@@ -1,0 +1,882 @@
+:root {
+    --bg-main: #0a0b0d;
+    --bg-panel: #13161a;
+    --bg-panel-light: #1c2026;
+    
+    --text-main: #e0e6ed;
+    --text-dim: #798696;
+    --text-dark: #475569;
+    
+    --border-color: #2a313d;
+    --border-hightlight: #3f4a5c;
+    
+    --accent-blue: #3b82f6;
+    --success-green: #10b981;
+    --warning-yellow: #f59e0b;
+    --danger-red: #ef4444;
+    
+    --font-mono: 'Roboto Mono', monospace;
+    --font-sans: 'Roboto', sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.gcs-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.5rem;
+}
+
+/* Header */
+.gcs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+
+.title-head {
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 1px;
+}
+
+.right-head {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+}
+
+.dot {
+    width: 8px; height: 8px; border-radius: 50%;
+}
+.dot.red { background-color: var(--danger-red); }
+.dot.green { background-color: var(--success-green); }
+
+.network-stats {
+    display: flex;
+    gap: 1.5rem;
+    color: var(--text-dim);
+}
+.network-stats span span { color: var(--text-main); }
+
+/* Main Grid Layout */
+.gcs-main {
+    flex: 1;          /* kalan yüksekliği al, footer'a yer bırak */
+    min-height: 0;    /* flex shrink çalışsın */
+    display: flex;
+    gap: 0.5rem;
+    overflow: hidden;
+}
+
+/* ─── BOTTOM LOG PANEL ──────────────────────── */
+.bottom-panel {
+    flex: 0 0 140px;      /* sabit yükseklik — büyümez */
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;     /* içerik taşmasın */
+}
+
+.log-container {
+    flex: 1;
+    overflow-y: auto;    /* yalnızca bu alan scroll */
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 6px;
+    scroll-behavior: smooth;
+}
+
+/* Scrollbar stili */
+.log-container::-webkit-scrollbar { width: 4px; }
+.log-container::-webkit-scrollbar-track { background: transparent; }
+.log-container::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+/* Log satırı */
+.log-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    padding: 1px 4px;
+    border-radius: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+}
+.log-entry.info    { color: var(--text-dim); }
+.log-entry.success { color: var(--success-green); }
+.log-entry.warn    { color: var(--warning-yellow); }
+.log-entry.crit    { color: var(--danger-red); background: rgba(239,68,68,0.05); }
+
+.log-time { color: var(--text-dark); flex-shrink: 0; }
+.log-src  { color: var(--accent-blue); flex-shrink: 0; min-width: 36px; }
+.log-msg  { overflow: hidden; text-overflow: ellipsis; }
+
+/* Panels */
+.panel {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.left-panel, .right-panel {
+    flex: 0 0 320px;
+    max-height: 100%;
+    overflow-y: auto;
+    min-height: 0;
+    align-self: stretch;
+}
+
+.center-panel {
+    flex: 1;
+    background-color: #000;
+    border: 1px solid var(--border-color);
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+/* Typography inside panels */
+.panel-title {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    letter-spacing: 1px;
+}
+
+/* Left Panel Controls */
+.vehicle-selector {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.vehicle-selector input[type="radio"] {
+    display: none;
+}
+
+.vehicle-selector label {
+    flex: 1;
+    text-align: center;
+    padding: 0.5rem;
+    background-color: var(--bg-panel-light);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.vehicle-selector input[type="radio"]:checked + label {
+    background-color: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+}
+
+.control-section {
+    display: none;
+    flex-direction: column;
+}
+
+.control-section.active-section {
+    display: flex;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.btn-grid, .btn-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.t-btn {
+    background-color: var(--bg-panel-light);
+    border: 1px solid var(--border-hightlight);
+    color: var(--text-main);
+    padding: 0.6rem;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.t-btn:hover { background-color: var(--border-color); }
+.t-btn:active { transform: scale(0.98); }
+
+.btn-action { border-left: 3px solid var(--accent-blue); }
+.btn-warning { border-left: 3px solid var(--warning-yellow); }
+.btn-danger { border-left: 3px solid var(--danger-red); }
+.btn-success { border-left: 3px solid var(--success-green); text-align: center; font-weight: bold;}
+
+.block-btn { width: 100%; display: block; text-align: center; }
+
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    padding: 0.5rem;
+    background: var(--bg-panel-light);
+}
+.value-highlight { color: var(--warning-yellow); font-weight: bold;}
+
+/* Right Panel Telemetry */
+.telemetry-block {
+    margin-bottom: 1rem;
+}
+
+.block-head {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+    border-bottom: 1px dotted var(--border-color);
+    padding-bottom: 0.25rem;
+}
+
+.data-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.d-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    background-color: var(--bg-panel-light);
+    padding: 0.4rem 0.5rem;
+    border: 1px solid transparent;
+}
+.d-row span:first-child { color: var(--text-dim); }
+
+.val { font-weight: 600; color: var(--text-main); }
+.val.red { color: var(--danger-red); }
+.val.green { color: var(--success-green); }
+.val.warning { color: var(--warning-yellow); }
+
+/* Center Panel (FPV area) */
+.fpv-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#fpv-canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background-color: #111; /* fallback */
+}
+
+/* FPV Overlays */
+.hud-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+}
+
+.hud-top-center {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.lock-status {
+    padding: 0.5rem 1.5rem;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1.2rem;
+    border: 2px solid;
+    background: rgba(0,0,0,0.5);
+}
+
+.mode-search { color: var(--warning-yellow); border-color: var(--warning-yellow); }
+.mode-track { color: var(--accent-blue); border-color: var(--accent-blue); }
+.mode-lock { color: var(--danger-red); border-color: var(--danger-red); }
+
+.hud-center-crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 40px;
+}
+.ch-h { position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: rgba(255,255,255,0.5); }
+.ch-v { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: rgba(255,255,255,0.5); }
+
+/* Bounding box HTML element representation */
+.target-box {
+    position: absolute;
+    border: 2px solid var(--danger-red);
+    width: 100px; height: 80px;
+    top: 40%; left: 45%; /* mocked initial pos */
+    display: flex;
+    flex-direction: column;
+}
+.target-box.hidden { display: none; }
+.t-class {
+    position: absolute;
+    top: -25px; left: -2px;
+    background: var(--danger-red);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 2px 5px;
+    white-space: nowrap;
+}
+
+.hud-warnings {
+    position: absolute;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(239, 68, 68, 0.8);
+    color: white;
+    padding: 0.5rem 2rem;
+    font-family: var(--font-mono);
+    font-weight: bold;
+    animation: blink 1s infinite alternate;
+}
+@keyframes blink {
+    from { opacity: 1; }
+    to { opacity: 0.2; }
+}
+.hidden { display: none !important; }
+
+/* === JOYSTICK & MANUEL KONTROL === */
+.manual-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid var(--warning-yellow);
+    margin-bottom: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--warning-yellow);
+}
+
+.w-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px; height: 32px;
+    background: var(--warning-yellow);
+    color: #000;
+    font-weight: 900;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.joystick-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.joystick-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+}
+
+.joystick-base {
+    position: relative;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: var(--bg-main);
+    border: 2px solid var(--border-hightlight);
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+}
+
+.joystick-knob {
+    position: absolute;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    border: 2px solid #fff;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: background 0.1s;
+}
+.joystick-knob.active { background: var(--warning-yellow); }
+
+.joystick-axes {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+}
+
+.axis-label {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-dark);
+}
+.axis-left  { top: 50%; left: 6px;  transform: translateY(-50%); }
+.axis-right { top: 50%; right: 6px; transform: translateY(-50%); }
+.axis-top   { top: 6px; left: 50%;  transform: translateX(-50%); }
+.axis-bottom { bottom: 6px; left: 50%; transform: translateX(-50%); }
+
+.joystick-readout {
+    display: flex;
+    gap: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+.joystick-readout span span {
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+/* Bottom Panel */
+.bottom-panel {
+    flex: 0 0 150px;
+    margin-top: auto;
+}
+.small-title { margin-bottom: 0.5rem; font-size: 0.8rem; border: none; }
+
+.log-container {
+    height: calc(100% - 25px);
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.log-entry {
+    display: flex;
+    gap: 1rem;
+    padding: 2px 4px;
+    border-bottom: 1px dotted var(--border-color);
+}
+.log-time { color: var(--text-dim); }
+.log-src { color: var(--accent-blue); width: 80px;}
+.log-msg { color: var(--text-main); }
+.log-entry.warn .log-msg { color: var(--warning-yellow); }
+.log-entry.crit .log-msg { color: var(--danger-red); }
+
+/* ---- CHASE MODE ---- */
+.chase-info-panel {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.chase-info-panel .d-row {
+    padding: 3px 0;
+}
+
+#btn-chase {
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+}
+
+#btn-chase:hover:not(:disabled) {
+    transform: scale(1.02);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-danger {
+    border-left-color: var(--danger-red) !important;
+    background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.btn-danger:hover:not(:disabled) {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3) !important;
+}
+
+/* ---- VIDEO GÜRÜLTÜ CANVAS KATMANI ---- */
+.video-noise-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;   /* tıklama geçirgen */
+    z-index: 5;             /* HUD'un altında, videonun üstünde */
+    display: block;
+}
+
+/* ---- GPS KARIŞTIRMA SİMÜLASYONU ---- */
+.gps-jam-panel {
+    background: rgba(239, 68, 68, 0.04);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-left: 2px solid rgba(239, 68, 68, 0.4);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-top: 6px;
+}
+
+.gps-jam-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.gps-jam-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+/* Değer göstergesi — d-row val ile aynı stil */
+.gps-jam-value {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    transition: color 0.2s;
+}
+.gps-jam-value.green  { color: var(--success-green); }
+.gps-jam-value.yellow { color: var(--warning-yellow); }
+.gps-jam-value.orange { color: #ff8c00; }
+.gps-jam-value.red    { color: var(--danger-red); }
+.gps-jam-value.blink  { animation: blink-red 0.5s ease-in-out infinite; }
+
+/* Custom range slider */
+.gps-jam-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    background: linear-gradient(to right,
+        var(--success-green) 0%,
+        var(--warning-yellow) 28%,
+        #ff8c00 58%,
+        var(--danger-red) 82%,
+        #ff0040 100%
+    );
+    margin-bottom: 4px;
+}
+
+.gps-jam-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-main);
+    border: 2px solid var(--bg-panel-light);
+    box-shadow: 0 0 4px rgba(0,0,0,0.6);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.gps-jam-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+.gps-jam-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-main);
+    border: 2px solid var(--bg-panel-light);
+    cursor: pointer;
+}
+
+.gps-jam-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    margin-bottom: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    color: var(--text-dark);
+    letter-spacing: 0.2px;
+}
+
+.gps-jam-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    letter-spacing: 0.3px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Renkli dot'lar */
+.dot.yellow { background: var(--warning-yellow); }
+.dot.orange { background: #ff8c00; }
+
+/* GPS kayıp blink animasyonu */
+@keyframes blink-red {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.15; }
+}
+
+.dot.blink {
+    animation: blink-red 0.5s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════
+   VURMA (STRIKE) PANELI
+   ═══════════════════════════════════════════════ */
+
+/* Bölüm ayırıcı */
+.section-divider {
+    border: none;
+    border-top: 1px solid rgba(220,38,38,0.18);
+    margin: 10px 0 2px;
+}
+
+/* Ana panel */
+.strike-panel {
+    background: rgba(220, 38, 38, 0.04);
+    border: 1px solid rgba(220, 38, 38, 0.16);
+    border-left: 2px solid rgba(220, 38, 38, 0.45);
+    border-radius: 4px;
+    padding: 10px 12px 12px;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* Sürgü satırı: etiket + durum */
+.strike-slider-wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.strike-slider-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-dark);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+.strike-slider-pct {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--danger-red);
+    transition: color 0.2s;
+}
+
+.strike-slider-pct.green { color: var(--success-green); }
+
+/* Kilit sürgüsü — native range, gri→kırmızı */
+.strike-arm-input {
+    display: block;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    background: linear-gradient(to right,
+        #374151 0%,
+        #6b7280 45%,
+        #b91c1c 80%,
+        #ef4444 100%
+    );
+    margin-bottom: 10px;
+}
+
+.strike-arm-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #9ca3af;
+    border: 2px solid var(--bg-panel);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: background 0.25s, box-shadow 0.2s;
+}
+
+.strike-arm-input.armed::-webkit-slider-thumb {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239,68,68,0.6);
+}
+
+.strike-arm-input::-moz-range-thumb {
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: #9ca3af;
+    border: 2px solid var(--bg-panel);
+    cursor: pointer;
+}
+
+/* ─── VUR BUTONU ─────────────────────────────── */
+
+/* 1. KİLİTLİ — tamamen statik, hiçbir efekt yok */
+.btn-strike {
+    display: block;
+    width: 100%;
+    padding: 10px 0;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    border-radius: 4px;
+    border: 1px solid rgba(220, 38, 38, 0.15);
+    background: rgba(40, 8, 8, 0.6);
+    color: rgba(200, 50, 50, 0.28);
+    cursor: not-allowed;
+    /* sıfır transition — tamamen statik */
+    transition: none;
+    transform: none;
+    box-shadow: none;
+}
+
+/* hover/focus kilitliyken hiçbir etki yok */
+.btn-strike:hover,
+.btn-strike:focus {
+    outline: none;
+    transform: none;
+    box-shadow: none;
+}
+
+/* 2. KİLİT AÇILDI (armed) — biraz küçük, hazır hissi */
+.btn-strike.armed {
+    background: linear-gradient(180deg, #c81e1e 0%, #991b1b 100%);
+    color: #fff;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    cursor: pointer;
+    /* Sürekli scale(0.96) → "hazır, bas beni" efekti */
+    transform: scale(0.96);
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.25),
+                inset 0 1px 0 rgba(255,255,255,0.08);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* hover armed: değişecek bir şey yok — kullanıcı zaten görüyor */
+.btn-strike.armed:hover {
+    transform: scale(0.96);  /* aynı kal */
+    box-shadow: 0 2px 14px rgba(239, 68, 68, 0.35),
+                inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* press efekti — belirgin küçülme, basıldığı hissedilsin */
+.btn-strike.armed:active {
+    transform: scale(0.91);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15),
+                inset 0 2px 4px rgba(0,0,0,0.3);
+    transition: transform 0.06s ease;
+}
+
+/* 3. AKTİF (vurma sürüyor) — turuncu, normal boyut */
+.btn-strike.active {
+    background: linear-gradient(180deg, #c2410c 0%, #9a3412 100%);
+    color: #fff;
+    border: 1px solid rgba(249, 115, 22, 0.35);
+    cursor: pointer;
+    transform: scale(1);
+    box-shadow: 0 2px 10px rgba(249, 115, 22, 0.2);
+    transition: transform 0.18s ease;
+}
+
+.btn-strike.active:active {
+    transform: scale(0.95);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
+    transition: transform 0.06s ease;
+}
+
+/* Durum satırı */
+.strike-status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-dark);
+    letter-spacing: 0.3px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* gps-jam-value.red yardımcısı */
+.gps-jam-value.red { color: var(--danger-red); }
+}

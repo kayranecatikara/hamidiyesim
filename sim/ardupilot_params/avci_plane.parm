@@ -1,0 +1,27 @@
+# =============================================================
+#  HEDEF UÇAK (ArduPlane / Cessna) — parametre yamaları
+# =============================================================
+# start_ardupilot_sitl.sh içinde --add-param-file ile yüklenir.
+# Amaç: hedef uçağı avcı drone'un yakalayabileceği gerçekçi bir hızda tutmak.
+# Varsayılan SITL plane'i LOITER'da 22-29 m/s yapıyordu; avcı drone ~18.6 m/s
+# max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
+
+# Cruise / airspeed hedefleri (cm/s)
+TRIM_ARSPD_CM 1500
+ARSPD_FBW_MIN 1200
+ARSPD_FBW_MAX 2200
+
+# LOITER yarıçapını küçült — hedef daha dar bir bölgede kalsın
+WP_LOITER_RAD 80
+
+# =============================================================
+#  Gazebo mini_talon_vtail V-KUYRUK servo eşlemesi
+# =============================================================
+# Talon artık Gazebo'da GERÇEKTEN uçuyor (ArduPilotPlugin, fdm 9012), relay yok.
+# ArduPilot resmi model.sdf'in gerektirdiği çıkış eşlemesi (V-tail mixing):
+#   SERVO1=Aileron, SERVO2=Sol V-Tail, SERVO3=Throttle, SERVO4=Sağ V-Tail
+# ArduPlane bu function'larla elevator+rudder'ı sol/sağ ruddervator'a mixler.
+SERVO1_FUNCTION 4
+SERVO2_FUNCTION 79
+SERVO3_FUNCTION 70
+SERVO4_FUNCTION 80

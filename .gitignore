@@ -1,0 +1,31 @@
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ============ Sanal ortam (yerelde kalır, repoya girmez) ============
+.venv/
+venv/
+env/
+
+# ============ Mission Planner binary (~400MB) ============
+# 'bash scripts/setup_mission_planner.sh' ile indirilir — repoda tutulmaz.
+tools/mission_planner/
+
+# ============ Çalışma çıktıları ============
+logs/
+*.log
+*.tlog
+*.BIN
+*.bak
+
+# ============ ArduPilot SITL geçici dosyaları ============
+eeprom.bin
+mav.parm
+*.parm.bak
+
+# ============ Editör / OS ============
+*.swp
+.vscode/
+.idea/
+.DS_Store

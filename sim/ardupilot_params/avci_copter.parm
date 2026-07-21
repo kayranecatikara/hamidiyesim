@@ -1,0 +1,26 @@
+# =============================================================
+#  AVCI DRONE (ArduCopter) — Avcı İHA parametre yamaları
+# =============================================================
+# start_ardupilot_sitl.sh içinde --add-param-file ile yüklenir.
+# Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
+#
+# Neden bu değerler (SITL'de ölçülerek belirlendi):
+#  - Varsayılan ANGLE_MAX=30° ile "+"quad yatayda ~10.3 m/s'de takılıyordu
+#    (aerodinamik terminal hız). 55°'de ~18.6 m/s'e çıkıyor — chase'in
+#    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
+#  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
+
+# Agresif eğim → yüksek yatay hız
+ANGLE_MAX 5500
+
+# GUIDED/WPNAV hız ve ivme tavanları
+WPNAV_SPEED 2200
+WPNAV_SPEED_UP 1000
+WPNAV_SPEED_DN 1000
+WPNAV_ACCEL 600
+LOIT_SPEED 2200
+PSC_VELXY_P 2.0
+
+# SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
+FS_GCS_ENABLE 0
+FS_THR_ENABLE 0

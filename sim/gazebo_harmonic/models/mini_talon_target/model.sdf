@@ -1,0 +1,41 @@
+<?xml version='1.0'?>
+<sdf version="1.9">
+  <!-- Hedef uçak — GÖRSEL model (avcı drone kamerasının hedefi).
+       ArduPilot SITL_Models mini_talon_vtail mesh'leri (beyaz, V-kuyruk).
+       kinematic + gravity kapalı: cessna_pose_relay, ArduPlane telemetrisine
+       göre gz set_pose ile hareket ettirir (fizik uygulanmaz, düşmez). -->
+  <model name="mini_talon_target">
+    <static>true</static>
+    <link name="body">
+      <inertial>
+        <mass>1.5</mass>
+        <inertia><ixx>0.05</ixx><iyy>0.08</iyy><izz>0.1</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+      </inertial>
+
+      <visual name="fuselage">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_fuselage.dae</uri></mesh></geometry>
+        <material><ambient>0.9 0.9 0.92 1</ambient><diffuse>0.95 0.95 0.97 1</diffuse></material>
+      </visual>
+      <visual name="forward_deck">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_forward_deck.dae</uri></mesh></geometry>
+        <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.6 0.6 0.63 1</diffuse></material>
+      </visual>
+      <visual name="left_wing">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_left_wing.dae</uri></mesh></geometry>
+        <material><ambient>0.9 0.9 0.92 1</ambient><diffuse>0.95 0.95 0.97 1</diffuse></material>
+      </visual>
+      <visual name="right_wing">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_right_wing.dae</uri></mesh></geometry>
+        <material><ambient>0.9 0.9 0.92 1</ambient><diffuse>0.95 0.95 0.97 1</diffuse></material>
+      </visual>
+      <visual name="left_tail">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_left_tail.dae</uri></mesh></geometry>
+        <material><ambient>0.9 0.9 0.92 1</ambient><diffuse>0.95 0.95 0.97 1</diffuse></material>
+      </visual>
+      <visual name="right_tail">
+        <geometry><mesh><uri>model://mini_talon_target/meshes/mini_talon_right_tail.dae</uri></mesh></geometry>
+        <material><ambient>0.9 0.9 0.92 1</ambient><diffuse>0.95 0.95 0.97 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+</sdf>

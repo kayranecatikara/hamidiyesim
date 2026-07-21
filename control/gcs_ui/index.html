@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avcı Operasyon Merkezi</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Ciddi Tipografi: Roboto Mono (sayılar ve teknik veri için) ve Inter veya Roboto -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="gcs-container">
+        
+        <!-- Header: En Ust Ince Cizgi (Baglanti kalitesi) -->
+        <header class="gcs-header">
+            <div class="left-head">
+                <span class="title-head">Y.K.İ // TAKTİK SAHA EKRANI</span>
+            </div>
+            <div class="right-head">
+                <div class="status-indicator">
+                    <span id="conn-dot" class="dot red"></span>
+                    <span id="conn-text">OFFLINE</span>
+                </div>
+                <div class="network-stats">
+                    <span>LATENCY: <span id="net-latency">--</span>ms</span>
+                    <span>PACKET LOSS: <span id="net-loss">--</span>%</span>
+                    <span>LAST HB: <span id="net-hb">--</span>s</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="gcs-main">
+            
+            <!-- LEFT PANEL: GOREV / KONTROL -->
+            <aside class="panel left-panel">
+                <div class="panel-title">GÖREV VE KONTROL</div>
+                
+                <div class="vehicle-selector">
+                    <input type="radio" id="mode-target" name="vehicle-mode" value="target" checked>
+                    <label for="mode-target">HEDEF İHA</label>
+                    
+                    <input type="radio" id="mode-hunter" name="vehicle-mode" value="hunter">
+                    <label for="mode-hunter">AVCI DRONE</label>
+                </div>
+
+                <!-- Hedef İHA Kontrol Paneli -->
+                <div id="target-controls" class="control-section active-section">
+                    <h3 class="section-title">UÇUŞ SENARYOLARI</h3>
+                    <div class="btn-grid">
+                        <button id="btn-plane-square" class="t-btn btn-action">KARE ÇİZ</button>
+                        <button id="btn-plane-manual" class="t-btn btn-warning">MANUEL MOD</button>
+                    </div>
+
+                    <!-- UÇAK HIZ AYARI — kare çiz basılınca görünür -->
+                    <div id="plane-speed-block" class="hidden mt-1">
+                        <h3 class="section-title">✈ UÇAK HIZ AYARI</h3>
+                        <div class="gps-jam-panel">
+                            <div class="gps-jam-header">
+                                <span class="gps-jam-label">THROTTLE:</span>
+                                <span id="plane-thr-value" class="gps-jam-value">60%</span>
+                            </div>
+                            <input type="range" id="plane-thr-slider" class="gps-jam-slider"
+                                   min="0" max="100" value="60" step="1">
+                            <div class="gps-jam-labels">
+                                <span>RÖLANTI</span>
+                                <span>YAVAS</span>
+                                <span>CRUISE</span>
+                                <span>HIZLI</span>
+                                <span>MAX</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GPS KARIŞTIRMA SİMÜLASYONU -->
+                    <h3 class="section-title mt-2">📡 GPS KARIŞTIRMA</h3>
+                    <div class="gps-jam-panel">
+                        <div class="gps-jam-header">
+                            <span class="gps-jam-label">SEVİYE:</span>
+                            <span id="gps-jam-value" class="gps-jam-value">0%</span>
+                        </div>
+                        <input type="range" id="gps-jam-slider" class="gps-jam-slider"
+                               min="0" max="100" value="0" step="1">
+                        <div class="gps-jam-labels">
+                            <span>TEMİZ</span>
+                            <span>HAFİF</span>
+                            <span>ORTA</span>
+                            <span>ŞİDDETLİ</span>
+                            <span>KAYIP</span>
+                        </div>
+                        <div id="gps-jam-status" class="gps-jam-status">
+                            <span class="dot green"></span> GPS Sinyali Normal
+                        </div>
+                    </div>
+
+                    <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
+                    <div id="manual-control-block" class="hidden">
+                        <div class="manual-hint">
+                            <span class="w-key">W</span>
+                            <span>= Motora Gaz Ver</span>
+                        </div>
+                        <div class="joystick-area">
+                            <div class="joystick-label">FLAP / YÜZEY KONTROLÜ</div>
+                            <div id="joystick-base" class="joystick-base">
+                                <div id="joystick-knob" class="joystick-knob"></div>
+                                <div class="joystick-axes">
+                                    <span class="axis-label axis-left">← AIL</span>
+                                    <span class="axis-label axis-right">AIL →</span>
+                                    <span class="axis-label axis-top">↑ ELV</span>
+                                    <span class="axis-label axis-bottom">ELV ↓</span>
+                                </div>
+                            </div>
+                            <div class="joystick-readout">
+                                <span>ROLL: <span id="js-x">0</span></span>
+                                <span>PITCH: <span id="js-y">0</span></span>
+                                <span>GAZ: <span id="js-thr">0</span>%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Avcı Drone Kontrol Paneli -->
+                <div id="hunter-controls" class="control-section">
+                    <h3 class="section-title">TAKİP MODU</h3>
+                    <div class="btn-grid">
+                        <button id="btn-chase" class="t-btn btn-success block-btn">🚀 GÖREVİ BAŞLAT</button>
+                    </div>
+                    
+                    <div id="chase-info" class="chase-info-panel mt-1">
+                        <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
+                        <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
+                    </div>
+
+
+                    <!-- VIDEO PARAZİT SİMÜLASYONU -->
+                    <h3 class="section-title mt-2">📷 VIDEO PARAZİT</h3>
+                    <div class="gps-jam-panel">
+                        <div class="gps-jam-header">
+                            <span class="gps-jam-label">PARAZİT:</span>
+                            <span id="video-noise-value" class="gps-jam-value green">0%</span>
+                        </div>
+                        <input type="range" id="video-noise-slider" class="gps-jam-slider"
+                               min="0" max="100" value="0" step="1">
+                        <div class="gps-jam-labels">
+                            <span>TEMİZ</span>
+                            <span>HAFİF</span>
+                            <span>ORTA</span>
+                            <span>ŞİDDETLİ</span>
+                            <span>SİYAH</span>
+                        </div>
+                        <div id="video-noise-status" class="gps-jam-status">
+                            <span class="dot green"></span> Temiz Analog Sinyal
+                        </div>
+                    </div>
+
+                    <!-- PnP POSE TAHMİNİ (Kamera Tabanlı) -->
+                    <div class="section-divider"></div>
+                    <h3 class="section-title mt-2">📐 PnP POSE TAHMİNİ</h3>
+                    <div class="chase-info-panel">
+                        <div class="d-row"><span>MESAFE:</span> <span id="pnp-dist" class="val">-- m</span></div>
+                        <div class="d-row"><span>HIZ:</span> <span id="pnp-speed" class="val">-- m/s</span></div>
+                        <div class="d-row"><span>KONUM (X,Y,Z):</span> <span id="pnp-pos" class="val">--, --, --</span></div>
+                        <div class="d-row"><span>İVME:</span> <span id="pnp-accel" class="val">-- m/s²</span></div>
+                        <div class="d-row"><span>YAW:</span> <span id="pnp-yaw" class="val">--°</span></div>
+                        <div class="d-row"><span>MODEL:</span> <span id="pnp-model-status" class="val warning">BEKLEMEDE</span></div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- CENTER PANEL: FPV & OVERLAY -->
+            <main class="center-panel">
+                <div class="fpv-container">
+                    <!-- CANLI ROS GORUNTUSU -->
+                    <img id="fpv-stream" src="/api/video_feed/plane" alt="Video Yükleniyor..." width="1280" height="720" style="object-fit: cover; width: 100%; height: 100%;">
+                    
+                    <!-- Overlay Elements (HTML/CSS) -->
+                    <div class="hud-overlay">
+                        <!-- VIDEO PARAZİT CANVAS KATMANI -->
+                        <canvas id="video-noise-canvas" class="video-noise-canvas"></canvas>
+                        <div class="hud-top-center">
+                            <div id="hud-status" class="lock-status mode-search">ARAMA MODU</div>
+                        </div>
+                        
+                        <div class="hud-center-crosshair">
+                            <div class="ch-h"></div>
+                            <div class="ch-v"></div>
+                        </div>
+
+                        <!-- Target Bounding Box and Error Vector will be drawn on canvas or moved via JS here -->
+                        <div id="target-box" class="target-box hidden">
+                            <span class="t-class">FIXED WING <span class="t-conf">0.96</span></span>
+                        </div>
+
+                        <!-- Warning Corner -->
+                        <div class="hud-warnings hidden" id="analog-warning">
+                            ANALOG GLITCH DETECTED
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- RIGHT PANEL: TELEMETRY -->
+            <aside class="panel right-panel">
+                <div class="panel-title">TELEMETRİ & ALGORİTMA</div>
+                
+                <div class="telemetry-block">
+                    <h4 class="block-head">HEDEF İHA METRİKLERİ</h4>
+                    <div class="data-list">
+                        <div class="d-row"><span>HIZ:</span> <span id="tele-plane-speed" class="val">0.0 m/s</span></div>
+                        <div class="d-row"><span>İRTİFA:</span> <span id="tele-plane-alt" class="val">0.0 m</span></div>
+                        <div class="d-row"><span>KONUM:</span> <span id="tele-plane-pos" class="val">0.0, 0.0</span></div>
+                        <div class="d-row"><span>HEADING:</span> <span id="tele-plane-hdg" class="val">0°</span></div>
+                    </div>
+                </div>
+
+                <div class="telemetry-block mt-2">
+                    <h4 class="block-head">AVCI DRONE METRİKLERİ</h4>
+                    <div class="data-list">
+                        <div class="d-row"><span>HIZ:</span> <span id="tele-hunter-speed" class="val">0.0 m/s</span></div>
+                        <div class="d-row"><span>İRTİFA:</span> <span id="tele-hunter-alt" class="val">0.0 m</span></div>
+                        <div class="d-row"><span>KONUM:</span> <span id="tele-hunter-pos" class="val">0.0, 0.0</span></div>
+                        <div class="d-row"><span>HEADING:</span> <span id="tele-hunter-hdg" class="val">0°</span></div>
+                        <div class="d-row"><span>BATARYA:</span> <span class="val green">98%</span></div>
+                    </div>
+                </div>
+
+                <div class="telemetry-block mt-2">
+                    <h4 class="block-head">GÖREV DURUMU</h4>
+                    <div class="data-list">
+                        <div class="d-row"><span>KİLİT:</span> <span id="tele-lock-status" class="val red">YOK</span></div>
+                        <div class="d-row"><span>TERMİNAL MOD:</span> <span id="tele-terminal-status" class="val warning">BEKLEMEDE</span></div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- BOTTOM PANEL: EVENT LOG -->
+        <footer class="panel bottom-panel">
+            <div class="panel-title small-title">MISSION LOG / EVENT TIMELINE</div>
+            <div id="event-log" class="log-container">
+                <!-- Logs will be prepended here via JS -->
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js?v=5"></script>
+</body>
+</html>

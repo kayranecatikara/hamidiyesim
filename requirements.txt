@@ -1,0 +1,14 @@
+# AVCI SİM — Python (pip) bağımlılıkları
+# ---------------------------------------------------------------
+# Kurulum:  pip install -r requirements.txt
+#
+# NOT: Aşağıdakiler pip ile DEĞİL, apt ile gelir (README'ye bakın):
+#   - rclpy, cv_bridge, sensor_msgs, gazebo_msgs  -> ROS 2 Humble
+#   - gz.transport13 / gz.msgs10                  -> python3-gz-transport13
+# ---------------------------------------------------------------
+opencv-python>=4.5
+numpy>=1.21
+fastapi>=0.100
+uvicorn>=0.20
+pydantic>=2.0
+pymavlink>=2.4

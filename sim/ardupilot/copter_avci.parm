@@ -1,0 +1,8 @@
+# AVCI drone (ArduCopter) — chase/strike icin hiz limitleri
+# PX4'teki MPC_XY_VEL_MAX=20 karsiligi
+WPNAV_SPEED      2000
+WPNAV_SPEED_UP   1000
+WPNAV_SPEED_DN   1000
+WPNAV_ACCEL      800
+ANGLE_MAX        4500
+# GUIDED hiz komutu zaman asimi (sn) — chase
