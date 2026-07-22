@@ -100,6 +100,8 @@ export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$
 
 ## Çalıştırma
 
+> Kopyala-yapıştır için hazır tam komut listesi: **[docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md)**
+
 Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
 
 **Temizlik** (boş bir terminalde):
@@ -301,7 +303,10 @@ Ortam değişkenlerini export ettikten ve /opt/ros/humble/setup.bash source etti
     "Iris kamerasından ilk görüntü" ve "Talon kamerasından ilk görüntü" satırlarını gör.
 
 --- BİTİRİŞ ---
-README'nin "Çalıştırma" bölümündeki 5 terminali sırayla başlat ve http://localhost:8000
-arayüzünde HEM "AVCI DRONE" HEM "HEDEF İHA" sekmelerinde kamera görüntüsünün geldiğini
-doğrula. Kullanıcıya kısa bir kurulum özeti + neyin doğrulandığını raporla.
+docs/SIMULASYON_CALISTIRMA.md dosyasındaki 5 terminali sırayla başlat ve
+http://localhost:8000 arayüzünde HEM "AVCI DRONE" HEM "HEDEF İHA" sekmelerinde
+kamera görüntüsünün geldiğini doğrula. Kullanıcıya kısa bir kurulum özeti + neyin
+doğrulandığını raporla. Son olarak kullanıcıya şunu söyle: "Bundan sonra TÜM
+sistemi docs/SIMULASYON_CALISTIRMA.md dosyasındaki komutlarla çalıştırabilirsiniz —
+her terminal bloğu orada sırasıyla yazılıdır."
 ````
