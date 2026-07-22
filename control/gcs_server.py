@@ -52,9 +52,52 @@ def read_root():
 # GLOBAL STATE
 # -----------------------------------------------------------------------
 telemetry_state = {
-    "iris":  {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False},
-    "plane": {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False},
+    "iris":  {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False,
+              "lat": 0.0, "lon": 0.0, "alt_amsl": 0.0},
+    "plane": {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False,
+              "lat": 0.0, "lon": 0.0, "alt_amsl": 0.0},
 }
+
+# ── NED ÇERÇEVE OFSETİ (iris ↔ plane) ──────────────────────────────────
+# İki SITL'in LOCAL_POSITION_NED orijinleri AYNI DEĞİL: ArduPilotPlugin dünya-
+# çerçeveli pozisyon gönderir, her aracın EKF orijini KENDİ spawn noktasında
+# kurulur (iris 0,0 — talon 12,0 → world dosyası). Plane local'ini olduğu gibi
+# iris local'iyle karşılaştırmak ~12m sabit hata veriyordu (drone hedefin
+# YANINDAN takip ediyordu, kamera hedefi bulamıyordu). Düzeltme: iki aracın
+# GLOBAL_POSITION_INT (GPS) verisinden sabit ofset kendinden-kalibre edilir,
+# plane local'i iris çerçevesine taşınır.
+_frame_off = {"n": 0.0, "e": 0.0, "d": 0.0, "samples": 0, "ok": False}
+_plane_local_raw = {"x": 0.0, "y": 0.0, "z": 0.0}
+_M_PER_DEG = 111319.4907          # metre / derece (enlem)
+
+
+def _frame_off_update():
+    """Plane GLOBAL geldiğinde çağrılır: GPS'ten plane'in iris-çerçevesindeki
+    konumu kurulur, plane LOCAL ham değeriyle farkı (EKF orijin ofseti) EMA'lanır.
+    Ofset sabittir (orijinler hareket etmez); EMA yalnız GPS gürültüsünü süzer."""
+    ip = telemetry_state["iris"]
+    pp = telemetry_state["plane"]
+    if ip["lat"] == 0.0 or pp["lat"] == 0.0:
+        return                                    # iki GPS de gelmeden kalibre etme
+    rel_n = (pp["lat"] - ip["lat"]) * _M_PER_DEG
+    rel_e = (pp["lon"] - ip["lon"]) * _M_PER_DEG * math.cos(math.radians(ip["lat"]))
+    rel_d = -(pp["alt_amsl"] - ip["alt_amsl"])
+    sn = (ip["x"] + rel_n) - _plane_local_raw["x"]
+    se = (ip["y"] + rel_e) - _plane_local_raw["y"]
+    sd = (ip["z"] + rel_d) - _plane_local_raw["z"]
+    if _frame_off["samples"] == 0:
+        _frame_off.update(n=sn, e=se, d=sd)
+    else:
+        a = 0.1
+        _frame_off["n"] = (1 - a) * _frame_off["n"] + a * sn
+        _frame_off["e"] = (1 - a) * _frame_off["e"] + a * se
+        _frame_off["d"] = (1 - a) * _frame_off["d"] + a * sd
+    _frame_off["samples"] += 1
+    if not _frame_off["ok"] and _frame_off["samples"] >= 20:
+        _frame_off["ok"] = True
+        print(f"[FRAME] Plane→iris NED çerçeve ofseti kalibre edildi: "
+              f"N={_frame_off['n']:+.1f}m E={_frame_off['e']:+.1f}m "
+              f"D={_frame_off['d']:+.1f}m (EKF orijinleri spawn farkı)")
 
 # GPS karıştırma simülasyonu — chase thread BU veriyi okur
 _gps_noise_level = 0.0   # 0.0 = temiz, 1.0 = tamamen bozuk
@@ -655,7 +698,7 @@ def _read_iris_telem_from_conn(conn):
     """
     for _ in range(10):  # en fazla 10 mesaj oku (kuyruk temizliği)
         msg = conn.recv_match(
-            type=['LOCAL_POSITION_NED', 'ATTITUDE', 'HEARTBEAT'],
+            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
             blocking=False
         )
         if not msg:
@@ -965,6 +1008,15 @@ def _process_mavlink_msg(msg, vehicle_name):
         # ADIM 10'da eklendiğinde gerekirse buraya offset geri konulur.
         px, py, pz = round(msg.x, 2), round(msg.y, 2), round(msg.z, 2)
 
+        # Plane local'i İRİS ÇERÇEVESİNE taşı (EKF orijinleri farklı; bkz.
+        # _frame_off). Ham değer kalibrasyon için ayrıca saklanır.
+        if vehicle_name == 'plane':
+            _plane_local_raw.update(x=px, y=py, z=pz)
+            if _frame_off["ok"]:
+                px = round(px + _frame_off["n"], 2)
+                py = round(py + _frame_off["e"], 2)
+                pz = round(pz + _frame_off["d"], 2)
+
         telemetry_state[vehicle_name].update(
             x=px, y=py, z=pz,
             vx=round(msg.vx, 2), vy=round(msg.vy, 2), vz=round(msg.vz, 2),
@@ -973,6 +1025,11 @@ def _process_mavlink_msg(msg, vehicle_name):
         if vehicle_name == 'plane':
             _apply_gps_noise(px, py, pz,
                              telemetry_state['plane']['yaw'])
+    elif msg_type == 'GLOBAL_POSITION_INT':
+        telemetry_state[vehicle_name].update(
+            lat=msg.lat / 1e7, lon=msg.lon / 1e7, alt_amsl=msg.alt / 1000.0)
+        if vehicle_name == 'plane':
+            _frame_off_update()                   # çerçeve ofsetini kalibre et
     elif msg_type == 'ATTITUDE':
         telemetry_state[vehicle_name].update(
             roll=round(math.degrees(msg.roll), 1),
@@ -994,7 +1051,7 @@ async def mavlink_listener():
 
     while True:
         msg = _mav_conn.recv_match(
-            type=['LOCAL_POSITION_NED', 'ATTITUDE', 'HEARTBEAT'],
+            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
             blocking=False
         )
         if msg:
@@ -1037,7 +1094,7 @@ def _iris_telem_worker():
     while not _iris_telem_stop.is_set():
         try:
             msg = _iris_telem_conn.recv_match(
-                type=['LOCAL_POSITION_NED', 'ATTITUDE', 'HEARTBEAT'],
+                type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
                 blocking=False
             )
             if msg:

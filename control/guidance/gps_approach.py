@@ -18,8 +18,9 @@ ve hareket komutları bu sisteme dönüştürüldü:
   world_to_body + PITCH/ROLL komutu        dünya-NED hız vektörü komutu
 
 KORUNAN MEKANİKLER (eski koddaki şekliyle):
-  - ANTI-OVERSHOOT STANDOFF: pozisyon komutu hedefe değil, hedeften
-    APPROACH_STANDOFF geride bir noktaya sürülür → hedef hep önde/kadrajda.
+  - KUYRUK İSTASYONU (standoff): komut istasyonu hedefin HIZ YÖNÜNÜN
+    APPROACH_STANDOFF gerisinde → drone yandan yetişse bile arkaya süzülür,
+    hedef hep önde/kadrajda (GPS fazının amacı GÖRSEL TEMAS: YOLO tespiti).
   - LEAD → FEEDFORWARD: eski ayrık 0.5sn nişan lead'inin işini hız komutundaki
     hedef-hızı feedforward'u görür (sürekli lead; standoff gerçek hedefe göre).
   - FRENLEME (göreli): tavan = min(V_CAP_FAR, hedef_hızı + kapanma_payı(d));
@@ -61,10 +62,16 @@ from control.guidance.common import (
 class Cfg:
     LOOP_HZ = 20.0                # sistem geleneği (eski 50 Hz; setpoint için 20 yeter)
 
-    # --- STANDOFF (anti-overshoot) ---
+    # --- STANDOFF / İSTASYON (anti-overshoot + kadraj) ---
     # Eski koddaki ayrık APPROACH_LEAD_S (0.5s nişan lead'i) hız alanında YOK:
     # hedef hızı feedforward'u sürekli lead sağlar; standoff GERÇEK hedefe göre.
-    APPROACH_STANDOFF = 5.0       # m; komut istasyonu hedefin bu kadar gerisinde
+    # 10m = eski sistemin KANITLANMIŞ EFEKTİF takip mesafesi (komut 5m + pursuit
+    # lag ≈ 10m notu). Kadraj geometrisi: 10m geriden + 5m alttan → hedefe bakış
+    # açısı atan(5/10)=26.6° ≈ kamera tilt 25° → hedef kadraj MERKEZİNDE; kutu
+    # ~20px (200px·m/d) → YOLO tespiti rahat (model min 10px ile eğitildi).
+    APPROACH_STANDOFF = 10.0      # m; istasyon hedefin bu kadar gerisinde
+    TRACK_MIN_SPD     = 3.0       # m/s; hedef bundan hızlıysa istasyon HIZ YÖNÜNÜN
+                                  # gerisinde (kuyruk takibi); yavaşsa LOS gerisi
 
     # --- LOOK-UP GEOMETRİSİ (alttan bakış; gökyüzü silueti) ---
     LOOKUP_ELEV_DEG     = 6.0     # LOS yükseliş açısı setpoint'i (0 = kapalı)
@@ -99,7 +106,8 @@ class Cfg:
 
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
-    YAW_RATE_MAX = math.radians(120.0)   # komut yaw'ının dönüş hızı
+    YAW_RATE_MAX = math.radians(180.0)   # komut yaw dönüş hızı (10m istasyonda
+                                         # yanlamasına geçişte kadraj kaçmasın)
 
     # --- DEADBAND / SINIRLAR ---
     POS_DEADBAND = 1.5            # m; çok yakında yatay jitter önle (eski 150 cm)
@@ -244,13 +252,23 @@ def run_gps_approach(conn, get_plane, get_iris, stop_event):
         alt_ref = max(alt_tgt - alt_off, Cfg.LOOKUP_MIN_ALT)
         ez = alt_ref - alt_iris                       # yukarı-pozitif dikey hata (eskiyle aynı)
 
-        # ── 5) STANDOFF KOMUT HATASI: hedefe değil, gerisindeki noktaya ──
-        if d_h > 1e-6:
-            ux, uy = ex / d_h, ey / d_h
-            d_cmd = d_h - Cfg.APPROACH_STANDOFF       # +: yaklaş, -: çok yakın → geri
-            ex_cmd, ey_cmd = ux * d_cmd, uy * d_cmd
+        # ── 5) İSTASYON NOKTASI: hedefin İZİNİN GERİSİNDE (kuyruk takibi) ──
+        # LOS gerisi değil, hedefin HIZ YÖNÜNÜN gerisi: drone hedefe hangi
+        # yönden yetişirse yetişsin (yandan dahil) arkaya süzülür → kuyruktan
+        # takip, LOS oranı ~0, kadraj kararlı — tespit için en iyi geometri.
+        # (Yan takip sorunu: LOS-standoff mesafeyi korur ama YÖNÜ korumaz;
+        # drone yandan yetişince yanda kalıyordu.) Hedef yavaşsa LOS gerisi.
+        tgt_spd = math.hypot(vel_x, vel_y)
+        if tgt_spd >= Cfg.TRACK_MIN_SPD:
+            st_x = est_x - (vel_x / tgt_spd) * Cfg.APPROACH_STANDOFF
+            st_y = est_y - (vel_y / tgt_spd) * Cfg.APPROACH_STANDOFF
+        elif d_h > 1e-6:
+            st_x = est_x - (ex / d_h) * Cfg.APPROACH_STANDOFF
+            st_y = est_y - (ey / d_h) * Cfg.APPROACH_STANDOFF
         else:
-            ex_cmd = ey_cmd = 0.0
+            st_x, st_y = ix, iy
+        ex_cmd = st_x - ix                            # istasyona hata vektörü
+        ey_cmd = st_y - iy
 
         # ── 6) HANDOFF HİSTEREZİSİ → durum ──
         if not handoff and d_h < Cfg.HANDOFF_RANGE:
@@ -283,7 +301,6 @@ def run_gps_approach(conn, get_plane, get_iris, stop_event):
         vx = vel_x + Cfg.KP_H * ex_cmd + Cfg.KD_H * de[0]
         vy = vel_y + Cfg.KP_H * ey_cmd + Cfg.KD_H * de[1]
 
-        tgt_spd = math.hypot(vel_x, vel_y)
         vcap = min(Cfg.V_CAP_FAR, tgt_spd + closing_allow(d_h))   # GÖRELİ fren
         vmag = math.hypot(vx, vy)
         if vmag > vcap and vmag > 1e-6:
@@ -296,7 +313,7 @@ def run_gps_approach(conn, get_plane, get_iris, stop_event):
             vx *= alc
             vy *= alc
 
-        if d_h < Cfg.POS_DEADBAND:                    # çok yakında: PD bırak, hedefle süz
+        if math.hypot(ex_cmd, ey_cmd) < Cfg.POS_DEADBAND:   # istasyondayız: FF ile süz
             vx, vy = vel_x, vel_y
 
         # ── 9) DİKEY HIZ: dış döngü aynen; iç döngü ArduPilot'un ──
