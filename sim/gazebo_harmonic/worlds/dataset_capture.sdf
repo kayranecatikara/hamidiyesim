@@ -1,0 +1,83 @@
+<?xml version="1.0" ?>
+<!--
+  dataset_capture.sdf — YOLO veri toplama için STATİK world.
+  Fizik/ArduPilot YOK: sabit kamera (iris gövdesi+kamerası, static) + statik hedef.
+  ARKA PLAN asıl chase world'üne (avci_harmonic.sdf) eşlendi: aynı gökyüzü tonu
+  (0.8 gri), aynı güneş ışığı, aynı runway — domain gap'i kapatmak için.
+
+  capture_dataset.py hedefi /world/dataset/set_pose ile FOV'da dolaştırır,
+  /iris_cam/image'den kare alır. Uçuş gerekmez.
+
+  Başlat:
+    export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models
+    gz sim -r sim/gazebo_harmonic/worlds/dataset_capture.sdf
+-->
+<sdf version="1.9">
+  <world name="dataset">
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <!-- Asıl world ile birebir aynı gökyüzü/ambient -->
+    <scene>
+      <ambient>1.0 1.0 1.0</ambient>
+      <background>0.8 0.8 0.8</background>
+      <sky></sky>
+    </scene>
+
+    <spherical_coordinates>
+      <latitude_deg>-35.363262</latitude_deg>
+      <longitude_deg>149.165237</longitude_deg>
+      <elevation>584</elevation>
+      <heading_deg>0</heading_deg>
+      <surface_model>EARTH_WGS84</surface_model>
+    </spherical_coordinates>
+
+    <!-- Asıl world ile birebir aynı güneş -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.8 0.8 0.8 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Asıl world öğesi: runway (kamera altına alındı ki hedef bazen pist önünde
+         görünsün → gökyüzü+pist arka plan çeşitliliği) -->
+    <include>
+      <uri>model://runway</uri>
+      <pose degrees="true">0 0 0 0 0 0</pose>
+    </include>
+
+    <!-- SABİT KAMERA (drone): iris gövdesi+kamerası (ArduPilot YOK), static, HAVADA (20m).
+         base_link = (0 0 20); kamera offset (0.10 0 0.05) pitch −25°(yukarı).
+         capture_dataset.py IRIS_POS=(0,0,20), IRIS_YAW=0 ile birebir eşleşir. -->
+    <include>
+      <name>camera_rig</name>
+      <uri>model://iris_with_standoffs</uri>
+      <pose>0 0 20 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- HEDEF: statik mini Talon; capture set_pose ile FOV'da dolaştırır -->
+    <include>
+      <name>mini_talon</name>
+      <uri>model://mini_talon_target</uri>
+      <pose>20 0 14 0 0 1.57</pose>
+    </include>
+  </world>
+</sdf>

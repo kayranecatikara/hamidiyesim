@@ -12,3 +12,4 @@ fastapi>=0.100
 uvicorn>=0.20
 pydantic>=2.0
 pymavlink>=2.4
+ultralytics>=8.3   # YOLO detection (eğitim + çıkarım); torch ayrıca gerekli (CUDA'lı)

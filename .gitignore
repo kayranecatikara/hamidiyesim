@@ -29,3 +29,11 @@ mav.parm
 .vscode/
 .idea/
 .DS_Store
+
+# ============ YOLO detection (üretilen veri + ağırlıklar) ============
+vision/datasets/
+vision/models/*
+runs/
+*.pt
+# Eğitilmiş güncel model repoya girer (5.5MB) — dataset girmez
+!vision/models/avci_yolo.pt

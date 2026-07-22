@@ -24,8 +24,8 @@ from pymavlink import mavutil
 import uvicorn
 
 # Cessna renk tabanlı tespit
-from vision.color_detector import detect_cessna, draw_overlay
-from vision.detection_state import set_detection
+from vision.detection_state import set_detection, get_detection
+# YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
 # Kare scriptinin de kullandığı, kanıtlanmış çalışan modüller (ArduPilot)
 from control.mav_common import (
@@ -523,8 +523,73 @@ def pnp_telemetry():
     }
 
 
-from control.chase_algorithm import run_chase as _run_chase_algorithm
-from control.strike_algorithm import run_strike as _run_strike_algorithm
+from control.guidance.gps_chase import run_chase as _run_chase_algorithm
+from control.guidance.gps_strike import run_strike as _run_strike_algorithm
+from control.guidance.visual_guidance import run_visual_guidance as _run_visual_guidance
+
+
+# ══════════════════════════════════════════════════════════
+#  GÖRSEL GÜDÜM (IBVS) — izole hat: YOLO bbox → drone hız.
+#  GPS chase'i BOZMAZ; ayrı endpoint. (Faz 4'te supervisor birleştirir.)
+# ══════════════════════════════════════════════════════════
+_visual_active = False
+_visual_stop_event = threading.Event()
+
+
+def _visual_thread():
+    """Görsel güdüm altyapısı: kalkış + IBVS döngüsü (get_detection → hız)."""
+    global _visual_active
+    print("=" * 50)
+    print("[VISUAL] Görsel Güdüm (IBVS) başlıyor")
+    print("=" * 50)
+    try:
+        stop_iris_telem()
+        time.sleep(0.3)
+        conn = df_connect_drone(port=14541)
+        print(f"[VISUAL] Iris bağlantısı: target_sys={conn.target_system}")
+
+        success = df_takeoff(target_z=-5.0)          # drone havada olmalı
+        if not success:
+            print("[VISUAL] Kalkış başarısız!")
+            _visual_active = False
+            return
+        print("[VISUAL] ✓ Kalkış tamam — IBVS başlatılıyor")
+
+        def get_iris():
+            _read_iris_telem_from_conn(conn)          # x,y,z,yaw günceller
+            t = telemetry_state["iris"]
+            return {"x": t["x"], "y": t["y"], "z": t["z"], "yaw": t["yaw"]}
+
+        _visual_stop_event.clear()
+        _run_visual_guidance(conn, get_detection, get_iris, _visual_stop_event)
+
+    except Exception as e:
+        import traceback
+        print(f"[VISUAL] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _visual_active = False
+        start_iris_telem()
+
+
+@app.post("/api/command/iris/start_visual")
+def start_visual():
+    global _visual_active, _chase_active
+    if _visual_active:
+        return {"status": "error", "message": "Görsel güdüm zaten aktif."}
+    _chase_active = False       # aynı porta erişen GPS chase'i durdur
+    time.sleep(0.3)
+    _visual_active = True
+    threading.Thread(target=_visual_thread, daemon=True).start()
+    return {"status": "success", "message": "Görsel güdüm (IBVS) başlatıldı."}
+
+
+@app.post("/api/command/iris/stop_visual")
+def stop_visual():
+    global _visual_active
+    _visual_active = False
+    _visual_stop_event.set()
+    return {"status": "success", "message": "Görsel güdüm durduruldu."}
 
 _strike_active = False
 _strike_stop_event = threading.Event()
@@ -693,14 +758,20 @@ latest_frames = {
     "plane": {"data": None, "id": 0}
 }
 
+_yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
+
 def process_iris_frame(img):
     """Iris kamera karesini işle: Cessna/hedef tespiti + overlay + video parazit
     simülasyonu + MJPEG kodlama. Hem ROS2 (Gazebo Classic) hem gz-transport
     (Gazebo Harmonic) kamera kaynakları bu fonksiyonu çağırır."""
-    # ---- HEDEF TESPİT + OVERLAY ----
-    det = detect_cessna(img)
-    set_detection(det)
-    img = draw_overlay(img, det)
+    # ---- HEDEF TESPİT (YOLO) + OVERLAY ----
+    if _yolo_detector is not None:
+        try:
+            det = _yolo_detector.detect_talon(img)
+            set_detection(det)
+            img = _yolo_detector.draw_overlay(img, det)
+        except Exception as e:
+            print(f"[GCS] YOLO tespit hatası: {e}")
 
     # ---- VIDEO PARAZİT SİMÜLASYONU ----
     lvl = _video_noise_level
@@ -989,6 +1060,17 @@ def stop_iris_telem():
 async def startup_event():
     asyncio.create_task(mavlink_listener())          # plane — 14550
     start_iris_telem()                                # iris  — 14541 (background thread)
+    # YOLO detector'ı yükle (opsiyonel; AVCI_DETECTOR=off ile kapatılır)
+    if os.environ.get("AVCI_DETECTOR", "yolo").lower() == "yolo":
+        global _yolo_detector
+        try:
+            from vision import detector as _det
+            _det.load()                          # ağırlık + CUDA warmup
+            _yolo_detector = _det
+            print("[GCS] YOLO detector hazır (avci_yolo.pt)")
+        except Exception as e:
+            print(f"[GCS] YOLO detector yüklenemedi ({e}) — tespit kapalı")
+
     # Kamera kaynağı: Harmonic (gz-transport) veya Classic (ROS2 cv_bridge)
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
         threading.Thread(target=gz_iris_camera_thread, daemon=True).start()   # avcı iris
