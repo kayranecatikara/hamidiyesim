@@ -10,6 +10,13 @@
 #    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
 #  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
 
+# Çerçeve (frame) tanımı — ŞART: bu olmadan ArduCopter "PreArm: Motors:
+# Check frame class and type" verir, motor mikseri kurulmaz, force-arm edilse
+# bile motorlar itki üretmez → NAV_TAKEOFF başarısız olur, iris kalkamaz.
+# FRAME_CLASS 1 = Quad, FRAME_TYPE 1 = X (iris quadrotor).
+FRAME_CLASS 1
+FRAME_TYPE 1
+
 # Agresif eğim → yüksek yatay hız
 ANGLE_MAX 5500
 

@@ -1,26 +1,33 @@
 # =============================================================
-#  HEDEF UÇAK (ArduPlane / Cessna) — parametre yamaları
+#  HEDEF UÇAK (ArduPlane / mini_talon) — parametre yamaları
 # =============================================================
-# start_ardupilot_sitl.sh içinde --add-param-file ile yüklenir.
-# Amaç: hedef uçağı avcı drone'un yakalayabileceği gerçekçi bir hızda tutmak.
-# Varsayılan SITL plane'i LOITER'da 22-29 m/s yapıyordu; avcı drone ~18.6 m/s
-# max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
+# start scriptinde --add-param-file ile yüklenir.
+#
+# TASARIM: mini_talon ArduPilot'un RESMİ Gazebo demo uçağıdır ve VARSAYILAN
+# ArduPlane ayarlarıyla uçar. Önceki oturumda eklenen aşırı kısıtlar (pitch ±12°,
+# roll ±15°, sıkı TECS limitleri) pitch/roll otoritesini kısıp uçağı kalkıştan
+# sonra dalış/stall'a sokuyordu. Bu yüzden VARSAYILANLARA dönüldü; yalnızca
+# senaryo için gerekli minimum (hız + V-tail servo eşlemesi + RTL land kapalı)
+# bırakıldı.
 
-# Cruise / airspeed hedefleri (cm/s)
-TRIM_ARSPD_CM 1500
+# --- Cruise / airspeed (cm/s) ---
+# Avcı drone ~18.6 m/s max; hedefi yakalayabilsin diye ılımlı bir cruise.
+# Ama stall marjı için çok düşük DEĞİL (18 m/s cruise, min 12).
+TRIM_ARSPD_CM 1800
 ARSPD_FBW_MIN 1200
-ARSPD_FBW_MAX 2200
+ARSPD_FBW_MAX 2500
 
-# LOITER yarıçapını küçült — hedef daha dar bir bölgede kalsın
-WP_LOITER_RAD 80
+# --- LOITER yarıçapı — makul, yumuşak daire ---
+WP_LOITER_RAD 120
+
+# --- RTL'de otomatik iniş YOK (moda geçişte istenmeyen alçalma/iniş olmasın) ---
+RTL_AUTOLAND 0
 
 # =============================================================
-#  Gazebo mini_talon_vtail V-KUYRUK servo eşlemesi
+#  Gazebo mini_talon_vtail V-KUYRUK servo eşlemesi (ZORUNLU)
 # =============================================================
-# Talon artık Gazebo'da GERÇEKTEN uçuyor (ArduPilotPlugin, fdm 9012), relay yok.
 # ArduPilot resmi model.sdf'in gerektirdiği çıkış eşlemesi (V-tail mixing):
 #   SERVO1=Aileron, SERVO2=Sol V-Tail, SERVO3=Throttle, SERVO4=Sağ V-Tail
-# ArduPlane bu function'larla elevator+rudder'ı sol/sağ ruddervator'a mixler.
 SERVO1_FUNCTION 4
 SERVO2_FUNCTION 79
 SERVO3_FUNCTION 70

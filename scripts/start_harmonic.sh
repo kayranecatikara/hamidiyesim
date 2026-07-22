@@ -10,13 +10,14 @@
 #   3) ArduPlane SITL (mini_talon --model JSON:9012) — Talon Harmonic FDM 9012
 #      Talon Gazebo'da GERÇEKTEN uçar (relay YOK); gcs "kare çiz" ile kontrol.
 #
-# Ardından AYRI terminallerde:
-#   - python3 -m control.gcs_server      (web GCS + gz kamera + chase/strike)
-#   - bash scripts/start_mission_planner.sh
+# Artik arayuzu (web GCS) de kendisi baslatir ve tarayiciyi otomatik acar.
+# Mission Planner (istege bagli) hala ayri:  bash scripts/start_mission_planner.sh
 #
 # Kullanım:
-#   bash scripts/start_harmonic.sh            # GUI (NVIDIA render, önerilen)
-#   GZ_HEADLESS=1 bash scripts/start_harmonic.sh   # görüntüsüz
+#   bash scripts/start_harmonic.sh            # her sey + tarayici otomatik acilir
+#   GZ_GUI=1 bash scripts/start_harmonic.sh   # 3B Gazebo penceresi de acilir (Intel GPU, agir)
+#   NO_GCS=1 bash scripts/start_harmonic.sh   # arayuzu baslatma (sadece sim)
+#   NO_BROWSER=1 bash scripts/start_harmonic.sh   # arayuzu baslat ama tarayici acma
 #   bash scripts/start_harmonic.sh stop       # durdur
 
 PROJ="$HOME/projects/avci_sim"
@@ -26,10 +27,24 @@ LOG="$PROJ/logs"; mkdir -p "$LOG"
 WORLD="$PROJ/sim/gazebo_harmonic/worlds/avci_harmonic.sdf"
 
 stop_all() {
-    for pat in 'cessna_pose_relay' 'model JSON' 'model plane' '[s]im_vehicle' '[m]avproxy' '[g]z sim' '[r]uby.*gz'; do
+    for pat in 'cessna_pose_relay' 'model JSON' 'model plane' '[s]im_vehicle' '[m]avproxy' '[g]z sim' '[r]uby.*gz' 'control.gcs_server'; do
         pkill -9 -f "$pat" 2>/dev/null
     done
     sleep 3
+}
+
+# Tarayiciyi acabilecek ilk araci bul ve URL'yi ac (arka planda).
+open_browser() {
+    local url="$1"
+    [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && { echo "[HARMONIC] Ekran yok, tarayici acilmiyor: $url"; return; }
+    for b in xdg-open firefox google-chrome chromium chromium-browser; do
+        if command -v "$b" >/dev/null 2>&1; then
+            nohup "$b" "$url" >/dev/null 2>&1 &
+            echo "[HARMONIC] Tarayici acildi ($b): $url"
+            return
+        fi
+    done
+    echo "[HARMONIC] Tarayici bulunamadi; elle ac: $url"
 }
 
 if [ "${1:-}" = "stop" ]; then
@@ -40,18 +55,23 @@ echo "[HARMONIC] Eski süreçler temizleniyor..."; stop_all
 
 # Ortam — Harmonic plugin + model yolları + NVIDIA render
 source /opt/ros/humble/setup.bash 2>/dev/null
+# MAVProxy pip --user ile ~/.local/bin'e kurulu; sim_vehicle.py onu PATH'te arar.
+# Bu satır olmadan "No such file or directory: 'mavproxy.py'" -> SITL çöker.
+export PATH="$HOME/.local/bin:$PATH"
 export GZ_SIM_SYSTEM_PLUGIN_PATH="$APGZ/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
 export GZ_SIM_RESOURCE_PATH="$PROJ/sim/gazebo_harmonic/models:$APGZ/models:$APGZ/worlds:${GZ_SIM_RESOURCE_PATH:-}"
 
 # 1) Gazebo Harmonic
-if [ "${GZ_HEADLESS:-0}" = "1" ]; then
-    echo "[HARMONIC] Gazebo (headless) başlatılıyor..."
-    unset DISPLAY
-    nohup gz sim -s -r --headless-rendering -v2 "$WORLD" > "$LOG/gz_harmonic.log" 2>&1 &
-else
-    echo "[HARMONIC] Gazebo (GUI, NVIDIA render) başlatılıyor..."
-    export DISPLAY="${DISPLAY:-:1}"
+# Varsayılan: HEADLESS render (kamera web arayüzüne akar, 3B pencere gerekmez).
+# NVIDIA surucusu yuklu degil; render Intel GPU ile yapiliyor. 3B pencere de
+# istersen GZ_GUI=1 ile acilir (Intel'de calisir ama agirdir, akis takilabilir).
+if [ "${GZ_GUI:-0}" = "1" ]; then
+    echo "[HARMONIC] Gazebo (GUI) başlatılıyor..."
+    export DISPLAY="${DISPLAY:-:0}"
     nohup gz sim -r -v2 "$WORLD" > "$LOG/gz_harmonic.log" 2>&1 &
+else
+    echo "[HARMONIC] Gazebo (headless render) başlatılıyor..."
+    nohup gz sim -s -r --headless-rendering -v2 "$WORLD" > "$LOG/gz_harmonic.log" 2>&1 &
 fi
 
 echo "[HARMONIC] Gazebo FDM portu (9002) bekleniyor..."
@@ -80,10 +100,32 @@ sleep 25
 # (Relay kaldırıldı — Talon Gazebo'da gerçekten uçtuğu için gerek yok.
 #  gcs_server hedefi 14542'den kontrol eder: /api/command/plane/square)
 
+# 4) Arayuz (web GCS) + kamera — arka planda baslat, sonra tarayiciyi ac.
+URL="http://localhost:8000/ui/index.html"
+if [ "${NO_GCS:-0}" = "1" ]; then
+    echo "[HARMONIC] NO_GCS=1 -> arayuz baslatilmadi."
+else
+    echo "[HARMONIC] Arayuz (web GCS) başlatılıyor..."
+    ( cd "$PROJ" && AVCI_GZ_CAMERA=1 nohup python3 -m control.gcs_server > "$LOG/gcs_server.log" 2>&1 & )
+
+    echo "[HARMONIC] Web sunucusu (port 8000) bekleniyor..."
+    up=0
+    for i in $(seq 1 40); do
+        ss -ltn 2>/dev/null | grep -q ':8000' && { up=1; break; }
+        sleep 0.5
+    done
+    if [ "$up" = "1" ]; then
+        echo "[HARMONIC] Arayuz hazir: $URL"
+        [ "${NO_BROWSER:-0}" = "1" ] || open_browser "$URL"
+    else
+        echo "[HARMONIC] UYARI: port 8000 acilmadi, gcs_server.log'a bak."
+    fi
+fi
+
 echo "=================================================================="
 echo "[HARMONIC] Tam sistem hazır."
-echo "  Loglar: $LOG/{gz_harmonic,copter_harmonic,plane_harmonic,harmonic_relay}.log"
-echo "  Şimdi AYRI terminallerde:"
-echo "    cd ~/projects/avci_sim && source /opt/ros/humble/setup.bash && python3 -m control.gcs_server"
-echo "    bash ~/projects/avci_sim/scripts/start_mission_planner.sh"
+echo "  Arayuz : $URL"
+echo "  Loglar : $LOG/{gz_harmonic,copter_harmonic,plane_harmonic,gcs_server}.log"
+echo "  Mission Planner (istege bagli): bash ~/projects/avci_sim/scripts/start_mission_planner.sh"
+echo "  Durdurmak icin: bash ~/projects/avci_sim/scripts/start_harmonic.sh stop"
 echo "=================================================================="
