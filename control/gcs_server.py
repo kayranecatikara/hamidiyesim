@@ -453,7 +453,11 @@ def chase_status():
         (plane["y"] - iris["y"])**2 +
         (plane["z"] - iris["z"])**2
     )
-    return {"active": True, "distance": round(dist, 1)}
+    resp = {"active": True, "distance": round(dist, 1)}
+    if _GPS_LAW != "v2":
+        # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
+        resp["guidance"] = dict(_gps_approach_mod.status)
+    return resp
 
 
 # -----------------------------------------------------------------------
@@ -524,8 +528,14 @@ def pnp_telemetry():
 
 
 from control.guidance.gps_chase import run_chase as _run_chase_algorithm
+from control.guidance import gps_approach as _gps_approach_mod
+from control.guidance.gps_approach import run_gps_approach as _run_gps_approach
 from control.guidance.gps_strike import run_strike as _run_strike_algorithm
 from control.guidance.visual_guidance import run_visual_guidance as _run_visual_guidance
+
+# GPS güdüm yasası seçimi: varsayılan eski sistemin portu (gps_approach);
+# AVCI_GPS_LAW=v2 → önceki chase v2 (SPRINT/APPROACH/LOCK state machine).
+_GPS_LAW = os.environ.get("AVCI_GPS_LAW", "yaklasma").lower()
 
 
 # ══════════════════════════════════════════════════════════
@@ -734,8 +744,13 @@ def _chase_thread():
         watcher = threading.Thread(target=watch_active, daemon=True)
         watcher.start()
 
-        # ---- ALGORİTMAYI ÇAĞIR ----
-        _run_chase_algorithm(conn, get_plane, get_iris, chase_stop)
+        # ---- ALGORİTMAYI ÇAĞIR (AVCI_GPS_LAW: yaklasma=eski sistem portu | v2) ----
+        if _GPS_LAW == "v2":
+            print("[CHASE] Güdüm yasası: chase v2 (AVCI_GPS_LAW=v2)")
+            _run_chase_algorithm(conn, get_plane, get_iris, chase_stop)
+        else:
+            print("[CHASE] Güdüm yasası: GPS-YAKLASMA (eski sistem portu, gps_approach)")
+            _run_gps_approach(conn, get_plane, get_iris, chase_stop)
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
