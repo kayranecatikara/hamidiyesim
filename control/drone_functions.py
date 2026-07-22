@@ -100,45 +100,6 @@ def _send_position_setpoint(conn, x: float, y: float, z: float,
     )
 
 
-# Velocity setpoint type_mask: sadece hız (vx,vy,vz) + yaw_rate kullan;
-# pozisyon, ivme ve mutlak yaw IGNORE edilir (set edilen bit = IGNORE).
-#   bit0-2 pos=ignore(1), bit3-5 vel=use(0), bit6-8 accel=ignore(1),
-#   bit9 force=0, bit10 yaw=ignore(1), bit11 yaw_rate=use(0)
-# HATA DÜZELTMESİ: eski değer (0b0000_0100_1100_0111 = 1223) bit8'i (accel-Z
-# ignore) SET ETMİYORDU → ArduCopter setpoint'i "hız + kısmi ivme" olarak
-# yorumlayıp DİKEY hız (vz) bileşenini uygulamıyordu (W/S ile tırmanma/alçalma
-# çalışmıyordu). Doğru maske bit6-8'in HEPSİNİ set eder = 1479.
-TYPEMASK_VELOCITY = 0b0000_0101_1100_0111   # = 1479 (accel x,y,z hepsi ignore)
-
-
-def _send_velocity_setpoint(conn, vx: float, vy: float, vz: float,
-                            yaw_rate: float = 0.0, body_frame: bool = True):
-    """
-    Tek bir HIZ (velocity) setpoint gönderir — GUIDED modda anlık sürüş için.
-
-    Klavye/joystick ile manuel uçuşta idealdir: tuş basılıyken sabit hız,
-    bırakınca (0,0,0) → drone olduğu yerde asılı kalır (hover).
-
-    body_frame=True  → MAV_FRAME_BODY_OFFSET_NED: vx=ileri, vy=sağ, vz=aşağı
-                       (araç burnuna göre — sezgisel kontrol).
-    body_frame=False → MAV_FRAME_LOCAL_NED: vx=Kuzey, vy=Doğu, vz=aşağı.
-    NED işareti: vz negatif = YUKARI. yaw_rate rad/s (+ = sağa/saat yönü).
-    """
-    frame = (mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED if body_frame
-             else mavutil.mavlink.MAV_FRAME_LOCAL_NED)
-    conn.mav.set_position_target_local_ned_send(
-        timestamp_ms(),
-        conn.target_system,
-        conn.target_component,
-        frame,
-        TYPEMASK_VELOCITY,
-        0.0, 0.0, 0.0,     # x, y, z (ignore)
-        vx, vy, vz,        # vx, vy, vz  (m/s)
-        0.0, 0.0, 0.0,     # afx, afy, afz (ignore)
-        0.0, yaw_rate,     # yaw (ignore), yaw_rate (rad/s)
-    )
-
-
 # ---------------------------------------------------------------------------
 # Arm / Disarm / Mode
 # ---------------------------------------------------------------------------
