@@ -259,6 +259,67 @@ body {
 .btn-action { border-left: 3px solid var(--accent-blue); }
 .btn-warning { border-left: 3px solid var(--warning-yellow); }
 .btn-danger { border-left: 3px solid var(--danger-red); }
+
+/* Şekil butonları: yazı yerine yuvarlak (otomatik) / kare (manuel) */
+.shape-row { display: flex; gap: 0.5rem; }
+.shape-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    padding: 0.6rem 0.3rem;
+}
+/* şekil butonu altındaki isim (Daire/Kare/Üçgen) */
+.shape-name {
+    font-size: 0.64rem;
+    text-align: center;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+/* AKTİF SENARYO altındaki YAZI butonları (uçuş tipi) */
+.mode-row { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.mode-btn {
+    flex: 1;
+    padding: 0.55rem 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.mode-btn.active-scn { background: var(--border-color); box-shadow: inset 0 0 0 2px var(--border-hightlight); }
+.shape-btn .ico { width: 26px; height: 26px; display: inline-block; transition: filter 0.2s, transform 0.2s; }
+.ico-circle { border-radius: 50%; background: var(--accent-blue); }      /* otomatik uçuş = yuvarlak */
+.ico-square { border-radius: 4px;  background: var(--warning-yellow); }   /* manuel = kare */
+.ico-triangle {                                                          /* rastgele/kaçış = üçgen */
+    width: 0; height: 0; background: transparent; border-radius: 0;
+    border-left: 13px solid transparent;
+    border-right: 13px solid transparent;
+    border-bottom: 23px solid var(--success-green);
+}
+.shape-btn:hover .ico { filter: brightness(1.25); }
+.shape-btn:active .ico { transform: scale(0.9); }
+/* aktif senaryo göstergesi */
+.shape-btn.active-scn { background: var(--border-color); box-shadow: inset 0 0 0 2px var(--border-hightlight); }
+/* [R] otonom rastgele/kaçış kutusu */
+.r-box .r-letter {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 4px;
+    border: 2px solid var(--danger-red);
+    color: var(--danger-red); font-weight: bold; font-size: 15px;
+    transition: filter 0.2s, transform 0.2s;
+}
+.r-box:hover .r-letter { filter: brightness(1.25); }
+.r-box:active .r-letter { transform: scale(0.9); }
+/* 4-mod senaryo açıklaması */
+.scenario-legend {
+    display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem;
+    margin: 0.4rem 0 0.2rem; font-size: 0.72rem; color: var(--text-dim);
+}
+.scenario-legend b { color: var(--text-main); font-weight: 600; }
 .btn-success { border-left: 3px solid var(--success-green); text-align: center; font-weight: bold;}
 
 .block-btn { width: 100%; display: block; text-align: center; }
@@ -326,6 +387,14 @@ body {
     height: 100%;
     object-fit: cover;
     background-color: #111; /* fallback */
+}
+/* Kamera görüntüsü: konteyneri SABİT doldurur (küçülme/esneme yok) */
+#fpv-stream {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    flex-shrink: 0;
 }
 
 /* FPV Overlays */
@@ -880,3 +949,44 @@ body {
 /* gps-jam-value.red yardımcısı */
 .gps-jam-value.red { color: var(--danger-red); }
 }
+
+/* ===== KONUM 3B HARİTASI (X/Y/Z) — döndürülebilir turntable ===== */
+.minimap-wrap {
+    position: relative;
+    width: 100%;
+    height: 260px;
+    min-height: 260px;      /* daralmayı önle */
+    flex-shrink: 0;         /* flex konteynerde esnemesin/küçülmesin */
+    background: #06080c;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 4px 0;
+}
+.minimap-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+}
+.minimap-canvas:active { cursor: grabbing; }
+.minimap-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+.minimap-legend > span span { color: var(--text-main); }
+.mm-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+.mm-iris  { background: var(--success-green); }
+.mm-plane { background: var(--danger-red); }

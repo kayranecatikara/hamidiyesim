@@ -5,6 +5,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
+import base64
 import math
 import signal
 import subprocess
@@ -16,12 +17,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 from pymavlink import mavutil
 import uvicorn
+
+# NOT: rclpy / cv_bridge / sensor_msgs YALNIZCA Gazebo Classic (ROS2) kamera
+# yolunda gerekir. Harmonic (gz-transport, AVCI_GZ_CAMERA=1) modunda ROS 2
+# kurulu OLMASA BİLE sunucu açılabilsin diye bu importlar ros2_spin_thread()
+# içine ERTELENDİ (lazy). Böylece `import rclpy` başarısızsa gz modu etkilenmez.
 
 # Cessna renk tabanlı tespit
 from vision.color_detector import detect_cessna, draw_overlay
@@ -71,6 +73,16 @@ _square_active = False
 _square_stop_event = threading.Event()
 _square_thread_obj = None
 
+# Geometrik DAİRE (tam otomatik, X-Y çember + sabit Z)
+_circle_active = False
+_circle_stop = threading.Event()
+_circle_thread_obj = None
+
+# Geometrik ÜÇGEN (tam otomatik, X-Y-Z 3 tepe)
+_triangle_active = False
+_triangle_stop = threading.Event()
+_triangle_thread_obj = None
+
 # Uçak throttle seviyesi — slider ile ayarlanır (0-1000 aralığı, MANUAL_CONTROL)
 _plane_throttle = 600   # default = THROTTLE_CRUISE
 
@@ -82,6 +94,15 @@ _manual_active = False
 _manual_aileron  = 1500
 _manual_elevator = 1500
 _manual_throttle = 1000
+# Manuel moddan çıkışta uçağı disarm et Mİ?
+#   True  → "tam duruş" (yere in): override bırakılır + güvenli disarm
+#   False → başka moda GEÇİŞ (AUTO/kare): DİSARM ETME → uçak havada düşmesin,
+#           armed + throttle korunarak AUTO devralana dek uçmaya devam etsin.
+_plane_disarm_on_manual_exit = True
+# Manuel kontrol thread nesnesi — moda geçişte "tam durmasını bekle" (join) için.
+# Aksi halde manuel thread hâlâ init'teyken (FBWA/arm) kare thread'i LOITER
+# kurup ikisi ÇAKIŞIR (race) → uçak yanlış modda kalıp düşer.
+_manual_thread_obj = None
 
 def id_to_name(sysid):
     # ArduPilot SITL: iris/copter sysid=5, plane sysid=2
@@ -93,64 +114,698 @@ def id_to_name(sysid):
 
 @app.post("/api/command/plane/square")
 def command_plane_square():
+    """🟧 Hedef İHA'yı GEOMETRİK KARE rotasına alır (tam otomatik)."""
     global _square_active, _square_thread_obj
-    try:
-        # Eğer manuel kontrol aktifse durdur
-        global _manual_active
-        if _manual_active:
-            _manual_active = False
-            time.sleep(0.3)
+    if _square_active:
+        return {"status": "success", "message": "Zaten kare modunda"}
+    _stop_active_plane_modes(exclude='square')
+    _square_stop_event.clear()
+    _square_active = True
+    _square_thread_obj = threading.Thread(target=_square_thread, daemon=True)
+    _square_thread_obj.start()
+    print("[SQUARE] Geometrik kare başlatıldı.")
+    return {"status": "success", "message": "Geometrik kare rotası"}
 
-        if _square_active:
-            _square_stop_event.set()
-            time.sleep(0.5)
 
-        _square_stop_event.clear()
-        _square_active = True
-        _square_thread_obj = threading.Thread(target=_square_thread, daemon=True)
-        _square_thread_obj.start()
-        return {"status": "success", "message": "Kare çizme başlatıldı."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+@app.post("/api/command/plane/stop_square")
+def command_plane_stop_square():
+    global _square_active
+    _square_stop_event.set()
+    _square_active = False
+    return {"status": "success", "message": "Kare durduruldu"}
+
+PLANE_MODE_AUTO = 10     # ArduPlane AUTO custom mode
+PLANE_MODE_LOITER = 12   # ArduPlane LOITER custom mode (stabil daire)
+
+
+def _upload_mission(conn, items):
+    """Standart MAVLink mission protokolü ile görev öğelerini yükler.
+    items: [{seq, frame, cmd, current, autocontinue, p1..p4, x(lat*1e7), y(lon*1e7), z(alt_m)}]"""
+    sysid, comp = conn.target_system, conn.target_component
+    conn.mav.mission_count_send(sysid, comp, len(items))
+    for _ in range(len(items)):
+        req = conn.recv_match(type=['MISSION_REQUEST', 'MISSION_REQUEST_INT'],
+                              blocking=True, timeout=5)
+        if req is None:
+            raise RuntimeError("MISSION_REQUEST zaman aşımı")
+        it = items[req.seq]
+        conn.mav.mission_item_int_send(
+            sysid, comp, it['seq'], it['frame'], it['cmd'],
+            int(it.get('current', 0)), int(it.get('autocontinue', 1)),
+            float(it.get('p1', 0)), float(it.get('p2', 0)),
+            float(it.get('p3', 0)), float(it.get('p4', 0)),
+            int(it['x']), int(it['y']), float(it['z']),
+            mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
+        )
+    ack = conn.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+    return ack
+
+
+SQUARE_HALF    = 135.0   # yarım kenar (m) → kenar 270m (BÜYÜK → düz kenarlar baskın, KARE görünür)
+SQUARE_ALT     = 50.0    # SABİT irtifa (Z)
+SQUARE_CHAMFER = 26.0    # köşe pah kırma (m) — küçük/orantılı → köşeler keskin (kare),
+                         # yine de 90°'yi 45°'ye bölüp uçuşu yumuşatır (stall yok)
+
 
 def _square_thread():
+    """🟧 Hedef İHA için GEOMETRİK KARE rotası (tam otomatik, X-Y, sabit Z).
+    Üçgen/daireyle aynı kanıtlanmış teknik: GUIDED'da kenarlar alt-noktalara
+    bölünür → uçak her ~25m'de bir noktaya varır, dönüşler KÜÇÜK kalır (köşelerde
+    bile yumuşak) → stall/çakılma yok. Avcı iris bundan etkilenmez (ayrı port)."""
     global _square_active
-    print("[SQUARE] Thread başlıyor...")
+    print("[SQUARE] Geometrik kare (X-Y, sabit Z) başlıyor...")
+    conn = None
     try:
-        import subprocess as _sp
-        import os as _os
-        project_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-        proc = _sp.Popen(
-            ["python3", "-m", "control.run_plane_square"],
-            cwd=project_root,
-            start_new_session=True
-        )
-        # Stop event gelene kadar bekle, ya da process bitene kadar
-        while not _square_stop_event.is_set():
-            ret = proc.poll()
-            if ret is not None:
-                print(f"[SQUARE] Script tamamlandı (exit={ret})")
-                break
-            import time as _t
-            _t.sleep(0.5)
-        # Durdurma sinyali geldiyse process'i öldür
-        if proc.poll() is None:
-            try:
-                _os.killpg(_os.getpgid(proc.pid), __import__('signal').SIGKILL)
-            except Exception:
-                proc.kill()
-            proc.wait()
-            print("[SQUARE] Script durduruldu.")
+        from control.mav_common import connect_mavlink
+        conn = connect_mavlink(14542, source_system=255)
+        setup = _plane_guided_setup(conn, _square_stop_event, "SQUARE", SQUARE_ALT)
+        if setup is None:
+            return
+        lat0, lon0, coslat = setup
+        S = SQUARE_HALF
+        V = [(S, S), (S, -S), (-S, -S), (-S, S)]          # kare köşeleri (Kuzey, Doğu)
+        # KÖŞE PAH KIRMA: keskin 90° köşe bu gövdeyi zorluyor (overshoot + irtifa
+        # fırlaması). Her köşeyi C kadar keserek 90°'yi iki 45°'ye böl → sekizgen
+        # benzeri "yuvarlatılmış kare"; hâlâ kare görünür ama uçak yumuşak döner.
+        C = SQUARE_CHAMFER
+        oct_pts = []
+        for i in range(4):
+            prev, cur, nxt = V[(i - 1) % 4], V[i], V[(i + 1) % 4]
+            ix, iy = cur[0] - prev[0], cur[1] - prev[1]   # gelen kenar yönü
+            il = math.hypot(ix, iy); ix, iy = ix / il, iy / il
+            ox, oy = nxt[0] - cur[0], nxt[1] - cur[1]     # giden kenar yönü
+            ol = math.hypot(ox, oy); ox, oy = ox / ol, oy / ol
+            oct_pts.append((cur[0] - C * ix, cur[1] - C * iy))   # köşeden C önce
+            oct_pts.append((cur[0] + C * ox, cur[1] + C * oy))   # köşeden C sonra
+        # 8 kenarı ~25m aralıklı alt-noktalara böl (yumuşak, erişilebilir)
+        pts = []
+        m = len(oct_pts)
+        for i in range(m):
+            ax, ay = oct_pts[i]
+            bx, by = oct_pts[(i + 1) % m]
+            seg = max(1, int(math.hypot(bx - ax, by - ay) / 25.0))
+            for s in range(seg):
+                f = s / float(seg)
+                pts.append((ax + (bx - ax) * f, ay + (by - ay) * f, SQUARE_ALT))
+        _fly_geo_loop(conn, _square_stop_event, "SQUARE", lat0, lon0, coslat, pts)
     except Exception as e:
         import traceback
         print(f"[SQUARE] HATA: {e}")
         traceback.print_exc()
     finally:
         _square_active = False
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+# =======================================================================
+# ORTAK YARDIMCILAR — mod geçişi + GUIDED kalkış kurulumu
+# =======================================================================
+def _stop_active_plane_modes(exclude=None):
+    """Aktif olan diğer TÜM Hedef Uçak modlarını durdur (temiz moda geçiş).
+    Manuel çıkışta uçağı DISARM ETMEZ (havada kalsın). exclude: durdurulmayacak
+    mod adı ('circle','triangle','square','manual','random')."""
+    global _square_active, _plane_random_active, _manual_active
+    global _circle_active, _triangle_active, _plane_disarm_on_manual_exit
+    if exclude != 'circle' and _circle_active:
+        _circle_stop.set()
+        if _circle_thread_obj is not None:
+            _circle_thread_obj.join(timeout=8.0)
+        _circle_active = False
+    if exclude != 'triangle' and _triangle_active:
+        _triangle_stop.set()
+        if _triangle_thread_obj is not None:
+            _triangle_thread_obj.join(timeout=8.0)
+        _triangle_active = False
+    if exclude != 'random' and _plane_random_active:
+        _plane_random_stop.set()
+        if _plane_random_thread_obj is not None:
+            _plane_random_thread_obj.join(timeout=8.0)
+        _plane_random_active = False
+    if exclude != 'square' and _square_active:
+        _square_stop_event.set()
+        if _square_thread_obj is not None:
+            _square_thread_obj.join(timeout=8.0)
+        _square_active = False
+    if exclude != 'manual' and _manual_active:
+        _plane_disarm_on_manual_exit = False   # geçiş: armed kal, havada düşme
+        _manual_active = False
+        if _manual_thread_obj is not None:
+            _manual_thread_obj.join(timeout=8.0)
+        _plane_disarm_on_manual_exit = True
+    time.sleep(0.3)
+
+
+def _plane_guided_setup(conn, stop_event, tag, cruise_alt):
+    """Home GPS al; uçak yerdeyse NAV_TAKEOFF+LOITER ile kalkır; sonra GUIDED'a
+    alır. Dönüş: (lat0, lon0, coslat) veya iptal olduysa None.
+    NOT: Uçuş parametrelerine DOKUNMAZ — avci_plane.parm'daki tuned varsayılanlar
+    korunur (airspeed/TECS override'ları uçağı daldırıyordu)."""
+    sysid, comp = conn.target_system, conn.target_component
+    home = None
+    t0 = time.time()
+    while time.time() - t0 < 15 and not stop_event.is_set():
+        msg = conn.recv_match(type='GLOBAL_POSITION_INT', blocking=True, timeout=1)
+        if msg and msg.lat != 0:
+            home = (msg.lat, msg.lon)
+            break
+    if home is None:
+        print(f"[{tag}] GPS home alınamadı — iptal")
+        return None
+    lat0, lon0 = home
+    FR = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+    cur_alt_m = -telemetry_state["plane"]["z"]
+    airborne = cur_alt_m > 15.0
+    alt = cruise_alt if not airborne else max(30.0, min(round(cur_alt_m), 75.0))
+    if not airborne:
+        WP   = mavutil.mavlink.MAV_CMD_NAV_WAYPOINT
+        TO   = mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
+        LOIT = mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM
+        items = [
+            dict(seq=0, frame=FR, cmd=WP,   x=lat0, y=lon0, z=alt, current=1),
+            dict(seq=1, frame=FR, cmd=TO,   x=lat0, y=lon0, z=alt, p1=15),
+            dict(seq=2, frame=FR, cmd=LOIT, x=lat0, y=lon0, z=alt),
+        ]
+        _upload_mission(conn, items)
+        print(f"[{tag}] Yerden kalkış → {alt:.0f}m")
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                                   mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                                   PLANE_MODE_AUTO, 0, 0, 0, 0, 0)
+        time.sleep(0.6)
+        conn.mav.rc_channels_override_send(sysid, comp, 0, 0, 0, 0, 0, 0, 0, 0)
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                                   0, 1, 2989, 0, 0, 0, 0, 0)
+        time.sleep(0.5)
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_MISSION_START,
+                                   0, 0, 0, 0, 0, 0, 0, 0)
+        t0 = time.time()
+        while time.time() - t0 < 45 and not stop_event.is_set():
+            if -telemetry_state["plane"]["z"] > alt * 0.7:
+                break
+            time.sleep(1)
+        # Kalkış legi uçağı home'dan UZAĞA taşır (sığ tırmanış ~250m). GUIDED'a
+        # geçmeden önce mission LOITER'ının (wp2, home merkezli) uçağı home
+        # ÇEVRESİNE geri getirmesini bekle → ilk şekil noktası uçağın ARKASINDA
+        # kalmasın; yoksa GUIDED sert ~180° reversal ister → bu gövde stall/dalış
+        # yapar. (AUTO/LOITER dönüşü koordineli ve stall-güvenli.)
+        print(f"[{tag}] Kalkış tamam → LOITER ile home'a dönüş bekleniyor...")
+        t0 = time.time()
+        while time.time() - t0 < 35 and not stop_event.is_set():
+            p = telemetry_state["plane"]
+            if math.hypot(p["x"], p["y"]) < 170.0 and -p["z"] > alt * 0.55:
+                break
+            time.sleep(0.5)
+    else:
+        # Başka moddan (özellikle MANUEL) gelindi. Manuel çıkışta uçak FBWA'da +
+        # CH3 THROTTLE RC-OVERRIDE bırakılmış olabilir + düşük/yavaş olabilir →
+        # doğrudan GUIDED gezinme stall/çakılma yapıyordu (otomatik modlarda bu
+        # override yok, o yüzden onlardan geçiş sorunsuz). ÇÖZÜM: tüm RC override'ları
+        # GÜÇLÜ şekilde bırak (3x, CH3 dahil), LOITER ile stabilize + garanti arm,
+        # daha uzun toparlanma bekle.
+        for _ in range(3):
+            conn.mav.rc_channels_override_send(sysid, comp, 0, 0, 0, 0, 0, 0, 0, 0)
+            time.sleep(0.1)
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                                   mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                                   PLANE_MODE_LOITER, 0, 0, 0, 0, 0)
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                                   0, 1, 2989, 0, 0, 0, 0, 0)
+        print(f"[{tag}] Havada (başka moddan) → RC override bırakıldı + LOITER ile HIZ/attitude toparla...")
+        # KÖK NEDEN: manuel (FBWA) uçağı STALL HIZINA yakın YAVAŞ bırakabilir
+        # (gaz manuel; cruise altında verilince ~12-13 m/s = stall sınırı). Yavaşken
+        # GUIDED gezinme/tırmanış → stall → burun aşağı çakılma. LOITER'da TECS hızı
+        # cruise'a çıkarır → HIZ TOPARLANANA kadar bekle (min 8s, hız ≥17 m/s, maks 25s).
+        # TAM TOPARLANANA kadar LOITER'da bekle: SEVİYE (roll<20°) + HIZ (≥15 m/s).
+        # Manuel uçağı yatık/yavaş bırakabilir; LOITER koordineli düzeltir. Min 8s,
+        # maks 28s.
+        t0 = time.time()
+        while time.time() - t0 < 28 and not stop_event.is_set():
+            pl = telemetry_state["plane"]
+            spd = pl.get("speed", 0.0)
+            rll = abs(pl.get("roll", 0.0))
+            if time.time() - t0 > 8 and spd >= 15.0 and rll < 20.0:
+                break
+            time.sleep(0.5)
+        _pl = telemetry_state["plane"]
+        print(f"[{tag}] LOITER stabilize bitti (hız={_pl.get('speed',0):.0f} roll={_pl.get('roll',0):.0f})")
+        conn.mav.rc_channels_override_send(sysid, comp, 0, 0, 0, 0, 0, 0, 0, 0)
+    # GUIDED moduna al → set_position_target ile şekli çizeceğiz
+    conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                               mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                               PLANE_MODE_GUIDED, 0, 0, 0, 0, 0)
+    time.sleep(0.6)
+    coslat = math.cos(math.radians(lat0 / 1e7))
+    # GÜVENLİ İRTİFAYA KADEMELİ TIRMANIŞ: mevcut konumda daire çizerek +10m
+    # adımlarla çık (dik/hızlı tırmanış-stall'ı önle). Manuelden düşük gelen uçak
+    # yumuşakça toparlanır. Her adımda hedefe ulaşana dek bekle.
+    safe = max(float(cruise_alt), PLANE_ALT_MIN + 5.0)
+    p = telemetry_state["plane"]
+    clat = lat0 + int((p["x"] / 111320.0) * 1e7)
+    clon = lon0 + int((p["y"] / (111320.0 * coslat)) * 1e7)
+    tgt_a = max(-telemetry_state["plane"]["z"], float(PLANE_ALT_MIN))
+    t_end = time.time() + 30
+    while tgt_a < safe - 3.0 and time.time() < t_end and not stop_event.is_set():
+        tgt_a = min(safe, tgt_a + 10.0)
+        conn.mav.set_position_target_global_int_send(
+            0, sysid, comp, FR, 0b0000111111111000, clat, clon, tgt_a, 0, 0, 0, 0, 0, 0, 0, 0)
+        t0 = time.time()
+        while time.time() - t0 < 8 and not stop_event.is_set():
+            if -telemetry_state["plane"]["z"] > tgt_a - 4.0:
+                break
+            time.sleep(0.5)
+    conn.mav.set_position_target_global_int_send(
+        0, sysid, comp, FR, 0b0000111111111000, clat, clon, safe, 0, 0, 0, 0, 0, 0, 0, 0)
+    print(f"[{tag}] GUIDED aktif (güvenli irtifa ~{safe:.0f}m, kademeli)")
+    return lat0, lon0, coslat
+
+
+# Geometrik rota ortak parametreleri
+GEO_WP_ACCEPT  = 35.0    # varış kabul yarıçapı (m)
+GEO_WP_MAXTIME = 9.0     # bir noktada maks süre (s)
+
+
+def _fly_geo_loop(conn, stop_event, tag, lat0, lon0, coslat, points):
+    """GUIDED'da verilen geometrik noktaları (Kuzey,Doğu,irtifa) SIRAYLA ve
+    SONSUZ döngüde hedefler → uçak şekli fiziksel olarak çizer. Her noktaya
+    yaklaşınca (veya maks süre) bir sonrakine geçer. Yumuşak GUIDED navigasyonu
+    hızı koruduğu için sert AUTO virajlarındaki stall/çakılma olmaz."""
+    sysid, comp = conn.target_system, conn.target_component
+    FR = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+    n = len(points)
+    # Uçağın ŞU ANKİ konumuna EN YAKIN noktadan başla → ilk hedef uçağın
+    # arkasında/çok uzağında kalmasın (küçük dönüş, sert reversal yok).
+    cx, cy = telemetry_state["plane"]["x"], telemetry_state["plane"]["y"]
+    idx = min(range(n), key=lambda i: (points[i][0] - cx) ** 2 + (points[i][1] - cy) ** 2)
+    print(f"[{tag}] En yakın nokta #{idx}'ten başlanıyor (konum {cx:+.0f}K {cy:+.0f}D)")
+    while not stop_event.is_set():
+        nx, ny, talt = points[idx % n]
+        tlat = lat0 + int((nx / 111320.0) * 1e7)
+        tlon = lon0 + int((ny / (111320.0 * coslat)) * 1e7)
+        conn.mav.set_position_target_global_int_send(
+            0, sysid, comp, FR, 0b0000111111111000,
+            tlat, tlon, talt, 0, 0, 0, 0, 0, 0, 0, 0)
+        print(f"[{tag}] köşe #{idx % n}: {nx:+.0f}K {ny:+.0f}D z={talt:.0f}m")
+        t0 = time.time()
+        while time.time() - t0 < GEO_WP_MAXTIME and not stop_event.is_set():
+            msg = conn.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
+            if msg and msg.lat != 0:
+                dlat_m = (tlat - msg.lat) / 1e7 * 111320.0
+                dlon_m = (tlon - msg.lon) / 1e7 * 111320.0 * coslat
+                if math.hypot(dlat_m, dlon_m) < GEO_WP_ACCEPT:
+                    break
+            time.sleep(0.3)
+        idx += 1
+    conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                               mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                               PLANE_MODE_LOITER, 0, 0, 0, 0, 0)
+    print(f"[{tag}] Durduruldu → LOITER (stabil).")
+
+
+# =======================================================================
+# 🔵 GEOMETRİK DAİRE — tam otomatik devriye (X-Y çember, SABİT Z)
+# =======================================================================
+CIRCLE_RADIUS = 130.0    # m — daire yarıçapı R (x=R·cosθ, y=R·sinθ)
+CIRCLE_ALT    = 50.0     # m — SABİT irtifa (Z)
+CIRCLE_POINTS = 24       # çember üzerindeki waypoint sayısı (yumuşak devriye)
+
+
+def _circle_thread():
+    global _circle_active
+    print("[CIRCLE] Geometrik daire (X-Y çember, sabit Z) başlıyor...")
+    conn = None
+    try:
+        from control.mav_common import connect_mavlink
+        conn = connect_mavlink(14542, source_system=255)
+        setup = _plane_guided_setup(conn, _circle_stop, "CIRCLE", CIRCLE_ALT)
+        if setup is None:
+            return
+        lat0, lon0, coslat = setup
+        # Çember noktaları: Kuzey=R·cosθ, Doğu=R·sinθ; irtifa sabit
+        pts = []
+        for i in range(CIRCLE_POINTS):
+            th = 2.0 * math.pi * i / CIRCLE_POINTS
+            pts.append((CIRCLE_RADIUS * math.cos(th),
+                        CIRCLE_RADIUS * math.sin(th),
+                        CIRCLE_ALT))
+        _fly_geo_loop(conn, _circle_stop, "CIRCLE", lat0, lon0, coslat, pts)
+    except Exception as e:
+        import traceback
+        print(f"[CIRCLE] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _circle_active = False
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 @app.post("/api/command/plane/circle")
 def command_plane_circle():
-    return {"status": "error", "message": "Daire scripti henüz hazır değil!"}
+    """🔵 Hedef İHA'yı GEOMETRİK DAİRE devriyesine alır (tam otomatik)."""
+    global _circle_active, _circle_thread_obj
+    if _circle_active:
+        return {"status": "success", "message": "Zaten daire modunda"}
+    _stop_active_plane_modes(exclude='circle')
+    _circle_stop.clear()
+    _circle_active = True
+    _circle_thread_obj = threading.Thread(target=_circle_thread, daemon=True)
+    _circle_thread_obj.start()
+    print("[CIRCLE] Geometrik daire başlatıldı.")
+    return {"status": "success", "message": "Geometrik daire devriyesi"}
+
+
+@app.post("/api/command/plane/stop_circle")
+def command_plane_stop_circle():
+    global _circle_active
+    _circle_stop.set()
+    _circle_active = False
+    return {"status": "success", "message": "Daire durduruldu"}
+
+
+# =======================================================================
+# 🔺 GEOMETRİK ÜÇGEN — tam otomatik (X-Y-Z, 3 tepe; 3B irtifa değişimi)
+# =======================================================================
+TRI_RADIUS = 150.0                 # m — üçgenin çevrel yarıçapı (tepe uzaklığı)
+TRI_ALTS   = [45.0, 60.0, 70.0]    # m — her tepe farklı irtifa → gerçek 3B üçgen
+TRI_SEG    = 8                     # her kenarı kaç ara-noktaya böl (yumuşak kenar +
+                                   # kademeli irtifa; uzun kenarda timeout/stall önler)
+
+
+def _triangle_thread():
+    global _triangle_active
+    print("[TRIANGLE] Geometrik üçgen (X-Y-Z, 3 tepe) başlıyor...")
+    conn = None
+    try:
+        from control.mav_common import connect_mavlink
+        conn = connect_mavlink(14542, source_system=255)
+        setup = _plane_guided_setup(conn, _triangle_stop, "TRIANGLE",
+                                    sum(TRI_ALTS) / len(TRI_ALTS))
+        if setup is None:
+            return
+        lat0, lon0, coslat = setup
+        # 3 tepe: 120° aralıklı (ilki doğuya, +π/2). Her tepe farklı Z.
+        verts = []
+        for i in range(3):
+            th = 2.0 * math.pi * i / 3.0 + math.pi / 2.0
+            verts.append((TRI_RADIUS * math.cos(th),
+                          TRI_RADIUS * math.sin(th),
+                          TRI_ALTS[i]))
+        # KENARLARI ara-noktalara böl + irtifayı kenar boyunca lineer harmanla.
+        # Böylece uzun kenarda uçak her ~32m'de bir noktaya varır (daire gibi),
+        # dönüşler ve tırmanış/alçalış KADEMELİ olur → stall/dalış olmaz.
+        pts = []
+        for i in range(3):
+            ax, ay, az = verts[i]
+            bx, by, bz = verts[(i + 1) % 3]
+            for s in range(TRI_SEG):
+                f = s / float(TRI_SEG)
+                pts.append((ax + (bx - ax) * f,
+                            ay + (by - ay) * f,
+                            az + (bz - az) * f))
+        _fly_geo_loop(conn, _triangle_stop, "TRIANGLE", lat0, lon0, coslat, pts)
+    except Exception as e:
+        import traceback
+        print(f"[TRIANGLE] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _triangle_active = False
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+@app.post("/api/command/plane/triangle")
+def command_plane_triangle():
+    """🔺 Hedef İHA'yı GEOMETRİK ÜÇGEN rotasına alır (tam otomatik, 3B)."""
+    global _triangle_active, _triangle_thread_obj
+    if _triangle_active:
+        return {"status": "success", "message": "Zaten üçgen modunda"}
+    _stop_active_plane_modes(exclude='triangle')
+    _triangle_stop.clear()
+    _triangle_active = True
+    _triangle_thread_obj = threading.Thread(target=_triangle_thread, daemon=True)
+    _triangle_thread_obj.start()
+    print("[TRIANGLE] Geometrik üçgen başlatıldı.")
+    return {"status": "success", "message": "Geometrik üçgen rotası"}
+
+
+@app.post("/api/command/plane/stop_triangle")
+def command_plane_stop_triangle():
+    global _triangle_active
+    _triangle_stop.set()
+    _triangle_active = False
+    return {"status": "success", "message": "Üçgen durduruldu"}
+
+
+# =======================================================================
+# HEDEF İHA RASTGELE / KAÇIŞ UÇUŞU — GUIDED + periyodik rastgele hedef
+# =======================================================================
+# Hedef uçak (Talon) gelişigüzel gezinir (Avcı drone kovalasın diye): kalkar,
+# GUIDED moduna geçer ve periyodik olarak ~home çevresinde RASTGELE noktalara
+# reposition eder → yumuşak dönüşlerle "yuvarlaklar + sağ-sol" gelişigüzel uçuş.
+# ArduPlane VARSAYILAN ayarlarıyla stabil olduğundan (bkz. avci_plane.parm)
+# bu manevralar stall/çakılma yapmaz.
+PLANE_MODE_GUIDED = 15
+_plane_random_active = False
+_plane_random_stop = threading.Event()
+_plane_random_thread_obj = None
+PLANE_RANDOM_ALT     = 50.0     # kalkış/başlangıç irtifası (m)
+PLANE_R_MIN          = 50.0     # leg uzunluğu — KISA: uçak ~8s'de waypoint'e VARIR,
+PLANE_R_MAX          = 95.0     # heading hizalanır → sonraki dönüş kontrollü (stall/reversal önler)
+PLANE_ALT_MIN        = 42.0     # işletme irtifası tabanı — dar/yüksek band [42,58]
+PLANE_ALT_MAX        = 58.0     # irtifa üst sınırı (dar band → küçük irtifa değişimi = phugoid yok)
+PLANE_Z_MIN          = 42.0     # SERT alt limit — bunun altına ASLA hedeflemez
+PLANE_ALT_RECOVER    = 30.0     # bu irtifanın altına düşerse → ACİL TOPARLA (düz ileri + tırman)
+PLANE_WP_ACCEPT      = 30.0     # varış kabul yarıçapı (kısa leg → sık, küçük dönüş)
+PLANE_WP_MAXTIME     = 7.0      # bir waypoint'te maks süre
+
+
+PLANE_ALT_STEP = 8.0         # bir leg'de maks irtifa değişimi (m) — düşük taban (20m)
+                             # için daha kademeli in/çık → dip'lerde stall/çakılma önler
+
+
+PLANE_OP_RADIUS = 260.0      # home operasyon alanı yarıçapı (m) — dışına taşmasın
+PLANE_THREAT_R  = 140.0      # Avcı bu mesafeden yakınsa → kaçış manevrası (ondan uzağa)
+
+
+def _generate_random_3d_waypoint(cur_x, cur_y, cur_yaw_deg, lat0, lon0, coslat,
+                                 prev_alt, avci_x=None, avci_y=None, jdir=1):
+    """KAÇAMAK / KAOTİK 3B waypoint — TEK DÜZEN DEĞİL. Her leg farklı manevra:
+      • hafif dokuma (weave)   • SERT jink (yön alternasyonlu, S çizer)
+      • tamamen gelişigüzel yön
+    Ayrıca AVCI yakınsa (PLANE_THREAT_R) → ONDAN UZAĞA sert kaçış legi.
+    Amaç: yakalanmamak. Stall koruması: SERT dönüşlerde irtifa KORUNUR (seviye
+    uçuş); irtifa oyunu sadece düz/hafif leg'lerde yapılır. Home alanına
+    (PLANE_OP_RADIUS) sıkıştırılır, 15 m sert taban korunur.
+    jdir: sert jink yön alternasyonu (±1) — sürekli aynı yöne dönüp daire olmasın."""
+    # === YUMUŞAK RASTGELE YÜRÜYÜŞ (stall-güvenli) ===
+    # KRİTİK: bu gövde GUIDED'da BÜYÜK heading değişiminde stall edip daldırıyor.
+    # Daire/üçgen çalıştı çünkü adım başına dönüş KÜÇÜKtü (~15°). Aynı prensip:
+    # uçağın GERÇEK mevcut yönünden (yaw) KISA bir adım at, heading'i sadece AZ
+    # değiştir (alternasyonlu → gelişigüzel dalgalı S). Sert dönüş/reversal YOK →
+    # çakılma yok. Sonuç: dalgalı, öngörülemez ama stabil 3B gezinme.
+    base = math.radians(cur_yaw_deg)               # uçağın GERÇEK mevcut yönü
+    delta = jdir * random.uniform(0.10, 0.38)      # 6°..22° küçük dönüş (alternasyonlu)
+    if random.random() < 0.25:
+        delta *= 0.25                              # ara sıra ~düz git (çeşitlilik)
+    hdg = base + delta
+    # Boundary'e yaklaşınca home yönüne YUMUŞAK düzeltme (sert dönüş değil)
+    d_home = math.hypot(cur_x, cur_y)
+    if d_home > PLANE_OP_RADIUS * 0.7:
+        home_bear = math.atan2(-cur_y, -cur_x)     # home'a doğru yön
+        diff = (home_bear - hdg + math.pi) % (2 * math.pi) - math.pi
+        hdg += max(-0.45, min(0.45, diff))         # ≤ ~26° düzeltme
+    step = random.uniform(45.0, 65.0)              # KISA leg → erişilebilir, yumuşak
+    nx = cur_x + step * math.cos(hdg)
+    ny = cur_y + step * math.sin(hdg)
+    d = math.hypot(nx, ny)
+    if d > PLANE_OP_RADIUS:
+        nx *= PLANE_OP_RADIUS / d
+        ny *= PLANE_OP_RADIUS / d
+    tlat = lat0 + int((nx / 111320.0) * 1e7)
+    tlon = lon0 + int((ny / (111320.0 * coslat)) * 1e7)
+    # --- İRTİFA: her leg KADEMELİ, rastgele hedefe doğru (hızlı in/çık = stall) ---
+    alt_target = random.uniform(PLANE_ALT_MIN, PLANE_ALT_MAX)
+    step_a = max(-PLANE_ALT_STEP, min(PLANE_ALT_STEP, alt_target - prev_alt))
+    talt = prev_alt + step_a
+    talt = min(max(talt, PLANE_ALT_MIN), PLANE_ALT_MAX)
+    talt = max(talt, PLANE_Z_MIN)                   # SERT alt taban
+    return tlat, tlon, talt, nx, ny
+
+
+def _plane_random_thread():
+    global _plane_random_active
+    print("[PLANE-RANDOM] Rastgele/kaçış uçuşu başlıyor...")
+    conn = None
+    try:
+        from control.mav_common import connect_mavlink
+        conn = connect_mavlink(14542, source_system=255)
+        sysid, comp = conn.target_system, conn.target_component
+        print(f"[PLANE-RANDOM] Plane bağlandı sys={sysid}")
+
+        # GAZ TABANI: random gezinmede TECS uçağı ~12.7 m/s'de (stall 12'ye çok
+        # yakın!) tutuyordu → az bir bozulmada stall. THR_MIN yükseltmek uçağı
+        # HIZLANDIRIR (stall marjı). NOT: bu, dalışa yol açan TECS_SPDWEIGHT'ten
+        # FARKLI — sadece güç tabanı, "irtifadan feragat et" davranışı YOK.
+        try:
+            conn.mav.param_set_send(sysid, comp, b'THR_MIN', 55.0,
+                                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+            time.sleep(0.2)
+        except Exception:
+            pass
+
+        # Kalkış + home'a DÖNÜŞ + GUIDED (kalkış-dönüş düzeltmeli ortak yardımcı:
+        # NAV_TAKEOFF uçağı uzağa taşır → LOITER ile home'a döndükten sonra GUIDED'a
+        # geçilir; ilk hedef arkada kalıp sert reversal/stall yapmaz. Param override YOK.)
+        setup = _plane_guided_setup(conn, _plane_random_stop, "PLANE-RANDOM", PLANE_RANDOM_ALT)
+        if setup is None:
+            return
+        lat0, lon0, coslat = setup
+        FR = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+        print("[PLANE-RANDOM] GUIDED — home çevresinde LOITER-tabanlı gelişigüzel gezinme")
+
+        prev_alt = float(PLANE_RANDOM_ALT)          # kademeli irtifa için başlangıç
+        alt_goal = prev_alt                         # kalıcı irtifa hedefi (whipsaw önle)
+        alt_ctr = 0                                 # kaç adım sonra yeni hedef
+        _tick = 0
+        jdir = 1                                    # yön alternasyonu (S/gelişigüzel)
+        while not _plane_random_stop.is_set():
+            cur = telemetry_state["plane"]
+            alt_now = -cur["z"]                       # NED: irtifa = -z (m)
+            # ==== ACİL TOPARLAMA: yere yaklaşırsa düz ileri + tırman ====
+            if alt_now < PLANE_ALT_RECOVER:
+                hd = math.radians(cur["yaw"])
+                rx = cur["x"] + 150.0 * math.cos(hd)
+                ry = cur["y"] + 150.0 * math.sin(hd)
+                dd = math.hypot(rx, ry)
+                if dd > PLANE_OP_RADIUS:
+                    rx *= PLANE_OP_RADIUS / dd; ry *= PLANE_OP_RADIUS / dd
+                rlat = lat0 + int((rx / 111320.0) * 1e7)
+                rlon = lon0 + int((ry / (111320.0 * coslat)) * 1e7)
+                conn.mav.set_position_target_global_int_send(
+                    0, sysid, comp, FR, 0b0000111111111000,
+                    rlat, rlon, PLANE_ALT_MAX, 0, 0, 0, 0, 0, 0, 0, 0)
+                print(f"[PLANE-RANDOM] ⚠ TOPARLAMA irtifa={alt_now:.0f}m → tırman {PLANE_ALT_MAX:.0f}m")
+                t0 = time.time()
+                while time.time() - t0 < 8 and not _plane_random_stop.is_set():
+                    if -telemetry_state["plane"]["z"] > PLANE_ALT_MIN:
+                        break
+                    time.sleep(0.3)
+                prev_alt = max(-telemetry_state["plane"]["z"], PLANE_ALT_MIN)
+                continue
+            # ---- KÜÇÜK-DÖNÜŞLÜ gelişigüzel adım (stall-güvenli) ----
+            # KRİTİK: bu gövde BÜYÜK dönüşte stall eder (kare/daire çalışıyor çünkü
+            # adım başına dönüş küçük). Uçağın GERÇEK yönünden yalnızca ~7-23° sap
+            # (alternasyonlu → dalgalı S), ara sıra düz git → öngörülemez ama yumuşak.
+            # Home'dan uzaklaşınca yumuşak geri-çekme (boundary/drift önle).
+            cx, cy = cur["x"], cur["y"]
+            base = math.radians(cur["yaw"])           # uçağın GERÇEK yönü
+            # jdir'i HER adım DEĞİL, ara sıra çevir → uçak aynı yöne bir süre dönüp
+            # YUMUŞAK ARK çizer. Her adım çevirmek (S-weave / sürekli bank reversal)
+            # hızı ~13 m/s'ye düşürüp stall'a (12) yaklaştırıyordu; yumuşak ark hızı
+            # KORUR (cruise ~18-20 → geniş stall marjı) → manevrada/geçişte çakılmaz.
+            if random.random() < 0.20:
+                jdir = -jdir
+            delta = jdir * random.uniform(0.10, 0.28)  # 6°..16° yumuşak dönüş
+            if random.random() < 0.3:
+                delta *= 0.25                         # ara sıra ~düz (çeşitlilik)
+            hdg = base + delta
+            # Home'dan uzaklaşınca ETKİLİ geri-çekme (alan içinde kalsın). Düzeltme
+            # ≤ ~40° (kademeli koordineli dönüş → stall yok ama home'a döner).
+            d_home = math.hypot(cx, cy)
+            if d_home > PLANE_OP_RADIUS * 0.5:
+                home_bear = math.atan2(-cy, -cx)      # home'a doğru yön
+                diff = (home_bear - hdg + math.pi) % (2 * math.pi) - math.pi
+                hdg += max(-0.7, min(0.7, diff))      # ≤ ~40° etkili düzeltme
+            step = random.uniform(65.0, 90.0)         # daha uzun leg → sürekli düz uçuş → hız korunur
+            nx, ny = cx + step * math.cos(hdg), cy + step * math.sin(hdg)
+            # Hedefi alan İÇİNDE tut (loiter yarıçapı için pay bırak → çok uzağa açılmasın)
+            d = math.hypot(nx, ny)
+            lim = PLANE_OP_RADIUS * 0.7
+            if d > lim:
+                nx *= lim / d; ny *= lim / d
+            # İrtifa: KALICI hedefe doğru KADEMELİ kayma (nose-down/up ile alçalıp
+            # tırmanabilir = MANEVRA serbest). Zemine ÇARPMAMA güvencesi: hedef
+            # ASLA PLANE_ALT_MIN'in (yüksek taban) altına inmez → alçalsa bile
+            # zemine yaklaşmaz. + küçük dönüş → stall-dive yok. Yani burun aşağı
+            # bakabilir ama hareket için, çakılmak için değil.
+            # SABİT İRTİFA (daire/kare gibi — kanıtlanmış stabil). İrtifa DEĞİŞİMİ
+            # bu gövdede phugoid (hız-irtifa salınımı → balonlaşma → stall → BURUN
+            # AŞAĞI dalış → çakılma) tetikliyordu; dönüş + irtifa değişimi aynı anda
+            # olunca daha da kötüleşiyordu. Sabit tutunca salınım hiç başlamaz.
+            # Gelişigüzellik yatayda (küçük dönüşlerle) sağlanır.
+            talt = float(PLANE_RANDOM_ALT)
+            prev_alt = talt
+            tlat = lat0 + int((nx / 111320.0) * 1e7)
+            tlon = lon0 + int((ny / (111320.0 * coslat)) * 1e7)
+            conn.mav.set_position_target_global_int_send(
+                0, sysid, comp, FR, 0b0000111111111000,
+                tlat, tlon, talt, 0, 0, 0, 0, 0, 0, 0, 0)
+            _tick += 1
+            print(f"[PLANE-RANDOM] nokta #{_tick}: {nx:+.0f}K {ny:+.0f}D z={talt:.0f}m")
+            # SÜREKLİ HAREKET (daire/kare gibi): noktaya varınca HEMEN yenisine geç.
+            # UZUN beklemede uçak phugoid (pitch salınımı) yapıp balonlaşıp
+            # stall'a giriyordu; sürekli ilerleyince TECS stabil kalır → porpoise yok.
+            t0 = time.time()
+            while time.time() - t0 < 7.0 and not _plane_random_stop.is_set():
+                msg = conn.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
+                if msg and msg.lat != 0:
+                    dlat_m = (tlat - msg.lat) / 1e7 * 111320.0
+                    dlon_m = (tlon - msg.lon) / 1e7 * 111320.0 * coslat
+                    if math.hypot(dlat_m, dlon_m) < 30.0:
+                        break                         # vardı → yeni gelişigüzel adım
+                if -telemetry_state["plane"]["z"] < PLANE_ALT_RECOVER:
+                    break
+                time.sleep(0.3)
+
+        # durdurma → LOITER (stabil daire, çakılmadan bekler)
+        conn.mav.command_long_send(sysid, comp, mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                                   mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                                   PLANE_MODE_LOITER, 0, 0, 0, 0, 0)
+        print("[PLANE-RANDOM] Durduruldu → LOITER (stabil).")
+    except Exception as e:
+        import traceback
+        print(f"[PLANE-RANDOM] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _plane_random_active = False
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+@app.post("/api/command/plane/start_random")
+def plane_start_random():
+    """Hedef İHA'yı kaldırıp rastgele/kaçış gezinme uçuşu başlatır."""
+    global _plane_random_active, _plane_random_thread_obj
+    if _plane_random_active:
+        return {"status": "success", "message": "Zaten rastgele uçuşta"}
+    # Diğer tüm uçak modlarını (daire/üçgen/kare/manuel) temizle
+    _stop_active_plane_modes(exclude='random')
+    _plane_random_active = True
+    _plane_random_stop.clear()
+    t = threading.Thread(target=_plane_random_thread, daemon=True)
+    _plane_random_thread_obj = t
+    t.start()
+    print("[PLANE-RANDOM] Rastgele uçuş başlatıldı.")
+    return {"status": "success", "message": "Hedef İHA rastgele/kaçış uçuşu"}
+
+
+@app.post("/api/command/plane/stop_random")
+def plane_stop_random():
+    global _plane_random_active
+    _plane_random_stop.set()
+    _plane_random_active = False
+    print("[PLANE-RANDOM] Rastgele uçuş durduruldu.")
+    return {"status": "success"}
 
 # -----------------------------------------------------------------------
 # MANUEL KONTROL
@@ -162,16 +817,18 @@ class ManualCmd(BaseModel):
 
 @app.post("/api/command/plane/start_manual")
 def start_manual_mode():
-    global _manual_active, _square_active
+    global _manual_active, _plane_disarm_on_manual_exit
     global _manual_aileron, _manual_elevator, _manual_throttle
 
     # =========================================================
-    # ADIM 1: Kare scriptini durdur (Eğer çalışıyorsa)
+    # ADIM 1: Diğer tüm uçak modlarını durdur (daire/üçgen/random/kare)
     # =========================================================
-    if _square_active:
-        print("[GCS] Kare uçuşu durduruluyor...")
-        _square_stop_event.set()
-        time.sleep(0.5)
+    _stop_active_plane_modes(exclude='manual')
+
+    # Bu manuel oturumu normal biterse (STOP MANUAL) uçak yere insin → disarm.
+    # (NOT: _stop_active_plane_modes sonrası ayarla — o helper bayrağı geçici
+    # olarak False yapıp True'ya döndürüyor; burada nihai değeri biz belirleriz.)
+    _plane_disarm_on_manual_exit = True
 
     subprocess.run(['pkill', '-9', '-f', 'run_plane_square'], capture_output=True)
 
@@ -181,9 +838,18 @@ def start_manual_mode():
     _manual_active = True
     _manual_aileron = 1500
     _manual_elevator = 1500
-    _manual_throttle = 1000
+    # SORUNSUZ AUTO→MANUEL: uçak HAVADAYSA manuele CRUISE throttle ile gir.
+    # Aksi halde manuel throttle 1000'e (rölanti) düşer → uçak süzülüp DÜŞER.
+    # (Frontend de start_manual'de throttle'ı ~%60'a çekiyor; ikisi uyumlu.)
+    plane_alt = -telemetry_state["plane"]["z"]   # metre (yukarı +)
+    airborne = plane_alt > 8.0
+    _manual_throttle = 1650 if airborne else 1000
+    print(f"[GCS] Manuel başlıyor — plane alt={plane_alt:.0f}m "
+          f"{'(havada → cruise throttle)' if airborne else '(yerde → rölanti)'}")
 
+    global _manual_thread_obj
     t = threading.Thread(target=_manual_control_thread, daemon=True)
+    _manual_thread_obj = t
     t.start()
     print("[GCS] Manuel kontrol thread'i başlatıldı.")
     return {"status": "success", "message": "Manuel mod aktif"}
@@ -221,43 +887,165 @@ def _manual_control_thread():
         time.sleep(0.5)
 
         # =====================================================
-        # MOD DEĞİŞTİR — ArduPlane MANUAL (0): RC override doğrudan servolara
-        # işler. Kare scripti (plane_functions.arm_plane) de aynı modu kullanır.
+        # MOD DEĞİŞTİR — FBWA (ANGLE / attitude kontrol).
+        # MANUAL (0) modunda aileron doğrudan servoya gider → aileron = roll
+        # HIZI; tam kırımda uçak hızla takla atar ("roll çok hızlı"). FBWA (5)
+        # modunda aileron çubuğu ROLL AÇISINI komutlar (LIM_ROLL_CD ile sınırlı,
+        # otopilot stabilize eder, çubuk merkezde kanatlar otomatik seviyelenir)
+        # → yumuşak, hafif, kendi kendine düzelen roll. Maks yatış 45° ile sınırlı.
         # =====================================================
-        print("[MANUAL] MANUAL moda geçiliyor...")
-        result = set_mode(conn, PLANE_MODE_MANUAL)
+        # Açı LİMİTLERİ — otopilot tarafında uygulanır (giriş gecikmesi YOK).
+        #  * LIM_ROLL_CD=6000  → maks yatış 60° (talep). FBWA bunu AŞAMAZ →
+        #    uçak ASLA ters dönemez / takla atamaz (yalnızca 60°'ye kadar yatar).
+        #  * LIM_PITCH_MAX/MIN → burun yukarı/aşağı açısını sınırla → elevator ile
+        #    LOOP (ters takla) yapılamaz.
+        def _set_param(name, val):
+            try:
+                conn.mav.param_set_send(
+                    conn.target_system, conn.target_component,
+                    name, float(val), mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+            except Exception as e:
+                print(f"[MANUAL] {name.decode()} ayarlanamadı: {e}")
+
+        def _read_param(name, default):
+            """Mevcut param değerini oku (çıkışta geri yüklemek için)."""
+            try:
+                conn.mav.param_request_read_send(
+                    conn.target_system, conn.target_component, name, -1)
+                t0 = time.time()
+                while time.time() - t0 < 0.6:
+                    pv = conn.recv_match(type='PARAM_VALUE', blocking=True, timeout=0.5)
+                    if pv is not None and pv.param_id.strip('\x00') == name.decode():
+                        return float(pv.param_value)
+            except Exception:
+                pass
+            return default
+
+        # ÖNCE orijinal limitleri kaydet — manuel bitince geri yüklenecek ki
+        # AUTO/kare gibi diğer modlar manuelin agresif 60° limitiyle bozulmasın
+        # (düşük hızda 60° yatış → kanat stall → kalkışta ters dönme/çakılma).
+        _orig_lims = {
+            b'LIM_ROLL_CD':   _read_param(b'LIM_ROLL_CD', 4500.0),
+            b'LIM_PITCH_MAX': _read_param(b'LIM_PITCH_MAX', 2000.0),
+            b'LIM_PITCH_MIN': _read_param(b'LIM_PITCH_MIN', -2500.0),
+        }
+        _set_param(b'LIM_ROLL_CD', 6000.0)     # 60° maks yatış (manuel için)
+        _set_param(b'LIM_PITCH_MAX', 2000.0)   # +20° maks burun yukarı
+        _set_param(b'LIM_PITCH_MIN', -2000.0)  # -20° maks burun aşağı
+        print(f"[MANUAL] Açı limitleri: roll ±60°, pitch ±20° "
+              f"(orijinaller kaydedildi: {[int(v) for v in _orig_lims.values()]})")
+
+        # FBWA'yı fire-and-forget dayatan yardımcı (bloklamaz) — döngüde de kullanılır.
+        def _assert_fbwa():
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                PLANE_MODE_FBWA, 0, 0, 0, 0, 0)
+
+        print("[MANUAL] FBWA (ANGLE) moduna geçiliyor...")
+        result = set_mode(conn, PLANE_MODE_FBWA, confirm_timeout=1.0)
         if result and result[1] == 0:
-            print("[MANUAL] ✓ ArduPlane MANUAL modu kabul etti (ACK result=0)")
+            print("[MANUAL] ✓ ArduPlane FBWA modu kabul etti (ACK result=0)")
         else:
             print(f"[MANUAL] ⚠ Mode ACK: {result} — yine de devam ediliyor")
             # İkinci deneme
-            time.sleep(0.3)
-            result2 = set_mode(conn, PLANE_MODE_MANUAL)
+            time.sleep(0.2)
+            result2 = set_mode(conn, PLANE_MODE_FBWA, confirm_timeout=1.0)
             print(f"[MANUAL] İkinci deneme ACK: {result2}")
+
+        # =====================================================
+        # ARM — throttle etkili olsun diye ŞART
+        # ArduPlane MANUAL modda motor yalnızca ARMED iken döner; disarm
+        # durumunda gaz komutu (CH3) SERVO çıkışına yansımaz → İHA yerinde
+        # kalır. Force-arm (magic 2989) prearm kontrollerini atlar (SITL için
+        # güvenli). Yerde rölanti gazda ArduPlane ~10 sn sonra otomatik disarm
+        # ettiğinden döngü içinde periyodik olarak yeniden arm ediyoruz.
+        # =====================================================
+        def _force_arm():
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0, 1, 2989, 0, 0, 0, 0, 0)   # p1=1 arm, p2=2989 force
+
+        print("[MANUAL] Plane ARM ediliyor (force)...")
+        _force_arm()
+        _last_arm = time.time()
 
         # =====================================================
         # RC OVERRIDE DÖNGÜSÜ — 10 Hz
         # =====================================================
-        print("[MANUAL] RC Override döngüsü başlıyor (10 Hz)...")
+        # GECİKMESİZ ROLL: aileron komutu ANINDA gönderilir (slew/rampa/ölçekleme
+        # YOK → giriş gecikmesi kalkar, çubuk anında karşılık bulur). Eğilme
+        # yumuşaklığı ve SINIRI otopilot tarafında sağlanır: FBWA çubuğu roll
+        # AÇISINA çevirir ve LIM_ROLL_CD (=60°) ile sınırlar → tam çubuk = 60°.
+        print("[MANUAL] RC Override döngüsü başlıyor (10 Hz, gecikmesiz roll)...")
+        _log_tick = 0
+        _last_mode = time.time()
         while _manual_active:
             conn.mav.rc_channels_override_send(
                 conn.target_system,
                 conn.target_component,
-                _manual_aileron,    # CH1: Roll/Aileron
+                _manual_aileron,    # CH1: Roll/Aileron — doğrudan (gecikmesiz)
                 _manual_elevator,   # CH2: Pitch/Elevator
                 _manual_throttle,   # CH3: Throttle
                 1500,               # CH4: Yaw nötr
                 0, 0, 0, 0
             )
+            # FBWA'yı ~1 sn'de bir YENİDEN DAYAT — mod herhangi bir sebeple
+            # MANUAL'e düşerse (RC mod anahtarı, failsafe vb.) uçak rate-roll ile
+            # ters takla atabilir; bu koruma onu tekrar açı-limitli FBWA'ya çeker.
+            if time.time() - _last_mode > 1.0:
+                _assert_fbwa()
+                _last_mode = time.time()
+            # Yerde otomatik disarm'a karşı ~3 sn'de bir yeniden arm et
+            if time.time() - _last_arm > 3.0:
+                _force_arm()
+                _last_arm = time.time()
+            # Takip kolaylığı için saniyede ~1 kez komut logla
+            _log_tick += 1
+            if _log_tick % 10 == 0:
+                print(f"[MANUAL] Komut → ail={_manual_aileron} "
+                      f"elv={_manual_elevator} thr={_manual_throttle}")
             time.sleep(0.1)
 
-        # Kapanış — throttle sıfırla
-        conn.mav.rc_channels_override_send(
-            conn.target_system, conn.target_component,
-            1500, 1500, 1000, 1500, 0, 0, 0, 0
-        )
-        keepalive.stop()
-        print("[MANUAL] Kapatıldı.")
+        # ===================== KAPANIŞ — moda göre =====================
+        # ÖNCE açı limitlerini orijinallerine geri yükle → sonraki AUTO/kare
+        # güvenli varsayılan limitlerle uçsun (60° manuel limiti kalkışta çakılmaya
+        # yol açıyordu).
+        for _pname, _pval in _orig_lims.items():
+            _set_param(_pname, _pval)
+        print(f"[MANUAL] Açı limitleri geri yüklendi: {[int(v) for v in _orig_lims.values()]}")
+
+        if _plane_disarm_on_manual_exit:
+            # TAM DURUŞ (STOP MANUAL): override'ları bırak (0=serbest) + güvenli
+            # disarm. Yerde/duruş senaryosu için doğru davranış.
+            for _ in range(3):
+                conn.mav.rc_channels_override_send(
+                    conn.target_system, conn.target_component,
+                    0, 0, 0, 0, 0, 0, 0, 0)   # tüm kanalları serbest bırak
+                time.sleep(0.05)
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0, 0, 21196, 0, 0, 0, 0, 0)   # p1=0 disarm, p2=21196 force
+            keepalive.stop()
+            print("[MANUAL] Kapatıldı (tam duruş → disarm gönderildi).")
+        else:
+            # MODA GEÇİŞ (AUTO/kare): DİSARM ETME → uçak havada DÜŞMESİN.
+            # Roll/pitch/yaw override'larını serbest bırak (AUTO otopiloti kontrol
+            # etsin) ama THROTTLE'ı cruise seviyede tut ki AUTO devralana kadar
+            # uçak güçte kalıp seviyeli uçsun (AUTO'da bu throttle override'ı TECS
+            # tarafından zaten yok sayılır). Böylece geçiş SORUNSUZ, düşme yok.
+            cruise_thr = max(1650, int(_manual_throttle))
+            for _ in range(3):
+                conn.mav.rc_channels_override_send(
+                    conn.target_system, conn.target_component,
+                    0, 0, cruise_thr, 0, 0, 0, 0, 0)   # yalnız CH3 throttle override
+                time.sleep(0.05)
+            keepalive.stop()
+            print(f"[MANUAL] Moda geçiş → DİSARM YOK, armed + throttle {cruise_thr} "
+                  f"korunuyor (AUTO devralacak).")
 
     except Exception as e:
         import traceback
@@ -295,11 +1083,14 @@ from control.drone_functions import (
     set_guided_mode as df_guided,
     hover as df_hover,
     _send_position_setpoint,
+    _send_velocity_setpoint,
+    land_drone as df_land,
     get_conn as df_get_conn,
     SETPOINT_RATE,
 )
 from control.mav_common import (
     COPTER_MODE_GUIDED,
+    COPTER_MODE_LOITER,
     arm as mav_arm,
     set_mode as mav_set_mode,
     timestamp_ms,
@@ -572,6 +1363,342 @@ def strike_status():
     return {"active": True, "distance": round(dist, 1)}
 
 
+# =======================================================================
+# İRİS (AVCI) MANUEL UÇUŞ — GUIDED + velocity setpoint ile klavye kontrolü
+# =======================================================================
+# ArduCopter yön/hız komutlarını YALNIZCA GUIDED modda ve ARMED iken uygular;
+# ayrıca araç HAVADA olmalıdır (yerdeyken hız setpoint'i onu kaldırmaz). Bu
+# yüzden manuel moda geçişte otomatik olarak: GUIDED → ARM → TAKEOFF(~3 m) →
+# 10 Hz hız (velocity) döngüsü çalışır. Setpoint akışı hiç kesilmez (tuş
+# basılı olmasa bile 0-hız gider) → ArduPilot watchdog'u tetiklenmez, hover.
+_iris_manual_active = False
+_iris_manual_vx = 0.0        # ileri(+)/geri(-)   m/s (body frame)
+_iris_manual_vy = 0.0        # sağ(+)/sol(-)      m/s
+_iris_manual_vz = 0.0        # aşağı(+)/yukarı(-) m/s (NED: yukarı = negatif)
+_iris_manual_yawrate = 0.0   # sağa(+)/sola(-)    rad/s
+IRIS_MANUAL_ALT = 3.0        # otomatik kalkış irtifası (m)
+_iris_manual_thread_obj = None   # manuel→dans geçişinde "tam dur"u bekle (join)
+# Manuel çıkışta İNİLSİN Mİ? True=LAND (tam duruş), False=LOITER'da hover kal
+# (dansa kesintisiz geçiş için — inip tekrar kalkmasın).
+_iris_land_on_manual_exit = True
+
+# --- Manevra yumuşatma + maks yatış (roll) limiti (ANGLE mantığı) -----------
+# ArduCopter ANGLE_MAX parametresi maksimum yatış (roll/pitch) açısını sınırlar;
+# 45° = 4500 santi-derece. Bu, aracın herhangi bir manevrada 45°'den fazla
+# yatmasını engeller (talep edilen ±45° clamp). Ek olarak komutları kademeli
+# (slew rate-limit) uygulayarak sağa/sola dönüşteki "aşırı sert" hareketi
+# yumuşatıyoruz — hız hedefe adım adım yaklaşır, ani sıçrama olmaz.
+IRIS_MAX_BANK_DEG = 45.0     # ANGLE_MAX → maksimum yatış açısı (roll/pitch)
+IRIS_VEL_SLEW = 4.0          # m/s / s  — yatay/dikey hız değişim tavanı
+IRIS_YAW_SLEW = 1.2          # rad/s / s — yaw hızı değişim tavanı
+
+
+def clamp_roll(roll, limit=IRIS_MAX_BANK_DEG):
+    """İstenen yatış (roll) açısını ±limit ile sınırla.
+    Talep edilen fonksiyon: roll = max(min(roll, 45), -45)."""
+    return max(min(roll, limit), -limit)
+
+
+def _slew(cur, target, max_delta):
+    """cur değerini target'a doğru en çok max_delta kadar yaklaştırır (yumuşatma)."""
+    if target > cur + max_delta:
+        return cur + max_delta
+    if target < cur - max_delta:
+        return cur - max_delta
+    return target
+
+
+class IrisManualCmd(BaseModel):
+    vx: float = 0.0
+    vy: float = 0.0
+    vz: float = 0.0
+    yaw_rate: float = 0.0
+
+
+def _iris_manual_thread():
+    """Iris'i GUIDED'a alır, arm eder, ~3 m'ye kaldırır ve 10 Hz velocity
+    setpoint döngüsüyle klavye komutlarını uygular."""
+    global _iris_manual_active
+    try:
+        stop_iris_telem()          # 14541 portunu serbest bırak
+        time.sleep(0.3)
+        conn = df_connect_drone(port=14541)   # heartbeat ile target_system set edilir
+        print(f"[IRIS-MANUAL] Bağlantı: target_sys={conn.target_system}")
+
+        # GCS KEEPALIVE — 10 Hz heartbeat. Bağlantı kopmalarını (heartbeat
+        # düşmesi) ve olası GCS failsafe'i önler; kamera/telemetri akışı stabil kalır.
+        keepalive = GCSKeepalive(conn, interval=0.1)
+        keepalive.start()
+
+        # GUIDED + ARM + TAKEOFF (takeoff_to_z içeride GPS bekler, force-arm
+        # eder, NAV_TAKEOFF yollar ve hedef irtifaya ulaşana dek bekler)
+        print(f"[IRIS-MANUAL] GUIDED → ARM → TAKEOFF({IRIS_MANUAL_ALT} m)...")
+        ok = df_takeoff(target_z=-abs(IRIS_MANUAL_ALT))
+        print(f"[IRIS-MANUAL] Kalkış sonucu: {ok}")
+        if not ok:
+            print("[IRIS-MANUAL] ⚠ Kalkış doğrulanamadı — yine de hız döngüsüne geçiliyor")
+
+        # ANGLE limiti: maksimum yatış açısını 45° (=4500 cd) ile sınırla →
+        # ArduCopter herhangi bir manevrada bu açıdan fazla YATMAZ (roll clamp).
+        # Proje parm'ı ANGLE_MAX'ı 55° (5500) yaptığından manevra sert; manuelde
+        # 45°'ye çekiyoruz. Orijinal değeri okuyup çıkışta geri yüklüyoruz ki
+        # chase/strike gibi diğer modlar etkilenmesin.
+        _orig_angle_max = 5500.0
+        try:
+            conn.mav.param_request_read_send(
+                conn.target_system, conn.target_component, b'ANGLE_MAX', -1)
+            pv = conn.recv_match(type='PARAM_VALUE', blocking=True, timeout=1.5)
+            if pv is not None and pv.param_id.strip('\x00') == 'ANGLE_MAX':
+                _orig_angle_max = float(pv.param_value)
+        except Exception:
+            pass
+        try:
+            conn.mav.param_set_send(
+                conn.target_system, conn.target_component,
+                b'ANGLE_MAX', float(IRIS_MAX_BANK_DEG * 100.0),
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+            print(f"[IRIS-MANUAL] ANGLE_MAX {int(_orig_angle_max)}→{int(IRIS_MAX_BANK_DEG*100)} cd "
+                  f"({IRIS_MAX_BANK_DEG:.0f}°) — maks yatış sınırlandı")
+        except Exception as e:
+            print(f"[IRIS-MANUAL] ANGLE_MAX ayarlanamadı: {e}")
+
+        print("[IRIS-MANUAL] Hız (velocity) komut döngüsü başlıyor (10 Hz, yumuşatmalı)...")
+        _tick = 0
+        dt = 0.1
+        # Yumuşatılmış (slew-limited) anlık komut değerleri — hedefe kademeli yaklaşır
+        cvx = cvy = cvz = cyaw = 0.0
+        while _iris_manual_active:
+            # Sert manevrayı engelle: her tick'te hedefe en çok SLEW*dt kadar yaklaş
+            cvx = _slew(cvx, _iris_manual_vx, IRIS_VEL_SLEW * dt)
+            cvy = _slew(cvy, _iris_manual_vy, IRIS_VEL_SLEW * dt)
+            cvz = _slew(cvz, _iris_manual_vz, IRIS_VEL_SLEW * dt)
+            cyaw = _slew(cyaw, _iris_manual_yawrate, IRIS_YAW_SLEW * dt)
+            _send_velocity_setpoint(
+                conn, cvx, cvy, cvz, cyaw, body_frame=True,
+            )
+            _read_iris_telem_from_conn(conn)   # telemetriyi güncel tut
+            _tick += 1
+            if _tick % 10 == 0:                # ~saniyede bir
+                print(f"[IRIS-MANUAL] cmd(hedef→yumuşak) vx={_iris_manual_vx:.1f}→{cvx:.1f} "
+                      f"vy={_iris_manual_vy:.1f}→{cvy:.1f} vz={_iris_manual_vz:.1f}→{cvz:.1f} "
+                      f"yaw={_iris_manual_yawrate:.2f}→{cyaw:.2f}")
+            time.sleep(dt)
+
+        # ANGLE_MAX'ı orijinaline geri yükle (diğer modlar sert manevra yapabilsin)
+        try:
+            conn.mav.param_set_send(
+                conn.target_system, conn.target_component,
+                b'ANGLE_MAX', float(_orig_angle_max),
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+            print(f"[IRIS-MANUAL] ANGLE_MAX geri yüklendi → {int(_orig_angle_max)} cd")
+        except Exception:
+            pass
+
+        # Çıkış → önce sıfır hız (fren). GUIDED'da setpoint akışı kesilirse
+        # ArduCopter failsafe'e girer; bu yüzden ya LAND (iniş) ya da LOITER
+        # (yerinde hover) moduna alıyoruz.
+        for _ in range(5):
+            _send_velocity_setpoint(conn, 0, 0, 0, 0)
+            time.sleep(0.05)
+        if _iris_land_on_manual_exit:
+            try:
+                df_land()   # tam duruş → otonom iniş + disarm
+                print("[IRIS-MANUAL] Döngü durdu → LAND (iniş).")
+            except Exception as le:
+                print(f"[IRIS-MANUAL] LAND hatası: {le}")
+        else:
+            # DANSA GEÇİŞ: inme! LOITER'a al → yerinde hover kalır, dans thread'i
+            # devralır (LOITER GPS ile konum+irtifa tutar, setpoint gerekmez).
+            try:
+                mav_set_mode(conn, COPTER_MODE_LOITER)
+                print("[IRIS-MANUAL] Dansa geçiş → LOITER (hover, iniş yok).")
+            except Exception as le:
+                print(f"[IRIS-MANUAL] LOITER hatası: {le}")
+    except Exception as e:
+        import traceback
+        print(f"[IRIS-MANUAL] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _iris_manual_active = False
+        try:
+            keepalive.stop()
+        except Exception:
+            pass
+        start_iris_telem()         # pasif telemetriyi geri aç
+
+
+@app.post("/api/command/iris/start_manual")
+def iris_start_manual():
+    global _iris_manual_active, _iris_manual_vx, _iris_manual_vy
+    global _iris_manual_vz, _iris_manual_yawrate
+    global _iris_manual_thread_obj, _iris_land_on_manual_exit, _iris_random_active
+    if _chase_active or _strike_active:
+        return {"status": "error", "message": "Önce Takip/Strike modunu kapatın"}
+    if _iris_manual_active:
+        return {"status": "success", "message": "Zaten manuel modda"}
+    # Rastgele dans aktifse durdur (LOITER'da hover kalır) ve TAM durmasını bekle
+    # (join) → 14541 port çakışması olmadan manuel devralsın.
+    if _iris_random_active:
+        _iris_random_active = False
+        if _iris_random_thread_obj is not None:
+            _iris_random_thread_obj.join(timeout=8.0)
+        time.sleep(0.3)
+    _iris_land_on_manual_exit = True   # normal manuel: durunca insin
+    _iris_manual_vx = _iris_manual_vy = _iris_manual_vz = 0.0
+    _iris_manual_yawrate = 0.0
+    _iris_manual_active = True
+    t = threading.Thread(target=_iris_manual_thread, daemon=True)
+    _iris_manual_thread_obj = t
+    t.start()
+    print("[IRIS-MANUAL] Manuel uçuş thread'i başlatıldı.")
+    return {"status": "success", "message": "Iris manuel uçuş: kalkış yapılıyor"}
+
+
+@app.post("/api/command/iris/manual")
+def iris_manual_cmd(cmd: IrisManualCmd):
+    """Klavye → hız hedeflerini thread'e iletir (10 Hz akış)."""
+    global _iris_manual_vx, _iris_manual_vy, _iris_manual_vz, _iris_manual_yawrate
+    if not _iris_manual_active:
+        return {"status": "skip"}
+    _iris_manual_vx = cmd.vx
+    _iris_manual_vy = cmd.vy
+    _iris_manual_vz = cmd.vz
+    _iris_manual_yawrate = cmd.yaw_rate
+    return {"status": "success"}
+
+
+@app.post("/api/command/iris/stop_manual")
+def iris_stop_manual():
+    global _iris_manual_active
+    _iris_manual_active = False
+    print("[IRIS-MANUAL] Manuel uçuş kapatıldı (hover).")
+    return {"status": "success"}
+
+
+# =======================================================================
+# AVCI (İRİS) RASTGELE DANS — otonom daireler + sağ-sol gelişigüzel uçuş
+# =======================================================================
+# Bir tuşa (klavyede R) basınca Avcı drone kalkar ve GUIDED velocity setpoint'
+# lerle DAİRELER çizip SAĞA-SOLA gelişigüzel hareket eder. İleri hız + yaw-rate
+# = daire; rastgele yanal (vy) atışlar = sağ-sol; parametreler periyodik olarak
+# rastgele değişir → "gelişi güzel". Slew ile yumuşatılır, akıcı görünür.
+_iris_random_active = False
+_iris_random_thread_obj = None   # dans→manuel geçişinde "tam dur"u bekle (join)
+IRIS_RANDOM_ALT = 5.0        # dans irtifası (m) — daireler görünür olsun
+
+
+def _iris_random_thread():
+    """Avcı iris için OTONOM rastgele dans thread'i (GUIDED + velocity)."""
+    global _iris_random_active
+    keepalive = None
+    try:
+        stop_iris_telem()          # 14541 portunu serbest bırak
+        time.sleep(0.3)
+        conn = df_connect_drone(port=14541)
+        print(f"[IRIS-RANDOM] Bağlantı: target_sys={conn.target_system}")
+        keepalive = GCSKeepalive(conn, interval=0.1)
+        keepalive.start()
+
+        print(f"[IRIS-RANDOM] GUIDED → ARM → TAKEOFF({IRIS_RANDOM_ALT} m)...")
+        ok = df_takeoff(target_z=-abs(IRIS_RANDOM_ALT))
+        print(f"[IRIS-RANDOM] Kalkış: {ok}")
+        if not ok:
+            print("[IRIS-RANDOM] ⚠ Kalkış doğrulanamadı — yine de dansa geçiliyor")
+
+        print("[IRIS-RANDOM] Rastgele dans döngüsü başlıyor (10 Hz)...")
+        dt = 0.1
+        t = 0.0
+        next_change = 0.0
+        # hedef manevra bileşenleri (periyodik rastgele seçilir)
+        tgt_fwd = 1.5      # ileri hız (m/s) — daire yarıçapını yaw ile belirler
+        tgt_yaw = 0.5      # yaw-rate (rad/s) — daire yönü/sıkılığı
+        tgt_lat = 0.0      # yanal hız (m/s) — sağ(+)/sol(-) atış
+        tgt_vz  = 0.0      # dikey hız (m/s) — hafif iniş/çıkış
+        # yumuşatılmış (slew) anlık komutlar → akıcı hareket
+        cfwd = cyaw = clat = cvz = 0.0
+        _tick = 0
+        while _iris_random_active:
+            if t >= next_change:
+                # yeni rastgele manevra parçası seç (daire + sağ-sol dart)
+                tgt_fwd = random.uniform(0.8, 2.2)
+                tgt_yaw = random.choice([-1, 1]) * random.uniform(0.35, 1.1)
+                tgt_lat = random.uniform(-1.8, 1.8)
+                tgt_vz  = random.uniform(-0.5, 0.5)
+                next_change = t + random.uniform(1.5, 3.5)
+            # yumuşat: ani sıçrama olmasın, dans akıcı görünsün
+            cfwd = _slew(cfwd, tgt_fwd, IRIS_VEL_SLEW * dt)
+            clat = _slew(clat, tgt_lat, IRIS_VEL_SLEW * dt)
+            cvz  = _slew(cvz,  tgt_vz,  IRIS_VEL_SLEW * dt)
+            cyaw = _slew(cyaw, tgt_yaw, IRIS_YAW_SLEW * dt)
+            _send_velocity_setpoint(conn, cfwd, clat, cvz, cyaw, body_frame=True)
+            _read_iris_telem_from_conn(conn)
+            t += dt
+            _tick += 1
+            if _tick % 10 == 0:
+                print(f"[IRIS-RANDOM] daire: ileri={cfwd:.1f} yanal={clat:.1f} "
+                      f"vz={cvz:.1f} yaw={cyaw:.2f}")
+            time.sleep(dt)
+
+        # çıkış: dur (fren), sonra LOITER → YERİNDE HOVER kalır (inmez).
+        # (GUIDED'da setpoint akışı kesilince failsafe olur; LOITER GPS ile
+        #  konum+irtifayı setpoint olmadan tutar → drone asılı bekler.)
+        for _ in range(5):
+            _send_velocity_setpoint(conn, 0, 0, 0, 0)
+            time.sleep(0.05)
+        try:
+            mav_set_mode(conn, COPTER_MODE_LOITER)
+            print("[IRIS-RANDOM] Dans durdu → LOITER (yerinde hover, iniş yok).")
+        except Exception as le:
+            print(f"[IRIS-RANDOM] LOITER hatası: {le}")
+    except Exception as e:
+        import traceback
+        print(f"[IRIS-RANDOM] HATA: {e}")
+        traceback.print_exc()
+    finally:
+        _iris_random_active = False
+        try:
+            if keepalive is not None:
+                keepalive.stop()
+        except Exception:
+            pass
+        start_iris_telem()
+
+
+@app.post("/api/command/iris/start_random")
+def iris_start_random():
+    """Avcı drone'u kaldırıp rastgele dans (daireler + sağ-sol) başlatır.
+    Manuel uçuş aktifse KESİNTİSİZ geçer: manueli indirmeden LOITER'a alıp
+    (thread'i join ederek) dans devralır — havada iken de sorunsuz."""
+    global _iris_random_active, _iris_random_thread_obj
+    global _iris_manual_active, _iris_land_on_manual_exit
+    if _chase_active or _strike_active:
+        return {"status": "error", "message": "Önce Takip/Strike modunu kapatın"}
+    if _iris_random_active:
+        return {"status": "success", "message": "Zaten rastgele dans modunda"}
+    # Manuel uçuş aktifse → KESİNTİSİZ handoff: inme (LOITER'da bekle) + tam dur
+    if _iris_manual_active:
+        _iris_land_on_manual_exit = False       # inme, LOITER'da hover kal
+        _iris_manual_active = False
+        if _iris_manual_thread_obj is not None:
+            _iris_manual_thread_obj.join(timeout=8.0)   # 14541 serbest kalsın
+        _iris_land_on_manual_exit = True        # sonraki normal duruş için geri al
+        time.sleep(0.3)
+    _iris_random_active = True
+    t = threading.Thread(target=_iris_random_thread, daemon=True)
+    _iris_random_thread_obj = t
+    t.start()
+    print("[IRIS-RANDOM] Rastgele dans başlatıldı.")
+    return {"status": "success", "message": "Rastgele dans: daireler + sağ-sol"}
+
+
+@app.post("/api/command/iris/stop_random")
+def iris_stop_random():
+    global _iris_random_active
+    _iris_random_active = False
+    print("[IRIS-RANDOM] Rastgele dans kapatıldı (LOITER hover).")
+    return {"status": "success"}
+
+
 def _read_iris_telem_from_conn(conn):
     """
     Chase/Strike conn bağlantısı üzerinden iris telemetrisini oku
@@ -745,29 +1872,96 @@ def process_iris_frame(img):
     latest_frames["iris"]["id"] += 1
 
 
-def gz_iris_camera_thread():
-    """Gazebo Harmonic: iris kamerasını gz-transport'tan oku (ros_gz köprüsü
-    yerine doğrudan). AVCI_GZ_CAMERA=1 ise startup'ta bu thread başlatılır."""
+# Kamera watchdog: her kaynağın son kare zamanı.
+#
+# ÖNEMLİ (kök neden düzeltmesi): Gazebo Harmonic kamera sensörleri
+# <always_on>1</always_on> ile SÜREKLİ yayınlar; asıl kırılganlık gz-transport
+# ABONE tarafındadır. Eski kod her 3 sn'de bir YENİ `GzNode()` yaratıp yeniden
+# abone oluyordu → "subscriber churn". Harmonic lazy-render kameraları bu churn
+# yüzünden KALICI olarak donuyordu (loglarda sonsuz "yeniden abone" döngüsü,
+# görüntü hiç geri gelmiyordu). Ayrıca resubscribe sonrası _gz_cam_last sıfırlanıp
+# gerçek başarısızlık maskeleniyordu.
+#
+# Yeni tasarım:
+#  - TEK, KALICI node (global sözlükte tutulur → asla GC edilmez, churn yok).
+#  - Tek abonelik; akış sağlıklıysa ona DOKUNULMAZ (memory: "don't churn").
+#  - Gerçek stall'da (uzun süre kare yok) SON ÇARE olarak AYNI node üzerinde tek
+#    bir unsubscribe+subscribe denenir, seyrek (throttle) ve _gz_cam_last'ı sahte
+#    sıfırlamadan; böylece kareler dönerse cb() saati günceller, dönmezse spam yok.
+_gz_cam_last = {"iris": 0.0, "plane": 0.0}
+_gz_cam_stalled = {"iris": False, "plane": False}
+_gz_nodes = {}                 # name -> persistent GzNode (GC koruması)
+_GZ_CAM_STALL_SEC = 5.0        # bu süre kare gelmezse "donmuş" say
+_GZ_CAM_RESUB_SEC = 8.0        # kurtarma denemeleri arası minimum süre (churn'ü sınırla)
+
+
+def _gz_camera_reader(name, topic_env, default_topic, process_fn):
+    """Tek bir gz-transport kamera topic'ini dinler. Kalıcı node + churn'süz
+    watchdog: akış donarsa seyrek/tek bir yeniden abonelik dener."""
     try:
         from gz.transport13 import Node as GzNode
         from gz.msgs10.image_pb2 import Image as GzImage
     except Exception as e:
-        print(f"[GCS] gz-transport Python yok, Harmonic kamera atlandı: {e}")
+        print(f"[GCS] gz-transport Python yok, {name} kamera atlandı: {e}")
         return
+
+    topic = os.environ.get(topic_env, default_topic)
 
     def cb(msg):
         try:
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            _gz_cam_last[name] = time.time()
+            if _gz_cam_stalled.get(name):
+                _gz_cam_stalled[name] = False
+                print(f"[GCS] ✓ {name} kamera akışı geri geldi")
+            # Kanal sayısını veriden türet (RGB8=3, MONO8=1) — reshape hatasına karşı
+            npix = msg.width * msg.height
+            ch = (len(msg.data) // npix) if npix else 3
+            arr = np.frombuffer(msg.data, dtype=np.uint8)
+            if ch >= 3:
+                img = arr[:npix * 3].reshape((msg.height, msg.width, 3))
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            else:
+                img = cv2.cvtColor(arr[:npix].reshape((msg.height, msg.width)),
+                                   cv2.COLOR_GRAY2BGR)
+            process_fn(img)
         except Exception as e:
-            print(f"[GCS GZ-CAM] hata: {e}")
+            print(f"[GCS GZ-CAM] {name} hata: {e}")
 
-    topic = os.environ.get("AVCI_GZ_CAMERA_TOPIC", "/iris_cam/image")
+    # TEK kalıcı node — global'de tutulur ki GC etmesin (churn'ü önler)
     node = GzNode()
+    _gz_nodes[name] = node
     node.subscribe(GzImage, topic, cb)
-    print(f"[GCS] gz-transport kamera dinleniyor ({topic}, Harmonic)")
+    _gz_cam_last[name] = time.time()
+    print(f"[GCS] gz-transport {name} kamera dinleniyor ({topic}, Harmonic)")
+
+    # WATCHDOG — akışa DOKUNMA; yalnızca gerçek stall'da seyrek kurtarma dene
+    last_resub = 0.0
     while True:
-        time.sleep(1)
+        time.sleep(1.0)
+        idle = time.time() - _gz_cam_last.get(name, 0.0)
+        if idle <= _GZ_CAM_STALL_SEC:
+            continue
+        if not _gz_cam_stalled.get(name):
+            _gz_cam_stalled[name] = True
+            print(f"[GCS] ⚠ {name} kamera {idle:.0f}s kare göndermedi (stall)")
+        # Kurtarmayı throttle et: AYNI node üzerinde tek unsubscribe+subscribe.
+        if time.time() - last_resub < _GZ_CAM_RESUB_SEC:
+            continue
+        last_resub = time.time()
+        print(f"[GCS] … {name} kamera tek yeniden abonelik deneniyor ({topic})")
+        try:
+            try:
+                node.unsubscribe(topic)
+            except Exception:
+                pass
+            node.subscribe(GzImage, topic, cb)
+        except Exception as e:
+            print(f"[GCS] {name} kamera yeniden abone hatası: {e}")
+
+
+def gz_iris_camera_thread():
+    """Gazebo Harmonic: iris kamerasını gz-transport'tan oku (watchdog'lu)."""
+    _gz_camera_reader("iris", "AVCI_GZ_CAMERA_TOPIC", "/iris_cam/image", process_iris_frame)
 
 
 def process_plane_frame(img):
@@ -781,56 +1975,43 @@ def process_plane_frame(img):
 
 
 def gz_talon_camera_thread():
-    """Gazebo Harmonic: Talon (hedef İHA) burun kamerasını gz-transport'tan oku.
-    AVCI_GZ_CAMERA=1 ise startup'ta iris ile birlikte başlatılır."""
-    try:
-        from gz.transport13 import Node as GzNode
-        from gz.msgs10.image_pb2 import Image as GzImage
-    except Exception as e:
-        print(f"[GCS] gz-transport Python yok, Talon kamera atlandı: {e}")
-        return
+    """Gazebo Harmonic: Talon (hedef İHA) burun kamerasını oku (watchdog'lu)."""
+    _gz_camera_reader("plane", "AVCI_GZ_TALON_TOPIC", "/talon_cam/image", process_plane_frame)
 
-    def cb(msg):
-        try:
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_plane_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
-        except Exception as e:
-            print(f"[GCS GZ-CAM] Talon hata: {e}")
-
-    topic = os.environ.get("AVCI_GZ_TALON_TOPIC", "/talon_cam/image")
-    node = GzNode()
-    node.subscribe(GzImage, topic, cb)
-    print(f"[GCS] gz-transport Talon kamera dinleniyor ({topic}, Harmonic)")
-    while True:
-        time.sleep(1)
-
-
-class CameraSubscriber(Node):
-    def __init__(self):
-        super().__init__('gcs_camera_listener')
-        self.bridge = CvBridge()
-        self.create_subscription(Image, '/iris_cam/front_camera/image_raw', self.cb_iris, 1)
-        self.create_subscription(Image, '/plane_cam/front_camera/image_raw', self.cb_plane, 1)
-        print("[GCS] ROS 2 Kameraları dinleniyor (/iris_cam & /plane_cam)...")
-
-    def cb_iris(self, data):
-        try:
-            process_iris_frame(self.bridge.imgmsg_to_cv2(data, "bgr8"))
-        except Exception as e:
-            print(f"[GCS CAM] Iris hata: {e}")
-
-    def cb_plane(self, data):
-        try:
-            img = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            _, buf = cv2.imencode('.jpg', img)
-            if latest_frames["plane"]["data"] is None:
-                print("[GCS] ✓ Plane kamerasından ilk görüntü!")
-            latest_frames["plane"]["data"] = buf.tobytes()
-            latest_frames["plane"]["id"] += 1
-        except Exception as e:
-            print(f"[GCS CAM] Plane hata: {e}")
 
 def ros2_spin_thread():
+    """Gazebo Classic yolu: ROS 2 kameralarını cv_bridge ile dinler.
+    rclpy/cv_bridge importları BURADA yapılır (lazy) — Harmonic modunda ROS 2
+    kurulu değilse sunucunun geri kalanı etkilenmesin."""
+    try:
+        import rclpy
+        from rclpy.node import Node
+        from sensor_msgs.msg import Image
+        from cv_bridge import CvBridge
+    except Exception as e:
+        print(f"[GCS] ROS 2 (rclpy/cv_bridge) yüklenemedi, ROS2 kamera atlandı: {e}")
+        return
+
+    class CameraSubscriber(Node):
+        def __init__(self):
+            super().__init__('gcs_camera_listener')
+            self.bridge = CvBridge()
+            self.create_subscription(Image, '/iris_cam/front_camera/image_raw', self.cb_iris, 1)
+            self.create_subscription(Image, '/plane_cam/front_camera/image_raw', self.cb_plane, 1)
+            print("[GCS] ROS 2 Kameraları dinleniyor (/iris_cam & /plane_cam)...")
+
+        def cb_iris(self, data):
+            try:
+                process_iris_frame(self.bridge.imgmsg_to_cv2(data, "bgr8"))
+            except Exception as e:
+                print(f"[GCS CAM] Iris hata: {e}")
+
+        def cb_plane(self, data):
+            try:
+                process_plane_frame(self.bridge.imgmsg_to_cv2(data, "bgr8"))
+            except Exception as e:
+                print(f"[GCS CAM] Plane hata: {e}")
+
     rclpy.init(args=None)
     node = CameraSubscriber()
     rclpy.spin(node)
@@ -985,9 +2166,25 @@ def stop_iris_telem():
         _iris_telem_thread.join(timeout=2.0)
     _iris_telem_thread = None
 
+async def _mavlink_heartbeat_loop():
+    """GCS heartbeat'ini kesintisiz 1 Hz gönder — bağlantı canlılığı için.
+    (Manuel modlar kendi 10 Hz GCSKeepalive'ını çalıştırdığından, plane manuel
+    aktifken çakışmayı önlemek için burada atlanır.)"""
+    while True:
+        try:
+            if _mav_conn is not None and not _manual_active:
+                _mav_conn.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+        except Exception:
+            pass
+        await asyncio.sleep(1.0)
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(mavlink_listener())          # plane — 14550
+    asyncio.create_task(_mavlink_heartbeat_loop())   # 1 Hz GCS heartbeat
     start_iris_telem()                                # iris  — 14541 (background thread)
     # Kamera kaynağı: Harmonic (gz-transport) veya Classic (ROS2 cv_bridge)
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
@@ -1001,6 +2198,7 @@ async def startup_event():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    _t = 0
     try:
         while True:
             # GPS noise seviyesini de frontend'e gönder
@@ -1008,9 +2206,42 @@ async def websocket_endpoint(websocket: WebSocket):
             payload["gps_noise"] = _gps_noise_level
             payload["gps_frozen"] = _noisy_plane_telem.get("frozen", False)
             payload["plane_throttle"] = _plane_throttle
-            await websocket.send_json(payload)
+            payload["ts"] = time.time()          # ping/pong: canlılık damgası
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                break                             # bağlantı koptu → çık, frontend reconnect eder
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
+@app.websocket("/ws/video/{vehicle}")
+async def video_ws(websocket: WebSocket, vehicle: str):
+    """Kamera karelerini WebSocket üzerinden base64 olarak canlı yayınlar.
+    MJPEG <img> tarayıcıda takılabildiği için asıl video hattı budur:
+    HER ZAMAN EN SON kareyi gönderir (buffer'da eski kare birikmez),
+    frontend img.src = data:image/jpeg;base64 ile anında çizer."""
+    if vehicle not in ("iris", "plane"):
+        vehicle = "iris"
+    await websocket.accept()
+    last_id = -1
+    try:
+        while True:
+            entry = latest_frames.get(vehicle)
+            if entry and entry["data"] is not None and entry["id"] != last_id:
+                last_id = entry["id"]                       # yalnızca en son kare
+                b64 = base64.b64encode(entry["data"]).decode("ascii")
+                try:
+                    await websocket.send_text(b64)
+                except Exception:
+                    break
+            await asyncio.sleep(0.045)                       # ~22 FPS tavan
+    except WebSocketDisconnect:
+        pass
+    except Exception:
         pass
 
 if __name__ == "__main__":

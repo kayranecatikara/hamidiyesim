@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Avcı Operasyon Merkezi</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=16">
     <!-- Ciddi Tipografi: Roboto Mono (sayılar ve teknik veri için) ve Inter veya Roboto -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -47,9 +47,27 @@
                 <!-- Hedef İHA Kontrol Paneli -->
                 <div id="target-controls" class="control-section active-section">
                     <h3 class="section-title">UÇUŞ SENARYOLARI</h3>
-                    <div class="btn-grid">
-                        <button id="btn-plane-square" class="t-btn btn-action">KARE ÇİZ</button>
-                        <button id="btn-plane-manual" class="t-btn btn-warning">MANUEL MOD</button>
+                    <!-- Geometrik ŞEKİL çizimleri: rota seçimi -->
+                    <div class="shape-row">
+                        <button id="btn-plane-circle" class="t-btn btn-action shape-btn" title="DAİRE — otomatik dairesel devriye (X-Y çember, sabit Z)">
+                            <span class="ico ico-circle"></span>
+                            <span class="shape-name">Daire</span>
+                        </button>
+                        <button id="btn-plane-square" class="t-btn btn-action shape-btn" title="KARE — otomatik geometrik kare rotası (X-Y, sabit Z)">
+                            <span class="ico ico-square"></span>
+                            <span class="shape-name">Kare</span>
+                        </button>
+                        <button id="btn-plane-triangle" class="t-btn btn-action shape-btn" title="ÜÇGEN — otomatik geometrik 3B rota (X-Y-Z)">
+                            <span class="ico ico-triangle"></span>
+                            <span class="shape-name">Üçgen</span>
+                        </button>
+                    </div>
+
+                    <div class="d-row mt-2"><span>AKTİF SENARYO:</span> <span id="plane-random-status" class="val warning">BEKLEMEDE</span></div>
+                    <!-- YAZI butonları: Daire/Kare/Üçgen = otomatik; bunlar ayrı uçuş tipleri -->
+                    <div class="mode-row">
+                        <button id="btn-mode-manual" class="t-btn btn-warning mode-btn" title="Manuel uçuş (W/S/A/D + joystick)">Manuel Uçuş</button>
+                        <button id="btn-mode-random" class="t-btn btn-danger mode-btn" title="Rastgele / kaçış uçuşu (3B gelişigüzel)">Rastgele Uçuş</button>
                     </div>
 
                     <!-- UÇAK HIZ AYARI — kare çiz basılınca görünür -->
@@ -96,11 +114,15 @@
                     <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
                     <div id="manual-control-block" class="hidden">
                         <div class="manual-hint">
-                            <span class="w-key">W</span>
-                            <span>= Motora Gaz Ver</span>
+                            <span class="w-key">W</span><span class="w-key">S</span>
+                            <span>= Gaz &nbsp;·&nbsp;</span>
+                            <span class="w-key">A</span><span class="w-key">D</span>
+                            <span>= Roll &nbsp;·&nbsp;</span>
+                            <span class="w-key">↑</span><span class="w-key">↓</span>
+                            <span>= Pitch &nbsp;(veya fare ile joystick)</span>
                         </div>
                         <div class="joystick-area">
-                            <div class="joystick-label">FLAP / YÜZEY KONTROLÜ</div>
+                            <div class="joystick-label">FLAP / YÜZEY KONTROLÜ (fare / klavye)</div>
                             <div id="joystick-base" class="joystick-base">
                                 <div id="joystick-knob" class="joystick-knob"></div>
                                 <div class="joystick-axes">
@@ -131,6 +153,52 @@
                         <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
                         <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
                     </div>
+
+                    <!-- AVCI DRONE MANUEL UÇUŞ (GUIDED + velocity) -->
+                    <h3 class="section-title mt-2">🎮 MANUEL UÇUŞ (AVCI)</h3>
+                    <div class="btn-grid">
+                        <button id="btn-iris-manual" class="t-btn btn-warning block-btn">🚁 MANUEL UÇUŞ BAŞLAT</button>
+                    </div>
+                    <div id="iris-manual-block" class="hidden">
+                        <div class="manual-hint">
+                            <span class="w-key">W</span><span class="w-key">S</span><span>= Gaz/İrtifa (Vz) &nbsp;·&nbsp;</span>
+                            <span class="w-key">A</span><span class="w-key">D</span><span>= Dön (Yaw)</span>
+                        </div>
+                        <div class="manual-hint">
+                            <span class="w-key">↑</span><span class="w-key">↓</span><span>= İleri/Geri &nbsp;·&nbsp;</span>
+                            <span class="w-key">←</span><span class="w-key">→</span><span>= Yana (Sol/Sağ)</span>
+                        </div>
+                        <div class="joystick-area">
+                            <div class="joystick-label">FARE İLE SÜR (yatay hız)</div>
+                            <div id="iris-joystick-base" class="joystick-base">
+                                <div id="iris-joystick-knob" class="joystick-knob"></div>
+                                <div class="joystick-axes">
+                                    <span class="axis-label axis-left">← SOL</span>
+                                    <span class="axis-label axis-right">SAĞ →</span>
+                                    <span class="axis-label axis-top">↑ İLERİ</span>
+                                    <span class="axis-label axis-bottom">GERİ ↓</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="joystick-readout mt-1">
+                            <span>vx: <span id="iris-vx">0.0</span></span>
+                            <span>vy: <span id="iris-vy">0.0</span></span>
+                            <span>vz: <span id="iris-vz">0.0</span></span>
+                            <span>yaw: <span id="iris-yaw">0.0</span></span>
+                        </div>
+                        <div class="d-row"><span>DURUM:</span> <span id="iris-manual-status" class="val warning">BEKLEMEDE</span></div>
+                    </div>
+
+                    <!-- RASTGELE DANS (AVCI) — daireler + sağ-sol gelişigüzel -->
+                    <h3 class="section-title mt-2">🎲 RASTGELE DANS</h3>
+                    <div class="btn-grid">
+                        <button id="btn-iris-random" class="t-btn btn-warning block-btn">🎲 RASTGELE UÇUŞ</button>
+                    </div>
+                    <div class="manual-hint">
+                        <span class="w-key">R</span>
+                        <span>= klavyeden aç/kapat &nbsp;·&nbsp; daireler çizip sağa-sola gelişigüzel uçar</span>
+                    </div>
+                    <div class="d-row"><span>DURUM:</span> <span id="iris-random-status" class="val warning">BEKLEMEDE</span></div>
 
 
                     <!-- VIDEO PARAZİT SİMÜLASYONU -->
@@ -172,7 +240,7 @@
             <main class="center-panel">
                 <div class="fpv-container">
                     <!-- CANLI ROS GORUNTUSU -->
-                    <img id="fpv-stream" src="/api/video_feed/plane" alt="Video Yükleniyor..." width="1280" height="720" style="object-fit: cover; width: 100%; height: 100%;">
+                    <img id="fpv-stream" src="" alt="Video Yükleniyor..." width="1280" height="720" style="object-fit: cover; width: 100%; height: 100%;">
                     
                     <!-- Overlay Elements (HTML/CSS) -->
                     <div class="hud-overlay">
@@ -203,8 +271,22 @@
             <!-- RIGHT PANEL: TELEMETRY -->
             <aside class="panel right-panel">
                 <div class="panel-title">TELEMETRİ & ALGORİTMA</div>
-                
+
+                <!-- KONUM MİNİMAP (XYZ) — simülasyon GPS/pozisyon verisi -->
                 <div class="telemetry-block">
+                    <h4 class="block-head">KONUM HARİTASI 3B · X/Y/Z (sürükle=döndür, tekerlek=zoom)</h4>
+                    <div class="minimap-wrap">
+                        <canvas id="minimap" width="260" height="260" class="minimap-canvas"></canvas>
+                    </div>
+                    <div class="minimap-legend">
+                        <span><span class="mm-dot mm-iris"></span>AVCI z=<span id="mm-iris-alt">--</span></span>
+                        <span><span class="mm-dot mm-plane"></span>HEDEF z=<span id="mm-plane-alt">--</span></span>
+                        <span>MESAFE: <span id="mm-dist">--</span></span>
+                        <span>ÖLÇEK: <span id="mm-scale">--</span></span>
+                    </div>
+                </div>
+
+                <div class="telemetry-block mt-2">
                     <h4 class="block-head">HEDEF İHA METRİKLERİ</h4>
                     <div class="data-list">
                         <div class="d-row"><span>HIZ:</span> <span id="tele-plane-speed" class="val">0.0 m/s</span></div>
@@ -244,6 +326,6 @@
         </footer>
     </div>
 
-    <script src="script.js?v=5"></script>
+    <script src="script.js?v=17"></script>
 </body>
 </html>
