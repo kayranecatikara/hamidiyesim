@@ -48,11 +48,31 @@
                 <div id="target-controls" class="control-section active-section">
                     <h3 class="section-title">UÇUŞ SENARYOLARI</h3>
                     <div class="btn-grid">
-                        <button id="btn-plane-square" class="t-btn btn-action">KARE ÇİZ</button>
-                        <button id="btn-plane-manual" class="t-btn btn-warning">MANUEL MOD</button>
+                        <button id="btn-scn-square" class="t-btn btn-action">▢ KARE ÇİZ</button>
+                        <button id="btn-scn-circle" class="t-btn btn-action">◯ DAİRE ÇİZ</button>
+                        <button id="btn-scn-aggressive" class="t-btn btn-danger">⚡ AGRESİF UÇUŞ</button>
+                        <button id="btn-plane-manual" class="t-btn btn-warning">🕹 MANUEL MOD</button>
                     </div>
 
-                    <!-- UÇAK HIZ AYARI — kare çiz basılınca görünür -->
+                    <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
+                    <div id="manual-control-block" class="hidden mt-1">
+                        <h3 class="section-title">🕹 MANUEL UÇUŞ — KLAVYE</h3>
+                        <div class="key-hint-grid">
+                            <div class="key-hint"><span class="key-chip">W</span><span>Burun yukarı</span></div>
+                            <div class="key-hint"><span class="key-chip">S</span><span>Burun aşağı</span></div>
+                            <div class="key-hint"><span class="key-chip">A</span><span>Sola yatış</span></div>
+                            <div class="key-hint"><span class="key-chip">D</span><span>Sağa yatış</span></div>
+                            <div class="key-hint"><span class="key-chip">L</span><span>Hızlan (gaz +)</span></div>
+                            <div class="key-hint"><span class="key-chip">I</span><span>Yavaşla (gaz −)</span></div>
+                        </div>
+                        <div class="joystick-readout mt-1">
+                            <span>ROLL: <span id="js-x">0.00</span></span>
+                            <span>PITCH: <span id="js-y">0.00</span></span>
+                            <span>GAZ: <span id="js-thr">60</span>%</span>
+                        </div>
+                    </div>
+
+                    <!-- UÇAK HIZ AYARI — senaryo başlayınca görünür -->
                     <div id="plane-speed-block" class="hidden mt-1">
                         <h3 class="section-title">✈ UÇAK HIZ AYARI</h3>
                         <div class="gps-jam-panel">
@@ -90,31 +110,6 @@
                         </div>
                         <div id="gps-jam-status" class="gps-jam-status">
                             <span class="dot green"></span> GPS Sinyali Normal
-                        </div>
-                    </div>
-
-                    <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
-                    <div id="manual-control-block" class="hidden">
-                        <div class="manual-hint">
-                            <span class="w-key">W</span>
-                            <span>= Motora Gaz Ver</span>
-                        </div>
-                        <div class="joystick-area">
-                            <div class="joystick-label">FLAP / YÜZEY KONTROLÜ</div>
-                            <div id="joystick-base" class="joystick-base">
-                                <div id="joystick-knob" class="joystick-knob"></div>
-                                <div class="joystick-axes">
-                                    <span class="axis-label axis-left">← AIL</span>
-                                    <span class="axis-label axis-right">AIL →</span>
-                                    <span class="axis-label axis-top">↑ ELV</span>
-                                    <span class="axis-label axis-bottom">ELV ↓</span>
-                                </div>
-                            </div>
-                            <div class="joystick-readout">
-                                <span>ROLL: <span id="js-x">0</span></span>
-                                <span>PITCH: <span id="js-y">0</span></span>
-                                <span>GAZ: <span id="js-thr">0</span>%</span>
-                            </div>
                         </div>
                     </div>
 
@@ -244,6 +239,6 @@
         </footer>
     </div>
 
-    <script src="script.js?v=5"></script>
+    <script src="script.js?v=6"></script>
 </body>
 </html>

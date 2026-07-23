@@ -109,10 +109,9 @@ _mav_conn = None
 _plane_sysid = None
 _plane_compid = 0
 
-# Uçak görev thread'leri
-_square_active = False
-_square_stop_event = threading.Event()
-_square_thread_obj = None
+# Uçak senaryo süreci (kare/daire/agresif) — aynı anda en fazla biri çalışır
+_scenario_proc = None
+_scenario_name = None
 
 # Uçak throttle seviyesi — slider ile ayarlanır (0-1000 aralığı, MANUAL_CONTROL)
 _plane_throttle = 600   # default = THROTTLE_CRUISE
@@ -134,66 +133,69 @@ def id_to_name(sysid):
         return "plane"
     return None
 
-@app.post("/api/command/plane/square")
-def command_plane_square():
-    global _square_active, _square_thread_obj
+# -----------------------------------------------------------------------
+# UÇUŞ SENARYOLARI (kare / daire / agresif) — run_plane_scenario.py süreci
+# -----------------------------------------------------------------------
+_SCENARIO_NAMES = ("square", "circle", "aggressive")
+
+
+def _stop_scenario_proc():
+    """Çalışan senaryo sürecini (varsa) öldürür + eski süreç artıklarını süpürür."""
+    global _scenario_proc, _scenario_name
+    if _scenario_proc is not None and _scenario_proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(_scenario_proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                _scenario_proc.kill()
+            except Exception:
+                pass
+        _scenario_proc.wait()
+        print(f"[SCENARIO] '{_scenario_name}' durduruldu.")
+    _scenario_proc = None
+    _scenario_name = None
+    # Emniyet: GCS yeniden başlatıldıysa elde referansı olmayan süreç kalmış olabilir
+    subprocess.run(['pkill', '-9', '-f', 'run_plane_scenario'], capture_output=True)
+    subprocess.run(['pkill', '-9', '-f', 'run_plane_square'], capture_output=True)
+
+
+@app.post("/api/command/plane/scenario/{name}")
+def start_plane_scenario(name: str):
+    """Senaryo başlat: araç takeoff yapıp deseni süresiz uçar.
+    square=kare, circle=daire, aggressive=rastgele agresif manevralar."""
+    global _scenario_proc, _scenario_name, _manual_active
+    if name not in _SCENARIO_NAMES:
+        return {"status": "error", "message": f"Bilinmeyen senaryo: {name}"}
     try:
-        # Eğer manuel kontrol aktifse durdur
-        global _manual_active
-        if _manual_active:
+        if _manual_active:                 # manuel kontrol açıksa kapat
             _manual_active = False
             time.sleep(0.3)
-
-        if _square_active:
-            _square_stop_event.set()
-            time.sleep(0.5)
-
-        _square_stop_event.clear()
-        _square_active = True
-        _square_thread_obj = threading.Thread(target=_square_thread, daemon=True)
-        _square_thread_obj.start()
-        return {"status": "success", "message": "Kare çizme başlatıldı."}
+        _stop_scenario_proc()              # önceki senaryo (varsa) dursun
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _scenario_proc = subprocess.Popen(
+            ["python3", "-m", "control.run_plane_scenario", name],
+            cwd=project_root,
+            start_new_session=True,
+        )
+        _scenario_name = name
+        print(f"[SCENARIO] '{name}' başlatıldı (pid={_scenario_proc.pid})")
+        return {"status": "success", "message": f"Senaryo başlatıldı: {name}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def _square_thread():
-    global _square_active
-    print("[SQUARE] Thread başlıyor...")
-    try:
-        import subprocess as _sp
-        import os as _os
-        project_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-        proc = _sp.Popen(
-            ["python3", "-m", "control.run_plane_square"],
-            cwd=project_root,
-            start_new_session=True
-        )
-        # Stop event gelene kadar bekle, ya da process bitene kadar
-        while not _square_stop_event.is_set():
-            ret = proc.poll()
-            if ret is not None:
-                print(f"[SQUARE] Script tamamlandı (exit={ret})")
-                break
-            import time as _t
-            _t.sleep(0.5)
-        # Durdurma sinyali geldiyse process'i öldür
-        if proc.poll() is None:
-            try:
-                _os.killpg(_os.getpgid(proc.pid), __import__('signal').SIGKILL)
-            except Exception:
-                proc.kill()
-            proc.wait()
-            print("[SQUARE] Script durduruldu.")
-    except Exception as e:
-        import traceback
-        print(f"[SQUARE] HATA: {e}")
-        traceback.print_exc()
-    finally:
-        _square_active = False
 
-@app.post("/api/command/plane/circle")
-def command_plane_circle():
-    return {"status": "error", "message": "Daire scripti henüz hazır değil!"}
+@app.post("/api/command/plane/stop_scenario")
+def stop_plane_scenario():
+    _stop_scenario_proc()
+    return {"status": "success", "message": "Senaryo durduruldu."}
+
+
+@app.get("/api/scenario_status")
+def scenario_status():
+    """Frontend buton senkronu: süreç yaşıyorsa aktif senaryo adı."""
+    if _scenario_proc is not None and _scenario_proc.poll() is None:
+        return {"active": True, "name": _scenario_name}
+    return {"active": False, "name": None}
 
 # -----------------------------------------------------------------------
 # MANUEL KONTROL
@@ -205,31 +207,28 @@ class ManualCmd(BaseModel):
 
 @app.post("/api/command/plane/start_manual")
 def start_manual_mode():
-    global _manual_active, _square_active
+    """Hangi senaryo uçuyorsa durdurur, uçağı klavye kontrolüne devralır.
+    FBWA modunda: W/S = pitch açı hedefi, A/D = yatış açı hedefi (stall'a
+    karşı açı limitli — ham MANUAL moddan çok daha kontrol edilebilir)."""
+    global _manual_active
     global _manual_aileron, _manual_elevator, _manual_throttle
 
-    # =========================================================
-    # ADIM 1: Kare scriptini durdur (Eğer çalışıyorsa)
-    # =========================================================
-    if _square_active:
-        print("[GCS] Kare uçuşu durduruluyor...")
-        _square_stop_event.set()
-        time.sleep(0.5)
+    # ADIM 1: Aktif senaryoyu durdur — RC override boşluğu doğmadan
+    # manuel thread devralacak
+    _stop_scenario_proc()
 
-    subprocess.run(['pkill', '-9', '-f', 'run_plane_square'], capture_output=True)
-
-    # =========================================================
-    # ADIM 2: Manuel kontrol thread'ini başlat
-    # =========================================================
-    _manual_active = True
-    _manual_aileron = 1500
+    # ADIM 2: Manuel kontrol thread'ini başlat.
+    # Gaz cruise'dan (1600) başlar — eski kod 1000 (rölanti) veriyordu,
+    # havada devralınca uçak stall'a giriyordu.
+    _manual_aileron  = 1500
     _manual_elevator = 1500
-    _manual_throttle = 1000
+    _manual_throttle = 1600
+    _manual_active = True
 
     t = threading.Thread(target=_manual_control_thread, daemon=True)
     t.start()
     print("[GCS] Manuel kontrol thread'i başlatıldı.")
-    return {"status": "success", "message": "Manuel mod aktif"}
+    return {"status": "success", "message": "Manuel mod aktif (FBWA)"}
 
 
 def _manual_control_thread():
@@ -264,18 +263,19 @@ def _manual_control_thread():
         time.sleep(0.5)
 
         # =====================================================
-        # MOD DEĞİŞTİR — ArduPlane MANUAL (0): RC override doğrudan servolara
-        # işler. Kare scripti (plane_functions.arm_plane) de aynı modu kullanır.
+        # MOD DEĞİŞTİR — ArduPlane FBWA (5): RC override açı hedefi olarak
+        # işlenir (roll stick = yatış hedefi, açı limitli). Ham MANUAL (0)
+        # havada elle uçulamıyordu; senaryolar da FBWA'da uçuyor.
         # =====================================================
-        print("[MANUAL] MANUAL moda geçiliyor...")
-        result = set_mode(conn, PLANE_MODE_MANUAL)
+        print("[MANUAL] FBWA moda geçiliyor...")
+        result = set_mode(conn, PLANE_MODE_FBWA)
         if result and result[1] == 0:
-            print("[MANUAL] ✓ ArduPlane MANUAL modu kabul etti (ACK result=0)")
+            print("[MANUAL] ✓ ArduPlane FBWA modu kabul etti (ACK result=0)")
         else:
             print(f"[MANUAL] ⚠ Mode ACK: {result} — yine de devam ediliyor")
             # İkinci deneme
             time.sleep(0.3)
-            result2 = set_mode(conn, PLANE_MODE_MANUAL)
+            result2 = set_mode(conn, PLANE_MODE_FBWA)
             print(f"[MANUAL] İkinci deneme ACK: {result2}")
 
         # =====================================================
@@ -294,10 +294,11 @@ def _manual_control_thread():
             )
             time.sleep(0.1)
 
-        # Kapanış — throttle sıfırla
+        # Kapanış — yüzeyler nötr, gaz CRUISE bırakılır (1000=rölanti stall
+        # ettiriyordu). Override 3 sn içinde kendiliğinden düşer.
         conn.mav.rc_channels_override_send(
             conn.target_system, conn.target_component,
-            1500, 1500, 1000, 1500, 0, 0, 0, 0
+            1500, 1500, 1600, 1500, 0, 0, 0, 0
         )
         keepalive.stop()
         print("[MANUAL] Kapatıldı.")
@@ -311,7 +312,7 @@ def _manual_control_thread():
 
 @app.post("/api/command/plane/manual")
 def command_plane_manual(cmd: ManualCmd):
-    """Joystick değerlerini thread'e iletir."""
+    """Klavye kontrol değerlerini (PWM) manuel thread'e iletir."""
     global _manual_aileron, _manual_elevator, _manual_throttle
     if not _manual_active:
         return {"status": "skip"}
