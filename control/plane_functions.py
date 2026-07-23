@@ -191,7 +191,8 @@ def send_manual_control(pitch: int = 0, roll: int = 0,
 
     # Standart RC PWM (1000-2000 aralığı) formülü
     rc_roll     = int(1500 + (roll / 2))
-    rc_pitch    = int(1500 - (pitch / 2))  # RC2 düşük PWM = elevator yukarı = burun yukarı
+    rc_pitch    = int(1500 + (pitch / 2))  # RC2 YÜKSEK PWM = burun yukarı (canlı
+                                           # SITL'de doğrulandı; eski yorum tersti)
     rc_throttle = int(1000 + throttle)     # 0..1000 aralığı 1000..2000'e çevrildi
     rc_yaw      = int(1500 + (yaw / 2))
 

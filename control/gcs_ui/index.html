@@ -55,20 +55,23 @@
                     </div>
 
                     <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
+                    <!-- Joystick (mouse) + klavye: W/S pitch, A/D roll, L/I gaz -->
                     <div id="manual-control-block" class="hidden mt-1">
-                        <h3 class="section-title">🕹 MANUEL UÇUŞ — KLAVYE</h3>
-                        <div class="key-hint-grid">
-                            <div class="key-hint"><span class="key-chip">W</span><span>Burun yukarı</span></div>
-                            <div class="key-hint"><span class="key-chip">S</span><span>Burun aşağı</span></div>
-                            <div class="key-hint"><span class="key-chip">A</span><span>Sola yatış</span></div>
-                            <div class="key-hint"><span class="key-chip">D</span><span>Sağa yatış</span></div>
-                            <div class="key-hint"><span class="key-chip">L</span><span>Hızlan (gaz +)</span></div>
-                            <div class="key-hint"><span class="key-chip">I</span><span>Yavaşla (gaz −)</span></div>
-                        </div>
-                        <div class="joystick-readout mt-1">
-                            <span>ROLL: <span id="js-x">0.00</span></span>
-                            <span>PITCH: <span id="js-y">0.00</span></span>
-                            <span>GAZ: <span id="js-thr">60</span>%</span>
+                        <div class="joystick-area">
+                            <div id="joystick-base" class="joystick-base">
+                                <div id="joystick-knob" class="joystick-knob"></div>
+                                <div class="joystick-axes">
+                                    <span class="axis-label axis-left">← A</span>
+                                    <span class="axis-label axis-right">D →</span>
+                                    <span class="axis-label axis-top">↑ W</span>
+                                    <span class="axis-label axis-bottom">S ↓</span>
+                                </div>
+                            </div>
+                            <div class="joystick-readout">
+                                <span>ROLL: <span id="js-x">0.00</span></span>
+                                <span>PITCH: <span id="js-y">0.00</span></span>
+                                <span>GAZ: <span id="js-thr">60</span>%</span>
+                            </div>
                         </div>
                     </div>
 

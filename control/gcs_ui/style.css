@@ -503,38 +503,8 @@ body {
     font-weight: 700;
 }
 
-.key-hint-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 10px;
-    padding: 8px 10px;
-    background: rgba(245, 158, 11, 0.06);
-    border: 1px solid rgba(245, 158, 11, 0.25);
-    border-radius: 4px;
-}
-
-.key-hint {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    color: var(--text-dim);
-    white-space: nowrap;
-}
-
-.key-chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    background: var(--warning-yellow);
-    color: #000;
-    font-weight: 900;
-    font-size: 0.75rem;
-    flex-shrink: 0;
-    border-radius: 3px;
+.joystick-knob {
+    transition: none;   /* klavye/tick güncellemelerinde gecikmesiz takip */
 }
 
 /* Bottom Panel */

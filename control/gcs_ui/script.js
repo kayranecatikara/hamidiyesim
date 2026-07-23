@@ -331,10 +331,12 @@ if (planeThrSlider) {
     });
 }
 
-// === MANUEL MOD — KLAVYE (W/S: pitch, A/D: roll, L: hızlan, I: yavaşla) ===
-// Basıldığında aktif senaryo durur, uçuş FBWA'da klavyeyle devralınır.
+// === MANUEL MOD — JOYSTICK (mouse) + KLAVYE (W/S: pitch, A/D: roll, L/I: gaz) ===
+// Basıldığında aktif senaryo durur, uçuş FBWA'da devralınır.
 const btnManual = document.getElementById('btn-plane-manual');
 const manualBlock = document.getElementById('manual-control-block');
+const joystickBase = document.getElementById('joystick-base');
+const joystickKnob = document.getElementById('joystick-knob');
 
 let manualActive = false;
 let keysDown = {};
@@ -343,6 +345,9 @@ let mElv = 0;      // -1..1 yumuşatılmış pitch komutu
 let mThr = 60;     // % gaz — cruise'dan başlar (havada devralınca stall olmasın)
 let manualLoop = null;
 let manualSendTick = 0;
+let isDragging = false;
+let jsAil = 0;     // -1..1 joystick hedefi (sürükleme sırasında)
+let jsElv = 0;
 
 btnManual.addEventListener('click', async () => {
     if (!manualActive) await enterManualMode();
@@ -362,6 +367,8 @@ async function enterManualMode() {
         if (data.status === 'success') {
             manualActive = true;
             keysDown = {}; mAil = 0; mElv = 0; mThr = 60;
+            isDragging = false; jsAil = 0; jsElv = 0;
+            setKnob(0, 0);
             manualBlock.classList.remove('hidden');
             btnManual.textContent = '✖ MANUEL KAPAT';
             btnManual.style.borderLeftColor = 'var(--danger-red)';
@@ -382,6 +389,9 @@ async function exitManualMode() {
     manualActive = false;
     clearInterval(manualLoop);
     manualLoop = null;
+    isDragging = false; jsAil = 0; jsElv = 0;
+    joystickKnob.classList.remove('active');
+    setKnob(0, 0);
     manualBlock.classList.add('hidden');
     btnManual.textContent = '🕹 MANUEL MOD';
     btnManual.style.borderLeftColor = '';
@@ -389,6 +399,61 @@ async function exitManualMode() {
     try { await fetch('/api/command/plane/stop_manual', { method: 'POST' }); } catch(e) {}
 }
 
+// --- Joystick (mouse/touch) ---
+function joystickEventPos(e) {
+    const rect = joystickBase.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const r = rect.width / 2;
+    const px = (e.clientX !== undefined) ? e.clientX : e.touches[0].clientX;
+    const py = (e.clientY !== undefined) ? e.clientY : e.touches[0].clientY;
+    let dx = px - cx, dy = py - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > r) { dx = dx / dist * r; dy = dy / dist * r; }
+    jsAil = +(dx / r).toFixed(3);   // -1..1
+    jsElv = -(dy / r).toFixed(3);   // -1..1 (ekran y'si ters: yukarı = burun yukarı)
+}
+
+function setKnob(ail, elv) {
+    const r = joystickBase.getBoundingClientRect().width / 2;
+    joystickKnob.style.left = `calc(50% + ${ail * r}px)`;
+    joystickKnob.style.top  = `calc(50% + ${-elv * r}px)`;
+}
+
+joystickBase.addEventListener('mousedown', (e) => {
+    if (!manualActive) return;
+    isDragging = true;
+    joystickKnob.classList.add('active');
+    joystickEventPos(e);
+});
+window.addEventListener('mousemove', (e) => {
+    if (!isDragging || !manualActive) return;
+    joystickEventPos(e);
+});
+window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    jsAil = 0; jsElv = 0;           // bırakınca merkeze dön
+    joystickKnob.classList.remove('active');
+});
+joystickBase.addEventListener('touchstart', (e) => {
+    if (!manualActive) return;
+    isDragging = true;
+    joystickKnob.classList.add('active');
+    joystickEventPos(e);
+}, { passive: true });
+window.addEventListener('touchmove', (e) => {
+    if (!isDragging || !manualActive) return;
+    joystickEventPos(e);
+}, { passive: true });
+window.addEventListener('touchend', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    jsAil = 0; jsElv = 0;
+    joystickKnob.classList.remove('active');
+});
+
+// --- Klavye ---
 const MANUAL_KEYS = ['w', 'a', 's', 'd', 'l', 'i'];
 
 window.addEventListener('keydown', (e) => {
@@ -406,10 +471,16 @@ window.addEventListener('keyup', (e) => {
 
 function manualTick() {
     if (!manualActive) return;
-    // Hedef yüzey komutu: tuş basılıysa tam sapma, değilse merkez
-    const tAil = (keysDown['d'] ? 1 : 0) - (keysDown['a'] ? 1 : 0);
-    const tElv = (keysDown['w'] ? 1 : 0) - (keysDown['s'] ? 1 : 0);
-    // Yumuşatma: ani PWM sıçraması yerine ~0.3s'de tam sapmaya ulaşır
+    // Hedef yüzey komutu: joystick sürükleniyorsa joystick, değilse klavye
+    let tAil, tElv;
+    if (isDragging) {
+        tAil = jsAil;
+        tElv = jsElv;
+    } else {
+        tAil = (keysDown['d'] ? 1 : 0) - (keysDown['a'] ? 1 : 0);
+        tElv = (keysDown['w'] ? 1 : 0) - (keysDown['s'] ? 1 : 0);
+    }
+    // Yumuşatma: ani PWM sıçraması yerine ~0.3s'de hedefe ulaşır
     mAil += (tAil - mAil) * 0.25;
     mElv += (tElv - mElv) * 0.25;
     if (tAil === 0 && Math.abs(mAil) < 0.02) mAil = 0;
@@ -418,13 +489,14 @@ function manualTick() {
     if (keysDown['l']) mThr = Math.min(100, mThr + 1);
     if (keysDown['i']) mThr = Math.max(0, mThr - 1);
 
+    setKnob(mAil, mElv);   // topuz hem joystick hem klavye girişini yansıtır
     document.getElementById('js-x').textContent = mAil.toFixed(2);
     document.getElementById('js-y').textContent = mElv.toFixed(2);
     document.getElementById('js-thr').textContent = Math.round(mThr);
 
     // PWM'e çevir — FBWA: tam sapma = maks yatış/pitch açı hedefi
     const aileron  = Math.round(1500 + mAil * 450);
-    const elevator = Math.round(1500 - mElv * 450);   // düşük PWM = burun yukarı
+    const elevator = Math.round(1500 + mElv * 450);   // yüksek PWM = burun yukarı (SITL'de doğrulandı)
     const thr      = Math.round(1000 + mThr * 10);
 
     // Sunucuya 10 Hz gönder (iç döngü 20 Hz — bir atlayarak)

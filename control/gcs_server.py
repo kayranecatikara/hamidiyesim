@@ -233,56 +233,55 @@ def start_manual_mode():
 
 def _manual_control_thread():
     """
-    AYNI ALT YAPIYI kullanarak plane'e bağlanır:
-    - connect_mavlink (source_system=251, aynı kare script gibi)
-    - GCSKeepalive (10 Hz heartbeat)
-    - set_mode (COMMAND_LONG ile MAV_CMD_DO_SET_MODE)
-    - rc_channels_override_send
+    Uçağı FBWA'da klavye/joystick kontrolüne devralır (10 Hz RC override).
+
+    ÖNEMLİ: Bu thread paylaşılan _mav_conn üzerinde ASLA blocking recv yapmaz.
+    Eski kod set_mode ile ACK/heartbeat okuyordu; aynı bağlantıyı async
+    mavlink_listener da okuduğu için mesaj yarışı oluyor, devralma saniyelerce
+    gecikiyor ve bu boşlukta araç düşebiliyordu. Artık:
+    - Mod komutu ACK beklemeden gönderilir (gerekirse 0.5s'de bir tekrar),
+    - Teyit telemetry_state['plane']['mode'] üzerinden (listener HEARTBEAT'ten
+      custom_mode yazar),
+    - RC override İLK saniyeden itibaren akar → kontrol boşluğu yok.
     """
     global _manual_active
 
     print("[MANUAL] Thread başlıyor...")
     try:
-        # =====================================================
-        # BAĞLANTI — Artık global _mav_conn (14551) kullanıyoruz
-        # =====================================================
+        # BAĞLANTI — global _mav_conn (14550, sadece gönderim için kullanılır)
         if _mav_conn is None:
             raise RuntimeError("Global MAVLink bağlantısı yok!")
-            
+
         conn = _mav_conn
         if _plane_sysid is not None:
             conn.target_system = _plane_sysid
-            
+
         print(f"[MANUAL] Bağlantı kullanılıyor: target_sys={conn.target_system}")
 
-        # =====================================================
         # KEEPALIVE — arming korunması için şart
-        # =====================================================
         keepalive = GCSKeepalive(conn, interval=0.1)
         keepalive.start()
-        time.sleep(0.5)
 
-        # =====================================================
-        # MOD DEĞİŞTİR — ArduPlane FBWA (5): RC override açı hedefi olarak
-        # işlenir (roll stick = yatış hedefi, açı limitli). Ham MANUAL (0)
-        # havada elle uçulamıyordu; senaryolar da FBWA'da uçuyor.
-        # =====================================================
-        print("[MANUAL] FBWA moda geçiliyor...")
-        result = set_mode(conn, PLANE_MODE_FBWA)
-        if result and result[1] == 0:
-            print("[MANUAL] ✓ ArduPlane FBWA modu kabul etti (ACK result=0)")
-        else:
-            print(f"[MANUAL] ⚠ Mode ACK: {result} — yine de devam ediliyor")
-            # İkinci deneme
-            time.sleep(0.3)
-            result2 = set_mode(conn, PLANE_MODE_FBWA)
-            print(f"[MANUAL] İkinci deneme ACK: {result2}")
+        def _send_fbwa():
+            # ArduPlane FBWA (5): RC override açı hedefi olarak işlenir (açı
+            # limitli, stall korumalı). Ham MANUAL (0) havada elle uçulamıyordu.
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                PLANE_MODE_FBWA, 0, 0, 0, 0, 0)
 
-        # =====================================================
-        # RC OVERRIDE DÖNGÜSÜ — 10 Hz
-        # =====================================================
-        print("[MANUAL] RC Override döngüsü başlıyor (10 Hz)...")
+        print("[MANUAL] FBWA komutu gönderildi, RC override döngüsü başlıyor (10 Hz)...")
+        _send_fbwa()
+        mode_ok = False
+        tick = 0
         while _manual_active:
+            if not mode_ok:
+                if telemetry_state["plane"].get("mode") == PLANE_MODE_FBWA:
+                    mode_ok = True
+                    print("[MANUAL] ✓ FBWA teyit edildi (heartbeat)")
+                elif tick > 0 and tick % 5 == 0:      # 0.5s'de bir tekrar dene
+                    _send_fbwa()
             conn.mav.rc_channels_override_send(
                 conn.target_system,
                 conn.target_component,
@@ -292,6 +291,7 @@ def _manual_control_thread():
                 1500,               # CH4: Yaw nötr
                 0, 0, 0, 0
             )
+            tick += 1
             time.sleep(0.1)
 
         # Kapanış — yüzeyler nötr, gaz CRUISE bırakılır (1000=rölanti stall
