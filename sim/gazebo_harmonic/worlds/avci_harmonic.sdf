@@ -112,7 +112,35 @@
     
     <!-- Pist KALDIRILDI (2026-07-24): detection modeli pist rakamını/çizgilerini
          yüksek güvenle HEDEF sanıyordu (canlı FP). Gerçek ortam için ayrı model
-         eğitileceğinden simdeki pistin faydası yok. Gerekirse geri eklenebilir. -->
+         eğitileceğinden simdeki pistin faydası yok. Yerine DÜZ ZEMİN (asfalt/işaret
+         yok) — runway hem çarpışma zeminini hem asfaltı sağlıyordu, sadece asfaltı
+         atmak için düz yeşil zemin koyuldu. -->
+    <model name="ground_plane">
+      <static>1</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>4000 4000</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>4000 4000</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.30 0.42 0.20 1</ambient>
+            <diffuse>0.34 0.46 0.22 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
 
     <include>
       <uri>model://iris_cam</uri>
