@@ -39,3 +39,4 @@ runs/
 !vision/models/avci_yolo.pt
 !vision/models/avci_pose.pt
 .claude/
+logs/visual_lead_*.csv

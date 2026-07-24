@@ -144,8 +144,16 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
   (`AVCI_HYBRID=off` → saf GPS, `AVCI_GPS_LAW=v2` → eski chase). `/api/chase_status`
   `supervisor` alanı döndürür: `{faz: GPS|VISUAL|DURDU, gecis_sayisi, kilit_sayac}`.
   `start_visual` endpoint'i yalnız-görsel test için duruyor.
-- Test: `tests/test_visual_lead.py` T22 — geçiş zinciri
-  GPS→VISUAL→(kayıp)→GPS→VISUAL→durdur sahte fazlarla doğrulanır.
+- **Terminal (kör dalış + vuruş, 2026-07-24):** log analizi gösterdi ki alttan
+  yaklaşmada hedef son ~6 m'de kadraj TEPESİNDEN çıkıyor (gövde yükselti 77-79°,
+  üst sınır +80.2°), tespit kopuyor, drone altından geçip GPS istasyonuna geri
+  çekiliyordu ("üstten kaçırma"). Çözüm `visual_lead`: menzil < `TERMINAL_MENZIL`
+  (8 m) iken VE kapanırken temas koparsa GPS'e DÖNMEZ, son nişan komutunu
+  (`son_v_cmd`) `TERMINAL_SURE` (2 s) boyunca sürdürür (kör dalış, durum=kor_dalis).
+  Gerçek menzil < `VURUS_MENZIL` (1.5 m) → "vuruldu" döner, supervisor görevi
+  bitirir (faz=VURULDU). Menzil sim ground-truth (gerçekte yakınlık sensörü).
+  Env: AVCI_IBVS_TERMINAL_MENZIL/SURE/VURUS_MENZIL. Testler T22-T25 (supervisor
+  geçiş + VURULDU biter + kör dalış→vuruş + süre dolunca ıska), toplam 27/27.
 
 ## 5. Kritik Tasarım Kararları (öneriler)
 

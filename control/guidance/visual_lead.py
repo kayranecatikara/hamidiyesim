@@ -24,6 +24,7 @@ import time
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.adapter_fixedwing import FixedWingAdapter
+from control.guidance.common import send_velocity
 from control.guidance.guidance_core import Cfg, LeadPursuitCore, govde_to_dunya
 
 _LOG_DIR = os.path.join(
@@ -42,7 +43,7 @@ _CSV_ALANLAR = [
 ]
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
-#                      bayat / mod_hata / attitude_yok
+#                      bayat / mod_hata / attitude_yok / kor_dalis / vuruldu
 
 
 class _ArasState:
@@ -69,11 +70,26 @@ class _ArasState:
                 self.pos = (msg.x, msg.y, msg.z)
 
 
+def _menzil_hesapla(get_plane_truth, iris_pos):
+    """Hedefin gerçek NED pozu ile iris arası mesafe (m) veya None.
+    NOT: sim ground-truth; gerçek uçuşta yerini yakınlık/menzil sensörü alır."""
+    if iris_pos is None or get_plane_truth is None:
+        return None
+    p = get_plane_truth()
+    if p is None:
+        return None
+    return math.sqrt((p["x"] - iris_pos[0]) ** 2 + (p["y"] - iris_pos[1]) ** 2
+                     + (p["z"] - iris_pos[2]) ** 2)
+
+
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     kayip_kare_esik=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
-    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı)."""
+    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu' (menzil
+    < VURUS_MENZIL). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
+    koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
+    dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
     core = LeadPursuitCore(cfg)
     if cfg.PLATFORM == "copter":
         adapter = CopterAdapter(cfg)
@@ -87,6 +103,10 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     bayat_sayaci = 0
     kayip_sayaci = 0       # ardışık pose'suz kare (temas kaybı takibi)
     son_kayit_wall = time.time()
+    son_v_cmd = None       # son gönderilen (vx,vy,vz,yaw) — kör dalışta sürdürülür
+    son_menzil = None      # son bilinen gerçek menzil
+    kapaniyor = False      # menzil azalıyor mu (kör dalış ancak kapanırken)
+    terminal_baslangic = None   # kör dalış başlangıç duvar anı
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -101,10 +121,33 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         w.writerow(row)
         f.flush()
 
+    def _kor_dalis_penceresi():
+        """Terminal kör dalış koşulu: son komut var, menzil eşik altında, kapanıyor."""
+        return (kayip_kare_esik is not None and son_v_cmd is not None
+                and menzil_onceki is not None
+                and menzil_onceki < cfg.TERMINAL_MENZIL and kapaniyor)
+
     try:
         while not stop_event.is_set():
             kayit = wait_pose(son_seq, timeout=0.5)
-            if kayit is None:                 # yeni kare yok (timeout)
+            if kayit is None:                 # yeni kare yok (timeout / akış durdu)
+                # Kör dalış penceresindeysek son nişanı sürdür, GPS'e DÖNME.
+                if _kor_dalis_penceresi():
+                    if terminal_baslangic is None:
+                        terminal_baslangic = time.time()
+                        print(f"[LEAD] KÖR DALIŞ (akış durdu) — menzil ~"
+                              f"{menzil_onceki:.1f} m, son nişan sürdürülüyor")
+                    send_velocity(conn, *son_v_cmd)
+                    aras.drenaj(conn)
+                    m = _menzil_hesapla(get_plane_truth, aras.pos)
+                    if m is not None and m < cfg.VURUS_MENZIL:
+                        print(f"[LEAD] ✓ VURULDU (menzil {m:.2f} m)")
+                        return "vuruldu"
+                    if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
+                        print("[LEAD WARN] kör dalış süresi doldu — ıskalandı")
+                        return "kayip"
+                    time.sleep(0.02)
+                    continue
                 if (kayip_kare_esik is not None
                         and time.time() - son_kayit_wall > 1.0):
                     print("[LEAD WARN] kare akışı kesildi (>1 s) — temas kaybı")
@@ -119,7 +162,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
                      "mod": aras.mode}
 
-            # menzil_gercek + kapanma hızı — SADECE LOG (güdüme girmez)
+            # menzil_gercek + kapanma hızı + terminal durum takibi
             if aras.pos is not None and get_plane_truth is not None:
                 p = get_plane_truth()
                 if p is not None:
@@ -127,13 +170,36 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                                   + (p["y"] - aras.pos[1]) ** 2
                                   + (p["z"] - aras.pos[2]) ** 2)
                     satir["menzil_gercek_m"] = round(d, 3)
+                    kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
                     if menzil_onceki is not None and stamp and t_menzil_onceki \
                             and stamp > t_menzil_onceki:
                         satir["kapanma_hizi_ms"] = round(
                             -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
                     menzil_onceki, t_menzil_onceki = d, stamp
+                    # VURUŞ: hedefe fiziksel temas mesafesi
+                    if d < cfg.VURUS_MENZIL:
+                        satir["durum"] = "vuruldu"
+                        _satir(satir)
+                        print(f"[LEAD] ✓ VURULDU (menzil {d:.2f} m)")
+                        return "vuruldu"
 
-            if pose is None:                  # bu karede tespit yok → komut yok
+            if pose is None:                  # bu karede tespit yok
+                # Terminal kör dalış: son nişanı sürdür, GPS'e DÖNME.
+                if _kor_dalis_penceresi():
+                    if terminal_baslangic is None:
+                        terminal_baslangic = time.time()
+                        print(f"[LEAD] KÖR DALIŞ — hedef kadrajdan çıktı, menzil ~"
+                              f"{menzil_onceki:.1f} m, {cfg.TERMINAL_SURE:.1f} s sürdür")
+                    send_velocity(conn, *son_v_cmd)
+                    satir["durum"] = "kor_dalis"
+                    (satir["vx_cmd"], satir["vy_cmd"],
+                     satir["vz_cmd"], yaw_r) = son_v_cmd
+                    satir["yaw_cmd_deg"] = round(math.degrees(yaw_r), 1)
+                    _satir(satir)
+                    if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
+                        print("[LEAD WARN] kör dalış süresi doldu — ıskalandı")
+                        return "kayip"
+                    continue
                 satir["durum"] = "tespit_yok"
                 _satir(satir)
                 kayip_sayaci += 1
@@ -143,6 +209,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     return "kayip"
                 continue
             kayip_sayaci = 0                  # pose var → temas sürüyor
+            terminal_baslangic = None         # temas döndü → kör dalış sıfırla
 
             # bayat kare kapısı (duvar saati — aynı saat cinsinden ölçüm)
             gecikme = (time.time() - wall_recv) if wall_recv else 0.0
@@ -196,6 +263,9 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 mevcut_yaw = aras.attitude[2]
                 cmd = adapter.command(conn, res["u_govde"], res["yaw_hata"],
                                       aras.attitude, res["dt"], mevcut_yaw)
+                # kör dalışta sürdürülecek son nişan komutu
+                son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
+                             cmd["yaw_cmd"])
                 satir.update({
                     "vx_cmd": round(cmd["v_cmd"][0], 2),
                     "vy_cmd": round(cmd["v_cmd"][1], 2),

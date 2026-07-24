@@ -63,6 +63,13 @@ class Cfg:
     KP_YAW = 1.2
     YAW_HIZ_MAX = 90.0       # deg/s — agresif yaw quad'ı savurur, kamerayı bulandırır
     IVME_TAVAN = 4.0         # m/s² — >5 m/s²'de burun aşağı eğilir, kamera yere bakar
+    # ── terminal (kör dalış + vuruş) ──
+    # Son ~6 m'de hedef kadraj tepesinden çıkıp tespit kopuyor; GPS'e dönmek
+    # yerine son nişan komutunu kısa süre SÜRDÜR (çarpışmayı tamamla).
+    TERMINAL_MENZIL = _env_f("AVCI_IBVS_TERMINAL_MENZIL", 8.0)   # m; altında temas
+                                                                # koparsa kör dalış
+    TERMINAL_SURE   = _env_f("AVCI_IBVS_TERMINAL_SURE", 2.0)     # s; kör dalış süresi
+    VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 1.5)      # m; altı = VURULDU
 
 
 def cfg_copy():

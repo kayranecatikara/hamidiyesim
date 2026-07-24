@@ -94,6 +94,10 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
                                 cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M)
         status["son_sebep"] = sebep
+        if sebep == "vuruldu":
+            status["faz"] = "VURULDU"
+            print("[SUPERVISOR] ✓✓ HEDEF VURULDU — görev tamamlandı.")
+            return
         if sebep == "kayip":
             print("[SUPERVISOR] Görsel temas kesildi → GPS fazına dönülüyor")
             continue
