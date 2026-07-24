@@ -495,6 +495,18 @@ body {
     font-weight: 700;
 }
 
+/* === UÇUŞ SENARYOSU BUTONLARI & KLAVYE MANUEL === */
+.t-btn.scn-active {
+    background: rgba(239, 68, 68, 0.12);
+    border-left-color: var(--danger-red);
+    color: var(--danger-red);
+    font-weight: 700;
+}
+
+.joystick-knob {
+    transition: none;   /* klavye/tick güncellemelerinde gecikmesiz takip */
+}
+
 /* Bottom Panel */
 .bottom-panel {
     flex: 0 0 150px;

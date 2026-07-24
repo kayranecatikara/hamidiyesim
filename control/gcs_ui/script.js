@@ -231,12 +231,82 @@ function sendCommand(endpoint, logMsg) {
         .catch(err => addLog('ERR', `Bağlantı Hatası: ${err}`, 'crit'));
 }
 
-document.getElementById('btn-plane-square').addEventListener('click', () => {
-    sendCommand('plane/square', 'Kare Çiz Görevi');
-    // Hız slider bloğunu göster
+// === UÇUŞ SENARYOLARI (kare / daire / agresif) ===
+// Her buton: takeoff + desen. Aktif senaryonun butonuna tekrar basmak durdurur.
+// Manuel mod butonu ise uçuşu klavye kontrolüne devralır.
+const SCN_LABELS = {
+    square:     '▢ KARE ÇİZ',
+    circle:     '◯ DAİRE ÇİZ',
+    aggressive: '⚡ AGRESİF UÇUŞ',
+};
+const scnButtons = {
+    square:     document.getElementById('btn-scn-square'),
+    circle:     document.getElementById('btn-scn-circle'),
+    aggressive: document.getElementById('btn-scn-aggressive'),
+};
+let activeScenario = null;
+
+function markScenarioButtons() {
+    for (const [name, btn] of Object.entries(scnButtons)) {
+        if (!btn) continue;
+        if (name === activeScenario) {
+            btn.classList.add('scn-active');
+            btn.textContent = '⛔ DURDUR — ' + SCN_LABELS[name].slice(2);
+        } else {
+            btn.classList.remove('scn-active');
+            btn.textContent = SCN_LABELS[name];
+        }
+    }
+    // Hız slider'ı yalnızca bir senaryo uçarken anlamlı
     const speedBlock = document.getElementById('plane-speed-block');
-    if (speedBlock) speedBlock.classList.remove('hidden');
-});
+    if (speedBlock) speedBlock.classList.toggle('hidden', !activeScenario);
+}
+
+async function startScenario(name) {
+    if (manualActive) await exitManualMode();
+    addLog('CMD', 'Senaryo başlatılıyor: ' + SCN_LABELS[name] + ' (takeoff + desen)', 'info');
+    try {
+        const res = await fetch('/api/command/plane/scenario/' + name, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            activeScenario = name;
+            addLog('SYS', '✓ ' + SCN_LABELS[name] + ' aktif — araç kalkış yapıp desene başlayacak.', 'success');
+        } else {
+            addLog('ERR', 'Senaryo hatası: ' + data.message, 'crit');
+        }
+    } catch (e) {
+        addLog('ERR', 'Bağlantı hatası: ' + e, 'crit');
+    }
+    markScenarioButtons();
+}
+
+async function stopScenario() {
+    if (activeScenario) addLog('SYS', 'Senaryo durduruluyor: ' + SCN_LABELS[activeScenario], 'warn');
+    activeScenario = null;
+    markScenarioButtons();
+    try { await fetch('/api/command/plane/stop_scenario', { method: 'POST' }); } catch (e) {}
+}
+
+for (const [name, btn] of Object.entries(scnButtons)) {
+    if (!btn) continue;
+    btn.addEventListener('click', () => {
+        if (activeScenario === name) stopScenario();
+        else startScenario(name);
+    });
+}
+
+// Senaryo süreci arka planda kendi kendine sonlanırsa butonları senkronize et
+setInterval(async () => {
+    try {
+        const res = await fetch('/api/scenario_status');
+        const d = await res.json();
+        const backend = d.active ? d.name : null;
+        if (backend !== activeScenario) {
+            activeScenario = backend;
+            markScenarioButtons();
+        }
+    } catch (e) { /* sessiz */ }
+}, 2000);
 
 // === UÇAK THROTTLE SLIDER ===
 const planeThrSlider = document.getElementById('plane-thr-slider');
@@ -261,138 +331,137 @@ if (planeThrSlider) {
     });
 }
 
-// === MANUEL MOD & JOYSTICK ===
+// === MANUEL MOD — JOYSTICK (mouse) + KLAVYE (W/S: pitch, A/D: roll, L/I: gaz) ===
+// Basıldığında aktif senaryo durur, uçuş FBWA'da devralınır.
 const btnManual = document.getElementById('btn-plane-manual');
 const manualBlock = document.getElementById('manual-control-block');
 const joystickBase = document.getElementById('joystick-base');
 const joystickKnob = document.getElementById('joystick-knob');
 
 let manualActive = false;
-let jsX = 0; // -1..1 (roll / aileron)
-let jsY = 0; // -1..1 (pitch / elevator)
-let throttle = 0; // 0..100
+let keysDown = {};
+let mAil = 0;      // -1..1 yumuşatılmış roll komutu
+let mElv = 0;      // -1..1 yumuşatılmış pitch komutu
+let mThr = 60;     // % gaz — cruise'dan başlar (havada devralınca stall olmasın)
+let manualLoop = null;
+let manualSendTick = 0;
 let isDragging = false;
-let sendInterval = null;
+let jsAil = 0;     // -1..1 joystick hedefi (sürükleme sırasında)
+let jsElv = 0;
 
 btnManual.addEventListener('click', async () => {
-    if (!manualActive) {
-        // Manuel mod AÇ
-        btnManual.textContent = '⏳ BAĞLANIYOR...';
-        btnManual.disabled = true;
-        addLog('SYS', 'Kare scripti durduruluyor, Plane MANUAL moda alınıyor...', 'warn');
-        
-        try {
-            const res = await fetch('/api/command/plane/start_manual', { method: 'POST' });
-            const data = await res.json();
-            if (data.status === 'success') {
-                manualActive = true;
-                manualBlock.classList.remove('hidden');
-                btnManual.textContent = '✖ MANUEL KAPAT';
-                btnManual.style.borderLeftColor = 'var(--danger-red)';
-                addLog('SYS', 'Manuel Mod AKTİF! Joystick ve W tuşu aktive edildi.', 'warn');
-                sendInterval = setInterval(sendManualCommand, 100); // 10 Hz
-            } else {
-                addLog('ERR', 'Manuel mod başlatılamadı: ' + data.message, 'crit');
-            }
-        } catch(e) {
-            addLog('ERR', 'Bağlantı hatası: ' + e, 'crit');
-        }
-        btnManual.disabled = false;
-    } else {
-        // Manuel mod KAPAT
-        manualActive = false;
-        manualBlock.classList.add('hidden');
-        btnManual.textContent = 'MANUEL MOD';
-        btnManual.style.borderLeftColor = '';
-        clearInterval(sendInterval);
-        jsX = 0; jsY = 0; throttle = 0;
-        updateJoystickUI(0, 0);
-        addLog('SYS', 'Manuel Mod KAPALI. Throttle sıfırlandı.', 'info');
-        fetch('/api/command/plane/stop_manual', { method: 'POST' }).catch(() => {});
-    }
+    if (!manualActive) await enterManualMode();
+    else await exitManualMode();
 });
 
-// Joystick Geometry
-function getJoystickPos(e) {
-    const rect = joystickBase.getBoundingClientRect();
-    const cx = rect.left + rect.width  / 2;
-    const cy = rect.top  + rect.height / 2;
-    const r  = rect.width / 2;
-    let dx = ((e.clientX || e.touches[0].clientX) - cx);
-    let dy = ((e.clientY || e.touches[0].clientY) - cy);
-    // Sınırla
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist > r) { dx = dx/dist*r; dy = dy/dist*r; }
-    return { dx, dy, r };
+async function enterManualMode() {
+    btnManual.textContent = '⏳ BAĞLANIYOR...';
+    btnManual.disabled = true;
+    addLog('SYS', 'Aktif senaryo durduruluyor, uçuş devralınıyor (FBWA)...', 'warn');
+    activeScenario = null;
+    markScenarioButtons();
+
+    try {
+        const res = await fetch('/api/command/plane/start_manual', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            manualActive = true;
+            keysDown = {}; mAil = 0; mElv = 0; mThr = 60;
+            isDragging = false; jsAil = 0; jsElv = 0;
+            setKnob(0, 0);
+            manualBlock.classList.remove('hidden');
+            btnManual.textContent = '✖ MANUEL KAPAT';
+            btnManual.style.borderLeftColor = 'var(--danger-red)';
+            addLog('SYS', 'Manuel Mod AKTİF — W/S: pitch, A/D: roll, L: hızlan, I: yavaşla', 'warn');
+            manualLoop = setInterval(manualTick, 50); // 20 Hz iç döngü
+        } else {
+            btnManual.textContent = '🕹 MANUEL MOD';
+            addLog('ERR', 'Manuel mod başlatılamadı: ' + data.message, 'crit');
+        }
+    } catch(e) {
+        btnManual.textContent = '🕹 MANUEL MOD';
+        addLog('ERR', 'Bağlantı hatası: ' + e, 'crit');
+    }
+    btnManual.disabled = false;
 }
 
-function updateJoystickUI(dx, dy) {
+async function exitManualMode() {
+    manualActive = false;
+    clearInterval(manualLoop);
+    manualLoop = null;
+    isDragging = false; jsAil = 0; jsElv = 0;
+    joystickKnob.classList.remove('active');
+    setKnob(0, 0);
+    manualBlock.classList.add('hidden');
+    btnManual.textContent = '🕹 MANUEL MOD';
+    btnManual.style.borderLeftColor = '';
+    addLog('SYS', 'Manuel Mod KAPALI.', 'info');
+    try { await fetch('/api/command/plane/stop_manual', { method: 'POST' }); } catch(e) {}
+}
+
+// --- Joystick (mouse/touch) ---
+function joystickEventPos(e) {
+    const rect = joystickBase.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const r = rect.width / 2;
+    const px = (e.clientX !== undefined) ? e.clientX : e.touches[0].clientX;
+    const py = (e.clientY !== undefined) ? e.clientY : e.touches[0].clientY;
+    let dx = px - cx, dy = py - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > r) { dx = dx / dist * r; dy = dy / dist * r; }
+    jsAil = +(dx / r).toFixed(3);   // -1..1
+    jsElv = -(dy / r).toFixed(3);   // -1..1 (ekran y'si ters: yukarı = burun yukarı)
+}
+
+function setKnob(ail, elv) {
     const r = joystickBase.getBoundingClientRect().width / 2;
-    joystickKnob.style.left = `calc(50% + ${dx}px)`;
-    joystickKnob.style.top  = `calc(50% + ${dy}px)`;
-    jsX = +(dx / r).toFixed(3);  // -1..1
-    jsY = -(dy / r).toFixed(3);  // -1..1 (y ekranı ters)
-    document.getElementById('js-x').textContent = jsX.toFixed(2);
-    document.getElementById('js-y').textContent = jsY.toFixed(2);
+    joystickKnob.style.left = `calc(50% + ${ail * r}px)`;
+    joystickKnob.style.top  = `calc(50% + ${-elv * r}px)`;
 }
 
 joystickBase.addEventListener('mousedown', (e) => {
     if (!manualActive) return;
     isDragging = true;
     joystickKnob.classList.add('active');
-    const pos = getJoystickPos(e);
-    updateJoystickUI(pos.dx, pos.dy);
+    joystickEventPos(e);
 });
-
 window.addEventListener('mousemove', (e) => {
     if (!isDragging || !manualActive) return;
-    const pos = getJoystickPos(e);
-    updateJoystickUI(pos.dx, pos.dy);
+    joystickEventPos(e);
 });
-
 window.addEventListener('mouseup', () => {
     if (!isDragging) return;
     isDragging = false;
+    jsAil = 0; jsElv = 0;           // bırakınca merkeze dön
     joystickKnob.classList.remove('active');
-    // Joystick merkeze dön
-    updateJoystickUI(0, 0);
 });
-
-// Touch support
 joystickBase.addEventListener('touchstart', (e) => {
     if (!manualActive) return;
     isDragging = true;
     joystickKnob.classList.add('active');
-    const pos = getJoystickPos(e);
-    updateJoystickUI(pos.dx, pos.dy);
+    joystickEventPos(e);
 }, { passive: true });
-
 window.addEventListener('touchmove', (e) => {
     if (!isDragging || !manualActive) return;
-    const pos = getJoystickPos(e);
-    updateJoystickUI(pos.dx, pos.dy);
+    joystickEventPos(e);
 }, { passive: true });
-
 window.addEventListener('touchend', () => {
     if (!isDragging) return;
     isDragging = false;
+    jsAil = 0; jsElv = 0;
     joystickKnob.classList.remove('active');
-    updateJoystickUI(0, 0);
 });
 
-// W key Throttle
-const keysDown = {};
+// --- Klavye ---
+const MANUAL_KEYS = ['w', 'a', 's', 'd', 'l', 'i'];
 
 window.addEventListener('keydown', (e) => {
     if (!manualActive) return;
-    keysDown[e.key.toLowerCase()] = true;
-    if (e.key.toLowerCase() === 'w') {
-        throttle = Math.min(100, throttle + 5);
-        document.getElementById('js-thr').textContent = throttle;
-    }
-    if (e.key.toLowerCase() === 's') {  // S ile gaz kıs
-        throttle = Math.max(0, throttle - 5);
-        document.getElementById('js-thr').textContent = throttle;
+    const k = e.key.toLowerCase();
+    if (MANUAL_KEYS.includes(k)) {
+        keysDown[k] = true;
+        e.preventDefault();
     }
 });
 
@@ -400,12 +469,39 @@ window.addEventListener('keyup', (e) => {
     keysDown[e.key.toLowerCase()] = false;
 });
 
-function sendManualCommand() {
+function manualTick() {
     if (!manualActive) return;
-    // MAVLink PWM aralığı: 1000-2000, merkez 1500
-    const aileron  = Math.round(1500 + jsX * 500);   // Roll
-    const elevator = Math.round(1500 + jsY * 500);   // Pitch
-    const thr      = Math.round(1000 + throttle * 10); // Throttle (0%=1000, 100%=2000)
+    // Hedef yüzey komutu: joystick sürükleniyorsa joystick, değilse klavye
+    let tAil, tElv;
+    if (isDragging) {
+        tAil = jsAil;
+        tElv = jsElv;
+    } else {
+        tAil = (keysDown['d'] ? 1 : 0) - (keysDown['a'] ? 1 : 0);
+        tElv = (keysDown['w'] ? 1 : 0) - (keysDown['s'] ? 1 : 0);
+    }
+    // Yumuşatma: ani PWM sıçraması yerine ~0.3s'de hedefe ulaşır
+    mAil += (tAil - mAil) * 0.25;
+    mElv += (tElv - mElv) * 0.25;
+    if (tAil === 0 && Math.abs(mAil) < 0.02) mAil = 0;
+    if (tElv === 0 && Math.abs(mElv) < 0.02) mElv = 0;
+    // L/I: kalıcı gaz seviyesi — basılı tutuldukça artar/azalır
+    if (keysDown['l']) mThr = Math.min(100, mThr + 1);
+    if (keysDown['i']) mThr = Math.max(0, mThr - 1);
+
+    setKnob(mAil, mElv);   // topuz hem joystick hem klavye girişini yansıtır
+    document.getElementById('js-x').textContent = mAil.toFixed(2);
+    document.getElementById('js-y').textContent = mElv.toFixed(2);
+    document.getElementById('js-thr').textContent = Math.round(mThr);
+
+    // PWM'e çevir — FBWA: tam sapma = maks yatış/pitch açı hedefi
+    const aileron  = Math.round(1500 + mAil * 450);
+    const elevator = Math.round(1500 + mElv * 450);   // yüksek PWM = burun yukarı (SITL'de doğrulandı)
+    const thr      = Math.round(1000 + mThr * 10);
+
+    // Sunucuya 10 Hz gönder (iç döngü 20 Hz — bir atlayarak)
+    manualSendTick++;
+    if (manualSendTick % 2) return;
     fetch('/api/command/plane/manual', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
