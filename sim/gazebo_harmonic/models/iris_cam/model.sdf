@@ -879,5 +879,220 @@
 
     </plugin>
 
+    <!-- ================================================================ -->
+    <!-- TARET + AG FIRLATICI  (interceptor_research'ten entegre edildi)   -->
+    <!-- Avci drone'un burnuna 2 eksenli taret; namludan ag atilir.        -->
+    <!-- Kaynak: interceptor_research/models/interceptors/avci_net_*       -->
+    <!-- ================================================================ -->
+
+    <!-- Taret tabani: govdeye (base_link) sabit. Drone'un YATAY MERKEZINDE
+         (x=0, y=0) ve UST bolumunde (z=0.05). -->
+    <link name="turret_base_link">
+      <pose>0.0 0.0 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>4e-5</iyy><iyz>0</iyz>
+          <izz>4e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_base_collision">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_base_visual">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.15 0.15 0.18 1</ambient>
+          <diffuse>0.15 0.15 0.18 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_mount_joint" type="fixed">
+      <parent>iris_with_standoffs::base_link</parent>
+      <child>turret_base_link</child>
+    </joint>
+
+    <!-- 1. eksen: PAN (yaw, Z ekseni), +-100 derece -->
+    <link name="turret_yaw_link">
+      <pose>0.0 0.0 0.08 0 0 0</pose>
+      <inertial>
+        <mass>0.08</mass>
+        <inertia>
+          <ixx>3e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>3e-5</iyy><iyz>0</iyz>
+          <izz>3e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_yaw_collision">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+      </collision>
+      <visual name="turret_yaw_visual">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+        <material>
+          <ambient>0.25 0.25 0.28 1</ambient>
+          <diffuse>0.25 0.25 0.28 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_yaw_joint" type="revolute">
+      <parent>turret_base_link</parent>
+      <child>turret_yaw_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <!-- PAN: 0..360 derece (tam tur) -->
+          <lower>0</lower>
+          <upper>6.28319</upper>
+          <effort>25.0</effort>
+          <velocity>6.0</velocity>
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- 2. eksen: TILT (pitch). Eksen 0 -1 0: +aci YUKARI kaldirir.
+         0..180 derece: 0=ileri (sase ile PARALEL), 90=tam yukari,
+         180=geri (sase ile paralel). Sasenin ALTINA bakmaz. -->
+    <link name="turret_pitch_link">
+      <pose>0.0 0.0 0.095 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>6e-5</iyy><iyz>0</iyz>
+          <izz>6e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_pitch_collision">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_pitch_visual">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.35 0.35 0.38 1</ambient>
+          <diffuse>0.35 0.35 0.38 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ============ AVCI ÖN KAMERASI (tarete entegre) ============ -->
+      <!-- Kamera taretin pitch linkinde: taret pan/tilt yaptıkça kamera da
+           aynı yöne bakar (namlu nereye nişan alırsa kamera oraya bakar).
+           Optik eksen +X (link ileri yönü). Tilt=0 iken düz ileri; taret
+           yukarı bakınca kamera da yukarı bakar.
+           Topic iris_cam/image AYNI kaldı (gcs_server bunu okuyor). -->
+      <sensor name="camera" type="camera">
+        <gz_frame_id>turret_pitch_link</gz_frame_id>
+        <!-- Namlu ucunu (~x=0.11) gececek sekilde biraz onde ki atis
+             mekanizmasi kadraja girmesin. -->
+        <pose>0.12 0 0.035 0 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>1</visualize>
+        <topic>iris_cam/image</topic>
+        <camera>
+          <horizontal_fov>2.18166</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>1000</far>
+          </clip>
+        </camera>
+      </sensor>
+    </link>
+
+    <joint name="turret_pitch_joint" type="revolute">
+      <parent>turret_yaw_link</parent>
+      <child>turret_pitch_link</child>
+      <axis>
+        <!-- 0 -1 0: pozitif aci namluyu YUKARI kaldirir -->
+        <xyz>0 -1 0</xyz>
+        <limit>
+          <!-- 0 (ileri, sase paralel) .. 180 (geri, sase paralel); hep yatay ve uzeri -->
+          <lower>0</lower>
+          <upper>3.14159</upper>
+          <effort>25.0</effort>
+          <velocity>6.0</velocity>
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- Namlu: agin cikis noktasi. Ekseni +X (govde ileri). -->
+    <link name="muzzle_link">
+      <pose degrees="true">0.06 0.0 0.095 0 90 0</pose>
+      <inertial>
+        <mass>0.07</mass>
+        <inertia>
+          <ixx>2e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>2e-5</iyy><iyz>0</iyz>
+          <izz>1e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="muzzle_collision">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+      </collision>
+      <visual name="muzzle_visual">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+        <material>
+          <ambient>0.7 0.25 0.05 1</ambient>
+          <diffuse>0.7 0.25 0.05 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="muzzle_joint" type="fixed">
+      <parent>turret_pitch_link</parent>
+      <child>muzzle_link</child>
+    </joint>
+
+    <!-- ================ Taret kontrolu ================ -->
+    <!-- Aci komutu:
+         gz topic -t /model/iris_with_ardupilot/joint/turret_yaw_joint/0/cmd_pos
+                  -m gz.msgs.Double -p 'data: 0.5' -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>turret_yaw_joint</joint_name>
+      <p_gain>8.0</p_gain>
+      <i_gain>1.0</i_gain>
+      <d_gain>0.4</d_gain>
+      <i_max>2.0</i_max>
+      <i_min>-2.0</i_min>
+      <cmd_max>20.0</cmd_max>
+      <cmd_min>-20.0</cmd_min>
+    </plugin>
+
+    <plugin filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>turret_pitch_joint</joint_name>
+      <!-- Tilt ekseni yercekimine + ag yukune karsi calisir; kazanclar buyuk. -->
+      <p_gain>30.0</p_gain>
+      <i_gain>25.0</i_gain>
+      <d_gain>1.5</d_gain>
+      <i_max>15.0</i_max>
+      <i_min>-15.0</i_min>
+      <cmd_max>20.0</cmd_max>
+      <cmd_min>-20.0</cmd_min>
+    </plugin>
+
+    <!-- ================ Ag firlatici ================ -->
+    <!-- Agi namluya kilitler ve TEK komutla ayni fizik adiminda atar.
+         Ates:  gz topic -t /avci/net/fire -m gz.msgs.Double -p 'data: 20' -->
+    <plugin filename="NetLauncherPlugin" name="avci::NetLauncherPlugin">
+      <muzzle_link>muzzle_link</muzzle_link>
+      <net_model>net_cone</net_model>
+      <net_link>net_link</net_link>
+      <fire_topic>/avci/net/fire</fire_topic>
+      <muzzle_speed>20.0</muzzle_speed>
+      <!-- muzzle_link pitch=90 ile duruyor; kendi +Z'si govde +X'ine bakar -->
+      <launch_axis>0 0 1</launch_axis>
+    </plugin>
+
   </model>
 </sdf>

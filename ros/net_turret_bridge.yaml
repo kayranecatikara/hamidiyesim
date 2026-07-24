@@ -1,0 +1,43 @@
+# =============================================================
+#  ROS 2 <-> Gazebo Harmonic köprüsü — Ağ atma + taret mekanizması
+# =============================================================
+# ros_gz_bridge parameter_bridge bu dosyayı okur ve aşağıdaki topic'leri
+# iki dünya arasında köprüler. Böylece ağ/taret mekanizması TAMAMEN ROS 2
+# üzerinden yönetilir; Gazebo tarafındaki gz-transport topic'leri gizli kalır.
+#
+# Çalıştırma (tek başına):
+#   ros2 run ros_gz_bridge parameter_bridge \
+#        --ros-args -p config_file:=$(pwd)/ros/net_turret_bridge.yaml
+# veya launch ile:  ros2 launch ros/net_turret.launch.py
+#
+# direction:
+#   ROS_TO_GZ  : ROS'tan yayınla -> Gazebo'ya git (komut)
+#   GZ_TO_ROS  : Gazebo'dan gelen -> ROS'a (geri bildirim)
+
+# --- Taret PAN (yaw) açı komutu [radyan] ---
+- ros_topic_name: "/avci/turret/yaw_cmd"
+  gz_topic_name: "/model/iris_with_ardupilot/joint/turret_yaw_joint/0/cmd_pos"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+
+# --- Taret TILT (pitch) açı komutu [radyan] ---
+- ros_topic_name: "/avci/turret/pitch_cmd"
+  gz_topic_name: "/model/iris_with_ardupilot/joint/turret_pitch_joint/0/cmd_pos"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+
+# --- Ağı ateşle: çıkış hızı [m/s] ---
+- ros_topic_name: "/avci/net/fire"
+  gz_topic_name: "/avci/net/fire"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+
+# --- Yakalama geri bildirimi: yakalanan modelin adı ---
+- ros_topic_name: "/avci/net/captured"
+  gz_topic_name: "/avci/net/captured"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS

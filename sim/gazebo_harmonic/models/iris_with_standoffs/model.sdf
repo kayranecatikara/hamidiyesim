@@ -233,29 +233,10 @@
         </material>
       </visual>
 
-      <!-- Avcı drone ön kamerası (chase_algorithm ile eşleşir):
-           FOV 125° (2.18166 rad), 25° yukarı tilt (-0.4363 rad).
-           gz-transport topic: iris_cam/image -->
-      <sensor name="camera" type="camera">
-        <gz_frame_id>base_link</gz_frame_id>
-        <pose>0.10 0 0.05 0 -0.4363 0</pose>
-        <always_on>1</always_on>
-        <update_rate>30</update_rate>
-        <visualize>1</visualize>
-        <topic>iris_cam/image</topic>
-        <camera>
-          <horizontal_fov>2.18166</horizontal_fov>
-          <image>
-            <width>640</width>
-            <height>480</height>
-            <format>R8G8B8</format>
-          </image>
-          <clip>
-            <near>0.05</near>
-            <far>1000</far>
-          </clip>
-        </camera>
-      </sensor>
+      <!-- NOT: Avcı ön kamerası artık burada DEĞİL. Tarete entegre edildi;
+           kamera taretin pitch linkine taşındı ki taret nereye dönerse kamera
+           da oraya baksın. Bkz. iris_cam/model.sdf -> turret_pitch_link içindeki
+           <sensor name="camera"> (aynı topic: iris_cam/image). -->
     </link>
     <link name='imu_link'>
       <inertial>

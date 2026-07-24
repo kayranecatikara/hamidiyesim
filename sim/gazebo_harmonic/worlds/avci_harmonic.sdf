@@ -27,6 +27,21 @@
       name="gz::sim::systems::NavSat">
     </plugin>
 
+    <!-- Ag temas sensoru icin (net_cone::net_contact) -->
+    <plugin filename="gz-sim-contact-system"
+      name="gz::sim::systems::Contact">
+    </plugin>
+
+    <!-- Ag YAKALAMA: atilan ag hedef Talon'a degince onu aga kilitler.
+         (interceptor_research'ten entegre; hedef = mini_talon) -->
+    <plugin filename="NetCapturePlugin" name="avci::NetCapturePlugin">
+      <net_model>net_cone</net_model>
+      <net_link>net_link</net_link>
+      <target_model>mini_talon</target_model>
+      <capture_topic>/avci/net/captured</capture_topic>
+      <min_speed>1.0</min_speed>
+    </plugin>
+
     <scene>
       <ambient>1.0 1.0 1.0</ambient>
       <background>0.8 0.8 0.8</background>
@@ -118,6 +133,18 @@
     <include>
       <uri>model://iris_cam</uri>
       <pose degrees="true">0 0 0.195 0 0 90</pose>
+    </include>
+
+    <!-- Ag konisi: avci drone'un namlusuna (muzzle_link) NetLauncherPlugin
+         tarafindan kilitlenir. Baslangicta namlu ucunda dursun diye poz,
+         iris'in kalkis pozuna (0 0 0.195, yaw 90) gore muzzle dunya pozudur.
+         Taret merkez-uste tasindi: govde muzzle (0.06, 0, 0.095),
+         yaw 90 -> dunya (0, 0.06, 0.29).
+         Ag +X'e acilir; yaw 90 ile agiz govde-ileri (+dunya Y) yonune bakar. -->
+    <include>
+      <uri>model://net_cone</uri>
+      <name>net_cone</name>
+      <pose degrees="true">0 0.06 0.29 0 0 90</pose>
     </include>
 
 

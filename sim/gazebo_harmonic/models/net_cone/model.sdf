@@ -1,0 +1,134 @@
+<?xml version="1.0" ?>
+<!--
+  1. asama ag modeli: tek rijit koni.
+
+  Gercek bir orgu degil; "yakalama hacmi" soyutlamasi. Koninin genis agzi +X'e
+  (ucus yonune) bakar, tepesi geride kalir - atilan bir agin acilmis halini
+  temsil eder. Temas ettigi hedefi NetCapturePlugin kilitler.
+
+  2. asama (models/net_launchers/net_mesh/) ayni arayuzu sunacak:
+    - ayni link adi        : net_link
+    - ayni contact sensor  : net_contact
+    - ayni topic'ler       : /net_cone/... yerine /net_mesh/...
+  boylece gorev kodu degismeden orgu aga gecilebilir.
+
+  Kutle butcesi: docs/SECIM_KARARI.md -> ag 0.30 kg (ag + 4 kose agirligi)
+-->
+<sdf version="1.9">
+  <model name="net_cone">
+
+    <!--
+      Koordinat sozlesmesi: net_link'in ORIJINI koninin TEPESI (arka uc).
+      Koni oradan +X yonunde acilir. Boylece modeli namlunun ucuna koymak
+      yeterli - agiz kendiliginden ileri bakar.
+    -->
+    <link name="net_link">
+      <inertial>
+        <mass>0.30</mass>
+        <!-- Ince kabuk koni yaklasimi; tam dogru degil ama menzil/balistik
+             icin yeterli. Agirlik merkezi agza dogru kayik. -->
+        <pose>0.15 0 0 0 0 0</pose>
+        <inertia>
+          <ixx>0.0012</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0009</iyy>
+          <iyz>0</iyz>
+          <izz>0.0009</izz>
+        </inertia>
+      </inertial>
+
+      <!--
+        Koni varsayilan olarak +Z'ye bakar (tepe +Z, taban -Z).
+        pitch=-90 -> +Z ekseni -X'e doner, yani TEPE geride, GENIS AGIZ +X'te.
+        Merkez x=+0.125 -> tepe x=0 (link orijini), agiz x=0.25.
+        radius 0.15 m -> 0.3 m agiz capi (taban daraltildi: drone yerdeyken
+        koni yere degmesin diye 0.35'ten 0.15'e dusuruldu)
+      -->
+      <collision name="net_collision">
+        <pose degrees="true">0.125 0 0 0 -90 0</pose>
+        <geometry>
+          <cone>
+            <radius>0.15</radius>
+            <length>0.25</length>
+          </cone>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <!-- Ag yumusak: hedefi sekmeden yakalamali -->
+              <max_vel>0.1</max_vel>
+              <min_depth>0.005</min_depth>
+            </ode>
+          </contact>
+          <friction>
+            <ode>
+              <mu>1.5</mu>
+              <mu2>1.5</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+
+      <visual name="net_visual">
+        <pose degrees="true">0.125 0 0 0 -90 0</pose>
+        <geometry>
+          <cone>
+            <radius>0.15</radius>
+            <length>0.25</length>
+          </cone>
+        </geometry>
+        <material>
+          <ambient>0.9 0.35 0.05 0.55</ambient>
+          <diffuse>0.9 0.35 0.05 0.55</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+        <transparency>0.45</transparency>
+      </visual>
+
+      <!-- Yakalama tespiti: NetCapturePlugin bu sensoru dinler -->
+      <sensor name="net_contact" type="contact">
+        <always_on>true</always_on>
+        <!-- Fizik adimiyla ayni hiz: 20 m/s'de 200 Hz ornekleme (5 ms = 10 cm)
+             30 cm'lik hedefte temasi kacirabiliyordu. -->
+        <update_rate>1000</update_rate>
+        <contact>
+          <collision>net_collision</collision>
+        </contact>
+      </sensor>
+    </link>
+
+    <!--
+      Ates edildikten sonra agin havada surtunmeyle yavaslamasi.
+      Genis agizli hafif bir cisim; menzili bu sinirliyor.
+      LiftDrag'i "sifir kaldirma, yuksek surukleme" ayariyla kullaniyoruz.
+    -->
+    <plugin filename="gz-sim-lift-drag-system"
+      name="gz::sim::systems::LiftDrag">
+      <a0>0.0</a0>
+      <cla>0.0</cla>
+      <cda>0.30</cda>
+      <cma>0.0</cma>
+      <alpha_stall>1.5708</alpha_stall>
+      <cla_stall>0.0</cla_stall>
+      <cda_stall>0.30</cda_stall>
+      <cma_stall>0.0</cma_stall>
+      <cp>0.15 0 0</cp>
+      <!--
+        DIKKAT - geometriyle kasitli uyumsuzluk:
+        Koninin agiz alani 0.385 m^2 ama surukleme alani 0.10 m^2 verildi.
+        Sebep: gercek ag tabancasi TOPLU bir paket atar, ag hedefe yakin acilir.
+        Tam acik 0.385 m^2 ile 18 m/s'de 90 N direnc cikiyor ve ag 4.3 m'de
+        duruyordu (olculdu) - DroneCatcher'in 20 m menzili imkansiz olurdu.
+        Bu yuzden GEOMETRI acik (yakalama hacmi icin), AERODINAMIK toplu paket
+        gibi modellendi. 2. asamada (net_mesh) acilma gercekten modellenecek.
+      -->
+      <area>0.10</area>
+      <air_density>1.2041</air_density>
+      <forward>1 0 0</forward>
+      <upward>0 0 1</upward>
+      <link_name>net_link</link_name>
+    </plugin>
+
+  </model>
+</sdf>
