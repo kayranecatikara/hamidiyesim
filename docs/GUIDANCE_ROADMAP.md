@@ -98,29 +98,54 @@ görsel hat sadece vel+yaw (strike'ın `_TYPEMASK_VEL_YAW` deseni).
 - Pürüz: `process_iris_frame`'de det'e **frame boyutu** eklenmeli (piksel→açı
   normalizasyonu için).
 
-### Faz 3 — Görsel güdüm (IBVS)
-- `control/guidance/visual_guidance.py`:
-  - `get_detection()` → bbox → piksel hatası `(cx−320, cy−240)`.
-  - Intrinsics ile açısal hata: `bearing = atan((cx−cx0)/fx)`, `elev = atan((cy−cy0)/fy)`
-    (25° tilt telafisiyle).
-  - **Yaw + yanal + dikey hız** komutu: hedefi kadraj merkezine çeken IBVS kontrol.
-  - **Menzil (derinlik):** bbox genişliğinden *göreli* yaklaşma
-    (`menzil ∝ fx·gerçek_genişlik / bbox_w`), **son bilinen GPS mesafesi prior**
-    olarak — saf bbox metrik derinlik vermez (hedef açısına göre değişir).
-  - Drone'a **hız setpoint** (strike'ın `_send_velocity` deseni).
-  - iris **yaw** gerekli (bbox bearing → dünya bearing): `telemetry_state["iris"]["yaw"]`
-    (callback yaw'ı düşürüyor — supervisor state'ten doğrudan alır).
+### Faz 3 — Görsel güdüm (IBVS lead pursuit v2) — UYGULANDI (2026-07-23)
+Eski bbox-merkezleme IBVS'i (`visual_guidance.py`) ve supervisor iskeleti KALDIRILDI;
+yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
+- `guidance_core.py` (platformdan bağımsız, Adım 1-8): `d = burun−kuyruk` gövde
+  projeksiyonu a, kanat projeksiyonu b → `olcek = sqrt(a² + (0.633·b)²)` (menzil
+  sadeleşir) → `yandanlik = a/olcek` → `lead = atan(K_LEAD·guven·kalite·yandanlik_f)`.
+  Kaydırma YÖN VEKTÖRÜ uzayında (FOV 125°'de piksel uzayı yanlış), kamera→gövde
+  dönüşümü 25° tilt ile tek fonksiyonda, LOS yükselti düzeltmesi
+  (`olcek_ham/sqrt(1+sin²eps)`, alttan yaklaşmada %23'e varan lead kaybını önler).
+  Sağlamlık: burun/kuyruk flip koruması, kalite kapısı (6→22.5m / 14→9.6m px),
+  deadband, kanat-ucu güven kapısı, çözümsüzlük işareti (çarpım>0.95).
+- `adapter_copter.py` (Adım 9, AKTİF): u_govde → dünya-NED, `v = V_KAPANMA·u_dunya`
+  + ivme rampası (4 m/s² — üstünde burun eğimi kamerayı yere baktırır) + slew-limitli
+  yaw. Komut yolu `common.send_velocity` (SET_POSITION_TARGET_LOCAL_NED hız+yaw).
+  **SET_ATTITUDE_TARGET kullanılmaz** — multirotorda attitude komutu yanlış araç
+  (burun yukarı = tırmanış değil geri yavaşlama); gaz/eğim ArduCopter'ın işi.
+- `adapter_fixedwing.py` (STUB): sabit kanatta SET_ATTITUDE_TARGET + yatarak dönüş.
+  **Yedek gaz politikası (uygulanınca):** hover gazını SABİT VARSAYMA, GUIDED'da
+  havada tutup çıkış gazını ölçerek HOVER_GAZ belirle;
+  `gaz = clip(HOVER_GAZ/cos(egim) + irtifa_pid, 0.15, 0.85)`; `egim>60°` → komut
+  reddet + WARN. ArduPlane'de gaz TECS'indir; attitude hedefiyle TECS etkileşimi
+  uygulanmadan önce ayrıca incelenecek. ArduCopter'ın SET_ATTITUDE_TARGET gaz
+  alanını yorumlayışı sürüme/moda göre değişir — varsayma, SITL'de ölç.
+- `visual_lead.py`: OLAY GÜDÜMLÜ döngü (sabit Hz yok, kare geldikçe;
+  `detection_state.wait_new_pose`). dt = kare header.stamp farkı (duvar saati
+  DEĞİL); bayat kare kapısı (gecikme>0.12s → komut yok); GUIDED kontrolü; her
+  kare CSV log (`logs/visual_lead_*.csv`): ölçüm zinciri + komutlar + eps/duzeltme
+  + menzil_kestirim (SADECE log, güdüme girmez) + menzil_gercek + pitch_body +
+  kameranın dünyaya göre bakışı.
+- Kabul kriterleri: `tests/test_visual_lead.py` T1-T21 (menzil bağımsızlık, tilt
+  telafisi, görüş zarfı, yükselti düzeltmesi sınır testleri, adaptör sözleşmeleri).
 
-### Faz 4 — Supervisor: geçiş + fallback
-- `guidance_supervisor.py` state machine:
-  `GPS_GUIDANCE → (görsel kilit) → VISUAL_GUIDANCE → (kilit kaybı) → GPS_GUIDANCE`.
-- **GPS→görsel:** N ardışık kararlı tespit (conf>eşik + bbox makul boyut/merkeze
-  yakın). **VEYA** GPS sağlıksız (`_gps_noise_level` yüksek / `frozen` / temiz-bozuk
-  sapması büyük).
-- **görsel→GPS fallback:** M kare tespit yok → GPS'e dön (drone kör kalmasın).
-- `gcs_server`: yeni `/api/command/iris/start_intercept` (hibrit) — supervisor'ı
-  başlatır; UI'da aktif hat rozeti (GPS/görsel). Mevcut `start_chase`/`start_strike`
-  korunur.
+### Faz 4 — Supervisor: geçiş + fallback — UYGULANDI (2026-07-23)
+- `control/guidance/supervisor.py` `run_hybrid`:
+  `GPS (gps_approach) → (görsel kilit) → VISUAL (visual_lead) → (temas kaybı) → GPS ...`
+  stop_chase'e kadar döner.
+- **GPS→görsel:** KILIT_N=10 ardışık pose karesi (conf ≥ 0.5) **VE**
+  (handoff ≤40 m **VEYA** GPS DROPOUT). Menzil kapısının nedeni: görsel fazın
+  kapanma hızı sabit (V_KAPANMA) — uzaktan erken geçilirse hızlı hedefe yetişilemez;
+  jam/DROPOUT'ta menzil bilinemez, görsel temas tek başına yeter.
+- **görsel→GPS fallback:** KAYIP_M=20 ardışık pose'suz kare veya kare akışının
+  >1 s durması → `run_visual_lead` "kayip" döner, GPS fazı yeniden başlar.
+- `gcs_server`: `start_chase` VARSAYILAN olarak hibriti çalıştırır
+  (`AVCI_HYBRID=off` → saf GPS, `AVCI_GPS_LAW=v2` → eski chase). `/api/chase_status`
+  `supervisor` alanı döndürür: `{faz: GPS|VISUAL|DURDU, gecis_sayisi, kilit_sayac}`.
+  `start_visual` endpoint'i yalnız-görsel test için duruyor.
+- Test: `tests/test_visual_lead.py` T22 — geçiş zinciri
+  GPS→VISUAL→(kayıp)→GPS→VISUAL→durdur sahte fazlarla doğrulanır.
 
 ## 5. Kritik Tasarım Kararları (öneriler)
 

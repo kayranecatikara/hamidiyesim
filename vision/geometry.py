@@ -104,6 +104,103 @@ def talon_vertices():
     return _TALON_VERTS
 
 
+# ── Talon keypoint'leri (pose modeli için) ──
+KEYPOINT_NAMES = ["burun", "kuyruk", "sol_kanat", "sag_kanat", "sol_vtail", "sag_vtail"]
+KEYPOINT_FLIP_IDX = [0, 1, 3, 2, 5, 4]   # yatay flip augmentasyonunda sol↔sağ eşleşmesi
+
+_TALON_KPTS = None
+
+
+def talon_keypoints():
+    """Talon keypoint'leri (base_link frame, (6,3), KEYPOINT_NAMES sırasında).
+    Parça collision STL'lerinin uç noktalarından türetilir (mesh değişirse
+    kendiliğinden günceller), cache'li."""
+    global _TALON_KPTS
+    if _TALON_KPTS is None:
+        def part(name):
+            return _stl_vertices(
+                os.path.join(_MESH_DIR, f"mini_talon_{name}_collision.stl"))
+        fus = part("fuselage")
+        lw, rw = part("left_wing"), part("right_wing")
+        lt, rt = part("left_tail"), part("right_tail")
+        _TALON_KPTS = np.array([
+            fus[fus[:, 0].argmax()],                     # burun
+            fus[fus[:, 0].argmin()],                     # kuyruk (gövde arkası)
+            lw[lw[:, 1].argmax()],                       # sol kanat ucu
+            rw[rw[:, 1].argmin()],                       # sağ kanat ucu
+            lt[(np.abs(lt[:, 1]) + lt[:, 2]).argmax()],  # sol V-tail ucu
+            rt[(np.abs(rt[:, 1]) + rt[:, 2]).argmax()],  # sağ V-tail ucu
+        ])
+    return _TALON_KPTS
+
+
+_TALON_TRIS = None
+
+
+def talon_triangles():
+    """Tüm collision mesh üçgenleri (base_link frame, (M,3,3)), cache'li.
+    STL vertex dizilimi üçgen-sıralı olduğundan reshape yeterli."""
+    global _TALON_TRIS
+    if _TALON_TRIS is None:
+        _TALON_TRIS = talon_vertices().reshape(-1, 3, 3).astype(float)
+    return _TALON_TRIS
+
+
+# Işın kpt'ye varmadan bu mesafeden fazla önce mesh'e çarparsa örtülü say;
+# kpt'nin kendi yüzey üçgenlerinin sahte "çarpma" vermemesi için tampon.
+_OCCL_EPS = 0.02
+
+
+def occluded_mask(cam_pos, target_pos, R_t):
+    """Her keypoint için öz-örtülme testi (Möller–Trumbore, body frame'de).
+    Kameradan keypoint'e ışın, aracın kendi mesh'ine kpt'den _OCCL_EPS'ten
+    daha önce çarpıyorsa o keypoint ÖRTÜLÜdür. Dönüş: (K,) bool."""
+    cam_b = R_t.T @ (np.asarray(cam_pos, float) - np.asarray(target_pos, float))
+    kpts = talon_keypoints()
+    tris = talon_triangles()
+    v0 = tris[:, 0]
+    e1 = tris[:, 1] - v0
+    e2 = tris[:, 2] - v0
+    s = cam_b - v0
+    q = np.cross(s, e1)
+    out = np.zeros(len(kpts), bool)
+    for k, kp in enumerate(kpts):
+        d = kp - cam_b
+        t_max = float(np.linalg.norm(d))
+        if t_max < 1e-9:
+            continue
+        d = d / t_max
+        p = np.cross(d, e2)
+        det = (e1 * p).sum(1)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        u = (s * p).sum(1) * inv
+        v = (d * q).sum(1) * inv
+        t = (e2 * q).sum(1) * inv
+        hit = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-6) & (t < t_max - _OCCL_EPS)
+        out[k] = bool(hit.any())
+    return out
+
+
+def target_keypoints(target_pos, target_rpy, iris_pos, iris_rpy):
+    """Keypoint'leri piksele projekte eder → (6,3) [u, v, vis].
+    vis=2: kadraj içinde, kameranın önünde VE örtülü değil; vis=0: değil
+    (u=v=0, YOLO-pose kuralı). Öz-örtülme (gövde/kanat arkasında kalan uç)
+    occluded_mask ile ışın-mesh testinden hesaplanır — örtülü nokta etikete
+    KONMAZ (eğitimi bozmasın)."""
+    R_t = rot_rpy(*target_rpy)
+    world = np.asarray(target_pos, float) + talon_keypoints() @ R_t.T
+    cam_pos, R_cam = camera_world_pose(iris_pos, iris_rpy)
+    u, v, front = project_points(world, cam_pos, R_cam)
+    occl = occluded_mask(cam_pos, target_pos, R_t)
+    out = np.zeros((len(u), 3))
+    vis = front & ~occl & (u >= 0) & (u < IMG_W) & (v >= 0) & (v < IMG_H)
+    out[vis, 0] = u[vis]
+    out[vis, 1] = v[vis]
+    out[vis, 2] = 2
+    return out
+
+
 # ── Kamera pozu + projeksiyon ──
 def camera_world_pose(iris_pos, iris_rpy):
     """iris (drone) world poz + rpy'den kamera world (konum, rotasyon matrisi).

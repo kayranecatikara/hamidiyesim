@@ -1,98 +1,103 @@
 """
-=============================================================
-  GÜDÜM SUPERVISOR — GPS ↔ Görsel geçiş yöneticisi
-=============================================================
-DURUM: İSKELET (Faz 0). Yapı ve geçiş politikası burada tanımlı; karar eşikleri
-ve görsel hat Faz 3 (IBVS) + Faz 4'te devreye girecek. Şu an update() daima GPS
-fazını döndürür — mevcut davranış korunur.
+supervisor.py — Faz 4: GPS ↔ görsel güdüm geçişi (hibrit müdahale).
 
-Onaylanan geçiş politikası:
-  GPS → VISUAL : (a) GÖRSEL TEMAS — N ardışık kararlı tespit (conf ≥ eşik), VEYA
-                 (b) GPS SAĞLIKSIZ — jamming seviyesi yüksek / telemetri donmuş
-  VISUAL → GPS : GÖRSEL KAYIP — M ardışık karede tespit yok (fallback; drone kör
-                 kalmasın)
+run_hybrid tek görev döngüsüdür (start_chase bunu çalıştırır):
 
-Entegrasyon (Faz 4): gcs_server._chase_thread supervisor.update()'i her döngüde
-çağırır; dönen faza göre get_plane() callback'i ya GPS telemetrisi ya da IBVS
-görsel pozisyon tahmini üretir (bkz. docs/GUIDANCE_ROADMAP.md, "en temiz dikiş").
+  GPS fazı (gps_approach) hedefe yaklaşır. Görsel temas oturunca
+  (KILIT_N ardışık pose karesi, conf ≥ POSE_CONF_MIN, VE handoff menzili
+  içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (visual_lead) geçilir.
+  Görsel temas kesilirse (KAYIP_M ardışık pose'suz kare veya kare akışının
+  durması) → GPS fazına dönülür. stop_chase gelene (veya araç vurulana)
+  kadar bu döngü sürer.
+
+Menzil kapısının (GATE_KILIT) nedeni: görsel fazın kapanma hızı sabit
+(V_KAPANMA); uzaktan erken geçilirse hızlı hedefe yetişilemez. GPS handoff
+histerezisi (≤40 m) zaten "yetişilmiş" durumu işaretler. GPS jam/DROPOUT'ta
+menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 """
 
-from enum import Enum
+import threading
+
+from control.guidance import gps_approach as _ga
+from control.guidance.gps_approach import run_gps_approach
+from control.guidance.guidance_core import Cfg as LeadCfg
+from control.guidance.visual_lead import run_visual_lead
 
 
-class GuidancePhase(Enum):
-    GPS = "gps"        # tam state (telemetri) ile güdüm — gps_chase / gps_strike
-    VISUAL = "visual"  # kamera bbox (IBVS) ile güdüm — visual_guidance (Faz 3)
+class SupCfg:
+    KILIT_N = 10          # ardışık güvenli pose karesi → görsel faza geç (~0.33 s)
+    KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
+    POSE_CONF_MIN = 0.5
+    GATE_KILIT = True     # geçiş için handoff (≤40 m) VEYA GPS DROPOUT şartı
 
 
-# Geçiş eşikleri (Faz 4'te ayarlanacak) — @20 Hz döngü varsayımı
-DEFAULT_LOCK_FRAMES = 10    # ~0.5 s kararlı tespit → görsel temas onayı
-DEFAULT_LOSS_FRAMES = 20    # ~1.0 s tespit yok → GPS'e fallback
-DEFAULT_CONF_MIN    = 0.50  # tespit güven eşiği (YOLO conf)
-DEFAULT_JAM_MAX     = 0.60  # üstünde GPS "sağlıksız" sayılır
+# Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
+status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None}
 
 
-class GuidanceSupervisor:
-    """
-    GPS ve görsel güdüm hatları arasında geçişi yöneten durum makinesi.
+def _kopru(parent_event, child_event):
+    """parent set olunca child'ı da set eder (faz thread'i ana stop'u duysun)."""
+    def izle():
+        while not parent_event.is_set() and not child_event.is_set():
+            parent_event.wait(0.5)
+        if parent_event.is_set():
+            child_event.set()
+    threading.Thread(target=izle, daemon=True).start()
 
-    İSKELET: sinyal okuma kancaları hazır; update() Faz 4'e kadar daima GPS döner.
 
-    Args:
-        get_detection : () -> dict|None   son YOLO/tespit sonucu (conf, bbox...)
-        get_gps_health: () -> dict        {"jam": float 0-1, "frozen": bool}
-    """
+def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
+               stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg):
+    status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
 
-    def __init__(self, get_detection=None, get_gps_health=None,
-                 lock_frames=DEFAULT_LOCK_FRAMES, loss_frames=DEFAULT_LOSS_FRAMES,
-                 conf_min=DEFAULT_CONF_MIN, jam_max=DEFAULT_JAM_MAX):
-        self._get_detection = get_detection
-        self._get_gps_health = get_gps_health
-        self.lock_frames = lock_frames
-        self.loss_frames = loss_frames
-        self.conf_min = conf_min
-        self.jam_max = jam_max
+    while not stop_event.is_set():
+        # ══ GPS FAZI ══ (gps_approach kendi 20 Hz döngüsünde; izci pose akışını sayar)
+        status["faz"] = "GPS"
+        faz_stop = threading.Event()
+        _kopru(stop_event, faz_stop)
+        tetik = {"gorsel": False}
 
-        self.phase = GuidancePhase.GPS
-        self._lock_streak = 0   # ardışık kararlı tespit sayacı
-        self._loss_streak = 0   # ardışık tespitsiz kare sayacı
+        def izci():
+            sayac, son_seq = 0, 0
+            while not faz_stop.is_set():
+                kayit = wait_pose(son_seq, timeout=0.5)
+                if kayit is None:
+                    continue
+                son_seq = kayit["seq"]
+                pose = kayit["pose"]
+                if pose is not None and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN:
+                    sayac += 1
+                else:
+                    sayac = 0
+                status["kilit_sayac"] = sayac
+                if sayac >= sup_cfg.KILIT_N:
+                    kapi = ((not sup_cfg.GATE_KILIT)
+                            or _ga.status.get("handoff")
+                            or _ga.status.get("durum") == "DROPOUT")
+                    if kapi:
+                        tetik["gorsel"] = True
+                        faz_stop.set()          # gps_approach döngüsünü kır
+                        return
 
-    # ── sinyal kancaları (Faz 4'te update() bunları kullanacak) ──
+        threading.Thread(target=izci, daemon=True).start()
+        print(f"[SUPERVISOR] GPS fazı (görsel kilit: {sup_cfg.KILIT_N} ardışık kare"
+              f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
+        run_gps_approach(conn, get_plane, get_iris, faz_stop)
 
-    def _visual_contact(self):
-        """N ardışık karede conf ≥ eşik tespit var mı? (görsel temas)"""
-        if self._get_detection is None:
-            return False
-        det = self._get_detection()
-        if det is not None and det.get("conf", 0.0) >= self.conf_min:
-            self._lock_streak += 1
-            self._loss_streak = 0
-        else:
-            self._lock_streak = 0
-            self._loss_streak += 1
-        return self._lock_streak >= self.lock_frames
+        if stop_event.is_set() or not tetik["gorsel"]:
+            break
 
-    def _gps_unhealthy(self):
-        """GPS jamming/freeze nedeniyle güvenilmez mi?"""
-        if self._get_gps_health is None:
-            return False
-        h = self._get_gps_health()
-        return h.get("frozen", False) or h.get("jam", 0.0) >= self.jam_max
+        # ══ GÖRSEL FAZ ══ (temas kesilene ya da stop'a kadar)
+        status["faz"] = "VISUAL"
+        status["gecis_sayisi"] += 1
+        print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
+              f"(geçiş #{status['gecis_sayisi']})")
+        sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
+                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M)
+        status["son_sebep"] = sebep
+        if sebep == "kayip":
+            print("[SUPERVISOR] Görsel temas kesildi → GPS fazına dönülüyor")
+            continue
+        break                                    # durduruldu
 
-    def _visual_lost(self):
-        """M ardışık karede tespit kayboldu mu? (fallback tetiği)"""
-        return self._loss_streak >= self.loss_frames
-
-    # ── ana karar ──
-
-    def update(self):
-        """
-        Aktif güdüm fazını döndürür.
-
-        Faz 0 İSKELET: daima GPS. Faz 4'te aşağıdaki state machine devreye girer:
-            if phase == GPS and (_visual_contact() or _gps_unhealthy()):
-                phase = VISUAL
-            elif phase == VISUAL and _visual_lost():
-                phase = GPS
-        """
-        return self.phase
+    status["faz"] = "DURDU"
+    print("[SUPERVISOR] Hibrit güdüm sonlandı.")

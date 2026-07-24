@@ -24,7 +24,8 @@ from pymavlink import mavutil
 import uvicorn
 
 # Cessna renk tabanlı tespit
-from vision.detection_state import set_detection, get_detection
+from vision.detection_state import (set_detection, set_pose_detection,
+                                    wait_new_pose)
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
 # Kare scriptinin de kullandığı, kanıtlanmış çalışan modüller (ArduPilot)
@@ -501,6 +502,7 @@ def chase_status():
     if _GPS_LAW != "v2":
         # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
         resp["guidance"] = dict(_gps_approach_mod.status)
+        resp["supervisor"] = dict(_supervisor_mod.status)
     return resp
 
 
@@ -575,7 +577,9 @@ from control.guidance.gps_chase import run_chase as _run_chase_algorithm
 from control.guidance import gps_approach as _gps_approach_mod
 from control.guidance.gps_approach import run_gps_approach as _run_gps_approach
 from control.guidance.gps_strike import run_strike as _run_strike_algorithm
-from control.guidance.visual_guidance import run_visual_guidance as _run_visual_guidance
+from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
+from control.guidance import supervisor as _supervisor_mod
+from control.guidance.supervisor import run_hybrid as _run_hybrid
 
 # GPS güdüm yasası seçimi: varsayılan eski sistemin portu (gps_approach);
 # AVCI_GPS_LAW=v2 → önceki chase v2 (SPRINT/APPROACH/LOCK state machine).
@@ -583,18 +587,19 @@ _GPS_LAW = os.environ.get("AVCI_GPS_LAW", "yaklasma").lower()
 
 
 # ══════════════════════════════════════════════════════════
-#  GÖRSEL GÜDÜM (IBVS) — izole hat: YOLO bbox → drone hız.
-#  GPS chase'i BOZMAZ; ayrı endpoint. (Faz 4'te supervisor birleştirir.)
+#  GÖRSEL GÜDÜM (IBVS lead pursuit v2) — izole hat:
+#  pose keypoint'leri → menzil bağımsız lead → hız + yaw komutu.
+#  GPS chase'i BOZMAZ; ayrı endpoint. Döngü kameraya kilitli (olay güdümlü).
 # ══════════════════════════════════════════════════════════
 _visual_active = False
 _visual_stop_event = threading.Event()
 
 
 def _visual_thread():
-    """Görsel güdüm altyapısı: kalkış + IBVS döngüsü (get_detection → hız)."""
+    """Görsel güdüm altyapısı: kalkış + IBVS lead pursuit döngüsü."""
     global _visual_active
     print("=" * 50)
-    print("[VISUAL] Görsel Güdüm (IBVS) başlıyor")
+    print("[VISUAL] Görsel Güdüm (IBVS lead pursuit v2) başlıyor")
     print("=" * 50)
     try:
         stop_iris_telem()
@@ -607,15 +612,16 @@ def _visual_thread():
             print("[VISUAL] Kalkış başarısız!")
             _visual_active = False
             return
-        print("[VISUAL] ✓ Kalkış tamam — IBVS başlatılıyor")
+        print("[VISUAL] ✓ Kalkış tamam — lead pursuit başlatılıyor")
 
-        def get_iris():
-            _read_iris_telem_from_conn(conn)          # x,y,z,yaw günceller
-            t = telemetry_state["iris"]
-            return {"x": t["x"], "y": t["y"], "z": t["z"], "yaw": t["yaw"]}
+        def get_plane_truth():
+            """Hedefin GERÇEK pozu (çerçeve-ofset düzeltmeli NED) — SADECE
+            menzil_gercek logu için, güdüme girmez."""
+            t = telemetry_state["plane"]
+            return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
         _visual_stop_event.clear()
-        _run_visual_guidance(conn, get_detection, get_iris, _visual_stop_event)
+        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event)
 
     except Exception as e:
         import traceback
@@ -635,7 +641,7 @@ def start_visual():
     time.sleep(0.3)
     _visual_active = True
     threading.Thread(target=_visual_thread, daemon=True).start()
-    return {"status": "success", "message": "Görsel güdüm (IBVS) başlatıldı."}
+    return {"status": "success", "message": "Görsel güdüm (lead pursuit) başlatıldı."}
 
 
 @app.post("/api/command/iris/stop_visual")
@@ -788,13 +794,24 @@ def _chase_thread():
         watcher = threading.Thread(target=watch_active, daemon=True)
         watcher.start()
 
-        # ---- ALGORİTMAYI ÇAĞIR (AVCI_GPS_LAW: yaklasma=eski sistem portu | v2) ----
+        # ---- ALGORİTMAYI ÇAĞIR ----
+        # Varsayılan: HİBRİT (GPS yaklaşma ↔ görsel lead pursuit, supervisor
+        # geçişli). AVCI_HYBRID=off → saf GPS; AVCI_GPS_LAW=v2 → eski chase v2.
         if _GPS_LAW == "v2":
             print("[CHASE] Güdüm yasası: chase v2 (AVCI_GPS_LAW=v2)")
             _run_chase_algorithm(conn, get_plane, get_iris, chase_stop)
-        else:
-            print("[CHASE] Güdüm yasası: GPS-YAKLASMA (eski sistem portu, gps_approach)")
+        elif os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
+            print("[CHASE] Güdüm yasası: GPS-YAKLASMA (saf GPS, AVCI_HYBRID=off)")
             _run_gps_approach(conn, get_plane, get_iris, chase_stop)
+        else:
+            print("[CHASE] Güdüm yasası: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
+
+            def get_plane_truth():
+                t = telemetry_state["plane"]
+                return {"x": t["x"], "y": t["y"], "z": t["z"]}
+
+            _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
+                        get_plane_truth, chase_stop)
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
@@ -818,19 +835,37 @@ latest_frames = {
 }
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
+_pose_detector = None   # startup'ta yüklenir (AVCI_POSE=on, varsayılan açık)
 
-def process_iris_frame(img):
+def process_iris_frame(img, stamp=None, wall_recv=None):
     """Iris kamera karesini işle: Cessna/hedef tespiti + overlay + video parazit
     simülasyonu + MJPEG kodlama. Hem ROS2 (Gazebo Classic) hem gz-transport
-    (Gazebo Harmonic) kamera kaynakları bu fonksiyonu çağırır."""
+    (Gazebo Harmonic) kamera kaynakları bu fonksiyonu çağırır.
+    stamp: kare header.stamp (s, sim saati) — IBVS dt hesabı bunu kullanır;
+    wall_recv: karenin geliş duvar anı (time.time) — bayat kare ölçümü."""
     # ---- HEDEF TESPİT (YOLO) + OVERLAY ----
+    # İki model de TEMİZ kare üzerinde çıkarım yapar; overlay'ler sonra çizilir
+    # (detection kutusu çizilmiş kare pose'a girerse çıkarımı bozar).
+    det = pose = None
     if _yolo_detector is not None:
         try:
             det = _yolo_detector.detect_talon(img)
             set_detection(det)
-            img = _yolo_detector.draw_overlay(img, det)
         except Exception as e:
             print(f"[GCS] YOLO tespit hatası: {e}")
+    # Pose YALNIZ detection kutu bulduğunda, kutunun çevresindeki kropta çalışır
+    # (boşuna yük binmez, sahnenin kalanına yanlış nokta atamaz).
+    if _pose_detector is not None:
+        try:
+            pose = (_pose_detector.detect_pose_in_bbox(img, det["bbox"])
+                    if det is not None else None)
+            set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv)
+        except Exception as e:
+            print(f"[GCS] YOLO poz hatası: {e}")
+    if _yolo_detector is not None:
+        img = _yolo_detector.draw_overlay(img, det)
+    if _pose_detector is not None:
+        img = _pose_detector.draw_overlay(img, pose)
 
     # ---- VIDEO PARAZİT SİMÜLASYONU ----
     lvl = _video_noise_level
@@ -887,8 +922,11 @@ def gz_iris_camera_thread():
 
     def cb(msg):
         try:
+            wall_recv = time.time()
+            stamp = msg.header.stamp.sec + msg.header.stamp.nsec * 1e-9
             arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
+                               stamp=stamp, wall_recv=wall_recv)
         except Exception as e:
             print(f"[GCS GZ-CAM] hata: {e}")
 
@@ -945,7 +983,9 @@ class CameraSubscriber(Node):
 
     def cb_iris(self, data):
         try:
-            process_iris_frame(self.bridge.imgmsg_to_cv2(data, "bgr8"))
+            stamp = data.header.stamp.sec + data.header.stamp.nanosec * 1e-9
+            process_iris_frame(self.bridge.imgmsg_to_cv2(data, "bgr8"),
+                               stamp=stamp, wall_recv=time.time())
         except Exception as e:
             print(f"[GCS CAM] Iris hata: {e}")
 
@@ -1039,6 +1079,7 @@ def _process_mavlink_msg(msg, vehicle_name):
     elif msg_type == 'HEARTBEAT' and sys_id != 255:
         telemetry_state[vehicle_name]["armed"] = (
             msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED != 0)
+        telemetry_state[vehicle_name]["mode"] = msg.custom_mode
 
 
 async def mavlink_listener():
@@ -1143,6 +1184,16 @@ async def startup_event():
             print("[GCS] YOLO detector hazır (avci_yolo.pt)")
         except Exception as e:
             print(f"[GCS] YOLO detector yüklenemedi ({e}) — tespit kapalı")
+    # YOLO-pose modelini yükle (detection'ın YANINDA çalışır; AVCI_POSE=off kapatır)
+    if os.environ.get("AVCI_POSE", "on").lower() not in ("off", "0"):
+        global _pose_detector
+        try:
+            from vision import pose_detector as _pdet
+            _pdet.load()                         # ağırlık + CUDA warmup
+            _pose_detector = _pdet
+            print("[GCS] YOLO pose hazır (avci_pose.pt)")
+        except Exception as e:
+            print(f"[GCS] YOLO pose yüklenemedi ({e}) — pose kapalı")
 
     # Kamera kaynağı: Harmonic (gz-transport) veya Classic (ROS2 cv_bridge)
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
