@@ -230,6 +230,17 @@
                         <div class="d-row"><span>TERMİNAL MOD:</span> <span id="tele-terminal-status" class="val warning">BEKLEMEDE</span></div>
                     </div>
                 </div>
+
+                <!-- 3B KONUM İZLEME: avcı + hedef, gerçek zamanlı, izli -->
+                <div class="telemetry-block mt-2 pos3d-block">
+                    <h4 class="block-head">3B KONUM İZLEME</h4>
+                    <canvas id="pos3d-canvas"></canvas>
+                    <div class="pos3d-legend">
+                        <span><span class="legend-dot dot-avci"></span>AVCI</span>
+                        <span><span class="legend-dot dot-hedef"></span>HEDEF</span>
+                        <span class="pos3d-hint">sürükle: döndür</span>
+                    </div>
+                </div>
             </aside>
         </div>
 
@@ -242,6 +253,6 @@
         </footer>
     </div>
 
-    <script src="script.js?v=6"></script>
+    <script src="script.js?v=7"></script>
 </body>
 </html>

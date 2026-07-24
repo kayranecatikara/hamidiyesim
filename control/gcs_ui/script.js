@@ -134,8 +134,193 @@ setInterval(() => {
 function updateTelemetry(data) {
     if(data.iris) updateAvci(data.iris);
     if(data.plane) updateHedef(data.plane);
+    // 3B konum grafiği izleri
+    if(data.iris) recordTrail('iris', data.iris);
+    if(data.plane) recordTrail('plane', data.plane);
     // Chase modunda konum bilgilerini güncelle
     if(data.iris && data.plane) updateChasePositions(data.plane, data.iris);
+}
+
+// =====================================================
+// 3B KONUM İZLEME — sağ panel alt grafik
+// NED telemetri (x=Kuzey, y=Doğu, z=Aşağı) → dünya (E, N, YUKARI=-z).
+// Harici kütüphane yok: ortografik projeksiyon + azimut/yükseliş döndürme.
+// =====================================================
+const p3dCanvas = document.getElementById('pos3d-canvas');
+const P3D_TRAIL_MAX = 350;            // ~35 sn iz @ 10 Hz
+const p3dTrails = { iris: [], plane: [] };
+let p3dAzim = -0.8;                   // radyan — sürükleyerek değişir
+let p3dElev = 1.0;                    // 0.15 (yandan) .. 1.5 (tepeden)
+let p3dDrag = null;
+// Otomatik çerçeveleme yumuşatması (grafik zıplamasın)
+const p3dView = { cx: 0, cy: 0, cz: 0, span: 40, init: false };
+
+function recordTrail(name, v) {
+    if (v.x === 0 && v.y === 0 && v.z === 0) return;  // telemetri henüz yok
+    const arr = p3dTrails[name];
+    const last = arr[arr.length - 1];
+    if (last && last.x === v.x && last.y === v.y && last.z === v.z) return;
+    arr.push({ x: v.x, y: v.y, z: v.z });
+    if (arr.length > P3D_TRAIL_MAX) arr.shift();
+}
+
+function p3dNiceStep(raw) {
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const n = raw / mag;
+    return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
+}
+
+function p3dRender() {
+    requestAnimationFrame(p3dRender);
+    if (!p3dCanvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = p3dCanvas.clientWidth, h = p3dCanvas.clientHeight;
+    if (w === 0 || h === 0) return;
+    if (p3dCanvas.width !== Math.round(w * dpr)) {
+        p3dCanvas.width = Math.round(w * dpr);
+        p3dCanvas.height = Math.round(h * dpr);
+    }
+    const ctx = p3dCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const all = p3dTrails.iris.concat(p3dTrails.plane);
+    if (all.length === 0) {
+        ctx.fillStyle = '#475569';
+        ctx.font = '11px Roboto Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('TELEMETRİ BEKLENİYOR...', w / 2, h / 2);
+        return;
+    }
+
+    // ---- Hedef çerçeve: tüm noktaları kapsa (dünya: E=y, N=x, U=-z) ----
+    let mnE = 1e9, mxE = -1e9, mnN = 1e9, mxN = -1e9, mnU = 1e9, mxU = -1e9;
+    for (const p of all) {
+        const E = p.y, N = p.x, U = -p.z;
+        if (E < mnE) mnE = E; if (E > mxE) mxE = E;
+        if (N < mnN) mnN = N; if (N > mxN) mxN = N;
+        if (U < mnU) mnU = U; if (U > mxU) mxU = U;
+    }
+    mnU = Math.min(mnU, 0);                       // zemin hep görünsün
+    const tgtCx = (mnE + mxE) / 2, tgtCy = (mnN + mxN) / 2, tgtCz = (mnU + mxU) / 2;
+    const tgtSpan = Math.max(30, mxE - mnE, mxN - mnN, mxU - mnU) * 1.15;
+    if (!p3dView.init) {
+        p3dView.cx = tgtCx; p3dView.cy = tgtCy; p3dView.cz = tgtCz;
+        p3dView.span = tgtSpan; p3dView.init = true;
+    } else {
+        const a = 0.06;                           // yumuşak takip
+        p3dView.cx += (tgtCx - p3dView.cx) * a;
+        p3dView.cy += (tgtCy - p3dView.cy) * a;
+        p3dView.cz += (tgtCz - p3dView.cz) * a;
+        p3dView.span += (tgtSpan - p3dView.span) * a;
+    }
+
+    const scale = Math.min(w, h) * 0.72 / p3dView.span;
+    const cosA = Math.cos(p3dAzim), sinA = Math.sin(p3dAzim);
+    const cosE = Math.cos(p3dElev), sinE = Math.sin(p3dElev);
+    const scx = w / 2, scy = h / 2 + h * 0.06;
+
+    // NED nokta → ekran. Dünya eksenleri: X=E(doğu) Y=N(kuzey) Z=U(yukarı)
+    function proj(ned) {
+        const X = ned.y - p3dView.cx;
+        const Y = ned.x - p3dView.cy;
+        const Z = -ned.z - p3dView.cz;
+        const x1 = X * cosA - Y * sinA;
+        const y1 = X * sinA + Y * cosA;
+        return {
+            x: scx + x1 * scale,
+            y: scy - (y1 * sinE + Z * cosE) * scale,
+        };
+    }
+    const projW = (E, N, U) => proj({ x: N, y: E, z: -U });
+
+    // ---- Zemin ızgarası (U=0) ----
+    const step = p3dNiceStep(p3dView.span / 4);
+    const gE0 = Math.floor((p3dView.cx - p3dView.span / 2) / step) * step;
+    const gE1 = Math.ceil((p3dView.cx + p3dView.span / 2) / step) * step;
+    const gN0 = Math.floor((p3dView.cy - p3dView.span / 2) / step) * step;
+    const gN1 = Math.ceil((p3dView.cy + p3dView.span / 2) / step) * step;
+    ctx.strokeStyle = 'rgba(42, 49, 61, 0.9)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let E = gE0; E <= gE1 + 0.001; E += step) {
+        const a1 = projW(E, gN0, 0), a2 = projW(E, gN1, 0);
+        ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y);
+    }
+    for (let N = gN0; N <= gN1 + 0.001; N += step) {
+        const a1 = projW(gE0, N, 0), a2 = projW(gE1, N, 0);
+        ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y);
+    }
+    ctx.stroke();
+
+    // Eksen okları + etiketler (ızgara köşesinden)
+    const axLen = step;
+    const o = projW(gE0, gN0, 0);
+    ctx.font = '9px Roboto Mono, monospace';
+    ctx.textAlign = 'center';
+    const axes = [
+        { p: projW(gE0 + axLen, gN0, 0), label: 'D', color: '#798696' },  // doğu
+        { p: projW(gE0, gN0 + axLen, 0), label: 'K', color: '#798696' },  // kuzey
+        { p: projW(gE0, gN0, axLen),     label: 'İRT', color: '#3b82f6' },
+    ];
+    for (const ax of axes) {
+        ctx.strokeStyle = ax.color; ctx.fillStyle = ax.color;
+        ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(ax.p.x, ax.p.y); ctx.stroke();
+        ctx.fillText(ax.label, ax.p.x, ax.p.y - 3);
+    }
+    // Izgara adım bilgisi
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText(`ızgara: ${step}m`, 6, h - 6);
+
+    // ---- İzler + araçlar ----
+    const vehicles = [
+        { key: 'iris',  color: '16, 185, 129', label: 'AVCI' },
+        { key: 'plane', color: '239, 68, 68',  label: 'HEDEF' },
+    ];
+    for (const v of vehicles) {
+        const tr = p3dTrails[v.key];
+        if (tr.length === 0) continue;
+        // İz: eskiden yeniye solarak
+        for (let i = 1; i < tr.length; i++) {
+            const alpha = Math.pow(i / tr.length, 1.4) * 0.85;
+            const p1 = proj(tr[i - 1]), p2 = proj(tr[i]);
+            ctx.strokeStyle = `rgba(${v.color}, ${alpha.toFixed(3)})`;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+        // Güncel nokta: zemine dikme (derinlik algısı) + dot + etiket
+        const cur = tr[tr.length - 1];
+        const pc = proj(cur);
+        const pg = projW(cur.y, cur.x, 0);
+        ctx.strokeStyle = `rgba(${v.color}, 0.35)`;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(pc.x, pc.y); ctx.lineTo(pg.x, pg.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = `rgba(${v.color}, 0.5)`;
+        ctx.beginPath(); ctx.arc(pg.x, pg.y, 2, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = `rgb(${v.color})`;
+        ctx.beginPath(); ctx.arc(pc.x, pc.y, 4, 0, 2 * Math.PI); ctx.fill();
+        ctx.textAlign = 'left';
+        ctx.font = '9px Roboto Mono, monospace';
+        ctx.fillText(`${v.label} ${(-cur.z).toFixed(0)}m`, pc.x + 7, pc.y - 4);
+    }
+}
+
+// Sürükleyerek döndürme
+if (p3dCanvas) {
+    p3dCanvas.addEventListener('mousedown', (e) => {
+        p3dDrag = { x: e.clientX, y: e.clientY };
+        e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!p3dDrag) return;
+        p3dAzim += (e.clientX - p3dDrag.x) * 0.01;
+        p3dElev = Math.max(0.15, Math.min(1.5, p3dElev + (e.clientY - p3dDrag.y) * 0.008));
+        p3dDrag = { x: e.clientX, y: e.clientY };
+    });
+    window.addEventListener('mouseup', () => { p3dDrag = null; });
+    p3dRender();   // çizim döngüsünü başlat
 }
 
 function updateAvci(drone) {

@@ -507,6 +507,51 @@ body {
     transition: none;   /* klavye/tick güncellemelerinde gecikmesiz takip */
 }
 
+/* === 3B KONUM İZLEME (sağ panel alt) === */
+.pos3d-block {
+    display: flex;
+    flex-direction: column;
+}
+
+#pos3d-canvas {
+    width: 100%;
+    height: 240px;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    cursor: grab;
+    touch-action: none;
+    display: block;
+}
+
+#pos3d-canvas:active { cursor: grabbing; }
+
+.pos3d-legend {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+    letter-spacing: 0.5px;
+}
+
+.legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+.legend-dot.dot-avci  { background: var(--success-green); }
+.legend-dot.dot-hedef { background: var(--danger-red); }
+
+.pos3d-hint {
+    margin-left: auto;
+    color: var(--text-dark);
+    font-size: 0.58rem;
+}
+
 /* Bottom Panel */
 .bottom-panel {
     flex: 0 0 150px;
