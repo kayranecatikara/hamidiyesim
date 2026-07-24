@@ -104,9 +104,10 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     kayip_sayaci = 0       # ardışık pose'suz kare (temas kaybı takibi)
     son_kayit_wall = time.time()
     son_v_cmd = None       # son gönderilen (vx,vy,vz,yaw) — kör dalışta sürdürülür
-    son_menzil = None      # son bilinen gerçek menzil
-    kapaniyor = False      # menzil azalıyor mu (kör dalış ancak kapanırken)
+    kapaniyor = False      # menzil azalıyor mu (yalnız log/gözlem)
     terminal_baslangic = None   # kör dalış başlangıç duvar anı
+    terminal_latch = False      # kör dalış KİLİDİ (girince süre/vuruşa dek sürer)
+    terminal_min = None         # kör dalış boyunca görülen en yakın menzil
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -121,31 +122,48 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         w.writerow(row)
         f.flush()
 
-    def _kor_dalis_penceresi():
-        """Terminal kör dalış koşulu: son komut var, menzil eşik altında, kapanıyor."""
+    def _terminal_giris_ok():
+        """Kör dalışa GİRİŞ: hibrit modda, son komut var, menzil eşik altında.
+        Kapanma bayrağı aranmaz — bu kadar yakında temas koparsa hedef önümüzde,
+        ileri commit doğru (gürültülü menzil kapanma bayrağını titretiyordu)."""
         return (kayip_kare_esik is not None and son_v_cmd is not None
                 and menzil_onceki is not None
-                and menzil_onceki < cfg.TERMINAL_MENZIL and kapaniyor)
+                and menzil_onceki < cfg.TERMINAL_MENZIL)
+
+    def _terminal_adim():
+        """Kilitli kör dalış bir adımı. Dönüş: 'vuruldu'/'kayip'/None (sürüyor)."""
+        nonlocal terminal_baslangic, terminal_latch, terminal_min
+        if not terminal_latch:
+            terminal_latch = True
+            terminal_baslangic = time.time()
+            terminal_min = menzil_onceki
+            print(f"[LEAD] KÖR DALIŞ (KİLİTLİ) — menzil ~{menzil_onceki:.1f} m, "
+                  f"son nişan {cfg.TERMINAL_SURE:.1f} s sürdürülüyor")
+        send_velocity(conn, *son_v_cmd)
+        aras.drenaj(conn)
+        m = _menzil_hesapla(get_plane_truth, aras.pos)
+        if m is not None:
+            terminal_min = min(terminal_min, m) if terminal_min is not None else m
+            if m < cfg.VURUS_MENZIL:
+                print(f"[LEAD] ✓ VURULDU (menzil {m:.2f} m)")
+                return "vuruldu"
+        if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
+            if terminal_min is not None and terminal_min < cfg.VURUS_MENZIL:
+                print(f"[LEAD] ✓ VURULDU (en yakın {terminal_min:.2f} m)")
+                return "vuruldu"
+            print(f"[LEAD WARN] kör dalış bitti — en yakın {terminal_min:.2f} m, ıska")
+            return "kayip"
+        return None
 
     try:
         while not stop_event.is_set():
             kayit = wait_pose(son_seq, timeout=0.5)
             if kayit is None:                 # yeni kare yok (timeout / akış durdu)
-                # Kör dalış penceresindeysek son nişanı sürdür, GPS'e DÖNME.
-                if _kor_dalis_penceresi():
-                    if terminal_baslangic is None:
-                        terminal_baslangic = time.time()
-                        print(f"[LEAD] KÖR DALIŞ (akış durdu) — menzil ~"
-                              f"{menzil_onceki:.1f} m, son nişan sürdürülüyor")
-                    send_velocity(conn, *son_v_cmd)
-                    aras.drenaj(conn)
-                    m = _menzil_hesapla(get_plane_truth, aras.pos)
-                    if m is not None and m < cfg.VURUS_MENZIL:
-                        print(f"[LEAD] ✓ VURULDU (menzil {m:.2f} m)")
-                        return "vuruldu"
-                    if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
-                        print("[LEAD WARN] kör dalış süresi doldu — ıskalandı")
-                        return "kayip"
+                # Kilitli kör dalıştaysak veya girişe uygunsak son nişanı sürdür.
+                if terminal_latch or _terminal_giris_ok():
+                    sonuc = _terminal_adim()
+                    if sonuc:
+                        return sonuc
                     time.sleep(0.02)
                     continue
                 if (kayip_kare_esik is not None
@@ -184,21 +202,16 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                         return "vuruldu"
 
             if pose is None:                  # bu karede tespit yok
-                # Terminal kör dalış: son nişanı sürdür, GPS'e DÖNME.
-                if _kor_dalis_penceresi():
-                    if terminal_baslangic is None:
-                        terminal_baslangic = time.time()
-                        print(f"[LEAD] KÖR DALIŞ — hedef kadrajdan çıktı, menzil ~"
-                              f"{menzil_onceki:.1f} m, {cfg.TERMINAL_SURE:.1f} s sürdür")
-                    send_velocity(conn, *son_v_cmd)
+                # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).
+                if terminal_latch or _terminal_giris_ok():
                     satir["durum"] = "kor_dalis"
                     (satir["vx_cmd"], satir["vy_cmd"],
                      satir["vz_cmd"], yaw_r) = son_v_cmd
                     satir["yaw_cmd_deg"] = round(math.degrees(yaw_r), 1)
                     _satir(satir)
-                    if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
-                        print("[LEAD WARN] kör dalış süresi doldu — ıskalandı")
-                        return "kayip"
+                    sonuc = _terminal_adim()
+                    if sonuc:
+                        return sonuc
                     continue
                 satir["durum"] = "tespit_yok"
                 _satir(satir)
@@ -210,6 +223,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 continue
             kayip_sayaci = 0                  # pose var → temas sürüyor
             terminal_baslangic = None         # temas döndü → kör dalış sıfırla
+            terminal_latch = False
+            terminal_min = None
 
             # bayat kare kapısı (duvar saati — aynı saat cinsinden ölçüm)
             gecikme = (time.time() - wall_recv) if wall_recv else 0.0

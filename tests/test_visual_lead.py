@@ -373,6 +373,17 @@ def main():
     kontrol("T25 kör dalış süresi dolunca ıska (kayip)",
             sonuc2 == "kayip", f"sonuç={sonuc2}")
 
+    # ── T26: GÜRÜLTÜLÜ menzil (zıplayan) — kilit tutmalı, vuruşu yakalamalı.
+    # Eski kapaniyor-bayraklı mantık bu senaryoda kör dalışı düşürüyordu. ──
+    cfgT3 = cfg_copy()
+    cfgT3.TERMINAL_MENZIL = 8.0; cfgT3.VURUS_MENZIL = 3.0; cfgT3.TERMINAL_SURE = 1.0
+    # yaklaş (pose var) → tespit kesil → menzil canlıdaki gibi ZIPLASIN
+    menz3 = [10, 8, 7, 6, 5.5, 5] + [8.6, 3.8, 7.1, 2.7, 5.3, 2.75]
+    posev3 = [True] * 6 + [False] * 6
+    sonuc3 = terminal_kosusu(cfgT3, menz3, posev3)
+    kontrol("T26 gürültülü menzilde kilit tutar + vuruş",
+            sonuc3 == "vuruldu", f"sonuç={sonuc3} (2.7/2.75<3.0 yakalanmalı)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

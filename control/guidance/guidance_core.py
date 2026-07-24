@@ -68,8 +68,13 @@ class Cfg:
     # yerine son nişan komutunu kısa süre SÜRDÜR (çarpışmayı tamamla).
     TERMINAL_MENZIL = _env_f("AVCI_IBVS_TERMINAL_MENZIL", 8.0)   # m; altında temas
                                                                 # koparsa kör dalış
-    TERMINAL_SURE   = _env_f("AVCI_IBVS_TERMINAL_SURE", 2.0)     # s; kör dalış süresi
-    VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 1.5)      # m; altı = VURULDU
+    # Kör dalış KİLİTLİDİR: bir kez girince süresi dolana/vuruşa dek sürer
+    # (gürültülü menzil kapanma bayrağını titretiyordu). 0.6 s @ 25 m/s ≈ 15 m
+    # — 6 m'lik kör bölgeyi kapatır, ıskada uzağa uçmaz.
+    TERMINAL_SURE   = _env_f("AVCI_IBVS_TERMINAL_SURE", 0.6)     # s; kör dalış süresi
+    # Hedef telemetrisi ~4-5 Hz, drane 25 m/s → menzil örnekleri ~5 m aralıklı;
+    # +araç açıklıkları ~1.3 m. 3 m merkez-merkez ≈ fiziksel temas.
+    VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 3.0)      # m; altı = VURULDU
 
 
 def cfg_copy():
