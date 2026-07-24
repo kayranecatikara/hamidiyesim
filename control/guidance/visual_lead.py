@@ -238,8 +238,10 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 continue                      # komut GÖNDERME, son komut korunur
 
-            # GUIDED kontrolü
-            if aras.mode != mav_common.COPTER_MODE_GUIDED:
+            # GUIDED kontrolü. mod HENÜZ BİLİNMİYORSA (None) komut KESME: HEARTBEAT
+            # ~1 Hz, ilk saniye None kalıyor; GPS fazından yeni geldik, zaten
+            # GUIDED'iz. Yalnız POZİTİF olarak GUIDED-dışı görürsek blokla.
+            if aras.mode is not None and aras.mode != mav_common.COPTER_MODE_GUIDED:
                 satir["durum"] = "mod_hata"
                 print(f"[LEAD ERROR] mod GUIDED değil (custom_mode={aras.mode}) "
                       f"— komut gönderilmiyor")

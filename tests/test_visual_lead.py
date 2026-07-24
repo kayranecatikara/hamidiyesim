@@ -268,7 +268,7 @@ def main():
 
     try:
         sup.run_gps_approach, sup.run_visual_lead = fake_gps, fake_visual
-        sup._ga.status["handoff"] = True          # menzil kapısı açık
+        sup._ga.status["d_h"] = 10.0          # menzil kapısı açık
         stop = threading.Event()
         th = threading.Thread(
             target=sup.run_hybrid,
@@ -282,7 +282,7 @@ def main():
                 f"geçiş={sup.status['gecis_sayisi']}")
     finally:
         sup.run_gps_approach, sup.run_visual_lead = _orij_gps, _orij_vis
-        sup._ga.status["handoff"] = False
+        sup._ga.status["d_h"] = None
 
     # ── T23: supervisor 'vuruldu' → görev biter, faz=VURULDU ──
     olaylar2 = []
@@ -296,7 +296,7 @@ def main():
 
     try:
         sup.run_gps_approach, sup.run_visual_lead = fake_gps2, fake_visual_vurus
-        sup._ga.status["handoff"] = True
+        sup._ga.status["d_h"] = 10.0
         stop = threading.Event()
         th = threading.Thread(target=sup.run_hybrid,
                               args=(None, None, None, fake_wait, None, stop),
@@ -307,7 +307,7 @@ def main():
                 f"olaylar={olaylar2} faz={sup.status['faz']}")
     finally:
         sup.run_gps_approach, sup.run_visual_lead = _og, _ov
-        sup._ga.status["handoff"] = False
+        sup._ga.status["d_h"] = None
 
     # ── T24/T25: visual_lead terminal (kör dalış → vuruş / süre dolunca ıska) ──
     import control.guidance.visual_lead as vlmod

@@ -16,6 +16,7 @@ histerezisi (≤40 m) zaten "yetişilmiş" durumu işaretler. GPS jam/DROPOUT'ta
 menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 """
 
+import os
 import threading
 
 from control.guidance import gps_approach as _ga
@@ -28,7 +29,12 @@ class SupCfg:
     KILIT_N = 10          # ardışık güvenli pose karesi → görsel faza geç (~0.33 s)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
     POSE_CONF_MIN = 0.5
-    GATE_KILIT = True     # geçiş için handoff (≤40 m) VEYA GPS DROPOUT şartı
+    GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
+    # Devir menzili: GPS handoff bayrağı 40 m'de açılıyor ama orada kutu ~7 px,
+    # pose güvenilmez (uzakta devralınca hedef hemen kaçtı — 2026-07-24 log).
+    # 20 m'de kutu ~7 px hâlâ küçük; pose asıl 10-12 m'de sağlam. GPS istasyonu
+    # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
+    GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
 
 
 # Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
@@ -70,9 +76,10 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                     sayac = 0
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
-                    kapi = ((not sup_cfg.GATE_KILIT)
-                            or _ga.status.get("handoff")
-                            or _ga.status.get("durum") == "DROPOUT")
+                    d_h = _ga.status.get("d_h")
+                    yakin = (d_h is not None and d_h < sup_cfg.GATE_MENZIL)
+                    dropout = _ga.status.get("durum") == "DROPOUT"  # jamming fallback
+                    kapi = (not sup_cfg.GATE_KILIT) or yakin or dropout
                     if kapi:
                         tetik["gorsel"] = True
                         faz_stop.set()          # gps_approach döngüsünü kır
