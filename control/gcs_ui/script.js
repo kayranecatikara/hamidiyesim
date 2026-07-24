@@ -442,9 +442,6 @@ function markScenarioButtons() {
             btn.textContent = SCN_LABELS[name];
         }
     }
-    // Hız slider'ı yalnızca bir senaryo uçarken anlamlı
-    const speedBlock = document.getElementById('plane-speed-block');
-    if (speedBlock) speedBlock.classList.toggle('hidden', !activeScenario);
 }
 
 async function startScenario(name) {
@@ -503,6 +500,9 @@ if (planeThrSlider) {
         const pct = parseInt(planeThrSlider.value, 10);
         planeThrValue.textContent = pct + '%';
 
+        // Manuel modda slider doğrudan gazı sürer (L/I ile aynı değer)
+        if (manualActive) mThr = pct;
+
         // Debounce: 100ms bekle, sonra POST et
         clearTimeout(planeThrTimeout);
         planeThrTimeout = setTimeout(() => {
@@ -555,6 +555,10 @@ async function enterManualMode() {
             isDragging = false; jsAil = 0; jsElv = 0;
             setKnob(0, 0);
             manualBlock.classList.remove('hidden');
+            // Gaz slider'ı yalnızca manuel modda görünür ve gazı sürer
+            const speedBlock = document.getElementById('plane-speed-block');
+            if (speedBlock) speedBlock.classList.remove('hidden');
+            if (planeThrSlider) { planeThrSlider.value = 60; planeThrValue.textContent = '60%'; }
             btnManual.textContent = '✖ MANUEL KAPAT';
             btnManual.style.borderLeftColor = 'var(--danger-red)';
             addLog('SYS', 'Manuel Mod AKTİF — W/S: pitch, A/D: roll, L: hızlan, I: yavaşla', 'warn');
@@ -578,6 +582,8 @@ async function exitManualMode() {
     joystickKnob.classList.remove('active');
     setKnob(0, 0);
     manualBlock.classList.add('hidden');
+    const speedBlock = document.getElementById('plane-speed-block');
+    if (speedBlock) speedBlock.classList.add('hidden');
     btnManual.textContent = '🕹 MANUEL MOD';
     btnManual.style.borderLeftColor = '';
     addLog('SYS', 'Manuel Mod KAPALI.', 'info');
@@ -678,6 +684,11 @@ function manualTick() {
     document.getElementById('js-x').textContent = mAil.toFixed(2);
     document.getElementById('js-y').textContent = mElv.toFixed(2);
     document.getElementById('js-thr').textContent = Math.round(mThr);
+    // Slider'ı L/I ile senkron tut (sürüklerken değer zaten aynı — çakışmaz)
+    if (planeThrSlider && parseInt(planeThrSlider.value, 10) !== Math.round(mThr)) {
+        planeThrSlider.value = Math.round(mThr);
+        planeThrValue.textContent = Math.round(mThr) + '%';
+    }
 
     // PWM'e çevir — FBWA: tam sapma = maks yatış/pitch açı hedefi
     const aileron  = Math.round(1500 + mAil * 450);
