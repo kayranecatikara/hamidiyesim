@@ -110,10 +110,9 @@
       </link>
     </model>
     
-    <include>
-      <uri>model://runway</uri>
-      <pose degrees="true">-29 545 0 0 0 363</pose>
-    </include>
+    <!-- Pist KALDIRILDI (2026-07-24): detection modeli pist rakamını/çizgilerini
+         yüksek güvenle HEDEF sanıyordu (canlı FP). Gerçek ortam için ayrı model
+         eğitileceğinden simdeki pistin faydası yok. Gerekirse geri eklenebilir. -->
 
     <include>
       <uri>model://iris_cam</uri>

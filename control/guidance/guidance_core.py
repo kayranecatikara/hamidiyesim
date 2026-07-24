@@ -55,10 +55,11 @@ class Cfg:
     KPT_CONF_MIN = _env_f("AVCI_POSE_KPT_CONF", 0.5)
     PLATFORM = os.environ.get("AVCI_PLATFORM", "copter")
     # ── copter adaptörü ──
-    # Hedef Talon ~15 m/s: kapanma hızı ondan YÜKSEK olmalı, yoksa görsel fazda
-    # geride kalınır → temas kopar → GPS'e dön → tekrar geç... salınımı olur.
-    # GPS hattının tavanıyla (V_CAP_FAR=19) eşit. K_LEAD taramasında SABİT tut.
-    V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 19.0)   # m/s
+    # Kapanma hızı hedefin (~15 m/s) ÇOK üstünde olmalı (kullanıcı kararı):
+    # görsel faz vurucu fazdır, hedefle hız eşitlemek GPS fazının işidir.
+    # Gerçek tavanı ArduCopter param/gövde limiti belirler — canlıda CSV'deki
+    # kapanma_hizi_ms ile doğrula. K_LEAD taramasında SABİT tut.
+    V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s
     KP_YAW = 1.2
     YAW_HIZ_MAX = 90.0       # deg/s — agresif yaw quad'ı savurur, kamerayı bulandırır
     IVME_TAVAN = 4.0         # m/s² — >5 m/s²'de burun aşağı eğilir, kamera yere bakar
