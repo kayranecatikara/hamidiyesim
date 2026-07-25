@@ -165,19 +165,40 @@ def main():
     print("[NEG-RW] Talon 600m uzağa park edildi. Toplama başlıyor...")
     time.sleep(0.5)
 
+    from vision import geometry as geo
+    TALON_PARK = (600.0, 600.0, 5.0)
+    KENAR_PAYI = 30.0     # px; kadraj kenarına bu kadar yakını da reddet
+
+    def talon_kadrajda(cam_pos_, cam_rpy_):
+        """Park edilmiş Talon'un MERKEZİ kadraja (pay dahil) projekte oluyor mu?
+        (poz + 25° tilt + FOV 125°). target_bbox kullanılmaz: 2px alt sınırı
+        uzaktaki beneği 'görünmez' sayar, oysa 5px benek bile etiket zehirler."""
+        cp, R = geo.camera_world_pose(cam_pos_, cam_rpy_)
+        u, v, valid = geo.project_points(
+            np.array([TALON_PARK], dtype=float), cp, R)
+        return bool(valid[0]) and (-KENAR_PAYI <= u[0] <= geo.IMG_W + KENAR_PAYI
+                                   and -KENAR_PAYI <= v[0] <= geo.IMG_H + KENAR_PAYI)
+
     saved = 0
     while saved < args.count:
         pos, rpy = random_negative_pose()
+        # GEOMETRİK KORUMA: negatif karede hedef (park halinde bile) görünemez.
+        if talon_kadrajda(pos, rpy):
+            continue
         if not _set_pose(node, CAMERA, pos, rpy):
             time.sleep(0.1)
             continue
-        # Taşınma sonrası TAZE kare bekle (en az 2 yeni kare)
+        # Taşınma sonrası TAZE kare bekle. En az 8 kare (~270 ms): set_pose
+        # ışınlanmasında render, kamera pozundan ÖNCE gövde pozunu güncelleyip
+        # kameranın KENDİ GÖVDESİNİ eski bakıştan görüntüleyebiliyor (17/650
+        # karede hayalet drone çıktı, 7'si etiket zehirledi). Uzun bekleme
+        # bu yarışı kapatır (pozitif toplayıcıdaki settle=0.20s'nin karşılığı).
         _, id0 = grabber.snapshot()
         t1 = time.time()
         frame = None
-        while time.time() - t1 < 1.0:
+        while time.time() - t1 < 1.5:
             f, fid = grabber.snapshot()
-            if fid >= id0 + 2:
+            if fid >= id0 + 8:
                 frame = f
                 break
             time.sleep(0.02)

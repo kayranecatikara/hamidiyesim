@@ -268,7 +268,7 @@ def main():
 
     try:
         sup.run_gps_approach, sup.run_visual_lead = fake_gps, fake_visual
-        sup._ga.status["handoff"] = True          # menzil kapısı açık
+        sup._ga.status["d_h"] = 10.0          # menzil kapısı açık
         stop = threading.Event()
         th = threading.Thread(
             target=sup.run_hybrid,
@@ -282,7 +282,107 @@ def main():
                 f"geçiş={sup.status['gecis_sayisi']}")
     finally:
         sup.run_gps_approach, sup.run_visual_lead = _orij_gps, _orij_vis
-        sup._ga.status["handoff"] = False
+        sup._ga.status["d_h"] = None
+
+    # ── T23: supervisor 'vuruldu' → görev biter, faz=VURULDU ──
+    olaylar2 = []
+    _og, _ov = sup.run_gps_approach, sup.run_visual_lead
+
+    def fake_gps2(conn, gp, gi, stop_event):
+        olaylar2.append("gps"); stop_event.wait(5.0)
+
+    def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None, kayip_kare_esik=None):
+        olaylar2.append("visual"); return "vuruldu"
+
+    try:
+        sup.run_gps_approach, sup.run_visual_lead = fake_gps2, fake_visual_vurus
+        sup._ga.status["d_h"] = 10.0
+        stop = threading.Event()
+        th = threading.Thread(target=sup.run_hybrid,
+                              args=(None, None, None, fake_wait, None, stop),
+                              daemon=True)
+        th.start(); th.join(10.0)
+        kontrol("T23 supervisor VURULDU → görev biter",
+                olaylar2 == ["gps", "visual"] and sup.status["faz"] == "VURULDU",
+                f"olaylar={olaylar2} faz={sup.status['faz']}")
+    finally:
+        sup.run_gps_approach, sup.run_visual_lead = _og, _ov
+        sup._ga.status["d_h"] = None
+
+    # ── T24/T25: visual_lead terminal (kör dalış → vuruş / süre dolunca ıska) ──
+    import guidance.gorsel_gudum.visual_lead as vlmod
+
+    class _Msg:
+        def __init__(s, t, **kw): s._t = t; s.__dict__.update(kw)
+        def get_type(s): return s._t
+        def get_srcSystem(s): return 1
+
+    class _FakeMav:
+        def __init__(s): s.gonderilen = []
+        def set_position_target_local_ned_send(s, *a): s.gonderilen.append(a)
+
+    class _FakeConn:
+        target_system = 1; target_component = 1
+        def __init__(s): s.mav = _FakeMav(); s._q = []
+        def durum_yaz(s, pos):
+            s._q = [_Msg("ATTITUDE", roll=0.0, pitch=0.0, yaw=0.0),
+                    _Msg("HEARTBEAT", custom_mode=4),
+                    _Msg("LOCAL_POSITION_NED", x=pos[0], y=pos[1], z=pos[2])]
+        def recv_match(s, type=None, blocking=False):
+            return s._q.pop(0) if s._q else None
+
+    def terminal_kosusu(cfg, menzil_dizisi, pose_var_dizisi):
+        """menzil_dizisi: her karede iris'in hedefe uzaklığı; pose_var_dizisi:
+        o karede pose geldi mi (True) / tespit yok (False). get_plane_truth
+        orijinde, iris (r,0,0)."""
+        conn = _FakeConn()
+        durum = {"i": 0}
+        def wp(son_seq, timeout=0.5):
+            i = durum["i"]
+            if i >= len(menzil_dizisi):
+                return None
+            durum["i"] += 1
+            r = menzil_dizisi[i]
+            conn.durum_yaz((r, 0.0, 0.0))
+            pose = make_pose(8, 90) if pose_var_dizisi[i] else None
+            return {"seq": i + 1, "pose": pose, "stamp": (i + 1) / 30.0,
+                    "wall_recv": _t.time()}
+        gpt = lambda: {"x": 0.0, "y": 0.0, "z": 0.0}
+        stop = threading.Event()
+        return vlmod.run_visual_lead(conn, wp, gpt, stop, cfg=cfg,
+                                     kayip_kare_esik=20)
+
+    cfgT = cfg_copy()
+    cfgT.TERMINAL_MENZIL = 8.0; cfgT.VURUS_MENZIL = 1.5; cfgT.TERMINAL_SURE = 2.0
+
+    # T24: yaklaş (10→6, pose var), sonra tespit KESİL ama menzil kapanmaya devam
+    # (6→1.2): kör dalış devreye girer, menzil<1.5 → VURULDU
+    menz = [10, 9, 8, 7, 6.5, 6] + [5, 4, 3, 2, 1.2]
+    posev = [True] * 6 + [False] * 5
+    sonuc = terminal_kosusu(cfgT, menz, posev)
+    kontrol("T24 kör dalış → VURULDU",
+            sonuc == "vuruldu", f"sonuç={sonuc}")
+
+    # T25: yaklaş sonra tespit kesil, menzil kapanıyor ama VURUS'a inmeden süre
+    # dolar (TERMINAL_SURE kısa) → ıska (kayip)
+    cfgT2 = cfg_copy()
+    cfgT2.TERMINAL_MENZIL = 8.0; cfgT2.VURUS_MENZIL = 1.5; cfgT2.TERMINAL_SURE = 0.08
+    menz2 = [10, 8, 7, 6, 5.5, 5] + [4.9, 4.8, 4.7, 4.6, 4.5, 4.4, 4.3, 4.2, 4.1, 4.0]
+    posev2 = [True] * 6 + [False] * 10
+    sonuc2 = terminal_kosusu(cfgT2, menz2, posev2)
+    kontrol("T25 kör dalış süresi dolunca ıska (kayip)",
+            sonuc2 == "kayip", f"sonuç={sonuc2}")
+
+    # ── T26: GÜRÜLTÜLÜ menzil (zıplayan) — kilit tutmalı, vuruşu yakalamalı.
+    # Eski kapaniyor-bayraklı mantık bu senaryoda kör dalışı düşürüyordu. ──
+    cfgT3 = cfg_copy()
+    cfgT3.TERMINAL_MENZIL = 8.0; cfgT3.VURUS_MENZIL = 3.0; cfgT3.TERMINAL_SURE = 1.0
+    # yaklaş (pose var) → tespit kesil → menzil canlıdaki gibi ZIPLASIN
+    menz3 = [10, 8, 7, 6, 5.5, 5] + [8.6, 3.8, 7.1, 2.7, 5.3, 2.75]
+    posev3 = [True] * 6 + [False] * 6
+    sonuc3 = terminal_kosusu(cfgT3, menz3, posev3)
+    kontrol("T26 gürültülü menzilde kilit tutar + vuruş",
+            sonuc3 == "vuruldu", f"sonuç={sonuc3} (2.7/2.75<3.0 yakalanmalı)")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

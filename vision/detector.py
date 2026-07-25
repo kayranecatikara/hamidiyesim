@@ -13,7 +13,9 @@ _MODEL_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                  "vision", "models", "avci_yolo.pt"),
 )
-_CONF_MIN = float(os.environ.get("AVCI_YOLO_CONF", "0.35"))
+# 0.45: val pozitiflerinde min conf 0.48 (0.45 altında pozitif YOK) — zayıf
+# pist/zemin FP'lerini keser, gerçek hedef kaybettirmez (2026-07-24 ölçümü).
+_CONF_MIN = float(os.environ.get("AVCI_YOLO_CONF", "0.45"))
 
 _model = None
 
