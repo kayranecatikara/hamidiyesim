@@ -10,7 +10,7 @@ Her blok **ayrı bir terminalde**, buradaki **sırayla** başlatılır.
 Boş bir terminalde (çalışan bileşenlerin olduğu terminalde değil):
 
 ```bash
-pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server'; sleep 3
+pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|gcs.gcs_server'; sleep 3
 ```
 
 ---
@@ -56,7 +56,7 @@ cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 export AVCI_GZ_CAMERA=1
 fuser -k 8000/tcp
-python3 -m control.gcs_server
+python3 -m gcs.gcs_server
 ```
 
 Web arayüz: <http://localhost:8000> — YOLO detector otomatik yüklenir

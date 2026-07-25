@@ -106,7 +106,7 @@ Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
 
 **Temizlik** (boş bir terminalde):
 ```bash
-pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server'; sleep 3
+pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|gcs.gcs_server'; sleep 3
 ```
 
 **Terminal 1 — Gazebo Harmonic** (açılması ~15 sn)
@@ -135,7 +135,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0
 cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 export AVCI_GZ_CAMERA=1
-python3 -m control.gcs_server
+python3 -m gcs.gcs_server
 ```
 
 **Terminal 5 — Mission Planner**
@@ -175,22 +175,52 @@ mono MissionPlanner.exe    # UDP 14551
 
 ```
 avci_sim/
-├── control/               # MAVLink kontrol + gcs_server (web/kamera/görev)
-│   ├── mav_common.py          # Ortak ArduPilot MAVLink altyapısı
+├── gcs/                   # Web Yer Kontrol İstasyonu
+│   ├── gcs_server.py          # FastAPI + gz-transport kamera + görev API
+│   └── gcs_ui/                # Web arayüz (HTML/CSS/JS)
+├── vehicle_control/       # Araç kontrol katmanı (MAVLink)
+│   ├── mavlink_common.py      # Ortak ArduPilot MAVLink altyapısı
 │   ├── drone_functions.py     # iris (ArduCopter) kontrol
 │   ├── plane_functions.py     # Talon (ArduPlane) kontrol
-│   ├── plane_patterns.py      # Kalkış + kare deseni
-│   ├── chase_algorithm.py     # SPRINT→APPROACH→LOCK→STRIKE
-│   ├── strike_algorithm.py    # Oransal Seyrüsefer (PN)
-│   └── gcs_server.py          # FastAPI + gz-transport kamera + görev API
-├── vision/                # OpenCV HSV hedef tespiti
+│   └── plane_patterns.py      # Kalkış + kare/daire deseni
+├── guidance/              # Avcı güdüm algoritmaları (türe göre klasörlü)
+│   ├── gps_gudum/             # Saf GPS güdüm hattı
+│   │   ├── gps_approach.py        # VARSAYILAN GPS yaklaşma güdümü
+│   │   ├── gps_chase.py           # Chase v2 (SPRINT→APPROACH→LOCK→STRIKE)
+│   │   └── gps_strike.py          # GPS terminal vuruş (Oransal Seyrüsefer)
+│   ├── gorsel_gudum/          # Kamera/pose tabanlı IBVS güdüm
+│   │   ├── guidance_core.py       # IBVS lead pursuit çekirdeği
+│   │   ├── visual_lead.py         # IBVS görsel güdüm döngüsü
+│   │   ├── adapter_copter.py      # Copter komut adaptörü
+│   │   └── adapter_fixedwing.py   # Sabit kanat adaptörü (stub)
+│   ├── hibrit_gudum/          # GPS↔görsel geçiş yönetimi
+│   │   └── supervisor.py          # Hibrit müdahale döngüsü
+│   └── ortak/                 # Paylaşılan yardımcılar
+│       └── common.py              # EMA, PID, setpoint, matematik
+├── vision/                # Çalışma zamanı görüntü işleme
+│   ├── detector.py            # YOLO hedef tespiti
+│   ├── pose_detector.py       # YOLO pose (keypoint) tespiti
+│   ├── geometry.py            # Kamera/keypoint geometri hesapları
+│   ├── detection_state.py     # Tespit durumu paylaşım katmanı
+│   └── models/                # Eğitilmiş modeller (avci_yolo.pt, avci_pose.pt)
+├── vision_training/       # Veri toplama + model eğitimi
+│   ├── capture_dataset.py     # YOLO dataset toplama (Gazebo)
+│   ├── capture_pose_dataset.py# Pose dataset toplama
+│   ├── capture_negatives.py   # Negatif örnek toplama
+│   ├── capture_runway_negatives.py # Pist hard-negative toplama
+│   ├── train_yolo.py          # YOLO detection eğitimi
+│   └── train_yolo_pose.py     # YOLO pose eğitimi
+├── demos/                 # Tek başına demo/test uçuş betikleri (run_*.py)
+├── diagnostics/           # Tanı araçları (arm_diag, fix_accel_bias)
+├── legacy/                # Eski dönem araçları (PX4/Classic kalıntıları)
 ├── sim/
 │   ├── gazebo_harmonic/       # Harmonic world + modeller (iris_cam, mini_talon_vtail)
 │   └── ardupilot_params/      # avci_copter.parm, avci_plane.parm
+├── tests/                 # Birim testleri
 ├── scripts/               # start_harmonic.sh, setup/start_mission_planner.sh
 ├── tools/mission_planner/ # (git'e dahil değil — setup script ile kurulur)
 ├── requirements.txt
-└── docs/ARDUPILOT_MIGRATION.md
+└── docs/                  # Rehberler (SIMULASYON_CALISTIRMA, GUIDANCE_ROADMAP...)
 ```
 
 ---
@@ -223,7 +253,7 @@ PROJE BAĞLAMI:
 Teknofest Avcı İHA hava-hava müdahale simülasyonu. Avcı multikopter (iris/ArduCopter)
 ile hedef sabit kanat (mini Talon/ArduPlane); ikisi de Gazebo Harmonic fiziğinde
 ArduPilot SITL ile GERÇEKTEN uçar. Kontrol, kamera işleme ve görev arayüzü tek bir
-web GCS'de (control/gcs_server.py, http://localhost:8000).
+web GCS'de (gcs/gcs_server.py, http://localhost:8000).
 
 ÖN KOŞUL:
 Ubuntu 22.04, internet erişimi, sudo yetkisi. BOŞ bir dizinde başlıyor olabilirsin;
@@ -234,7 +264,7 @@ mevcutsa) tekrar kurma, atla.
 Depo yoksa klonla, varsa güncelle:
 [ -d ~/projects/avci_sim/.git ] && (cd ~/projects/avci_sim && git pull) || git clone https://github.com/kayranecatikara/hamidiyesim.git ~/projects/avci_sim
 cd ~/projects/avci_sim
-DOĞRULA: ls ~/projects/avci_sim/control/gcs_server.py çıktı vermeli.
+DOĞRULA: ls ~/projects/avci_sim/gcs/gcs_server.py çıktı vermeli.
 
 --- ADIM 1: SİSTEM PAKETLERİ ---
 sudo apt-get update
@@ -299,7 +329,7 @@ Ortam değişkenlerini export ettikten ve /opt/ros/humble/setup.bash source etti
     shell'ini de öldürür.
 (b) SITL bağlantısı: Gazebo açıkken README "Terminal 2" komutuyla ArduCopter'ı başlat,
     çıktıda "EKF3 ... active" / GPS kilidi gör.
-(c) GCS kamera: AVCI_GZ_CAMERA=1 ile control.gcs_server'ı başlat; log'da
+(c) GCS kamera: AVCI_GZ_CAMERA=1 ile gcs.gcs_server'ı başlat; log'da
     "Iris kamerasından ilk görüntü" ve "Talon kamerasından ilk görüntü" satırlarını gör.
 
 --- BİTİRİŞ ---

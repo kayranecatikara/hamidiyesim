@@ -10,6 +10,13 @@
 #    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
 #  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
 
+# Frame tanımı (iris = X quad). ZORUNLU: sim_vehicle "--model JSON" ile
+# başlatıldığında SITL, gazebo-iris frame varsayılanlarını (copter.parm +
+# gazebo-iris.parm) yüklemez; FRAME_CLASS tanımsız kalır ->
+# "Frame: UNSUPPORTED" -> motorlar çıkış üretmez, drone kalkmaz.
+FRAME_CLASS 1
+FRAME_TYPE 1
+
 # Agresif eğim → yüksek yatay hız
 ANGLE_MAX 5500
 

@@ -14,7 +14,7 @@ gz sim -r sim/gazebo_harmonic/worlds/dataset_capture.sdf     # Terminal 1
 ```
 ```bash
 cd ~/projects/avci_sim && source /opt/ros/humble/setup.bash   # Terminal 2
-python3 -m vision.capture_dataset --count 2000
+python3 -m vision_training.capture_dataset --count 2000
 ```
 
 ## 1b) (Önerilir) Hard-negative kareler ekle
@@ -30,7 +30,7 @@ python3 -m vision.capture_negatives --count 500
 
 ```bash
 cd ~/projects/avci_sim
-zip -r talon_dataset.zip vision/datasets/talon
+zip -r talon_dataset.zip vision_training/datasets/talon
 # → talon_dataset.zip (Colab'e yüklenecek)
 ```
 
@@ -52,7 +52,7 @@ files.upload()
 
 **Hücre 3 — dataset.yaml (Colab yolu):**
 ```python
-yaml = """path: /content/vision/datasets/talon
+yaml = """path: /content/vision_training/datasets/talon
 train: images/train
 val: images/val
 nc: 1

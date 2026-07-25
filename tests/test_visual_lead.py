@@ -12,9 +12,9 @@ import math
 
 import numpy as np
 
-from control.guidance.adapter_copter import CopterAdapter
-from control.guidance.adapter_fixedwing import FixedWingAdapter
-from control.guidance.guidance_core import (
+from guidance.gorsel_gudum.adapter_copter import CopterAdapter
+from guidance.gorsel_gudum.adapter_fixedwing import FixedWingAdapter
+from guidance.gorsel_gudum.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
     govde_to_dunya, yukselti_duzeltme)
 from vision import geometry as geo
@@ -247,7 +247,7 @@ def main():
     # ── T22: supervisor geçiş zinciri GPS→VISUAL→(kayıp)→GPS→VISUAL→durdur ──
     import threading
     import time as _t
-    import control.guidance.supervisor as sup
+    import guidance.hibrit_gudum.supervisor as sup
     olaylar = []
     _orij_gps, _orij_vis = sup.run_gps_approach, sup.run_visual_lead
 

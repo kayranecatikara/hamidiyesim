@@ -11,7 +11,7 @@
 #      Talon Gazebo'da GERÇEKTEN uçar (relay YOK); gcs "kare çiz" ile kontrol.
 #
 # Ardından AYRI terminallerde:
-#   - python3 -m control.gcs_server      (web GCS + gz kamera + chase/strike)
+#   - python3 -m gcs.gcs_server      (web GCS + gz kamera + chase/strike)
 #   - bash scripts/start_mission_planner.sh
 #
 # Kullanım:
@@ -84,6 +84,6 @@ echo "=================================================================="
 echo "[HARMONIC] Tam sistem hazır."
 echo "  Loglar: $LOG/{gz_harmonic,copter_harmonic,plane_harmonic,harmonic_relay}.log"
 echo "  Şimdi AYRI terminallerde:"
-echo "    cd ~/projects/avci_sim && source /opt/ros/humble/setup.bash && python3 -m control.gcs_server"
+echo "    cd ~/projects/avci_sim && source /opt/ros/humble/setup.bash && python3 -m gcs.gcs_server"
 echo "    bash ~/projects/avci_sim/scripts/start_mission_planner.sh"
 echo "=================================================================="

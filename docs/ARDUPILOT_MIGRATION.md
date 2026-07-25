@@ -43,7 +43,7 @@ otomatik yükler.
 ### 2) Özel Web GCS
 ```bash
 source /opt/ros/humble/setup.bash
-python3 -m control.gcs_server        # http://localhost:8000
+python3 -m gcs.gcs_server        # http://localhost:8000
 ```
 
 ### 3) Mission Planner (mono gerektirir — bir kez kurulum)
@@ -82,7 +82,7 @@ cd ~/ardupilot && python3 Tools/autotest/sim_vehicle.py \
 
 1. ✅ ArduCopter GUIDED kalkış/iniş (NAV_TAKEOFF)
 2. ✅ ArduPlane TAKEOFF + uçuş + LOITER
-3. ✅ `mav_common` arm/mode/telemetri (ACK'lerle)
+3. ✅ `mavlink_common` arm/mode/telemetri (ACK'lerle)
 4. ✅ `drone_functions` kalkış/hareket/yaw/iniş
 5. ✅ `plane_functions`/`plane_patterns` arm/RC-override/FBWA dönüş
 6. ✅ İki araç eş zamanlı, 14550 & 14551'de ikisi de görünür
@@ -102,7 +102,7 @@ Bileşenler (sırayla, her biri ayrı terminal):
    (GAZEBO_PLUGIN/MODEL/RESOURCE_PATH + ROS2 + `/usr/share/gazebo/setup.sh`)
 2. ArduCopter: `sim_vehicle.py -v ArduCopter -f gazebo-iris -I0 --sysid 5 ...`
 3. ArduPlane: `sim_vehicle.py -v ArduPlane -f plane -I1 --sysid 2 ... --out udp:14552`
-4. Cessna relay: `python3 -m control.cessna_pose_relay`
+4. Cessna relay: `python3 -m legacy.cessna_pose_relay`
 5. gcs_server, 6. Mission Planner
 
 Doğrulanan bileşenler:

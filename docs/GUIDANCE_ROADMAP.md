@@ -44,7 +44,7 @@ dayanıklılık (mevcut `_apply_gps_noise` senaryosu tam bunu test eder).
 ## 3. Hedef Mimari
 
 ```
-control/guidance/
+guidance/
 ├── guidance_common.py      # ortak yardımcılar (EMA, clamp, vec3, accel-limit, ts)
 │                           #   — şu an chase+strike'ta BİREBİR kopyalı, buraya çıkar
 ├── gps_guidance.py         # SAF GPS: mevcut chase (takip/lock) + strike (terminal PN)
@@ -65,7 +65,7 @@ görsel hat sadece vel+yaw (strike'ın `_TYPEMASK_VEL_YAW` deseni).
 ## 4. Fazlar
 
 ### Faz 0 — Refactor: GPS hattını izole et + supervisor iskeleti
-- `control/guidance/` paketi. `guidance_common.py`'ye ortak yardımcıları çıkar
+- `guidance/` paketi. `guidance_common.py`'ye ortak yardımcıları çıkar
   (chase/strike'taki kopyalanmış `_clamp`, `_vec3_len`, EMA sınıfları, accel-limit).
 - `chase_algorithm.py` → `guidance/gps_guidance.py` (mantık aynı; pinhole "çerçeveleme"
   GPS hattının parçası olarak KALIR — gerçek kamera değil zaten).
@@ -88,7 +88,7 @@ görsel hat sadece vel+yaw (strike'ın `_TYPEMASK_VEL_YAW` deseni).
   (en doğru ground-truth) ya da telemetriden.
 - **Domain randomization:** ışık, hedef açısı/mesafesi, arka plan, (mevcut) video
   paraziti — gerçeğe/gürültüye transfer için.
-- `vision/train_yolo.py`: Ultralytics YOLO **nano** (kurulumda en güncel stabil
+- `vision_training/train_yolo.py`: Ultralytics YOLO **nano** (kurulumda en güncel stabil
   nano ağırlık sabitlenir), `dataset.yaml` + `model.train()`.
 - `vision/detector.py`: YOLO wrapper; `detect(frame) → {cx,cy,w,h,conf,bbox}`
   **aynı sözlük** — böylece `set_detection`/`draw_overlay`/downstream değişmez;
@@ -131,7 +131,7 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
   telafisi, görüş zarfı, yükselti düzeltmesi sınır testleri, adaptör sözleşmeleri).
 
 ### Faz 4 — Supervisor: geçiş + fallback — UYGULANDI (2026-07-23)
-- `control/guidance/supervisor.py` `run_hybrid`:
+- `guidance/hibrit_gudum/supervisor.py` `run_hybrid`:
   `GPS (gps_approach) → (görsel kilit) → VISUAL (visual_lead) → (temas kaybı) → GPS ...`
   stop_chase'e kadar döner.
 - **GPS→görsel:** KILIT_N=10 ardışık pose karesi (conf ≥ 0.5) **VE**
