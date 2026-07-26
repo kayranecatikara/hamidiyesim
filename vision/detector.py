@@ -17,6 +17,35 @@ _MODEL_PATH = os.environ.get(
 # pist/zemin FP'lerini keser, gerçek hedef kaybettirmez (2026-07-24 ölçümü).
 _CONF_MIN = float(os.environ.get("AVCI_YOLO_CONF", "0.45"))
 
+# GPU KULLANIMI — ÖLÇÜM: predict() cihaz belirtilmediği için YOLO
+# CPU'da çalışıyordu ve 8 çekirdeği doldurup (%793 CPU) Gazebo'yu
+# aç bırakıyordu → simülasyon %61 hızda koşuyor, her şey gecikmeli
+# görünüyordu. Kart (RTX 4060) boşta duruyordu. Artık GPU'da çalışır.
+_ETIKET = "YOLO-TESPIT"
+
+try:
+    import torch
+    if torch.cuda.is_available():
+        _CIHAZ = 0
+        _CIHAZ_AD = torch.cuda.get_device_name(0)
+    else:
+        _CIHAZ = 'cpu'
+        _CIHAZ_AD = None
+except Exception:
+    _CIHAZ = 'cpu'
+    _CIHAZ_AD = None
+
+# Seçilen cihaz AÇIKÇA yazılır. Sebebi yaşanmış bir arıza: NVIDIA sürücüsü
+# kernel modülüyle uyumsuz kaldığında torch sessizce CPU'ya düşüyordu; kimse
+# fark etmediği için günlerce "model çok yavaş / arayüz geç" diye başka yerde
+# hata arandı. Ölçüm: GPU 3.6 ms/kare (277 FPS), CPU 58.2 ms/kare (17 FPS) —
+# 16 KAT fark. Bir daha sessizce düşmesin diye CPU hâli UYARI olarak basılır.
+if _CIHAZ == 'cpu':
+    print(f"[{_ETIKET}] !!! UYARI: GPU YOK, CPU'da calisiyor (~16x YAVAS) !!!")
+    print(f"[{_ETIKET}] !!! kontrol: nvidia-smi  /  torch.cuda.is_available() !!!")
+else:
+    print(f"[{_ETIKET}] GPU aktif: {_CIHAZ_AD}")
+
 _model = None
 
 
@@ -37,7 +66,7 @@ def load(model_path=None):
 def detect_talon(frame_bgr, conf=None):
     """En yüksek güvenli Talon tespitini döndürür (dict) ya da None."""
     model = load()
-    res = model.predict(frame_bgr, conf=(conf if conf is not None else _CONF_MIN),
+    res = model.predict(frame_bgr, device=_CIHAZ, conf=(conf if conf is not None else _CONF_MIN),
                         verbose=False)[0]
     boxes = res.boxes
     if boxes is None or len(boxes) == 0:

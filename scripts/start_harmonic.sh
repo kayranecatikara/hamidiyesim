@@ -43,6 +43,22 @@ source /opt/ros/humble/setup.bash 2>/dev/null
 export GZ_SIM_SYSTEM_PLUGIN_PATH="$APGZ/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
 export GZ_SIM_RESOURCE_PATH="$PROJ/sim/gazebo_harmonic/models:$APGZ/models:$APGZ/worlds:${GZ_SIM_RESOURCE_PATH:-}"
 
+# NVIDIA RENDER — ÖLÇÜLDÜ, ZORUNLU.
+# Bu satırlar buraya YENİ eklendi: yukarıdaki yorum "NVIDIA render" diyordu
+# ama hiçbir değişken ayarlanmıyordu, Gazebo sessizce Intel iGPU'da (hatta
+# yazılım render'da) çalışıyordu. Makine hibrit grafikli ("prime-select
+# query" = on-demand): NVIDIA yalnız AÇIKÇA istenirse devreye girer.
+#   glxinfo -B                      -> Mesa Intel(R) Graphics (RPL-P)
+#   offload değişkenleriyle          -> NVIDIA GeForce RTX 4060 Laptop GPU
+# ÖLÇÜM (kare senaryo + chase, aynı sahne):
+#   Intel/yazılım : RTF 0.71, gz süreçleri %404 CPU, GPU boş
+#   NVIDIA        : RTF 1.00, GPU 1054 MiB / %19
+# RTF 0.71 demek simülasyon gerçek zamanın %71'i hızında koşuyor demekti;
+# telemetri ve kamera da o oranda geç geliyordu (arayüzdeki "gecikme").
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
+export __VK_LAYER_NV_optimus=NVIDIA_only
+
 # 1) Gazebo Harmonic
 if [ "${GZ_HEADLESS:-0}" = "1" ]; then
     echo "[HARMONIC] Gazebo (headless) başlatılıyor..."
@@ -63,7 +79,7 @@ echo "[HARMONIC] ArduCopter (gazebo-iris --model JSON) başlatılıyor..."
 ( cd "$AP" && nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
     -I0 --sysid 5 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_copter.parm" \
     --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" > "$LOG/copter_harmonic.log" 2>&1 & )
+    --mavproxy-args="--daemon --streamrate=25" > "$LOG/copter_harmonic.log" 2>&1 & )
 
 # 3) ArduPlane SITL (Gazebo mini_talon_vtail — GERÇEK uçuş, fdm 9012)
 #    Talon artık Gazebo'da ArduPilotPlugin ile uçuyor; relay YOK.
@@ -72,7 +88,7 @@ echo "[HARMONIC] ArduPlane (gazebo mini_talon --model JSON:9012) başlatılıyor
     --model JSON:127.0.0.1:9012 \
     -I1 --sysid 2 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_plane.parm" \
     --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" > "$LOG/plane_harmonic.log" 2>&1 & )
+    --mavproxy-args="--daemon --streamrate=25" > "$LOG/plane_harmonic.log" 2>&1 & )
 
 echo "[HARMONIC] SITL'lerin açılması bekleniyor (25s)..."
 sleep 25
