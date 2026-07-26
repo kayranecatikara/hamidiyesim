@@ -114,7 +114,6 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
   yaw. Komut yolu `common.send_velocity` (SET_POSITION_TARGET_LOCAL_NED hız+yaw).
   **SET_ATTITUDE_TARGET kullanılmaz** — multirotorda attitude komutu yanlış araç
   (burun yukarı = tırmanış değil geri yavaşlama); gaz/eğim ArduCopter'ın işi.
-- `adapter_fixedwing.py` (STUB): sabit kanatta SET_ATTITUDE_TARGET + yatarak dönüş.
   **Yedek gaz politikası (uygulanınca):** hover gazını SABİT VARSAYMA, GUIDED'da
   havada tutup çıkış gazını ölçerek HOVER_GAZ belirle;
   `gaz = clip(HOVER_GAZ/cos(egim) + irtifa_pid, 0.15, 0.85)`; `egim>60°` → komut

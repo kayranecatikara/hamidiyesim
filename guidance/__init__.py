@@ -14,7 +14,6 @@ Alt klasörler:
                             pose keypoint → menzil bağımsız lead → u_govde/hata açıları)
     - visual_lead.py      : IBVS döngüsü (olay güdümlü, kameraya kilitli, CSV log)
     - adapter_copter.py   : copter komut adaptörü (u_govde → NED hız + yaw)
-    - adapter_fixedwing.py: sabit kanat adaptörü (STUB — NotImplementedError)
 
   hibrit_gudum/    — GPS ↔ görsel geçiş yönetimi
     - supervisor.py  : hibrit müdahale döngüsü (GPS fazı → görsel faz geçişi)

@@ -23,7 +23,6 @@ import time
 
 from vehicle_control import mavlink_common
 from guidance.gorsel_gudum.adapter_copter import CopterAdapter
-from guidance.gorsel_gudum.adapter_fixedwing import FixedWingAdapter
 from guidance.ortak.common import send_velocity
 from guidance.gorsel_gudum.guidance_core import Cfg, LeadPursuitCore, govde_to_dunya
 
@@ -91,10 +90,15 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
     dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
     core = LeadPursuitCore(cfg)
-    if cfg.PLATFORM == "copter":
-        adapter = CopterAdapter(cfg)
-    else:
-        adapter = FixedWingAdapter(cfg)   # stub: command() NotImplementedError
+    # Sabit kanat adaptörü YOKTU: yalnızca NotImplementedError fırlatan boş
+    # bir iskeleti (adapter_fixedwing.py) tutmanın faydası olmadığı için
+    # kaldırıldı. Desteklenmeyen platform sessizce copter komutu almasın
+    # diye burada açıkça hata verilir.
+    if cfg.PLATFORM != "copter":
+        raise ValueError(
+            f"Desteklenmeyen platform: {cfg.PLATFORM!r}. Görsel güdüm yalnız "
+            "'copter' destekler (AVCI_PLATFORM=copter).")
+    adapter = CopterAdapter(cfg)
 
     aras = _ArasState()
     son_seq = 0            # _pose_seq 0'dan başlar; ilk GERÇEK kareyi bekle

@@ -13,7 +13,6 @@ import math
 import numpy as np
 
 from guidance.gorsel_gudum.adapter_copter import CopterAdapter
-from guidance.gorsel_gudum.adapter_fixedwing import FixedWingAdapter
 from guidance.gorsel_gudum.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
     govde_to_dunya, yukselti_duzeltme)
@@ -219,13 +218,6 @@ def main():
     kontrol("T18 |v|=V_KAPANMA ve yön=u_dunya",
             abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01 and yon > 0.9999,
             f"|v|={vn:.3f} m/s yön·u_dunya={yon:.6f}")
-
-    # ── T19: fixedwing stub sessizce GEÇMEZ ──
-    try:
-        FixedWingAdapter(cfg).compute()
-        kontrol("T19 fixedwing stub NotImplementedError", False, "istisna atmadı!")
-    except NotImplementedError:
-        kontrol("T19 fixedwing stub NotImplementedError", True)
 
     # ── T20: ivme rampası — hız sıçramasında uygulanan ivme ≤ IVME_TAVAN ──
     ad = CopterAdapter(cfg)                   # v_onceki = 0

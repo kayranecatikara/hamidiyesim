@@ -8,7 +8,7 @@ yönelimini çıkarır ve saf takip yönünün üstüne MENZİLDEN BAĞIMSIZ bir
 
 Çıktı bir YÖNDÜR: u_govde (FRD birim vektör) ve ondan türeyen yaw_hata /
 pitch_hata. Bu geometri quad'da da sabit kanatta da aynıdır — platforma bağlı
-komut üretimi adaptörlerdedir (adapter_copter / adapter_fixedwing).
+komut üretimi adaptördedir (adapter_copter).
 
 Kritik tasarım kuralları (master spec):
   - Kaydırma PİKSEL uzayında DEĞİL, yön vektörü uzayında yapılır (FOV 125°
