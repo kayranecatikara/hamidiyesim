@@ -4,29 +4,68 @@
 # start_ardupilot_sitl.sh içinde --add-param-file ile yüklenir.
 # Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
 #
-# Neden bu değerler (SITL'de ölçülerek belirlendi):
-#  - Varsayılan ANGLE_MAX=30° ile "+"quad yatayda ~10.3 m/s'de takılıyordu
-#    (aerodinamik terminal hız). 55°'de ~18.6 m/s'e çıkıyor — chase'in
-#    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
-#  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
+# ★★★ ÇOK ÖNEMLİ — 2026-07-26'da BULUNAN ARIZA ★★★
+# Bu dosyadaki performans ayarlarının HİÇBİRİ araca uygulanmıyordu.
+# Kullandığımız ArduPilot sürümü parametreleri hem YENİDEN ADLANDIRMIŞ
+# hem de SI birimlerine geçirmiş; eski isimler sessizce yok sayılıyordu
+# (ArduPilot bilinmeyen parametre için hata vermez).
+#
+#   yazdığımız (ESKİ)           aracın gerçek adı (YENİ)  fabrika değeri
+#   ANGLE_MAX    5500 cd    ->  ATC_ANGLE_MAX  (derece)   30
+#   WPNAV_ACCEL  1800 cm/s² ->  WP_ACC         (m/s²)     2.5
+#   WPNAV_SPEED  2200 cm/s  ->  WP_SPD         (m/s)      10
+#   WPNAV_SPEED_UP/DN       ->  WP_SPD_UP / WP_SPD_DN     2.5 / 1.5
+#   LOIT_SPEED   2200       ->  LOIT_SPEED_MS  (m/s)      12.5
+#   PSC_VELXY_P             ->  PSC_NE_VEL_P              2.0
+#   ATC_SLEW_YAW            ->  (kaldırıldı; ATC_RATE_Y_MAX=0 = sınırsız)
+#
+# Yani drone günlerce FABRİKA AYARLARIYLA uçtu. Ölçümle doğrulandı:
+# WP_ACC=2.5 m/s² → atan(2.5/9.81) = 14.3° eğim tavanı; uçuş kaydında
+# aracın eğimi hiçbir manevrada 16-17°'yi geçmedi ve 20 m/s komutuna
+# rağmen 14.7 m/s'de takıldı. "Manevrada geri kalma"nın kök nedeni buydu.
+#
+# DOĞRULAMA (her değişiklikten sonra yapılmalı):
+#   sim_vehicle çıktısındaki "Saved N parameters to mav_5_1.parm" dosyası
+#   aracın GERÇEK değerleridir. Buradaki her satırın orada aynı değerle
+#   göründüğü kontrol edilmeli — yoksa ayar sessizce yok sayılmıştır.
 
 # Frame tanımı (iris = X quad). ZORUNLU: sim_vehicle "--model JSON" ile
-# başlatıldığında SITL, gazebo-iris frame varsayılanlarını (copter.parm +
-# gazebo-iris.parm) yüklemez; FRAME_CLASS tanımsız kalır ->
-# "Frame: UNSUPPORTED" -> motorlar çıkış üretmez, drone kalkmaz.
+# başlatıldığında SITL, gazebo-iris frame varsayılanlarını yüklemez;
+# FRAME_CLASS tanımsız kalır -> "Frame: UNSUPPORTED" -> drone kalkmaz.
 FRAME_CLASS 1
 FRAME_TYPE 1
 
-# Agresif eğim → yüksek yatay hız
-ANGLE_MAX 5500
+# --- EĞİM TAVANI (derece) ---
+# Fabrika 30°. Yatay ivme tavanı = 9.81·tan(θ):
+#   30° -> 5.7 m/s²      45° -> 9.8 m/s²      55° -> 14.0 m/s²
+# 45°'de quad dikey itkisinin cos(45°)=%71'ini korur (1.41× itki gerekir),
+# iris'in itki/ağırlık oranı için rahat sınır. Kararlılık doğrulandıktan
+# sonra 55°'ye çıkarılabilir.
+# NOT: Eski dosyadaki "60° ve 65° denendi, crash etti" notu GEÇERSİZDİ —
+# o denemelerde parametre zaten hiç uygulanmıyordu, drone hep 30°'deydi.
+ATC_ANGLE_MAX 45
 
-# GUIDED/WPNAV hız ve ivme tavanları
-WPNAV_SPEED 2200
-WPNAV_SPEED_UP 1000
-WPNAV_SPEED_DN 1000
-WPNAV_ACCEL 600
-LOIT_SPEED 2200
-PSC_VELXY_P 2.0
+# --- YATAY HIZ / İVME (m/s, m/s²) ---
+# WP_ACC eğim tavanının altında kalmalı (45° -> 9.8 m/s²).
+WP_SPD 22
+WP_ACC 9.5
+WP_SPD_UP 8
+WP_SPD_DN 8
+WP_ACC_Z 5
+LOIT_SPEED_MS 22
+
+# --- JERK: İVMENİN NE HIZLA DEĞİŞEBİLECEĞİ (m/s³) ---
+# Fabrika WP_JERK=1.0 → ivmeyi 0'dan 9.8 m/s²'ye çıkarmak 10 SANİYE sürer.
+# Manevra ~8 saniye olduğu için araç tam eğime hiç ulaşamıyordu; eğim
+# ölçümlerde 16-17°'de takılı kalmasının ikinci nedeni buydu.
+# 15 m/s³ ile aynı geçiş 0.65 saniye.
+WP_JERK 15
+PSC_JERK_NE 15
+PSC_JERK_D 8
+
+# --- POZİSYON/HIZ KONTROLCÜSÜ ---
+PSC_NE_VEL_P 2.0
+PSC_NE_POS_P 1.5
 
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
 FS_GCS_ENABLE 0

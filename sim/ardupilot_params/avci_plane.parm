@@ -7,7 +7,10 @@
 # max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
 
 # Cruise / airspeed hedefleri (cm/s)
-TRIM_ARSPD_CM 1500
+# Hedef hızı 15→11 m/s: avcı tavanı 19 m/s (quad fiziği) olduğundan 15 m/s
+# hedefe karşı kapanma yalnız 3.8 m/s kalıyor ve hedef dönmeden yetişilemiyordu.
+# 11 m/s ile kapanma 8 m/s → 100 m 12 saniyede kapanır.
+TRIM_ARSPD_CM 1100
 ARSPD_FBW_MIN 1200
 ARSPD_FBW_MAX 2200
 
