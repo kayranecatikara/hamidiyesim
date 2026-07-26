@@ -1,364 +1,422 @@
 """
 =============================================================
-  GPS YAKLAŞMA HATTI — eski sistemin (ana_kontrol.py) portu
+  GPS GÜDÜM — GÖLGE TAKİBİ (doğrudan konum bağlantısı)
 =============================================================
-Önceki sistemdeki GPS güdüm mekanizmasının (AvciKontrol.adim() [GPS-YAKLASMA]
-yolu) bu simülasyona uyarlanmış hali. GÜDÜM YASASI AYNI; yalnız veri kaynakları
-ve hareket komutları bu sisteme dönüştürüldü:
+MANTIK TEK CÜMLE:
+    Avcı, hedefin GECIKME saniye ÖNCEKİ konumuna kilitlenir;
+    ALT_OFFSET metre altında uçar, burnu hedefe dönüktür.
 
-  ESKİ (oyun SDK)                          YENİ (avci_sim / ArduPilot)
-  ─────────────────────────────            ─────────────────────────────
-  birim: cm, z-YUKARI                      metre, NED (z-AŞAĞI)
-  get_target_location() bozuk GNSS         get_plane() → _noisy_plane_telem
-    + GNSSFiltre (2sn lead)                  + EMA pozisyon + sonlu-fark hız
-  get_drone_location() (cm)                get_iris() → LOCAL_POSITION_NED (m)
-  set_control_surfaces(thr,pitch,          SET_POSITION_TARGET_LOCAL_NED
-    roll,yaw) @50Hz + rate-limit             hız+yaw @20Hz + ivme sınırı
-  dikey iç döngü (KV_Z+integral→thr)       ArduPilot hız kontrolcüsü (vz komutu)
-  world_to_body + PITCH/ROLL komutu        dünya-NED hız vektörü komutu
+Yani avcı hedefin GÖLGESİDİR. Hedef nereye gittiyse avcı da tam oraya
+gider — sadece biraz sonra. Aradaki mesafe kendiliğinden oluşur:
 
-KORUNAN MEKANİKLER (eski koddaki şekliyle):
-  - KUYRUK İSTASYONU (standoff): komut istasyonu hedefin HIZ YÖNÜNÜN
-    APPROACH_STANDOFF gerisinde → drone yandan yetişse bile arkaya süzülür,
-    hedef hep önde/kadrajda (GPS fazının amacı GÖRSEL TEMAS: YOLO tespiti).
-  - LEAD → FEEDFORWARD: eski ayrık 0.5sn nişan lead'inin işini hız komutundaki
-    hedef-hızı feedforward'u görür (sürekli lead; standoff gerçek hedefe göre).
-  - FRENLEME (göreli): tavan = min(V_CAP_FAR, hedef_hızı + kapanma_payı(d));
-    kapanma payı BRAKE_DIST altında V_CLOSE_FAR→V_CLOSE_NEAR iner. Hedef hızı
-    ayrıca hız komutuna FEEDFORWARD eklenir (tutum→hız komut dönüşümünün gereği).
-  - LOOK-UP GEOMETRİSİ: avcı hedefin ALTINDA uçar (menzil-ölçekli ofset,
-    LOS yükseliş açısı ≥ LOOKUP_ELEV_DEG) → hedef GÖKYÜZÜ önünde siluet,
-    YOLO tespiti kopmaz. Kamera 25° yukarı tilt'li → kadraj da doğru oturur.
-    (NOT: gps_chase.py v2 hedefin ÜSTÜNDE uçuyordu; eski sistemin kanıtlanmış
-    geometrisi ALTTAN bakıştır — dataset de bu geometriyle toplandı.)
-  - ALÇALMA ÖNCELİĞİ: ref irtifanın üstündeysek yatay kovalama kısılır
-    (ileri-uçuş taşıması alçalmayı engellemesin).
-  - DİKEY KADEMELİ HIZ: ez → hedef vz (VZ_MAX tavanlı, trapez) — eski cascade'in
-    dış döngüsü; iç döngü (throttle) ArduPilot'a devredildi.
-  - YAW: burun daima HEDEFE (standoff noktasına değil) döner, deadband'li.
-  - None YÖNETİMİ: telemetri donuk/değişmemişse HOLD_S boyunca son kestirimle
-    devam (lead'li), sonrası DROPOUT → loiter (hover). frozen bayrağı okunur.
-  - HANDOFF HİSTEREZİSİ: d_h < HANDOFF_RANGE → KILIT (görsel faz devralmaya
-    hazır); d_h > HANDOFF_EXIT → geri ARAMA. Faz 4 supervisor bu durumu
-    görsel kilit sayacıyla birleştirecek (bkz. supervisor.py).
+    mesafe ≈ hedef_hızı × GECIKME        (15 m/s × 0.7 s ≈ 10 m)
 
-Arayüz: run_gps_approach(conn, get_plane, get_iris, stop_event)
-  get_plane() -> {x,y,z,yaw,frozen}  (m, NED; GPS-gürültülü hedef telemetrisi)
-  get_iris()  -> {x,y,z}             (m, NED; kendi konum)
+NEDEN BÖYLE (önceki sürümlerin hepsi buradan patlıyordu):
+    Eskiden güdüm HIZ komutu üretiyordu: nişan noktasına bak, hata hesapla,
+    kazançla çarp, tavana sığdır, feedforward ekle... Her manevrada bu
+    zincirin bir halkası komutu kısıyordu ve drone duraklıyordu. Ölçümle
+    bulunan beş ayrı arıza (tavan feedforward'ı kesiyor, head-on'da terimler
+    birbirini götürüyor, dönüşte fren, köşeyi dolaşma, telemetri boşluğunda
+    durma) hep AYNI kök nedenin belirtileriydi: hız komutunu biz üretiyorduk.
+
+    Artık üretmiyoruz. Drone'a "şu NOKTAYA git, hedef de şu hızla gidiyor"
+    diyoruz; hız profilini ArduCopter'ın 400 Hz'lik konum kontrolcüsü
+    çıkarıyor. Bizim 20 Hz'lik döngümüzün frenleme/kazanç/tavan hesabı
+    tamamen devre dışı — kısacak bir halka kalmadı.
+
+Uçuş profili:
+    Yatay : hedefin GECIKME saniye önceki (x, y) noktası
+    Dikey : o noktanın irtifasının ALT_OFFSET altı (kamera 25° yukarı
+            baktığı için hedef kadrajda kalır), güvenlik tabanı MIN_ALT
+    Burun : daima hedefe dönük
+
+Arayüz (değişmedi):
+    run_gps_approach(conn, get_plane, get_iris, stop_event)
+      get_plane() -> {x,y,z,vx,vy,vz,...}  (m, NED — iris çerçevesine
+                     taşınmış hâlde; bkz. gcs_server _frame_off)
+      get_iris()  -> {x,y,z,...}           (m, NED)
 =============================================================
 """
 
 import math
+import os
 import time
 
-from guidance.ortak.common import (
-    clamp, normalize_angle, limit_acceleration, send_velocity,
-)
+from guidance.ortak.common import clamp, normalize_angle, send_velocity
 
 
-# ══════════════════════════════════════════════════════════
-#  CFG — eski Cfg ile aynı isimler, metreye çevrilmiş değerler
-# ══════════════════════════════════════════════════════════
 class Cfg:
-    LOOP_HZ = 20.0                # sistem geleneği (eski 50 Hz; setpoint için 20 yeter)
+    LOOP_HZ = 20.0
 
-    # --- STANDOFF / İSTASYON (anti-overshoot + kadraj) ---
-    # Eski koddaki ayrık APPROACH_LEAD_S (0.5s nişan lead'i) hız alanında YOK:
-    # hedef hızı feedforward'u sürekli lead sağlar; standoff GERÇEK hedefe göre.
-    # 10m = eski sistemin KANITLANMIŞ EFEKTİF takip mesafesi (komut 5m + pursuit
-    # lag ≈ 10m notu). Kadraj geometrisi: 10m geriden + 5m alttan → hedefe bakış
-    # açısı atan(5/10)=26.6° ≈ kamera tilt 25° → hedef kadraj MERKEZİNDE; kutu
-    # ~20px (200px·m/d) → YOLO tespiti rahat (model min 10px ile eğitildi).
-    APPROACH_STANDOFF = 10.0      # m; istasyon hedefin bu kadar gerisinde
-    TRACK_MIN_SPD     = 3.0       # m/s; hedef bundan hızlıysa istasyon HIZ YÖNÜNÜN
-                                  # gerisinde (kuyruk takibi); yavaşsa LOS gerisi
+    # --- GÖLGE: TEK AYAR ---
+    # Avcı, hedefin bu kadar saniye önceki konumunda durur.
+    # Mesafe = hedef_hızı × GECIKME olduğundan hedef hızlanınca aralık
+    # kendiliğinden açılır, yavaşlayınca kapanır — yani avcı hedefin
+    # YOLUNDA kalır, mesafeyi ayrıca kovalamak gerekmez.
+    GECIKME    = 0.7      # s; 15 m/s'de ≈ 10 m arkada
+    ALT_OFFSET = 6.0      # m; hedefin kaç metre ALTINDA uçacak (kadraj için)
+    MIN_ALT    = 15.0     # m; asgari güvenli irtifa (referans irtifa tabanı)
 
-    # --- LOOK-UP GEOMETRİSİ (alttan bakış; gökyüzü silueti) ---
-    LOOKUP_ELEV_DEG     = 6.0     # LOS yükseliş açısı setpoint'i (0 = kapalı)
-    APPROACH_ALT_OFFSET = 5.0     # m; hedefin altında kalınacak ASGARİ dikey ofset
-    LOOKUP_MIN_ALT      = 8.0     # m; alçalma taban irtifası (yere çakılma koruması)
+    # --- YERE ÇARPMA KORUMASI ---
+    # KURTARMA_ALT bilerek MIN_ALT'ın ALTINDA: normal alçak uçuşta
+    # tetiklenmemeli, yalnız gerçekten aşağı kaçarken devreye girmeli.
+    KURTARMA_ALT  = 12.0  # m; bu irtifanın altı = koşulsuz kurtarma
+    KURTARMA_SURE = 3.0   # s; çarpmaya bu kadar süre kaldıysa kurtarma
+    GUVENLI_ALT   = 35.0  # m; kurtarmadan ancak bu irtifada çıkılır
+    YAW_SAPMA_SINIR = 75.0  # °; burun komuttan bu kadar saparsa kontrol kaybı
+    YAW_SAPMA_CIK   = 40.0  # °; kurtarmadan çıkış için sapma bunun altına inmeli
+    YAW_MIN_MESAFE  = 4.0   # m; hedefe bundan yakınken yaw dondurulur
 
-    # --- YAKLAŞMA HIZI PROFİLİ / FRENLEME ---
-    # Tavan HEDEF HIZINA GÖRELİDİR: vcap = min(V_CAP_FAR, |v_hedef| + kapanma_payı(d)).
-    # Eski mutlak tavan (5 m/s yakında) hedef 15 m/s uçarken ~50m'de dengeye
-    # kilitleniyordu (kapanma hızı 0). Fren NİYETİ korunur: yakında kapanma payı
-    # küçülür → overshoot yok; ama tavan asla hedefin kendi hızının altına inmez.
-    V_CAP_FAR    = 19.0           # m/s; MUTLAK tavan (ANGLE_MAX=55° ile ~19.5 ölçüldü)
-    V_CLOSE_FAR  = 14.0           # m/s; uzakta izin verilen KAPANMA hızı (hedef hızı üstü)
-    V_CLOSE_NEAR = 2.5            # m/s; standoff yakınında kapanma hızı
-    BRAKE_DIST   = 70.0           # m; bu mesafe altında kapanma payı kademeli düşer
+    # --- GÖLGEYE ÇEKME (manevrada geri kalmayı kapatan terim) ---
+    KP_KONUM  = 0.8       # konum hatası (m) → ek hız (m/s)
+    KP_DIKEY  = 1.0       # irtifa hatası (m) → dikey hız (m/s)
+    KD_KONUM  = 2.0       # sönümleme: yaklaşma hızını keser (overshoot önler)
+    V_TAVAN   = 20.0      # m/s; KOMUTUN TOPLAM tavanı. Quad ANGLE_MAX=55°
+                          # ile ~19 m/s yapabiliyor; bunun çok üstünde komut
+                          # vermek drone'u savurup ÇAKTIRDI (ölçüldü).
 
-    # --- PD KAZANÇLARI (hata m → hız m/s) ---
-    # Eski KP_H=0.00025/cm tutum-komut alanındaydı (30 m hatada tam yetki);
-    # hız alanı karşılığı: 0.8 1/s → ~24 m hatada tavana doyar. KD oranı (2.4s)
-    # tutum salınımını söndürmek içindi; hız döngüsünü ArduPilot söndürür → küçük.
-    KP_H = 0.8                    # yatay konum hatası → hız
-    KD_H = 0.25                   # yatay türev (EMA'lı) → sönümleme
-    DERIV_EMA = 0.2               # türev EMA katsayısı (eskiyle aynı)
+    # --- SINIRLAR (yalnız emniyet; normal uçuşta devreye girmez) ---
+    V_MAX   = 19.0        # m/s; yakalama fazındaki hız komutunun tavanı
+    # ★ TIRMANMA ve ALÇALMA tavanları AYRI olmak zorunda.
+    # VZ_YUKARI: 3.0 idi ve darboğazdı — araç WP_SPD_UP=8 m/s tırmanabilirken
+    #   güdüm üçte birinde tutuyordu (100 m fark 33 saniye sürüyordu).
+    # VZ_ASAGI : 8 m/s ALÇALMA drone'u ÇAKTIRDI. Hedef 65 m'den 29 m'ye
+    #   daldığında avcı peşinden indi; hızlı alçalışta motorlar düşük itkiye
+    #   iner ve yaw'ı tutacak diferansiyel itki kalmaz. Kayıt: güdüm sabit
+    #   59° yaw komut ederken aracın yaw'ı 77° → 134° → -116° savruldu
+    #   (roll/pitch küçük kaldı, yani savrulma değil YAW OTORİTESİ KAYBI),
+    #   ardından yere çakıldı. Alçalma yaw otoritesini koruyacak kadar
+    #   yavaş tutulur; hedefi kaybetmek çakılmaktan iyidir.
+    VZ_YUKARI = 8.0       # m/s; tırmanma tavanı
+    VZ_ASAGI  = 3.5       # m/s; alçalma tavanı (yaw otoritesi için)
+    VZ_MAX  = 8.0         # m/s; kurtarma tırmanışında kullanılır
+    YAKALAMA     = 60.0   # m; konum moduna DÖNÜŞ eşiği
+    YAKALAMA_CIK = 80.0   # m; hız moduna ÇIKIŞ eşiği (histerezis)
+    GECMIS_S = 8.0        # s; konum geçmişi bu kadar geriye tutulur
 
-    # --- DİKEY (eski cascade'in DIŞ döngüsü; iç döngü ArduPilot'ta) ---
-    KP_Z_POS = 1.5                # 1/s; ez → hedef dikey hız (birimden bağımsız, aynı)
-    VZ_MAX   = 3.5                # m/s; tırmanma/alçalma hız tavanı (eski 350 cm/s)
-
-    # --- ALÇALMA ÖNCELİĞİ (dikey-yatay ayrıştırma) ---
-    ALC_ONCELIK_M   = 8.0         # m; ref'in bu kadar üstünde yatay kovalama %15'e iner
-    ALC_ONCELIK_MIN = 0.15
-
-    # --- YAW ---
-    YAW_DEADBAND = math.radians(3.0)
-    YAW_RATE_MAX = math.radians(180.0)   # komut yaw dönüş hızı (10m istasyonda
-                                         # yanlamasına geçişte kadraj kaçmasın)
-
-    # --- DEADBAND / SINIRLAR ---
-    POS_DEADBAND = 1.5            # m; çok yakında yatay jitter önle (eski 150 cm)
-    MAX_ACCEL    = 10.0           # m/s²; komut hızı değişim sınırı (eski MAX_DELTA analogu)
-
-    # --- None YÖNETİMİ ---
-    HOLD_S = 6.0                  # s; donuk telemetride son kestirimle devam; ötesi loiter
-
-    # --- HANDOFF (histerezisli) ---
-    HANDOFF_RANGE = 40.0          # m; altında KILIT (görsel faz devralmaya hazır)
-    HANDOFF_EXIT  = 50.0          # m; üstüne çıkınca handoff iptal
-
-    # --- HEDEF TELEMETRİ FİLTRESİ (eski GNSSFiltre'nin yerine) ---
-    POS_EMA = 0.4                 # gürültülü hedef pozisyonu EMA
-    VEL_EMA = 0.3                 # sonlu-fark hedef hızı EMA
+    # --- DURUM ---
+    KILIT_MESAFE = 40.0   # m; altında "KİLİT" (görsel faz devralabilir)
+    DUR_S = 10.0          # s; telemetri bu kadar susarsa havada tut
 
 
-def closing_allow(d_horiz):
-    """Mesafeye göre izin verilen KAPANMA hızı (m/s) — eski FRENLEME profili,
-    hedef hızının ÜSTÜNE eklenen pay olarak. Yakında küçülür → yumuşak kapanış."""
-    if d_horiz >= Cfg.BRAKE_DIST:
-        return Cfg.V_CLOSE_FAR
-    t = d_horiz / Cfg.BRAKE_DIST
-    return Cfg.V_CLOSE_NEAR + (Cfg.V_CLOSE_FAR - Cfg.V_CLOSE_NEAR) * t
-
-
-# Telemetri/arayüz için son durum (gcs_server okuyabilir; salt gözlem)
-status = {
-    "durum": "WARMUP", "d_h": None, "handoff": False,
-    "fresh": False, "none_count": 0, "vcap": None,
-}
+# Arayüz/supervisor okur (salt gözlem)
+status = {"durum": "BEKLE", "d_h": None, "handoff": False, "vcap": None}
 
 
 def run_gps_approach(conn, get_plane, get_iris, stop_event):
-    """Eski adim() döngüsünün portu: hedefe standoff'lu, frenli, alttan yaklaşma."""
-    loop_period = 1.0 / Cfg.LOOP_HZ
+    periyot = 1.0 / Cfg.LOOP_HZ
 
-    # hedef kestirimi (eski GNSSFiltre durumunun karşılığı)
-    est_x = est_y = est_z = None          # EMA'lı hedef pozisyonu (m, NED)
-    vel_x = vel_y = vel_z = 0.0           # hedef hızı (m/s; sonlu-fark + EMA)
-    last_raw = None                       # tazelik tespiti (paket değişti mi?)
-    t_last_fresh = None                   # son TAZE paketin zamanı (hız sonlu-farkı için)
-    none_count = 0
+    # UÇUŞ KAYDI (AVCI_GUDUM_LOG=1): her döngüde (20 Hz) tam durum CSV'ye
+    # yazılır. 5 saniyede bir örnek alarak manevrayı anlamak imkânsızdı —
+    # manevra ~6 sn sürüyor, elde 1-2 nokta kalıyordu. Kök nedeni ancak
+    # kare kare veri gösteriyor.
+    kayit = None
+    if os.environ.get("AVCI_GUDUM_LOG") == "1":
+        yol = os.environ.get("AVCI_GUDUM_LOG_YOL", "/tmp/gudum_kayit.csv")
+        kayit = open(yol, "w", buffering=1)
+        kayit.write("t,tx,ty,tz,tvx,tvy,gx,gy,gz,gvx,gvy,"
+                    "ix,iy,iz,ivx,ivy,iroll,ipitch,iyaw,"
+                    "cmd_yaw,d_h,d_golge,mod\n")
+        print(f"[GPS-GUDUM] ucus kaydi: {yol}")
 
-    # PD durumu
-    de = [0.0, 0.0, 0.0]                  # EMA'lı hata türevi
-    e_prev = None
-    t_prev_deriv = None
-
-    # komut durumu
-    vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
-    handoff = False
-    handoff_announced = False
-    prev_time = None
-    loop_count = 0
+    gecmis = []                 # [(t, x, y, z, vx, vy, vz)] hedefin izi
+    son_taze = None             # son TAZE telemetri anı
+    son_konum = None
+    vel_modu = True             # başlangıçta uzak: hız komutu
+    kurtarma = False            # yere çarpma koruması etkin mi
+    sayac = 0
 
-    print("=" * 60)
-    print("[GPS-YAKLASMA] Eski sistem güdüm yasası (ana_kontrol portu) aktif")
-    print(f"[GPS-YAKLASMA] standoff={Cfg.APPROACH_STANDOFF}m (FF=sürekli lead) "
-          f"kapanma_payı={Cfg.V_CLOSE_FAR}->{Cfg.V_CLOSE_NEAR}m/s@<{Cfg.BRAKE_DIST:.0f}m "
-          f"(tavan=hedef_hızı+pay, mutlak {Cfg.V_CAP_FAR})")
-    print(f"[GPS-YAKLASMA] look-up: hedefin >= {Cfg.APPROACH_ALT_OFFSET}m ALTINDA "
-          f"(elev>={Cfg.LOOKUP_ELEV_DEG}°, taban {Cfg.LOOKUP_MIN_ALT}m)")
-    print("=" * 60)
+    print("=" * 58)
+    print("[GPS-GUDUM] GÖLGE TAKİBİ aktif (doğrudan konum bağlantısı)")
+    print(f"[GPS-GUDUM] avcı = hedefin {Cfg.GECIKME:.1f} sn önceki konumu, "
+          f"{Cfg.ALT_OFFSET:.0f} m altı (taban {Cfg.MIN_ALT:.0f} m)")
+    print("=" * 58)
 
     while not stop_event.is_set():
-        now = time.monotonic()
-        dt = (now - prev_time) if prev_time is not None else loop_period
-        dt = clamp(dt, 0.001, 0.2)
-        prev_time = now
+        simdi = time.monotonic()
 
         iris = get_iris()
-        ix, iy, iz = iris["x"], iris["y"], iris["z"]
         plane = get_plane()
 
-        # ── 1) TAZELİK + FİLTRE (eski _hedef_temizle + _fresh karşılığı) ──
-        raw = (plane["x"], plane["y"], plane["z"])
-        frozen = bool(plane.get("frozen", False))
-        fresh = (not frozen) and (raw != last_raw)
-        if fresh:
-            last_raw = raw
-            none_count = 0
-            if est_x is None:                       # ilk paket: filtre tohumla
-                est_x, est_y, est_z = raw
-            else:
-                a = Cfg.POS_EMA
-                nx = a * raw[0] + (1 - a) * est_x
-                ny = a * raw[1] + (1 - a) * est_y
-                nz = a * raw[2] + (1 - a) * est_z
-                # Sonlu-fark hedef hızı: paketler döngüden SEYREK gelir (örn. 5Hz
-                # paket / 20Hz döngü) → bölen, son taze paketten geçen GERÇEK süre.
-                if t_last_fresh is not None:
-                    fdt = now - t_last_fresh
-                    if 1e-3 < fdt < 2.0:             # çok bayat aralıktan hız türetme
-                        b = Cfg.VEL_EMA
-                        vel_x = b * ((nx - est_x) / fdt) + (1 - b) * vel_x
-                        vel_y = b * ((ny - est_y) / fdt) + (1 - b) * vel_y
-                        vel_z = b * ((nz - est_z) / fdt) + (1 - b) * vel_z
-                est_x, est_y, est_z = nx, ny, nz
-            t_last_fresh = now
-        else:
-            none_count += 1
+        ix, iy, iz = iris["x"], iris["y"], iris["z"]
+        tx, ty, tz = plane["x"], plane["y"], plane["z"]
+        tvx = float(plane.get("vx", 0.0) or 0.0)
+        tvy = float(plane.get("vy", 0.0) or 0.0)
+        tvz = float(plane.get("vz", 0.0) or 0.0)
+        hedef_hiz = math.hypot(tvx, tvy)
 
-        status.update(fresh=fresh, none_count=none_count)
+        # ── 1) TAZE PAKET Mİ? ──
+        # Geçmişe yalnız GERÇEK ölçüm yazılır. Telemetri 4 Hz, döngü 20 Hz:
+        # her döngüde yazsaydık aynı konumdan 5 kopya birikir ve "0.7 sn
+        # öncesi" araması bozulurdu.
+        konum = (tx, ty, tz)
+        taze = konum != son_konum
+        if taze:
+            son_konum = konum
+            son_taze = simdi
+            gecmis.append((simdi, tx, ty, tz, tvx, tvy, tvz))
+            # Geçmişi buda (bellek sabit kalsın)
+            sinir = simdi - Cfg.GECMIS_S
+            while len(gecmis) > 2 and gecmis[0][0] < sinir:
+                gecmis.pop(0)
 
-        # ── 2) WARMUP / DROPOUT (eski None yönetimi) ──
-        if est_x is None:                            # henüz hiç kestirim yok
-            _loiter(conn, cmd_yaw)
-            status.update(durum="WARMUP", d_h=None)
-            loop_count += 1
-            _sleep(now, loop_period)
+        yas = (simdi - son_taze) if son_taze is not None else 999.0
+        if yas > Cfg.DUR_S:
+            # Telemetri gerçekten kesildi: havada tut (hız 0), konum komutu
+            # gönderme — eski bir noktaya kilitlenip oraya gitmesin.
+            send_velocity(conn, 0.0, 0.0, 0.0, cmd_yaw or 0.0)
+            status.update(durum="TELEMETRI YOK", d_h=None)
+            _uyu(simdi, periyot)
             continue
-        if none_count * loop_period > Cfg.HOLD_S:    # uzun kesinti → loiter
-            _loiter(conn, cmd_yaw)
-            vx_prev = vy_prev = vz_prev = 0.0
-            status.update(durum="DROPOUT", d_h=None)
-            if loop_count % int(Cfg.LOOP_HZ * 3) == 0:
-                print(f"[GPS-YAKLASMA] DROPOUT — hedef telemetri {none_count * loop_period:.1f}s "
-                      f"donuk, loiter.")
-            loop_count += 1
-            _sleep(now, loop_period)
-            continue
-        # HOLD penceresi içinde: son kestirim + hedef hızıyla devam (lead taşır)
 
-        # ── 3) HEDEFE HATA (yaw/handoff/standoff hepsi GERÇEK hedefe göre) ──
-        # Eski koddaki ayrık lead noktası (hedef + 0.5s×hız) hız-komut alanında
-        # KULLANILMAZ: intercept'i hız feedforward'u (adım 8) sürekli sağlar.
-        # Lead noktasından standoff ölçmek, hızlı hedefte istasyonu hedefin
-        # ÖNÜNE düşürüyordu (lead 7.5m - standoff 5m = +2.5m); eski sistemde
-        # bunu pursuit lag maskeliyordu, hız komutunda maskeleyemez.
-        ex = est_x - ix
-        ey = est_y - iy
-        d_h = math.hypot(ex, ey)
-
-        # ── 4) DİKEY REFERANS: look-up geometrisi (NED; irtifa = -z) ──
-        alt_tgt  = -est_z                             # hedef irtifası (m, yukarı+)
-        alt_iris = -iz
-        dh_off = (math.tan(math.radians(Cfg.LOOKUP_ELEV_DEG)) * d_h
-                  if Cfg.LOOKUP_ELEV_DEG > 0.0 else 0.0)
-        alt_off = max(Cfg.APPROACH_ALT_OFFSET, dh_off)   # açı >= eps garanti + kadraj tabanı
-        alt_ref = max(alt_tgt - alt_off, Cfg.LOOKUP_MIN_ALT)
-        ez = alt_ref - alt_iris                       # yukarı-pozitif dikey hata (eskiyle aynı)
-
-        # ── 5) İSTASYON NOKTASI: hedefin İZİNİN GERİSİNDE (kuyruk takibi) ──
-        # LOS gerisi değil, hedefin HIZ YÖNÜNÜN gerisi: drone hedefe hangi
-        # yönden yetişirse yetişsin (yandan dahil) arkaya süzülür → kuyruktan
-        # takip, LOS oranı ~0, kadraj kararlı — tespit için en iyi geometri.
-        # (Yan takip sorunu: LOS-standoff mesafeyi korur ama YÖNÜ korumaz;
-        # drone yandan yetişince yanda kalıyordu.) Hedef yavaşsa LOS gerisi.
-        tgt_spd = math.hypot(vel_x, vel_y)
-        if tgt_spd >= Cfg.TRACK_MIN_SPD:
-            st_x = est_x - (vel_x / tgt_spd) * Cfg.APPROACH_STANDOFF
-            st_y = est_y - (vel_y / tgt_spd) * Cfg.APPROACH_STANDOFF
-        elif d_h > 1e-6:
-            st_x = est_x - (ex / d_h) * Cfg.APPROACH_STANDOFF
-            st_y = est_y - (ey / d_h) * Cfg.APPROACH_STANDOFF
+        # ══ YERE ÇARPMA KORUMASI (her şeyin önünde) ══
+        # Avcı kontrolü kaybedip düşmeye başlarsa takip ANLAMSIZDIR; tek iş
+        # hayatta kalmaktır. Ölçümde görüldü: hedef hızla alçalırken avcı da
+        # peşinden daldı, aynı anda 20 m/s yatay komut sürüyordu, quad
+        # aşırı yüklenip savruldu (roll -49° → pitch +43° → -54° → yere).
+        #
+        # Koruma iki şeye birden bakar:
+        #   1) mutlak taban  — irtifa KURTARMA_ALT'ın altına indiyse
+        #   2) çarpma süresi — irtifa / alçalma hızı; yüksekte bile hızlı
+        #      düşüyorsa (ör. 8 m/s ile 24 m'de 3 sn kalmıştır) devreye girer
+        # Devreye girince YATAY KOMUT SIFIRLANIR (tüm itki dikeye gider) ve
+        # tam gaz tırmanılır. Çıkış GUVENLI_ALT ile histerezislidir, yoksa
+        # eşiğin başında açılıp kapanıp salınım üretirdi.
+        irtifa = -iz
+        dusus = float(iris.get("vz", 0.0) or 0.0)          # NED: + aşağı
+        carpma_s = (irtifa / dusus) if dusus > 0.5 else 999.0
+        # Aracın burnu komut edilen yönden çok saptıysa kontrol kaybı var
+        # demektir (ölçüldü: komut 59° sabitken araç 134°/-116° savruldu).
+        # Bu durumda da kurtarmaya geçilir; tam gaz tırmanış throttle'ı
+        # yükseltir ve yaw otoritesini geri kazandırır.
+        yaw_sapma = 0.0
+        if cmd_yaw is not None:
+            yaw_sapma = abs(normalize_angle(
+                math.radians(float(iris.get("yaw", 0.0) or 0.0)) - cmd_yaw))
+        if kurtarma:
+            kurtarma = (irtifa < Cfg.GUVENLI_ALT
+                        or yaw_sapma > math.radians(Cfg.YAW_SAPMA_CIK))
         else:
-            st_x, st_y = ix, iy
-        ex_cmd = st_x - ix                            # istasyona hata vektörü
-        ey_cmd = st_y - iy
+            kurtarma = (irtifa < Cfg.KURTARMA_ALT
+                        or carpma_s < Cfg.KURTARMA_SURE
+                        or yaw_sapma > math.radians(Cfg.YAW_SAPMA_SINIR))
+        if kurtarma:
+            send_velocity(conn, 0.0, 0.0, -Cfg.VZ_MAX, cmd_yaw or 0.0)
+            status.update(durum="KURTARMA",
+                          d_h=round(math.hypot(tx - ix, ty - iy), 1),
+                          handoff=False, vcap=round(Cfg.V_TAVAN, 1))
+            if sayac % int(Cfg.LOOP_HZ) == 0:
+                sebep = ("irtifa" if irtifa < Cfg.KURTARMA_ALT else
+                         "carpma_suresi" if carpma_s < Cfg.KURTARMA_SURE else
+                         "YAW_KONTROL_KAYBI")
+                print(f"[GPS-GUDUM] !!! KURTARMA ({sebep}) !!! "
+                      f"irtifa={irtifa:.1f}m dusus={dusus:+.1f}m/s "
+                      f"carpmaya={carpma_s:.1f}s yaw_sapma={math.degrees(yaw_sapma):.0f}° "
+                      f"-> yatay kesildi, tam gaz tirmanis")
+            sayac += 1
+            _uyu(simdi, periyot)
+            continue
 
-        # ── 6) HANDOFF HİSTEREZİSİ → durum ──
-        if not handoff and d_h < Cfg.HANDOFF_RANGE:
-            handoff = True
-        elif handoff and d_h > Cfg.HANDOFF_EXIT:
-            handoff = False
-            handoff_announced = False
-        durum = "KILIT" if handoff else "ARAMA"
-        if handoff and not handoff_announced:
-            print(f"[GPS-YAKLASMA] HANDOFF: tespit menzilinde (d_h={d_h:.1f}m < "
-                  f"{Cfg.HANDOFF_RANGE:.0f}m) — görsel faz devralabilir.")
-            handoff_announced = True
+        if len(gecmis) < 2:
+            # Henüz iz yok: hedefin kendisini hedefle, iz birikince gölgeye oturur
+            gx, gy, gz = tx, ty, tz
+            gvx, gvy, gvz = tvx, tvy, tvz
+        else:
+            gx, gy, gz, gvx, gvy, gvz = _gecikmeli_nokta(
+                gecmis, simdi - Cfg.GECIKME)
 
-        # ── 7) EMA TÜREV (eski _derivative) ──
-        e_now = (ex_cmd, ey_cmd, ez)
-        if e_prev is not None and t_prev_deriv is not None:
-            ddt = now - t_prev_deriv
-            if ddt > 1e-3:
-                a = Cfg.DERIV_EMA
-                for i in range(3):
-                    raw_d = (e_now[i] - e_prev[i]) / ddt
-                    de[i] = (1 - a) * de[i] + a * raw_d
-        e_prev, t_prev_deriv = e_now, now
+        # ── 2) DİKEY: hedefin ANLIK irtifasının ALT_OFFSET altı ──
+        # NED'de z aşağı pozitiftir → "altında olmak" = z BÜYÜK.
+        # ★ Yatayda gölge (0.7 sn gerisi) doğru davranış — "aynı yoldan git"
+        # demek. Ama DİKEYDE gölge yanlış: hedef tırmanmaya başladığında
+        # gölgenin irtifası 0.7 sn boyunca eski değerde kalıyor, avcı
+        # tırmanmaya geç başlıyordu. İrtifada istediğimiz "aynı yoldan
+        # gitmek" değil, "hep 6 m altında olmak" — o yüzden hedefin ANLIK
+        # irtifası kullanılır.
+        hedef_irtifa = -tz
+        ref_irtifa = max(hedef_irtifa - Cfg.ALT_OFFSET, Cfg.MIN_ALT)
 
-        # ── 8) YATAY HIZ KOMUTU: hedef hızı FEEDFORWARD + PD → göreli tavan →
-        #       alçalma önceliği → deadband.
-        #       FF şart: eski tutum komutları hızı ENTEGRE ediyordu; hız komutunda
-        #       hedef hızı açıkça eklenmezse drone hedefle ancak hata birikimiyle
-        #       eş hızlanır ve mutlak tavan onu ~50m'de kilitliyordu.
-        vx = vel_x + Cfg.KP_H * ex_cmd + Cfg.KD_H * de[0]
-        vy = vel_y + Cfg.KP_H * ey_cmd + Cfg.KD_H * de[1]
+        # ── 3) KOMUT HIZI = hedefin hızı + gölgeye çekme ──
+        #
+        # ★★ MANEVRADAKİ GERİ KALMANIN KÖK NEDENİ BURASIYDI ★★
+        # Eskiden yalnız hedefin hızı (feedforward) gönderiliyor, konum
+        # hatasını kapatma işi ArduCopter'a bırakılıyordu. 20 Hz uçuş kaydı
+        # (5 manevra, hepsi birebir aynı) bunun ÇALIŞMADIĞINI gösterdi:
+        #
+        #   t=100.5  gölgeye 2.6 m   avcı 15.1 m/s  roll 13°  yön farkı 80°
+        #   t=105.0  gölgeye 24.4 m  avcı 15.0 m/s  roll  6°  yön farkı 78°
+        #   t=109.0  gölgeye 39.3 m  avcı 15.0 m/s  roll 10°  yön farkı 52°
+        #
+        # Avcı gölgeye 80° YAN açıyla, gölgeyle TAM AYNI hızda uçuyordu:
+        # yani paralel gidiyor, aradaki 39 m'yi kapatmaya hiç çalışmıyordu.
+        # Roll 18°'yi hiç geçmedi (ANGLE_MAX 55°) — 18° tam olarak dairede
+        # dönmeye yeten ivmedir, hatayı kapatmak için fazlası yok. Dönüş
+        # biter bitmez 22.8 m/s'ye çıkıp kapatıyordu; demek ki araçta güç
+        # vardı, komutta düzeltme yoktu.
+        #
+        # Çare: konum hatasını BİZ kapatıyoruz. Hedefin hızının üstüne
+        # gölgeye doğru bir çekme bileşeni bindirilir; ArduCopter bunu
+        # "istenen hız" olarak alır ve gereken kadar yatar.
+        # ★ SÖNÜMLEME ŞART (ölçüldü): yalnız P terimiyle (çekme = Kp·hata)
+        # denendiğinde avcı gölgeye 25 m/s ile dalıp ÜSTÜNDEN GEÇTİ, mesafe
+        # 12 m → 107 m açıldı, sonra geri döndü — takip limit döngüsüne girdi
+        # (kayıt: d_h 12 → 107 → 58 → 134 m). Fren terimi olmadan hedefte
+        # duramıyor. Bu yüzden D terimi eklendi: avcının gölgeye YAKLAŞMA
+        # hızı çekmeden düşülür, yani hedefe yaklaştıkça kendini frenler.
+        hx = gx - ix
+        hy = gy - iy
+        hata = math.hypot(hx, hy)
+        if hata > 1e-6:
+            ux, uy = hx / hata, hy / hata
+            # Gölgeye göre bağıl yaklaşma hızı (+ = kapanıyor).
+            # Feedforward (gvx,gvy) hâlâ ham hâlde — çekme henüz eklenmedi.
+            yaklasma = ((iris.get("vx", 0.0) - gvx) * ux
+                        + (iris.get("vy", 0.0) - gvy) * uy)
 
-        vcap = min(Cfg.V_CAP_FAR, tgt_spd + closing_allow(d_h))   # GÖRELİ fren
-        vmag = math.hypot(vx, vy)
-        if vmag > vcap and vmag > 1e-6:
-            s = vcap / vmag
-            vx *= s
-            vy *= s
+            # ★★ TAVAN ŞART — TAVANSIZ SÜRÜM DRONE'U ÇAKTI ★★
+            # Tavansız denendi: komut 27-29 m/s'e çıktı. Quad'ın ANGLE_MAX=55°
+            # ile fiziksel tavanı ~19 m/s; ulaşamayacağı komutu kovalarken
+            # roll kontrolden çıktı ve takla attı (kayıt: roll 24° → -51° →
+            # 95° → -115° → 120°, irtifa 59 m → 0 m, "Crash: AngErr=180").
+            #
+            # Ama düz ölçekleme de YANLIŞ: tüm vektörü küçültmek feedforward'ı
+            # da keser, drone hedeften yavaş kalır (bu, daha önce ölçülen
+            # "manevrada geri kalma"nın ta kendisiydi).
+            #
+            # Doğrusu BÜTÇE: hedefin hızı dokunulmaz, çekmeye yalnız tavandan
+            # ARTAN pay verilir. |ff + c·u| = V_TAVAN denkleminin çözümü.
+            # 15.1 m/s feedforward + 20 m/s tavan → dik yönde 13.1 m/s çekme
+            # kalır; 40 m yanal hatayı ~3 sn'de kapatmaya yeter.
+            ff = math.hypot(gvx, gvy)
+            b = gvx * ux + gvy * uy
+            disk = b * b - (ff * ff - Cfg.V_TAVAN * Cfg.V_TAVAN)
+            butce = (-b + math.sqrt(disk)) if disk > 0.0 else 0.0
+            # Üst sınır YALNIZ bütçe: sabit bir CEKME_MAX, hedef üzerimize
+            # gelirken (feedforward geri iterken) gereken büyük çekmeyi
+            # kesip komutu ters yöne çeviriyordu. Bütçe zaten toplam
+            # komutu V_TAVAN'da tutuyor.
+            cekme = clamp(Cfg.KP_KONUM * hata - Cfg.KD_KONUM * yaklasma,
+                          0.0, max(butce, 0.0))
+            gvx += ux * cekme
+            gvy += uy * cekme
 
-        if ez < 0.0:                                  # ref irtifanın ÜSTÜNDEYİZ → alçalma önceliği
-            alc = clamp(1.0 + ez / Cfg.ALC_ONCELIK_M, Cfg.ALC_ONCELIK_MIN, 1.0)
-            vx *= alc
-            vy *= alc
+        d_h_ham = math.hypot(tx - ix, ty - iy)
 
-        if math.hypot(ex_cmd, ey_cmd) < Cfg.POS_DEADBAND:   # istasyondayız: FF ile süz
-            vx, vy = vel_x, vel_y
+        # ── 4) YAW: burun HEDEFE (gölgeye değil) ──
+        # Kamera hedefi görsün diye burun daima gerçek hedefe bakar.
+        # Burun DAİMA hedefte (kamera hedefi kadrajda tutsun).
+        # A/B ölçüldü: burnu gidiş yönüne bağlamak manevrada geri kalmayı
+        # değiştirmedi (41.7 m vs 40.8 m) — yaw suçlu değildi, o yüzden
+        # kullanıcının istediği "burun hedefte" davranışı korunuyor.
+        #
+        # ★ ÇOK YAKINDA YAW DONDURULUR: hedefin tam üstündeyken (ölçümde
+        # d_h 0.2 m'ye kadar indi) "hedefe bakan açı" tanımsızlaşır, en
+        # ufak konum gürültüsü burnu 180° çevirir. Kayıtta yaw sapması
+        # 57°'ye fırladı. O bölgede burun son bilinen yönde tutulur.
+        if d_h_ham > Cfg.YAW_MIN_MESAFE or cmd_yaw is None:
+            cmd_yaw = math.atan2(ty - iy, tx - ix)
 
-        # ── 9) DİKEY HIZ: dış döngü aynen; iç döngü ArduPilot'un ──
-        vz_up  = clamp(Cfg.KP_Z_POS * ez, -Cfg.VZ_MAX, Cfg.VZ_MAX)
-        vz_ned = -vz_up                               # NED: aşağı+
+        # ── 5) GÖNDER ──
+        # İKİ FAZ — hangi komutun hangi mesafede iyi olduğu ÖLÇÜLDÜ:
+        #
+        # YAKIN (gölge ≤ YAKALAMA): konum + feedforward hız. Ölçümde
+        #   d_h ≈ 11 m'de kilitlendi, irtifa farkı tam 6.0 m, avcı hızı
+        #   hedefe birebir eşleşti (15.1 / 15.2 m/s), dönüşte 21 m/s'ye
+        #   hızlanıp toparladı. Takip için doğru komut bu.
+        #
+        # UZAK (gölge > YAKALAMA): saf hız, tam gaz. Sebebi ölçüm: konum
+        #   komutuyla 200 m mesafede avcı yalnız 6.2 m/s gidiyordu —
+        #   ArduCopter uzak bir konum hedefine yumuşak profil uygular,
+        #   yakalama dakikalarca sürerdi. Bu fazda amaç zaten tek şey:
+        #   aradaki mesafeyi en hızlı şekilde kapatmak.
+        # ★★ KONUM KOMUTU KALDIRILDI — ÖLÇÜMLE KANITLANDI ★★
+        # Konum+hız (posvel) komutu gönderildiğinde ArduCopter, verdiğimiz
+        # konumu kendi jerk-limitli profiliyle "yumuşatıyor" ve hız komutunu
+        # boğuyordu. 20 Hz kayıt, manevranın ortasında şunu gösterdi:
+        #
+        #   d_gölge  8.0 m   KOMUT 20.0 m/s   GERÇEK 14.6 m/s   roll 13°
+        #   d_gölge 28.9 m   KOMUT 20.0 m/s   GERÇEK 14.3 m/s   roll  9°
+        #   d_gölge 38.4 m   KOMUT 20.0 m/s   GERÇEK 14.3 m/s   roll 13°
+        #
+        # Yani güdüm 20 m/s istiyor, araç 14.3 m/s'de takılıyor ve 13°'den
+        # fazla yatmıyor. AYNI araç, yakalama fazında (saf hız komutu)
+        # 19 m/s yapıyordu — güçsüzlük değil, komut tipi sorunuydu.
+        # Artık her mesafede SAF HIZ komutu gidiyor: hızı zaten biz doğru
+        # hesaplıyoruz (hedefin hızı + gölgeye çekme + bütçe tavanı), araya
+        # ikinci bir yorumlayıcı katman girmiyor.
+        d_golge = math.hypot(gx - ix, gy - iy)
+        # ★ DİKEY FEEDFORWARD (eksikti): hedefin kendi tırmanma hızı komuta
+        # eklenir. Eskiden yalnız P terimi vardı (hata × Kp); bu, hedef
+        # sürekli tırmanırken KALICI hataya yol açar — kararlı durumda
+        # hata = hedefin tırmanma hızı / Kp kadar geride kalınır. Yatayda
+        # hedefin hızını eşliyorduk, dikeyde eşlemiyorduk.
+        # tvz NED'dir (aşağı +); hedef tırmanıyorsa negatiftir.
+        vz_ned = clamp(tvz - Cfg.KP_DIKEY * (ref_irtifa - (-iz)),
+                       -Cfg.VZ_YUKARI, Cfg.VZ_ASAGI)
+        send_velocity(conn, gvx, gvy, vz_ned, cmd_yaw)
 
-        # ── 10) YAW: burun daima HEDEFE (deadband + dönüş hızı sınırı) ──
-        bearing = math.atan2(ey, ex)
-        if cmd_yaw is None:
-            cmd_yaw = bearing
-        yaw_err = normalize_angle(bearing - cmd_yaw)
-        if abs(yaw_err) > Cfg.YAW_DEADBAND:
-            step = clamp(yaw_err, -Cfg.YAW_RATE_MAX * dt, Cfg.YAW_RATE_MAX * dt)
-            cmd_yaw = normalize_angle(cmd_yaw + step)
+        # ── Durum ──
+        d_h = math.hypot(tx - ix, ty - iy)
 
-        # ── 11) İVME SINIRI (eski rate_limit karşılığı) + GÖNDER ──
-        vx, vy, vz_ned = limit_acceleration(
-            vx, vy, vz_ned, vx_prev, vy_prev, vz_prev, Cfg.MAX_ACCEL, dt)
-        vx_prev, vy_prev, vz_prev = vx, vy, vz_ned
-        send_velocity(conn, vx, vy, vz_ned, cmd_yaw)
+        if kayit is not None:
+            kayit.write(
+                f"{simdi:.3f},{tx:.2f},{ty:.2f},{tz:.2f},{tvx:.2f},{tvy:.2f},"
+                f"{gx:.2f},{gy:.2f},{gz:.2f},{gvx:.2f},{gvy:.2f},"
+                f"{ix:.2f},{iy:.2f},{iz:.2f},"
+                f"{iris.get('vx',0.0):.2f},{iris.get('vy',0.0):.2f},"
+                f"{iris.get('roll',0.0):.1f},{iris.get('pitch',0.0):.1f},"
+                f"{iris.get('yaw',0.0):.1f},"
+                f"{math.degrees(cmd_yaw):.1f},{d_h:.2f},{d_golge:.2f},"
+                f"{'VEL' if d_golge > Cfg.YAKALAMA else 'POS'}\n")
+        kilit = d_h < Cfg.KILIT_MESAFE
+        status.update(durum="KILIT" if kilit else "TAKIP",
+                      d_h=round(d_h, 1), handoff=kilit,
+                      vcap=round(Cfg.V_MAX, 1))
 
-        status.update(durum=durum, d_h=round(d_h, 1), handoff=handoff,
-                      vcap=round(vcap, 1))
+        sayac += 1
+        if sayac % int(Cfg.LOOP_HZ * 3) == 0:
+            iris_irtifa = -iz
+            print(f"[GPS-GUDUM] {'KILIT' if kilit else 'TAKIP'} "
+                  f"d_h={d_h:.1f}m d_golge={d_golge:.1f}m "
+                  f"irtifa={iris_irtifa:.1f}/{ref_irtifa:.1f}m "
+                  f"ff=({gvx:+.1f},{gvy:+.1f}) hedef_v={hedef_hiz:.1f} "
+                  f"iz={len(gecmis)}")
 
-        loop_count += 1
-        if loop_count % int(Cfg.LOOP_HZ * 3) == 0:
-            print(f"[GPS-YAKLASMA] {durum} d_h={d_h:.1f}m ez={ez:+.1f}m "
-                  f"v=({vx:+.1f},{vy:+.1f},{vz_ned:+.1f}) |v|={math.hypot(vx, vy):.1f}"
-                  f"/{vcap:.1f}m/s hedef_v={tgt_spd:.1f} alt={alt_iris:.1f} "
-                  f"ref={alt_ref:.1f} tgt={alt_tgt:.1f} yaw={math.degrees(cmd_yaw):.0f}° "
-                  f"fresh={int(fresh)} hold={none_count * loop_period:.1f}s")
-
-        _sleep(now, loop_period)
+        _uyu(simdi, periyot)
 
     send_velocity(conn, 0.0, 0.0, 0.0, cmd_yaw or 0.0)
+    if kayit is not None:
+        kayit.close()
     status.update(durum="DURDU")
-    print("[GPS-YAKLASMA] Stop sinyali — döngü sonlandı.")
+    print("[GPS-GUDUM] durduruldu.")
 
 
-def _loiter(conn, cmd_yaw):
-    """Eski _loiter: agresifliği kes, hover (hız 0 → GUIDED irtifayı korur)."""
-    send_velocity(conn, 0.0, 0.0, 0.0, cmd_yaw or 0.0)
+def _gecikmeli_nokta(gecmis, istenen_t):
+    """Hedefin `istenen_t` anındaki konum+hızını geçmişten çıkarır.
+
+    İki komşu ölçüm arasında DOĞRUSAL ARA DEĞER yapılır: telemetri 4 Hz
+    geldiği için ham örnek seçmek 0.25 sn'lik basamaklar üretir ve konum
+    hedefi zıplar. Ara değerle gölge noktası pürüzsüz ilerler.
+    """
+    if istenen_t <= gecmis[0][0]:
+        return gecmis[0][1:]                    # o kadar geriye iz yok
+    if istenen_t >= gecmis[-1][0]:
+        return gecmis[-1][1:]                   # henüz gecikme dolmadı
+
+    for k in range(len(gecmis) - 1, 0, -1):
+        t1 = gecmis[k][0]
+        t0 = gecmis[k - 1][0]
+        if t0 <= istenen_t <= t1:
+            aralik = t1 - t0
+            o = (istenen_t - t0) / aralik if aralik > 1e-9 else 0.0
+            a = gecmis[k - 1]
+            b = gecmis[k]
+            return tuple(a[i] + (b[i] - a[i]) * o for i in range(1, 7))
+    return gecmis[-1][1:]
 
 
-def _sleep(t_start, period):
-    elapsed = time.monotonic() - t_start
-    if elapsed < period:
-        time.sleep(period - elapsed)
+def _uyu(baslangic, periyot):
+    gecen = time.monotonic() - baslangic
+    if gecen < periyot:
+        time.sleep(periyot - gecen)
