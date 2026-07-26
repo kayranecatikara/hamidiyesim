@@ -115,19 +115,23 @@ cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
 export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+# NVIDIA karta bagla (hibrit grafik: varsayilan Intel iGPU).
+# Olcum: bu satir olmadan RTF 0.71 (gz %404 CPU, GPU bos),
+# varken RTF 1.00. Dusuk RTF = telemetri/kamera geç gelir.
+export __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia
 gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 ```
 
 **Terminal 2 — ArduCopter (avcı iris, FDM 9002)**
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON -I0 --sysid 5 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON -I0 --sysid 5 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
 ```
 
 **Terminal 3 — ArduPlane (hedef Talon, FDM 9012)**
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
+python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
 ```
 
 **Terminal 4 — GCS Server (kamera + web arayüz + görev)**
@@ -185,6 +189,8 @@ avci_sim/
 │   └── plane_patterns.py      # Kalkış + kare/daire deseni
 ├── guidance/              # Avcı güdüm algoritmaları (türe göre klasörlü)
 │   ├── gps_gudum/             # Saf GPS güdüm hattı
+│   │   ├── README.md              # ★ GPS GÜDÜM TAM DOKÜMANI (geliştirme günlüğü,
+│   │   │                          #   ölçümler, ayarlar, arızalar ve çözümleri)
 │   │   ├── gps_approach.py        # VARSAYILAN GPS yaklaşma güdümü
 │   │   ├── gps_chase.py           # Chase v2 (SPRINT→APPROACH→LOCK→STRIKE)
 │   │   └── gps_strike.py          # GPS terminal vuruş (Oransal Seyrüsefer)
@@ -192,7 +198,6 @@ avci_sim/
 │   │   ├── guidance_core.py       # IBVS lead pursuit çekirdeği
 │   │   ├── visual_lead.py         # IBVS görsel güdüm döngüsü
 │   │   ├── adapter_copter.py      # Copter komut adaptörü
-│   │   └── adapter_fixedwing.py   # Sabit kanat adaptörü (stub)
 │   ├── hibrit_gudum/          # GPS↔görsel geçiş yönetimi
 │   │   └── supervisor.py          # Hibrit müdahale döngüsü
 │   └── ortak/                 # Paylaşılan yardımcılar
