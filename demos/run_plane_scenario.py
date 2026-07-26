@@ -119,13 +119,39 @@ def gcs_throttle():
     return _thr_cache["val"]
 
 
-def hold(conn, duration, roll=0, pitch=0, throttle=None, yaw=0):
-    """duration boyunca sabit komut uygula (throttle=None → GCS slider)."""
+# --- İRTİFA TUTMA ---------------------------------------------------------
+# ÖLÇÜM: Kare/daire senaryosunda irtifa kontrolü YOKTU; düz kenarlarda pitch=0
+# ama sabit güç, dönüşlerde ise pitch=+180 (tırmanış) veriliyordu. Sonuç:
+# hedef DURMADAN yükseliyordu (ölçüm: 46 m → 124 m → 322 m → 413 m). Bu hem
+# görevi imkânsız kılıyor (avcı hedefin irtifasına yetişemiyor, quad tırmanırken
+# yatay hızını kaybediyor) hem de testleri geçersiz yapıyordu.
+# Artık pitch, hedef irtifayı korumak için basit bir P denetimiyle sürülür.
+# İrtifa env ile ayarlanabilir: AVCI_HEDEF_IRTIFA=160 gibi. Böylece
+# senaryo yeniden başlatılarak hedefin irtifası değiştirilebiliyor
+# (avcının tırmanma performansını ölçmek için gerekliydi).
+SEYIR_IRTIFA = float(os.environ.get("AVCI_HEDEF_IRTIFA", "60"))  # m
+_IRTIFA_KP   = 8.0         # m hata → RC pitch birimi (25 iken kalkışta
+                           # pitch tavana çarpıp uçağı STALL ediyordu)
+_IRTIFA_TAVAN = 200        # RC pitch sınırı (±); 400 çok agresifti
+
+
+def irtifa_pitch(taban=0):
+    """Seyir irtifasını korumak için pitch komutu (RC birimi).
+    taban: dönüşlerde ek pitch (kanat yatıkken düşmeyi önler)."""
+    hata = SEYIR_IRTIFA - (-_pos["z"])          # + ise tırman
+    p = int(max(-_IRTIFA_TAVAN, min(_IRTIFA_TAVAN, hata * _IRTIFA_KP)))
+    return max(-_IRTIFA_TAVAN, min(_IRTIFA_TAVAN, p + taban))
+
+
+def hold(conn, duration, roll=0, pitch=None, throttle=None, yaw=0):
+    """duration boyunca sabit komut uygula (throttle=None → GCS slider,
+    pitch=None → irtifa tutma denetimi)."""
     t0 = time.time()
     while not _abort and time.time() - t0 < duration:
         _pump(conn)
         thr = gcs_throttle() if throttle is None else throttle
-        _rc(conn, roll=roll, pitch=pitch, throttle=thr, yaw=yaw)
+        p = irtifa_pitch() if pitch is None else pitch
+        _rc(conn, roll=roll, pitch=p, throttle=thr, yaw=yaw)
         time.sleep(CONTROL_RATE)
 
 
@@ -139,7 +165,12 @@ def _angdiff(a, b):
     return d
 
 
-def turn_by(conn, deg, bank=650, timeout=20.0):
+def turn_by(conn, deg, bank=380, timeout=30.0):
+    """ÖLÇÜM: bank=650 (~28° yatış) ile hedef 90°yi ~4 saniyede dönüyordu.
+    Avcı 15 m/s hız vektörünü 90° çevirmek için önce yavaşlamak zorunda
+    (|Δv|=21 m/s, 14 m/s² ile 1.5 s) → dönüşte 4-6 m/s'ye düşüp mesafeyi
+    kaybediyordu. 380 (~17° yatış) dönüşü genişletir; gerçek bir İHA da bu
+    kadar keskin dönmez."""
     """Heading tabanlı dönüş: hedef yaw'a ulaşana dek FBWA roll komutu.
 
     Dönüşte hafif up-elevator irtifa kaybını azaltır. 10° toleransta bırakılır
@@ -156,7 +187,7 @@ def turn_by(conn, deg, bank=650, timeout=20.0):
         _pump(conn)
         if _att["ok"] and abs(_angdiff(target, _att["yaw"])) < math.radians(10):
             break
-        _rc(conn, roll=roll_cmd, pitch=180, throttle=gcs_throttle())
+        _rc(conn, roll=roll_cmd, pitch=irtifa_pitch(taban=60), throttle=gcs_throttle())
         time.sleep(CONTROL_RATE)
 
 
@@ -189,7 +220,17 @@ def _read_vehicle_state(conn, wait=1.5):
 
 def takeoff(conn, climb_time=8.0):
     """Otonom kalkış: TAKEOFF modu motoru açıp TKOFF_ALT'a tırmandırır,
-    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir."""
+    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir.
+
+    Uçak ZATEN HAVADAYSA kalkış atlanır: senaryo yeniden başlatılarak
+    irtifa değiştirildiğinde TAKEOFF moduna geçmek uçağı bozuyordu.
+    """
+    _pump(conn)
+    if -_pos["z"] > 15.0:
+        print(f"[SCN] Uçak zaten havada ({-_pos['z']:.0f} m) → kalkış atlandı")
+        set_mode(conn, PLANE_MODE_FBWA)
+        hold(conn, 1.0)
+        return
     print("[SCN] Otonom kalkış (TAKEOFF modu)...")
     set_mode(conn, PLANE_MODE_TAKEOFF)
     t0 = time.time()
@@ -206,7 +247,12 @@ def takeoff(conn, climb_time=8.0):
 # ---------------------------------------------------------------------------
 
 def scenario_square(conn):
-    side = 5.0
+    side = 30.0   # ÖLÇÜM: hedef 15 m/s, avcı 19 m/s → kapanma 4 m/s.
+                  # 15 s kenar = 225 m; avcı 100 m açığı kapatmadan hedef
+                  # dönüyordu. 30 s kenar avcıya yetişip kuyruğa yerleşme
+                  # zamanı verir (gerçek hedef de bu sıklıkta dönmez).
+                  # avcı her dönüşte hız kaybedip (2.5 m/s) geri düşüyordu;
+                  # gerçek bir hedef de bu sıklıkta dönmez.
     print(f"[SCN] KARE — kenar {side}s, 90° pusula dönüşleri")
     i = 0
     while not _abort:
@@ -223,7 +269,7 @@ def scenario_circle(conn):
     # roll=500 → ~22° yatış: ~18 m/s'de ~80m yarıçaplı daire
     print("[SCN] DAİRE — sabit yatışla süresiz tur")
     while not _abort:
-        hold(conn, 0.5, roll=500, pitch=150)
+        hold(conn, 0.5, roll=500)  # pitch=irtifa tutma
 
 
 def scenario_aggressive(conn):

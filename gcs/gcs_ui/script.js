@@ -92,6 +92,8 @@ addLog('SYS', 'Y.K.İ. Başlatıldı. Sistem dinleniyor...', 'info');
 
 // === WebSocket ====
 let lastHbTime = Date.now();
+let sonTelemetri = null;      // en son gelen telemetri (yalnız bu çizilir)
+let cizimPlanlandi = false;   // rAF kuyruğunda bekleyen çizim var mı
 
 function connectWebSocket() {
     const wsUrl = `ws://${window.location.host}/ws`;
@@ -114,10 +116,24 @@ function connectWebSocket() {
         setTimeout(connectWebSocket, 1000);
     };
 
+    // GECİKME BİRİKMESİNİ ÖNLE (backpressure):
+    // Eskiden her mesaj SENKRON işleniyordu (DOM + 3B canvas çizimi, üstüne
+    // 2 MJPEG kamera akışı). Tarayıcı 10 Hz'e yetişemeyince mesajlar JS
+    // kuyruğunda birikiyor ve hepsi sırayla çiziliyordu → ekran giderek
+    // GEÇMİŞİ gösteriyordu (uçak gitti, arayüzde duruyor).
+    // ÖLÇÜM: sunucu tarafı temiz — WS 10.0 Hz, en büyük boşluk 103 ms.
+    // Çözüm: gelen veriyi sakla, çizimi ekranın kendi karesine (rAF) bırak.
+    // Tarayıcı yetişemezse ARADAKİ mesajlar atlanır, DAİMA en tazesi çizilir.
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+        sonTelemetri = JSON.parse(event.data);
         lastHbTime = Date.now();
-        updateTelemetry(data);
+        if (!cizimPlanlandi) {
+            cizimPlanlandi = true;
+            requestAnimationFrame(() => {
+                cizimPlanlandi = false;
+                if (sonTelemetri) updateTelemetry(sonTelemetri);
+            });
+        }
     };
 }
 

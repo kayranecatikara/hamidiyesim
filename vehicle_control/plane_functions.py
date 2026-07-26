@@ -51,6 +51,9 @@ CONTROL_RATE = 0.1      # saniye — kontrol loop hızı
 
 # manual_control sınırları: -1000..+1000 (pitch/roll/yaw), 0..1000 (throttle)
 THROTTLE_IDLE = 0
+# ÖLÇÜM: 600 ile hedef 15.2 m/s uçuyordu; avcı tavanı 19 m/s (quad fiziği)
+# olduğundan kapanma yalnız 3.8 m/s kalıyor ve hedef dönmeden yetişilemiyordu.
+# 420 ile hedef ~11 m/s → kapanma 8 m/s (100 m 12 saniyede kapanır).
 THROTTLE_CRUISE = 600
 THROTTLE_FULL = 900
 

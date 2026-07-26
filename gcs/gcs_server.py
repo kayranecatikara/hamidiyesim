@@ -45,6 +45,24 @@ if not os.path.exists(ui_path):
     os.makedirs(ui_path)
 app.mount("/ui", StaticFiles(directory=ui_path, html=True), name="ui")
 
+
+@app.middleware("http")
+async def _arayuz_onbellek_kapat(request, call_next):
+    """Arayüz dosyalarını (html/js/css) ASLA önbellekleme.
+
+    index.html script'i `script.js?v=N` ile çağırıyordu; v sabit kaldığı için
+    script.js değişse bile tarayıcı ESKİ dosyayı önbellekten okuyordu ve
+    yapılan düzeltmeler ekrana hiç yansımıyordu. Artık sunucu her istekte
+    no-store diyor → tarayıcı daima güncel arayüzü alır.
+    """
+    yanit = await call_next(request)
+    yol = request.url.path
+    if yol.endswith((".js", ".css", ".html")) or yol in ("/", "/ui", "/ui/"):
+        yanit.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        yanit.headers["Pragma"] = "no-cache"
+        yanit.headers["Expires"] = "0"
+    return yanit
+
 @app.get("/")
 def read_root():
     return RedirectResponse(url="/ui/index.html")
@@ -102,7 +120,8 @@ def _frame_off_update():
 
 # GPS karıştırma simülasyonu — chase thread BU veriyi okur
 _gps_noise_level = 0.0   # 0.0 = temiz, 1.0 = tamamen bozuk
-_noisy_plane_telem = {"x": 0, "y": 0, "z": 0, "yaw": 0, "frozen": False}
+_noisy_plane_telem = {"x": 0, "y": 0, "z": 0, "yaw": 0,
+                      "vx": 0.0, "vy": 0.0, "vz": 0.0, "frozen": False}
 _last_clean_plane = {"x": 0, "y": 0, "z": 0, "yaw": 0}  # freeze için son temiz veri
 
 # Telemetri bağlantısı (sadece okuma)
@@ -115,6 +134,8 @@ _scenario_proc = None
 _scenario_name = None
 
 # Uçak throttle seviyesi — slider ile ayarlanır (0-1000 aralığı, MANUAL_CONTROL)
+# ÖLÇÜM: 600 ile hedef 15 m/s uçuyor; avcı tavanı 19 m/s olduğundan kapanma
+# 3.8 m/s kalıyor ve hedef dönmeden yetişilemiyordu. 420 → hedef ~11 m/s.
 _plane_throttle = 600   # default = THROTTLE_CRUISE
 
 # Video parazit simülasyonu — iris kamera akışına uygulanır
@@ -373,7 +394,8 @@ def set_gps_noise(cmd: GpsNoiseCmd):
 def get_gps_noise():
     return {"level": _gps_noise_level}
 
-def _apply_gps_noise(clean_x, clean_y, clean_z, clean_yaw):
+def _apply_gps_noise(clean_x, clean_y, clean_z, clean_yaw,
+                     clean_vx=0.0, clean_vy=0.0, clean_vz=0.0):
     """
     GPS karıştırma modeli:
     - 0-30%:   Hafif gürültü (±2m), veri gelir
@@ -389,7 +411,9 @@ def _apply_gps_noise(clean_x, clean_y, clean_z, clean_yaw):
 
     if lvl <= 0.001:
         # Karıştırma yok
-        _noisy_plane_telem = {"x": clean_x, "y": clean_y, "z": clean_z, "yaw": clean_yaw, "frozen": False}
+        _noisy_plane_telem = {"x": clean_x, "y": clean_y, "z": clean_z, "yaw": clean_yaw,
+                              "vx": clean_vx, "vy": clean_vy, "vz": clean_vz,
+                              "frozen": False}
         return
 
     if lvl >= 0.999:
@@ -417,7 +441,15 @@ def _apply_gps_noise(clean_x, clean_y, clean_z, clean_yaw):
         nx += random.uniform(-jump, jump)
         ny += random.uniform(-jump, jump)
 
-    _noisy_plane_telem = {"x": round(nx,2), "y": round(ny,2), "z": round(nz,2), "yaw": round(nyaw,1), "frozen": False}
+    # Hız da karıştırmadan etkilenir (jamming'de kestirim bozulur); seviye ile
+    # orantılı gürültü + yüksek seviyede sönümleme.
+    vgur = lvl * 6.0
+    _noisy_plane_telem = {"x": round(nx,2), "y": round(ny,2), "z": round(nz,2),
+                          "yaw": round(nyaw,1),
+                          "vx": round(clean_vx + random.gauss(0, vgur), 2),
+                          "vy": round(clean_vy + random.gauss(0, vgur), 2),
+                          "vz": round(clean_vz + random.gauss(0, vgur * 0.3), 2),
+                          "frozen": False}
 
 @app.post("/api/video_noise")
 def set_video_noise(cmd: GpsNoiseCmd):  # GpsNoiseCmd: level:float, aynı model kullan
@@ -703,7 +735,10 @@ def _read_iris_telem_from_conn(conn):
     ve telemetry_state['iris']'e yaz. Non-blocking, birden fazla
     mesaj okuyabilir (kuyrukta birikenler).
     """
-    for _ in range(10):  # en fazla 10 mesaj oku (kuyruk temizliği)
+    # Kuyruğu SONUNA KADAR boşalt: 10 mesaj sınırı, 20 Hz döngüde ≈200 msg/s
+    # tavan demekti ve gelen yükün altında kalıyordu → iris konumu bayatlıyor,
+    # güdüm eski kendi konumuna göre komut üretiyordu.
+    for _ in range(2000):
         msg = conn.recv_match(
             type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
             blocking=False
@@ -761,16 +796,32 @@ def _chase_thread():
         print(f"[CHASE] Iris bağlantısı kuruldu: target_sys={conn.target_system}")
 
         # ---- KALKIŞ ----
-        plane_z = telemetry_state["plane"]["z"]
-        target_z = plane_z if plane_z < -1.0 else -5.0
-        print(f"[CHASE] Kalkış irtifası: z={target_z:.1f}m (NED)")
+        # ÖNEMLİ: Eskiden hedefin İRTİFASINA kalkılıyordu (target_z = plane_z).
+        # Hedef sürekli tırmandığı için bu kalkış dakikalarca sürüyor ve o
+        # süre boyunca drone YATAYDA HİÇ İLERLEMİYORDU (ölçüm: hedef 115 m
+        # ötedeyken drone 1.5 m/s ile tırmanıyordu; hedef 322 m'ye çıktığında
+        # kalkış hiç bitmiyordu). Artık yalnızca güvenli bir irtifaya havalanır;
+        # hedefin irtifasına ÇIKMAK güdümün işidir ve bunu YATAYDA İLERLERKEN
+        # yapar (ALT_OFFSET ile hedefin altına yerleşir).
+        KALKIS_IRTIFA = 30.0
+        target_z = -KALKIS_IRTIFA
+        print(f"[CHASE] Kalkış irtifası: z={target_z:.1f}m (sabit; "
+              f"hedef irtifasına güdüm yatayda ilerlerken çıkar)")
 
-        success = df_takeoff(target_z=target_z)
-        if not success:
-            print("[CHASE] Kalkış başarısız!")
-            _chase_active = False
-            return
-        print("[CHASE] ✓ Kalkış tamamlandı — algoritma başlatılıyor")
+        # Drone ZATEN HAVADAYSA kalkışı atla: görev durdurulup yeniden
+        # başlatıldığında iris hover'da kalıyor ve df_takeoff başarısız
+        # dönüyordu → güdüm hiç başlamıyor, drone havada asılı kalıyordu.
+        iris_irtifa = -telemetry_state["iris"]["z"]
+        if iris_irtifa > 5.0:
+            print(f"[CHASE] Zaten havada ({iris_irtifa:.1f} m) — kalkış atlandı, "
+                  f"doğrudan güdüme geçiliyor")
+        else:
+            success = df_takeoff(target_z=target_z)
+            if not success:
+                print("[CHASE] Kalkış başarısız!")
+                _chase_active = False
+                return
+            print("[CHASE] ✓ Kalkış tamamlandı — algoritma başlatılıyor")
 
         # ---- CALLBACK'LER ----
         def get_plane():
@@ -781,7 +832,15 @@ def _chase_thread():
         def get_iris():
             _read_iris_telem_from_conn(conn)
             t = telemetry_state["iris"]
-            return {"x": t["x"], "y": t["y"], "z": t["z"]}
+            # pitch: kamera 25° yukarı sabit bağlı; kadraj telafisi için güdüm
+            # kameranın ANLIK dünya eksenini (25° + pitch) bilmek zorunda.
+            # vx/vy/roll: güdümün UÇUŞ KAYDI için gerekli — komut ettiğimiz
+            # hızla aracın gerçekte ulaştığı hızı ancak böyle kıyaslayabiliyoruz
+            # (manevrada geri kalmanın komuttan mı araçtan mı geldiği sorusu).
+            return {"x": t["x"], "y": t["y"], "z": t["z"],
+                    "vx": t.get("vx", 0.0), "vy": t.get("vy", 0.0),
+                    "vz": t.get("vz", 0.0), "roll": t.get("roll", 0.0),
+                    "pitch": t.get("pitch", 0.0), "yaw": t.get("yaw", 0.0)}
 
         # ---- _chase_active'i stop_event'e bağla ----
         chase_stop = threading.Event()
@@ -800,8 +859,15 @@ def _chase_thread():
         if _GPS_LAW == "v2":
             print("[CHASE] Güdüm yasası: chase v2 (AVCI_GPS_LAW=v2)")
             _run_chase_algorithm(conn, get_plane, get_iris, chase_stop)
-        elif os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
-            print("[CHASE] Güdüm yasası: GPS-YAKLASMA (saf GPS, AVCI_HYBRID=off)")
+        # VARSAYILAN ARTIK "off" = SAF GPS GÜDÜM.
+        # Hibrit modda supervisor, görsel kilit sağlanınca visual_lead'e
+        # geçiyordu; görsel faz hedefi kadrajda bulamayınca drone havada
+        # DURAKLIYOR ("manevrada sabit kalıp ne yapacağını şaşırma"). GPS
+        # güdümü oturana kadar görsel faz devre dışı — kod SİLİNMEDİ,
+        # AVCI_HYBRID=on ile tekrar açılır.
+        elif os.environ.get("AVCI_HYBRID", "off").lower() in ("off", "0"):
+            print("[CHASE] Güdüm yasası: SAF GPS (görsel faz kapalı; "
+                  "açmak için AVCI_HYBRID=on)")
             _run_gps_approach(conn, get_plane, get_iris, chase_stop)
         else:
             print("[CHASE] Güdüm yasası: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
@@ -920,15 +986,44 @@ def gz_iris_camera_thread():
         print(f"[GCS] gz-transport Python yok, Harmonic kamera atlandı: {e}")
         return
 
+    # KARE BİRİKMESİNİ ÖNLE — ÖLÇÜM: Gazebo kamerası 30 Hz üretirken GCS
+    # çıkışı yalnız 14 Hz'di. Callback içinde YOLO detection + pose SENKRON
+    # çalıştığı için işleme kareye yetişemiyor, gz-transport kuyruğunda
+    # kareler BİRİKİYOR ve ekrandaki görüntü giderek geçmişe kayıyordu
+    # (telemetri "hedef 21 m ötede" derken kamerada hedef yoktu).
+    # Çözüm: callback yalnızca EN SON kareyi saklar (anında döner, kuyruk
+    # birikmez); ağır işlemeyi ayrı bir işçi yapar ve daima en taze kareyi
+    # alır. Yetişilemeyen ara kareler atlanır — gecikme birikemez.
+    son_kare = {"veri": None}
+    kare_kilidi = threading.Lock()
+
     def cb(msg):
         try:
             wall_recv = time.time()
             stamp = msg.header.stamp.sec + msg.header.stamp.nsec * 1e-9
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
-                               stamp=stamp, wall_recv=wall_recv)
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(
+                (msg.height, msg.width, 3))
+            with kare_kilidi:
+                son_kare["veri"] = (arr.copy(), stamp, wall_recv)   # üzerine yaz
         except Exception as e:
             print(f"[GCS GZ-CAM] hata: {e}")
+
+    def isleyici():
+        while True:
+            with kare_kilidi:
+                kare = son_kare["veri"]
+                son_kare["veri"] = None
+            if kare is None:
+                time.sleep(0.003)
+                continue
+            arr, stamp, wall_recv = kare
+            try:
+                process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
+                                   stamp=stamp, wall_recv=wall_recv)
+            except Exception as e:
+                print(f"[GCS GZ-CAM] işleme hatası: {e}")
+
+    threading.Thread(target=isleyici, daemon=True).start()
 
     topic = os.environ.get("AVCI_GZ_CAMERA_TOPIC", "/iris_cam/image")
     node = GzNode()
@@ -958,12 +1053,34 @@ def gz_talon_camera_thread():
         print(f"[GCS] gz-transport Python yok, Talon kamera atlandı: {e}")
         return
 
+    # Kare birikmesini önle (iris kamerasındaki ile aynı gerekçe): callback
+    # yalnız en son kareyi saklar, ağır JPEG kodlamayı ayrı işçi yapar.
+    son_kare = {"veri": None}
+    kare_kilidi = threading.Lock()
+
     def cb(msg):
         try:
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_plane_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(
+                (msg.height, msg.width, 3))
+            with kare_kilidi:
+                son_kare["veri"] = arr.copy()
         except Exception as e:
             print(f"[GCS GZ-CAM] Talon hata: {e}")
+
+    def isleyici():
+        while True:
+            with kare_kilidi:
+                arr = son_kare["veri"]
+                son_kare["veri"] = None
+            if arr is None:
+                time.sleep(0.003)
+                continue
+            try:
+                process_plane_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            except Exception as e:
+                print(f"[GCS GZ-CAM] Talon işleme hatası: {e}")
+
+    threading.Thread(target=isleyici, daemon=True).start()
 
     topic = os.environ.get("AVCI_GZ_TALON_TOPIC", "/talon_cam/image")
     node = GzNode()
@@ -1065,7 +1182,8 @@ def _process_mavlink_msg(msg, vehicle_name):
         # Plane verisine GPS gürültüsü uygula
         if vehicle_name == 'plane':
             _apply_gps_noise(px, py, pz,
-                             telemetry_state['plane']['yaw'])
+                             telemetry_state['plane']['yaw'],
+                             msg.vx, msg.vy, msg.vz)
     elif msg_type == 'GLOBAL_POSITION_INT':
         telemetry_state[vehicle_name].update(
             lat=msg.lat / 1e7, lon=msg.lon / 1e7, alt_amsl=msg.alt / 1000.0)
@@ -1091,12 +1209,21 @@ async def mavlink_listener():
     # sysid -> is_plane (bool) eşleşmesi
     sysid_is_plane = {}
 
+    # KUYRUK BOŞALTMA (drain) — ÖNEMLİ: eskiden her 5 ms'de YALNIZ 1 mesaj
+    # okunuyordu (≈200 msg/s tavan). ArduPilot iki araçtan saniyede ~1000
+    # mesaj yolluyor (streamrate × ~20 mesaj tipi × 2 araç) → UDP kuyruğu
+    # sürekli şişiyor, okunan paketler giderek eskiyordu ve arayüzdeki
+    # gecikme BİRİKEREK büyüyordu (uçak gitmiş, ekranda duruyor).
+    # Artık her turda kuyrukta ne varsa bitene kadar okunur → arayüz her
+    # zaman EN TAZE paketi gösterir, birikme imkânsızdır.
     while True:
-        msg = _mav_conn.recv_match(
-            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
-            blocking=False
-        )
-        if msg:
+        for _ in range(4000):                     # güvenlik tavanı (sonsuz döngü olmasın)
+            msg = _mav_conn.recv_match(
+                type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
+                blocking=False
+            )
+            if not msg:
+                break                             # kuyruk boşaldı
             sys_id = msg.get_srcSystem()
             if msg.get_type() == 'HEARTBEAT' and sys_id != 255:
                 # msg.type: 1=FixedWing, 2=Quadrotor, vs.
@@ -1114,7 +1241,7 @@ async def mavlink_listener():
             # Sadece UÇAĞA (FixedWing) ait MAVLink paketlerini "plane" olarak işle
             if sysid_is_plane.get(sys_id, False):
                 _process_mavlink_msg(msg, "plane")
-            
+
         await asyncio.sleep(0.005)
 
 
@@ -1135,11 +1262,14 @@ def _iris_telem_worker():
 
     while not _iris_telem_stop.is_set():
         try:
-            msg = _iris_telem_conn.recv_match(
-                type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
-                blocking=False
-            )
-            if msg:
+            for _ in range(2000):                 # kuyruğu boşalt (bkz. drain notu)
+                msg = _iris_telem_conn.recv_match(
+                    type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
+                          'ATTITUDE', 'HEARTBEAT'],
+                    blocking=False
+                )
+                if not msg:
+                    break
                 _process_mavlink_msg(msg, "iris")
         except Exception:
             pass
