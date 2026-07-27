@@ -7,8 +7,8 @@ yönelimini çıkarır ve saf takip yönünün üstüne MENZİLDEN BAĞIMSIZ bir
 (≈ hedef_hızı / bizim_hız).
 
 Çıktı bir YÖNDÜR: u_govde (FRD birim vektör) ve ondan türeyen yaw_hata /
-pitch_hata. Bu geometri quad'da da sabit kanatta da aynıdır — platforma bağlı
-komut üretimi adaptörlerdedir (adapter_copter / adapter_fixedwing).
+pitch_hata. Bu geometri platformdan bağımsızdır — platforma bağlı komut üretimi
+adaptördedir (adapter_copter).
 
 Kritik tasarım kuralları (master spec):
   - Kaydırma PİKSEL uzayında DEĞİL, yön vektörü uzayında yapılır (FOV 125°
@@ -53,7 +53,6 @@ class Cfg:
     UNDISTORT_AKTIF = False  # simde distorsiyon yok; gerçek donanımda True + katsayılar
     DIST_KATSAYILARI = None  # cv2.undistortPoints için (k1,k2,p1,p2,k3), simde None
     KPT_CONF_MIN = _env_f("AVCI_POSE_KPT_CONF", 0.5)
-    PLATFORM = os.environ.get("AVCI_PLATFORM", "copter")
     # ── copter adaptörü ──
     # Kapanma hızı hedefin (~15 m/s) ÇOK üstünde olmalı (kullanıcı kararı):
     # görsel faz vurucu fazdır, hedefle hız eşitlemek GPS fazının işidir.
@@ -61,8 +60,12 @@ class Cfg:
     # kapanma_hizi_ms ile doğrula. K_LEAD taramasında SABİT tut.
     V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s
     KP_YAW = 1.2
-    YAW_HIZ_MAX = 90.0       # deg/s — agresif yaw quad'ı savurur, kamerayı bulandırır
-    IVME_TAVAN = 4.0         # m/s² — >5 m/s²'de burun aşağı eğilir, kamera yere bakar
+    # ── LİMİTSİZ TEST (2026-07-25): yazılım kısıtlamaları kaldırıldı ──
+    # Kullanıcı isteği: ivme/hız/yaw yazılım tavanları güdümün gerçek
+    # davranışını maskeliyordu. Tek sınır artık firmware (WPNAV/ANGLE_MAX).
+    # Eski ayarlı değerler: YAW_HIZ_MAX=90, IVME_TAVAN=4 (geri almak için bunlar).
+    YAW_HIZ_MAX = 1080.0     # deg/s — pratikte slew kapalı (eski 90)
+    IVME_TAVAN = 1000.0      # m/s² — pratikte rampa kapalı (eski 4)
     # ── terminal (kör dalış + vuruş) ──
     # Son ~6 m'de hedef kadraj tepesinden çıkıp tespit kopuyor; GPS'e dönmek
     # yerine son nişan komutunu kısa süre SÜRDÜR (çarpışmayı tamamla).
@@ -75,6 +78,26 @@ class Cfg:
     # Hedef telemetrisi ~4-5 Hz, drane 25 m/s → menzil örnekleri ~5 m aralıklı;
     # +araç açıklıkları ~1.3 m. 3 m merkez-merkez ≈ fiziksel temas.
     VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 3.0)      # m; altı = VURULDU
+
+    # ── DİKEY PN + TERMİNAL CO-ALTITUDE (2026-07-25 alttan-geçiş düzeltmesi) ──
+    # Son uçuşta SAF TAKİP, tırmanan hedefin ALTINDAN geçti: menzil kapandıkça
+    # hedefin yükseliş açısı 51°→75° (kadraj tavanına) fırladı, drone ~2.4 m
+    # altından ıskaladı. İki terim eklendi (adapter_copter uygular):
+    #  (a) DİKEY AIM YUMUŞATMA: pose yükseliş açısı ok↔kpt_dusuk kareleri arasında
+    #      BİMODAL zıplıyor (~10-18°); ham türev alınırsa PN ±tavana çakılıp vz'yi
+    #      chatter'a sokuyor (162804 uçuşu: %24 doygun, 17 vz işaret değişimi, 5.1m
+    #      ıska). Önce dikey aim'i tek-kare slew kırpma + EMA ile yumuşat.
+    #  (b) DİKEY PN: YUMUŞATILMIŞ yükseliş oranıyla orantılı lead = PN_LEAD_SURE·oran
+    #      (anticipasyon; tırmanan hedefe çarpışma rotası, alttan geçişi keser).
+    #  (c) TERMİNAL CO-ALTITUDE: menzil eşik altında (KİLİTLİ) sabit yukarı nişan
+    #      yanlılığı → drone hedef seviyesine çıkıp kafa-kafaya vursun.
+    ELEV_EMA          = 0.4     # dikey aim EMA (bimodal kpt gürültüsü → vz chatter'ı kes)
+    ELEV_STEP_MAX_DEG = 10.0    # tek-karede dikey aim slew kırpması (gürültü sıçraması sınırı)
+    PN_LEAD_SURE      = _env_f("AVCI_IBVS_PN_SURE", 0.4)   # s; dikey LOS lead anticipasyonu
+    PN_DIKEY_MAX_DEG  = 15.0    # dikey lead açı tavanı (25→15; aşırı komut sınırı)
+    PN_RATE_EMA       = 0.3     # yumuşatılmış yükseliş oranı EMA
+    TERMINAL_COALT_DEG    = 10.0   # terminalde sabit yukarı nişan yanlılığı
+    TERMINAL_COALT_MENZIL = _env_f("AVCI_IBVS_COALT_MENZIL", 12.0)  # m; altında co-altitude (kilitli)
 
 
 def cfg_copy():

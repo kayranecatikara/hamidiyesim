@@ -29,8 +29,8 @@ KORUNAN MEKANİKLER (eski koddaki şekliyle):
   - LOOK-UP GEOMETRİSİ: avcı hedefin ALTINDA uçar (menzil-ölçekli ofset,
     LOS yükseliş açısı ≥ LOOKUP_ELEV_DEG) → hedef GÖKYÜZÜ önünde siluet,
     YOLO tespiti kopmaz. Kamera 25° yukarı tilt'li → kadraj da doğru oturur.
-    (NOT: gps_chase.py v2 hedefin ÜSTÜNDE uçuyordu; eski sistemin kanıtlanmış
-    geometrisi ALTTAN bakıştır — dataset de bu geometriyle toplandı.)
+    (NOT: kanıtlanmış geometri ALTTAN bakıştır; hedefin üstünden bakış tespiti
+    kopardığı için terk edildi — pose dataset'i de bu alttan geometriyle toplandı.)
   - ALÇALMA ÖNCELİĞİ: ref irtifanın üstündeysek yatay kovalama kısılır
     (ileri-uçuş taşıması alçalmayı engellemesin).
   - DİKEY KADEMELİ HIZ: ez → hedef vz (VZ_MAX tavanlı, trapez) — eski cascade'in
@@ -83,10 +83,16 @@ class Cfg:
     # Eski mutlak tavan (5 m/s yakında) hedef 15 m/s uçarken ~50m'de dengeye
     # kilitleniyordu (kapanma hızı 0). Fren NİYETİ korunur: yakında kapanma payı
     # küçülür → overshoot yok; ama tavan asla hedefin kendi hızının altına inmez.
-    V_CAP_FAR    = 19.0           # m/s; MUTLAK tavan (ANGLE_MAX=55° ile ~19.5 ölçüldü)
-    V_CLOSE_FAR  = 14.0           # m/s; uzakta izin verilen KAPANMA hızı (hedef hızı üstü)
-    V_CLOSE_NEAR = 2.5            # m/s; standoff yakınında kapanma hızı
-    BRAKE_DIST   = 70.0           # m; bu mesafe altında kapanma payı kademeli düşer
+    # ── KAPANMA HIZI AÇILDI (2026-07-25): hedef ~15 m/s uçarken eski tavan 19 →
+    # kapanma marjı ~4 m/s, son 70m'de 2.5'a inince araca hiç yaklaşamıyorduk.
+    # Firmware artık 30 m/s'e izin veriyor (WPNAV_SPEED 3000, ANGLE_MAX 70°).
+    # Frenleme/standoff MANTIĞI korunuyor; sadece marjlar büyütüldü.
+    # Eski değerler (geri almak için): V_CAP_FAR 19, V_CLOSE_FAR 14,
+    #   V_CLOSE_NEAR 2.5, BRAKE_DIST 70.
+    V_CAP_FAR    = 26.0           # m/s; MUTLAK tavan (ANGLE_MAX=70° ile terminal hız üstü)
+    V_CLOSE_FAR  = 18.0           # m/s; uzakta izin verilen KAPANMA hızı (hedef hızı üstü)
+    V_CLOSE_NEAR = 5.0            # m/s; standoff yakınında kapanma hızı (0'a inmesin)
+    BRAKE_DIST   = 55.0           # m; bu mesafe altında kapanma payı kademeli düşer
 
     # --- PD KAZANÇLARI (hata m → hız m/s) ---
     # Eski KP_H=0.00025/cm tutum-komut alanındaydı (30 m hatada tam yetki);

@@ -13,7 +13,6 @@ import math
 import numpy as np
 
 from control.guidance.adapter_copter import CopterAdapter
-from control.guidance.adapter_fixedwing import FixedWingAdapter
 from control.guidance.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
     govde_to_dunya, yukselti_duzeltme)
@@ -220,14 +219,10 @@ def main():
             abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01 and yon > 0.9999,
             f"|v|={vn:.3f} m/s yön·u_dunya={yon:.6f}")
 
-    # ── T19: fixedwing stub sessizce GEÇMEZ ──
-    try:
-        FixedWingAdapter(cfg).compute()
-        kontrol("T19 fixedwing stub NotImplementedError", False, "istisna atmadı!")
-    except NotImplementedError:
-        kontrol("T19 fixedwing stub NotImplementedError", True)
-
     # ── T20: ivme rampası — hız sıçramasında uygulanan ivme ≤ IVME_TAVAN ──
+    # Not: varsayılan IVME_TAVAN "limitsiz test" için çok yükseğe çekildi;
+    # rampa MEKANİZMASINI test etmek için burada açıkça sonlu bir değere sabitle.
+    cfg = cfg_copy(); cfg.IVME_TAVAN = 4.0
     ad = CopterAdapter(cfg)                   # v_onceki = 0
     dt = 1.0 / 30.0
     out = ad.compute(np.array([1.0, 0.0, 0.0]), 0.0, (0, 0, 0), dt, 0.0)
@@ -383,6 +378,55 @@ def main():
     sonuc3 = terminal_kosusu(cfgT3, menz3, posev3)
     kontrol("T26 gürültülü menzilde kilit tutar + vuruş",
             sonuc3 == "vuruldu", f"sonuç={sonuc3} (2.7/2.75<3.0 yakalanmalı)")
+
+    # ── T27: DİKEY PN — tırmanan hedef (yükseliş artıyor) → aim YUKARI kayar ──
+    # Saf takip altından geçiyordu; yumuşatılmış yükseliş oranından PN lead çıkış
+    # yükselişini girişin belirgin üstüne iter (yumuşatma lag'ine rağmen).
+    cfg = cfg_copy()
+    ad = CopterAdapter(cfg)
+    dt = 1.0 / 30.0
+    out = None
+    girdi_elev = None
+    for e_deg in range(10, 25):                        # +1°/kare 15 kare → sabit tırmanış
+        e = math.radians(e_deg)
+        ug = np.array([math.cos(e), 0.0, -math.sin(e)])   # gövde: ileri+yukarı
+        out = ad.compute(ug, 0.0, (0, 0, 0), dt, 0.0)
+        girdi_elev = e_deg
+    cikis_elev = math.degrees(math.asin(max(-1.0, min(1.0, -float(out["u_dunya"][2])))))
+    kontrol("T27 dikey PN tırmanan hedefte aim'i yukarı kaydırır",
+            cikis_elev > girdi_elev + 2.0 and out["pn_dikey_deg"] > 3.0,
+            f"girdi={girdi_elev}° çıkış={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}°")
+
+    # ── T28: TERMİNAL CO-ALTITUDE — sabit hedefte terminal=True aim'i ~COALT yukarı ──
+    cfg = cfg_copy()
+    e = math.radians(20.0)
+    ug = np.array([math.cos(e), 0.0, -math.sin(e)])
+    base = CopterAdapter(cfg).compute(ug, 0.0, (0, 0, 0), dt, 0.0, terminal=False)
+    term = CopterAdapter(cfg).compute(ug, 0.0, (0, 0, 0), dt, 0.0, terminal=True)
+    e_base = math.degrees(math.asin(-float(base["u_dunya"][2])))
+    e_term = math.degrees(math.asin(-float(term["u_dunya"][2])))
+    kontrol("T28 terminal co-altitude yukarı yanlılık",
+            abs((e_term - e_base) - cfg.TERMINAL_COALT_DEG) < 0.5
+            and abs(term["coalt_deg"] - cfg.TERMINAL_COALT_DEG) < 1e-6,
+            f"base={e_base:.2f}° term={e_term:.2f}° Δ={e_term-e_base:.2f}° "
+            f"(beklenen {cfg.TERMINAL_COALT_DEG}°)")
+
+    # ── T29: DİKEY AIM YUMUŞATMA — tek karede dev yükseliş sıçraması KIRPILIR ──
+    # (kpt bimodal ~49° zıplama vz'yi chatter'a sokuyordu). Komut yükselişi ham
+    # 70°'ye fırlamamalı (slew kırpma) ve |v|=V_KAPANMA korunmalı.
+    cfg = cfg_copy()
+    ad = CopterAdapter(cfg)
+    for e_deg in (20.0, 20.5, 21.0):                  # sakin seyir → yumuşatma otursun
+        e = math.radians(e_deg)
+        ad.compute(np.array([math.cos(e), 0.0, -math.sin(e)]), 0.0, (0, 0, 0), dt, 0.0)
+    e = math.radians(70.0)                            # ANİ ~49° sıçrama (bimodal gürültü)
+    out = ad.compute(np.array([math.cos(e), 0.0, -math.sin(e)]), 0.0, (0, 0, 0), dt, 0.0)
+    cikis_elev = math.degrees(math.asin(max(-1.0, min(1.0, -float(out["u_dunya"][2])))))
+    vn = np.linalg.norm(np.array(out["v_cmd"]))
+    kontrol("T29 dikey aim yumuşatma sıçramayı kırpar",
+            cikis_elev < 45.0 and abs(out["pn_dikey_deg"]) <= cfg.PN_DIKEY_MAX_DEG + 1e-6
+            and abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01,
+            f"ham=70° komut_yükseliş={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}° |v|={vn:.2f}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

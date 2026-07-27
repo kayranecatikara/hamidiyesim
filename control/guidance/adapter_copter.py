@@ -31,14 +31,63 @@ class CopterAdapter:
     def __init__(self, cfg=Cfg):
         self.cfg = cfg
         self.v_onceki = (0.0, 0.0, 0.0)
+        self.elev_f = None            # yumuşatılmış dikey aim yükseliş açısı (rad)
+        self.elev_onceki = None       # dikey PN: önceki (yumuşatılmış) yükseliş açısı
+        self.elev_rate_f = 0.0        # EMA'lı yükseliş oranı (rad/s)
 
-    def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw):
+    def _dikey_pn(self, u_dunya, dt, kalite, terminal):
+        """Aim yönünü dikey düzlemde yukarı döndür. Sıra:
+          (1) dikey aim YUMUŞAT (slew-kırpma + EMA) — bimodal kpt gürültüsünü kes,
+          (2) PN lead: yumuşatılmış yükseliş ORANIYLA orantılı anticipasyon,
+          (3) terminalde sabit co-altitude yanlılığı.
+        |u| korunur (azimut sabit, yalnız yükseliş açısı değişir). Dönüş:
+        (u_dunya_yeni, pn_lead_rad, coalt_rad)."""
+        cfg = self.cfg
+        elev_ham = math.asin(max(-1.0, min(1.0, -float(u_dunya[2]))))   # yukarı +
+        az = math.atan2(float(u_dunya[1]), float(u_dunya[0]))
+
+        # (1) DİKEY AIM YUMUŞATMA: tek-kare slew kırpma (gürültü sıçramasını sınırla)
+        # + EMA. Ham türev yerine bunun türevi PN'e gider → chatter'sız.
+        if self.elev_f is None:
+            self.elev_f = elev_ham
+        else:
+            step = clamp(elev_ham - self.elev_f,
+                         -math.radians(cfg.ELEV_STEP_MAX_DEG),
+                         math.radians(cfg.ELEV_STEP_MAX_DEG))
+            self.elev_f += cfg.ELEV_EMA * step
+        elev = self.elev_f
+
+        # (2) DİKEY PN: yumuşatılmış yükseliş oranıyla orantılı lead
+        pn_lead = 0.0
+        if dt is not None and 0.0 < dt <= 0.2 and self.elev_onceki is not None:
+            rate = (elev - self.elev_onceki) / dt
+            self.elev_rate_f = (cfg.PN_RATE_EMA * rate
+                                + (1.0 - cfg.PN_RATE_EMA) * self.elev_rate_f)
+            pn_lead = clamp(
+                cfg.PN_LEAD_SURE * self.elev_rate_f * max(0.0, min(1.0, kalite)),
+                -math.radians(cfg.PN_DIKEY_MAX_DEG),
+                math.radians(cfg.PN_DIKEY_MAX_DEG))
+        self.elev_onceki = elev
+
+        # (3) co-altitude: yalnız terminalde ve hedef ÜSTTEyken (aşağıdaki hedefte
+        # yukarı yanlılık yanlış) — alttan sıyırma yerine seviyeye çıkıp kafa-kafaya
+        coalt = math.radians(cfg.TERMINAL_COALT_DEG) if (terminal and elev > 0.0) else 0.0
+        elev_yeni = elev + pn_lead + coalt
+        ce = math.cos(elev_yeni)
+        u_yeni = np.array([ce * math.cos(az), ce * math.sin(az), -math.sin(elev_yeni)])
+        return u_yeni, pn_lead, coalt
+
+    def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
+                kalite=1.0, terminal=False):
         """Saf hesap (test edilir; göndermez).
         attitude: (roll, pitch, yaw) radyan. dt: kare aralığı (s).
-        Dönüş: dict(v_cmd, yaw_cmd, u_dunya, v_doygun, yaw_doygun)."""
+        kalite: pose kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
+        (co-altitude yanlılığı aktif). Dönüş: dict(v_cmd, yaw_cmd, u_dunya,
+        v_doygun, yaw_doygun, pn_dikey_deg, coalt_deg)."""
         cfg = self.cfg
         u_dunya = govde_to_dunya(u_govde, *attitude)
         u_dunya = u_dunya / np.linalg.norm(u_dunya)
+        u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal)
         v_hedef = cfg.V_KAPANMA * u_dunya
 
         if dt is None or dt <= 0:
@@ -60,11 +109,15 @@ class CopterAdapter:
         yaw_cmd = mevcut_yaw + adim
 
         return {"v_cmd": v_cmd, "yaw_cmd": yaw_cmd, "u_dunya": u_dunya,
-                "v_doygun": v_doygun, "yaw_doygun": yaw_doygun}
+                "v_doygun": v_doygun, "yaw_doygun": yaw_doygun,
+                "pn_dikey_deg": math.degrees(pn_lead),
+                "coalt_deg": math.degrees(coalt)}
 
-    def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw):
+    def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
+                kalite=1.0, terminal=False):
         """Hesapla + gönder. Dönen dict CSV loguna girer."""
-        out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw)
+        out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw,
+                            kalite=kalite, terminal=terminal)
         send_velocity(conn, out["v_cmd"][0], out["v_cmd"][1], out["v_cmd"][2],
                       out["yaw_cmd"])
         return out

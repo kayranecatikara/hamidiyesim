@@ -23,7 +23,6 @@ import time
 
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
-from control.guidance.adapter_fixedwing import FixedWingAdapter
 from control.guidance.common import send_velocity
 from control.guidance.guidance_core import Cfg, LeadPursuitCore, govde_to_dunya
 
@@ -39,7 +38,7 @@ _CSV_ALANLAR = [
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "v_doygun", "yaw_doygun",
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "kapanma_hizi_ms", "mod",
-    "pitch_body_deg", "kamera_dunya_pitch_deg",
+    "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
 ]
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
@@ -91,10 +90,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
     dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
     core = LeadPursuitCore(cfg)
-    if cfg.PLATFORM == "copter":
-        adapter = CopterAdapter(cfg)
-    else:
-        adapter = FixedWingAdapter(cfg)   # stub: command() NotImplementedError
+    adapter = CopterAdapter(cfg)          # yalnız copter platformu
 
     aras = _ArasState()
     son_seq = 0            # _pose_seq 0'dan başlar; ilk GERÇEK kareyi bekle
@@ -108,6 +104,9 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     terminal_baslangic = None   # kör dalış başlangıç duvar anı
     terminal_latch = False      # kör dalış KİLİDİ (girince süre/vuruşa dek sürer)
     terminal_min = None         # kör dalış boyunca görülen en yakın menzil
+    coalt_latch = False         # terminal co-altitude KİLİDİ (menzil bir kez eşik
+                                # altına inince kilitli; ground-truth menzil gürültüsü
+                                # yukarı yanlılığı titretmesin)
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -115,7 +114,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     f = open(csv_yol, "w", newline="")
     w = csv.DictWriter(f, fieldnames=_CSV_ALANLAR, extrasaction="ignore")
     w.writeheader()
-    print(f"[LEAD] IBVS lead pursuit başladı (platform={cfg.PLATFORM}, "
+    print(f"[LEAD] IBVS lead pursuit başladı (copter, "
           f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}) — log: {csv_yol}")
 
     def _satir(row):
@@ -278,8 +277,15 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
 
             if aras.attitude is not None:
                 mevcut_yaw = aras.attitude[2]
+                # terminal co-altitude: menzil eşik altına bir kez inince KİLİTLE
+                # (menzil_onceki = ground-truth; gerçek donanımda yakınlık sensörü).
+                # Kilit, ground-truth menzil gürültüsünün bayrağı titretmesini önler.
+                if (menzil_onceki is not None
+                        and menzil_onceki < cfg.TERMINAL_COALT_MENZIL):
+                    coalt_latch = True
                 cmd = adapter.command(conn, res["u_govde"], res["yaw_hata"],
-                                      aras.attitude, res["dt"], mevcut_yaw)
+                                      aras.attitude, res["dt"], mevcut_yaw,
+                                      kalite=res["kalite"], terminal=coalt_latch)
                 # kör dalışta sürdürülecek son nişan komutu
                 son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
                              cmd["yaw_cmd"])
@@ -290,6 +296,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     "yaw_cmd_deg": round(math.degrees(cmd["yaw_cmd"]), 1),
                     "v_doygun": int(cmd["v_doygun"]),
                     "yaw_doygun": int(cmd["yaw_doygun"]),
+                    "pn_dikey_deg": round(cmd["pn_dikey_deg"], 2),
+                    "coalt_deg": round(cmd["coalt_deg"], 2),
                 })
                 # quad'a özgü izleme: burun eğimi + kameranın DÜNYAYA göre bakışı
                 # (ivme tavanı aşılırsa kamera yere bakmaya başlar — Cfg.IVME_TAVAN)

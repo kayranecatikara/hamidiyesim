@@ -82,17 +82,24 @@ def _frame_off_update():
         return                                    # iki GPS de gelmeden kalibre etme
     rel_n = (pp["lat"] - ip["lat"]) * _M_PER_DEG
     rel_e = (pp["lon"] - ip["lon"]) * _M_PER_DEG * math.cos(math.radians(ip["lat"]))
-    rel_d = -(pp["alt_amsl"] - ip["alt_amsl"])
     sn = (ip["x"] + rel_n) - _plane_local_raw["x"]
     se = (ip["y"] + rel_e) - _plane_local_raw["y"]
-    sd = (ip["z"] + rel_d) - _plane_local_raw["z"]
+    # ── DİKEY: AMSL KULLANMA (2026-07-25 kök-neden düzeltmesi) ──
+    # İki SITL'in EKF orijin İRTİFALARI farklı (araç-tipi varsayılan home alt'ları
+    # ~12.7m ayrık; start_harmonic.sh --home vermiyor). GPS lat/lon gerçek yatay
+    # konumu doğru verirken alt_amsl bu 12.7m sahte ofseti taşıyordu: kamera+ham
+    # yerel-z "hedef ALTTA" derken AMSL "ÜSTTE" diyordu → güdüm drone'u hedefin
+    # üstüne çıkarıp görsel teması ENGELLİYORDU. İki araç da aynı düz zemine
+    # spawn olduğu için dikey orijin farkı = 0; plane ham yerel-z'si doğrudan
+    # iris ile kıyaslanabilir → d = 0. (Yatay N/E GPS kalibrasyonu korunuyor.)
+    sd = 0.0
     if _frame_off["samples"] == 0:
         _frame_off.update(n=sn, e=se, d=sd)
     else:
         a = 0.1
         _frame_off["n"] = (1 - a) * _frame_off["n"] + a * sn
         _frame_off["e"] = (1 - a) * _frame_off["e"] + a * se
-        _frame_off["d"] = (1 - a) * _frame_off["d"] + a * sd
+        _frame_off["d"] = 0.0
     _frame_off["samples"] += 1
     if not _frame_off["ok"] and _frame_off["samples"] >= 20:
         _frame_off["ok"] = True
@@ -455,11 +462,29 @@ _mavlink_stats = {"total": 0, "by_sysid": {}, "by_type": {}}
 
 @app.get("/api/debug/telem")
 def debug_telem():
-    """Anlık telemetry state + MAVLink istatistikleri."""
+    """Anlık telemetry state + MAVLink istatistikleri.
+
+    DİKEY TEŞHİS: kamera "hedef altta" derken telemetri "hedef üstte" diyorsa
+    dikey hiza (frame_off.d) yanlış demektir. Aşağıdaki alanlar kök nedeni açar:
+      - iris/plane alt_amsl: iki SITL'in AMSL'i tutarlı mı? (yerde eşit olmalı)
+      - plane_local_raw.z vs telemetry_state.plane.z: çerçeve ofseti ne kattı?
+      - frame_off.d: kilitli dikey ofset (başlangıçta 1 kez hesaplanır)."""
+    ip, pp = telemetry_state["iris"], telemetry_state["plane"]
     return {
         "telemetry_state": telemetry_state,
         "mavlink_stats": _mavlink_stats,
         "plane_sysid": _plane_sysid,
+        "frame_off": dict(_frame_off),
+        "plane_local_raw": dict(_plane_local_raw),
+        "dikey_teshis": {
+            "iris_alt_amsl": ip["alt_amsl"],
+            "plane_alt_amsl": pp["alt_amsl"],
+            "amsl_fark_m": round(pp["alt_amsl"] - ip["alt_amsl"], 2),
+            "iris_irtifa_local_m": round(-ip["z"], 2),
+            "plane_irtifa_local_m": round(-pp["z"], 2),
+            "plane_local_raw_irtifa_m": round(-_plane_local_raw["z"], 2),
+            "telemetri_dikey_fark_m": round(-pp["z"] - (-ip["z"]), 2),
+        },
     }
 
 @app.post("/api/command/iris/start_chase")
@@ -499,10 +524,9 @@ def chase_status():
         (plane["z"] - iris["z"])**2
     )
     resp = {"active": True, "distance": round(dist, 1)}
-    if _GPS_LAW != "v2":
-        # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
-        resp["guidance"] = dict(_gps_approach_mod.status)
-        resp["supervisor"] = dict(_supervisor_mod.status)
+    # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
+    resp["guidance"] = dict(_gps_approach_mod.status)
+    resp["supervisor"] = dict(_supervisor_mod.status)
     return resp
 
 
@@ -573,17 +597,11 @@ def pnp_telemetry():
     }
 
 
-from control.guidance.gps_chase import run_chase as _run_chase_algorithm
 from control.guidance import gps_approach as _gps_approach_mod
 from control.guidance.gps_approach import run_gps_approach as _run_gps_approach
-from control.guidance.gps_strike import run_strike as _run_strike_algorithm
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
-
-# GPS güdüm yasası seçimi: varsayılan eski sistemin portu (gps_approach);
-# AVCI_GPS_LAW=v2 → önceki chase v2 (SPRINT/APPROACH/LOCK state machine).
-_GPS_LAW = os.environ.get("AVCI_GPS_LAW", "yaklasma").lower()
 
 
 # ══════════════════════════════════════════════════════════
@@ -651,51 +669,6 @@ def stop_visual():
     _visual_stop_event.set()
     return {"status": "success", "message": "Görsel güdüm durduruldu."}
 
-_strike_active = False
-_strike_stop_event = threading.Event()
-
-@app.post("/api/command/iris/start_strike")
-def start_strike():
-    """Chase'i durdur, vurma moduna geç — tam gaz hedefe çarp."""
-    global _chase_active, _strike_active
-    if _strike_active:
-        return {"status": "error", "message": "Strike zaten aktif!"}
-
-    # Önce chase'i durdur
-    if _chase_active:
-        _chase_active = False
-        time.sleep(0.3)  # chase thread'in durmasını bekle
-        print("[STRIKE] Chase durduruldu — strike'a geçiliyor")
-
-    _strike_active = True
-    _strike_stop_event.clear()
-    t = threading.Thread(target=_strike_thread, daemon=True)
-    t.start()
-    return {"status": "success", "message": "⚠️ VURMA MODU AKTİF!"}
-
-
-@app.post("/api/command/iris/stop_strike")
-def stop_strike():
-    global _strike_active
-    _strike_stop_event.set()
-    _strike_active = False
-    print("[STRIKE] Durduruldu.")
-    return {"status": "success"}
-
-
-@app.get("/api/strike_status")
-def strike_status():
-    if not _strike_active:
-        return {"active": False}
-    plane = telemetry_state["plane"]
-    iris  = telemetry_state["iris"]
-    dist = math.sqrt(
-        (plane["x"] - iris["x"])**2 +
-        (plane["y"] - iris["y"])**2 +
-        (plane["z"] - iris["z"])**2
-    )
-    return {"active": True, "distance": round(dist, 1)}
-
 
 def _read_iris_telem_from_conn(conn):
     """
@@ -713,42 +686,12 @@ def _read_iris_telem_from_conn(conn):
         _process_mavlink_msg(msg, "iris")
 
 
-def _strike_thread():
-    """Strike altyapı thread'i: bağlantı + algoritma çağrısı."""
-    global _strike_active
-    try:
-        stop_iris_telem()  # port çatışmasını önle
-        time.sleep(0.3)
-        conn = df_connect_drone(port=14541)
-        print(f"[STRIKE] Iris bağlantısı: target_sys={conn.target_system}")
-
-        # Hedef İHA verisi (GPS-bozulmuş)
-        def get_plane():
-            return dict(_noisy_plane_telem)
-
-        def get_iris():
-            # conn üzerinden iris pozisyonunu oku
-            _read_iris_telem_from_conn(conn)
-            t = telemetry_state["iris"]
-            return {"x": t["x"], "y": t["y"], "z": t["z"]}
-
-        _run_strike_algorithm(conn, get_plane, get_iris, _strike_stop_event)
-
-    except Exception as e:
-        import traceback
-        print(f"[STRIKE] HATA: {e}")
-        traceback.print_exc()
-    finally:
-        _strike_active = False
-        start_iris_telem()  # port'u serbest bırakıp tekrar dinle
-
-
 def _chase_thread():
     """Chase altyapı thread'i: kalkış + chase_algorithm çağrısı."""
     global _chase_active
 
     print("=" * 50)
-    print("[CHASE] Chase Modu Başlıyor (chase_algorithm.run_chase)")
+    print("[CHASE] Chase Modu Başlıyor (hibrit: GPS yaklaşma ↔ görsel lead)")
     print("=" * 50)
 
     try:
@@ -796,11 +739,8 @@ def _chase_thread():
 
         # ---- ALGORİTMAYI ÇAĞIR ----
         # Varsayılan: HİBRİT (GPS yaklaşma ↔ görsel lead pursuit, supervisor
-        # geçişli). AVCI_HYBRID=off → saf GPS; AVCI_GPS_LAW=v2 → eski chase v2.
-        if _GPS_LAW == "v2":
-            print("[CHASE] Güdüm yasası: chase v2 (AVCI_GPS_LAW=v2)")
-            _run_chase_algorithm(conn, get_plane, get_iris, chase_stop)
-        elif os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
+        # geçişli). AVCI_HYBRID=off → saf GPS yaklaşma (tek başına test için).
+        if os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
             print("[CHASE] Güdüm yasası: GPS-YAKLASMA (saf GPS, AVCI_HYBRID=off)")
             _run_gps_approach(conn, get_plane, get_iris, chase_stop)
         else:
