@@ -10,20 +10,23 @@
 #    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
 #  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
 
-# ── LİMİTSİZ TEST (2026-07-25): firmware tavanları açıldı ──
-# Kullanıcı isteği: güdüm kodunun gerçek davranışını görmek için yazılım+firmware
-# kısıtlamaları kaldırıldı. Eski değerler (geri almak için):
-#   ANGLE_MAX 5500, WPNAV_SPEED 2200, WPNAV_SPEED_UP/DN 1000, WPNAV_ACCEL 600,
-#   LOIT_SPEED 2200.
-# Agresif eğim → yüksek yatay hız/ivme
-ANGLE_MAX 7000
+# ── YÜKSEK MANEVRA (2026-07-28): gerçek dronun kabiliyetine yaklaştırıldı ──
+# Manevra loglarında hedef 30 m/s'e çıkarken sim aracı 20 m/s'de takılıp yakalayamadı
+# (d_h 469 m'ye patladı). Gerçek avcı drone çok daha hızlı/çevik → tavanlar açıldı.
+# Kod tarafı tavanlar: control/guidance/gps_guidance.py (V_MAX=40, VZ_MAX=18, ACCEL=35).
+# Eski değerler (geri almak için):
+#   ANGLE_MAX 7000, WPNAV_SPEED 3000, WPNAV_SPEED_UP/DN 3000, WPNAV_ACCEL 2000,
+#   LOIT_SPEED 3000, PSC_VELXY_P 2.0.
+# Agresif eğim → yüksek aerodinamik terminal hız (tan(80°) ≈ 5.7× tan(55°))
+ANGLE_MAX 8000
 
 # GUIDED/WPNAV hız ve ivme tavanları (cm, cm/s, cm/s²)
-WPNAV_SPEED 3000
-WPNAV_SPEED_UP 3000
-WPNAV_SPEED_DN 3000
-WPNAV_ACCEL 2000
-LOIT_SPEED 3000
+WPNAV_SPEED 4500
+WPNAV_SPEED_UP 4000
+WPNAV_SPEED_DN 4000
+WPNAV_ACCEL 4000
+LOIT_SPEED 4500
+# PSC_VELXY_P 2.5→2.0 (2026-07-28 sönümleme: hız döngüsü sert kamçılanmasın)
 PSC_VELXY_P 2.0
 
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)

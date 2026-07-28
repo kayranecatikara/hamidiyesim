@@ -50,17 +50,27 @@ class Cfg:
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)
 
     # --- HIZ KONTROLÜ ---
+    # NOT (2026-07-28): sim aracı gerçek dronedan çok zayıftı. Manevra loglarında
+    # hedef 30 m/s'e çıkarken drone %97-98 oranında V_MAX=20 tavanında takılı kaldı,
+    # d_h 469 m'ye patladı (yakalayamıyor). Gerçek avcı drone bundan çok daha yetenekli
+    # → tavanlar belirgin açıldı (firmware tavanları avci_copter.parm ile birlikte).
     KP_H = 0.8                # yatay konum hatası → hız (1/s)
     KD_H = 0.20               # yatay türev sönümleme
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
-    VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
-    V_MAX = 20.0             # m/s; yatay hız tavanı
-    MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
+    VZ_MAX = _env_f("AVCI_GPS_VZ_MAX", 18.0)    # m/s; dikey hız tavanı (agresif tırmanış/dalış)
+    V_MAX = _env_f("AVCI_GPS_V_MAX", 40.0)      # m/s; yatay hız tavanı (hedef ~30'u rahat geçsin)
+    MAX_ACCEL = _env_f("AVCI_GPS_ACCEL", 25.0)  # m/s²; komut hızı değişim sınırı (35→25 sönümleme)
     DERIV_EMA = 0.2
+    # --- YAKLAŞMA FRENİ (2026-07-28: V_MAX 40'a çıkınca frensiz PD overshoot/zikzak
+    # yaptı — hedef daireyi aşıp savruluyordu). İstasyona PD düzeltmesi kinematik
+    # frenle sınırlanır: v_brake = sqrt(2·A_BRAKE·d_st) → kalan mesafede durabilecek
+    # hız. Uzakta hızlı, istasyona YUMUŞAK oturur. FF (hedef hızı) hep korunur. ---
+    A_BRAKE = _env_f("AVCI_GPS_BRAKE", 8.0)     # m/s²; yaklaşma freni yavaşlama ivmesi
+    V_STATION_NEAR = 2.0                        # m/s; istasyonda taban düzeltme hızı
 
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
-    YAW_RATE_MAX = math.radians(120.0)
+    YAW_RATE_MAX = math.radians(250.0)          # deg/s; burun çevikliği (eski 120)
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -214,9 +224,21 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                         de[i] = (1 - a) * de[i] + a * (e_now[i] - e_prev[i]) / ddt
             e_prev, t_prev_deriv = e_now, now
 
-            # ── 6) HIZ KOMUTU: hedef-hızı FF + PD ──
-            vx = vel_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
-            vy = vel_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
+            # ── 6) HIZ KOMUTU: hedef-hızı FF + FRENLİ PD ──
+            # Düzeltme (istasyona PD) kinematik frenle sınırlı: v_brake =
+            # sqrt(2·A_BRAKE·d_st) + taban → istasyona kalan mesafede durabilecek hız.
+            # Uzakta serbest (hızlı yaklaş), yakında küçülür (yumuşak otur, overshoot yok).
+            corr_x = cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
+            corr_y = cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
+            corr_mag = math.hypot(corr_x, corr_y)
+            d_st = math.hypot(ex_cmd, ey_cmd)
+            v_brake = math.sqrt(2.0 * cfg.A_BRAKE * d_st) + cfg.V_STATION_NEAR
+            if corr_mag > v_brake and corr_mag > 1e-6:
+                s = v_brake / corr_mag
+                corr_x *= s
+                corr_y *= s
+            vx = vel_x + corr_x
+            vy = vel_y + corr_y
             vmag = math.hypot(vx, vy)
             if vmag > cfg.V_MAX and vmag > 1e-6:
                 s = cfg.V_MAX / vmag
