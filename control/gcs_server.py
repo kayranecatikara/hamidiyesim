@@ -525,7 +525,7 @@ def chase_status():
     )
     resp = {"active": True, "distance": round(dist, 1)}
     # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
-    resp["guidance"] = dict(_gps_approach_mod.status)
+    resp["guidance"] = dict(_gps_guidance_mod.status)
     resp["supervisor"] = dict(_supervisor_mod.status)
     return resp
 
@@ -597,8 +597,8 @@ def pnp_telemetry():
     }
 
 
-from control.guidance import gps_approach as _gps_approach_mod
-from control.guidance.gps_approach import run_gps_approach as _run_gps_approach
+from control.guidance import gps_guidance as _gps_guidance_mod
+from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
@@ -724,7 +724,13 @@ def _chase_thread():
         def get_iris():
             _read_iris_telem_from_conn(conn)
             t = telemetry_state["iris"]
-            return {"x": t["x"], "y": t["y"], "z": t["z"]}
+            # x,y,z (m, NED) + attitude (rad; telemetri derece → radyan) + hız (m/s).
+            # Kadraj güdümü attitude'u hedefin kameradaki izdüşümü için kullanır.
+            return {"x": t["x"], "y": t["y"], "z": t["z"],
+                    "roll": math.radians(t["roll"]),
+                    "pitch": math.radians(t["pitch"]),
+                    "yaw": math.radians(t["yaw"]),
+                    "vx": t["vx"], "vy": t["vy"], "vz": t["vz"]}
 
         # ---- _chase_active'i stop_event'e bağla ----
         chase_stop = threading.Event()
@@ -742,7 +748,7 @@ def _chase_thread():
         # geçişli). AVCI_HYBRID=off → saf GPS yaklaşma (tek başına test için).
         if os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
             print("[CHASE] Güdüm yasası: GPS-YAKLASMA (saf GPS, AVCI_HYBRID=off)")
-            _run_gps_approach(conn, get_plane, get_iris, chase_stop)
+            _run_gps_guidance(conn, get_plane, get_iris, chase_stop)
         else:
             print("[CHASE] Güdüm yasası: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
 

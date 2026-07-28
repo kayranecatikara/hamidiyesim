@@ -3,7 +3,7 @@ supervisor.py — Faz 4: GPS ↔ görsel güdüm geçişi (hibrit müdahale).
 
 run_hybrid tek görev döngüsüdür (start_chase bunu çalıştırır):
 
-  GPS fazı (gps_approach) hedefe yaklaşır. Görsel temas oturunca
+  GPS fazı (gps_guidance) hedefe yaklaşır. Görsel temas oturunca
   (KILIT_N ardışık pose karesi, conf ≥ POSE_CONF_MIN, VE handoff menzili
   içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (visual_lead) geçilir.
   Görsel temas kesilirse (KAYIP_M ardışık pose'suz kare veya kare akışının
@@ -19,8 +19,8 @@ menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 import os
 import threading
 
-from control.guidance import gps_approach as _ga
-from control.guidance.gps_approach import run_gps_approach
+from control.guidance import gps_guidance as _ga
+from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
 
@@ -56,7 +56,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
     status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
 
     while not stop_event.is_set():
-        # ══ GPS FAZI ══ (gps_approach kendi 20 Hz döngüsünde; izci pose akışını sayar)
+        # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
         status["faz"] = "GPS"
         faz_stop = threading.Event()
         _kopru(stop_event, faz_stop)
@@ -82,13 +82,13 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                     kapi = (not sup_cfg.GATE_KILIT) or yakin or dropout
                     if kapi:
                         tetik["gorsel"] = True
-                        faz_stop.set()          # gps_approach döngüsünü kır
+                        faz_stop.set()          # gps_guidance döngüsünü kır
                         return
 
         threading.Thread(target=izci, daemon=True).start()
         print(f"[SUPERVISOR] GPS fazı (görsel kilit: {sup_cfg.KILIT_N} ardışık kare"
               f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
-        run_gps_approach(conn, get_plane, get_iris, faz_stop)
+        run_gps_guidance(conn, get_plane, get_iris, faz_stop)
 
         if stop_event.is_set() or not tetik["gorsel"]:
             break

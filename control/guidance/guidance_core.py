@@ -120,17 +120,61 @@ def kamera_to_govde(u_kamera, tilt_rad):
     return Ry @ ham
 
 
-def govde_to_dunya(u_govde, roll, pitch, yaw):
-    """Gövde FRD → dünya NED (ArduPilot attitude, radyan). DCM = Rz(ψ)·Ry(θ)·Rx(φ)."""
+def _dcm_govde_dunya(roll, pitch, yaw):
+    """Gövde FRD → dünya NED yön kosinüs matrisi (DCM = Rz(ψ)·Ry(θ)·Rx(φ))."""
     cr, sr = math.cos(roll), math.sin(roll)
     cp, sp = math.cos(pitch), math.sin(pitch)
     cy, sy = math.cos(yaw), math.sin(yaw)
-    R = np.array([
+    return np.array([
         [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
         [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
         [-sp,     cp * sr,                cp * cr],
     ])
-    return R @ np.asarray(u_govde, dtype=float)
+
+
+def govde_to_dunya(u_govde, roll, pitch, yaw):
+    """Gövde FRD → dünya NED (ArduPilot attitude, radyan)."""
+    return _dcm_govde_dunya(roll, pitch, yaw) @ np.asarray(u_govde, dtype=float)
+
+
+def hedef_kadraj_hatasi(hedef_ned, drone_ned, roll, pitch, yaw):
+    """Hedefin drone KAMERASINDAKİ kadraj konumu — SAF geometri (GPS + attitude).
+
+    guidance_core'un ters izdüşümü: dünya-NED hedef/drone pozu + drone attitude'undan
+    hedefe bakışın (LOS) gövde-çerçevesi açılarını ve piksel izdüşümünü verir. IBVS
+    pose zincirinin AYNI konvansiyonu (NED/FRD, 25° tilt) — hiç ENU/Gazebo karışmaz.
+
+    Kadraj MERKEZİ ⇔ yaw_hata=0 ve elev=+25° (kamera tilt'i) ⇔ (u,v)=(CX,CY).
+    Dönüş dict:
+      menzil      : slant menzil (m)
+      yaw_hata    : gövde azimut hatası (rad, sağ+; 0 = burun hedefte)
+      elev        : gövde LOS yükselişi (rad, yukarı+)
+      pitch_hata  : elev − tilt (rad; 0 = dikey merkez)
+      u, v        : piksel izdüşümü (hedef önde değilse None)
+      onde        : hedef kameranın önünde mi (bool)
+    """
+    los = np.asarray(hedef_ned, dtype=float) - np.asarray(drone_ned, dtype=float)
+    menzil = float(np.linalg.norm(los))
+    if menzil < 1e-6:
+        return {"menzil": 0.0, "yaw_hata": 0.0, "elev": 0.0,
+                "pitch_hata": 0.0, "u": None, "v": None, "onde": False}
+    u_dunya = los / menzil
+    R = _dcm_govde_dunya(roll, pitch, yaw)
+    u_govde = R.T @ u_dunya                                  # dünya → gövde (Rᵀ)
+    yaw_hata = math.atan2(u_govde[1], u_govde[0])            # sağ +
+    elev = math.atan2(-u_govde[2], math.hypot(u_govde[0], u_govde[1]))  # yukarı +
+    tilt = math.radians(Cfg.KAMERA_TILT_DEG)
+    # gövde → kamera (kamera_to_govde tersi) → piksel (yalnız log/UI)
+    c, s = math.cos(tilt), math.sin(tilt)
+    ham = np.array([c * u_govde[0] - s * u_govde[2],         # Ry(-tilt) @ u_govde
+                    u_govde[1],
+                    s * u_govde[0] + c * u_govde[2]])
+    u_kam = np.array([ham[1], ham[2], ham[0]])               # [sağ, aşağı, ileri]
+    onde = u_kam[2] > 1e-6
+    u_px = (geo.CX + geo.FX * u_kam[0] / u_kam[2]) if onde else None
+    v_px = (geo.CY + geo.FY * u_kam[1] / u_kam[2]) if onde else None
+    return {"menzil": menzil, "yaw_hata": yaw_hata, "elev": elev,
+            "pitch_hata": elev - tilt, "u": u_px, "v": v_px, "onde": onde}
 
 
 def yukselti_duzeltme(eps_rad):

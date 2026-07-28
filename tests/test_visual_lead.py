@@ -244,7 +244,7 @@ def main():
     import time as _t
     import control.guidance.supervisor as sup
     olaylar = []
-    _orij_gps, _orij_vis = sup.run_gps_approach, sup.run_visual_lead
+    _orij_gps, _orij_vis = sup.run_gps_guidance, sup.run_visual_lead
 
     def fake_gps(conn, gp, gi, stop_event):
         olaylar.append("gps")
@@ -262,7 +262,7 @@ def main():
                 "stamp": sayac["seq"] / 30.0, "wall_recv": _t.time()}
 
     try:
-        sup.run_gps_approach, sup.run_visual_lead = fake_gps, fake_visual
+        sup.run_gps_guidance, sup.run_visual_lead = fake_gps, fake_visual
         sup._ga.status["d_h"] = 10.0          # menzil kapısı açık
         stop = threading.Event()
         th = threading.Thread(
@@ -276,12 +276,12 @@ def main():
                 f"olaylar={olaylar} faz={sup.status['faz']} "
                 f"geçiş={sup.status['gecis_sayisi']}")
     finally:
-        sup.run_gps_approach, sup.run_visual_lead = _orij_gps, _orij_vis
+        sup.run_gps_guidance, sup.run_visual_lead = _orij_gps, _orij_vis
         sup._ga.status["d_h"] = None
 
     # ── T23: supervisor 'vuruldu' → görev biter, faz=VURULDU ──
     olaylar2 = []
-    _og, _ov = sup.run_gps_approach, sup.run_visual_lead
+    _og, _ov = sup.run_gps_guidance, sup.run_visual_lead
 
     def fake_gps2(conn, gp, gi, stop_event):
         olaylar2.append("gps"); stop_event.wait(5.0)
@@ -290,7 +290,7 @@ def main():
         olaylar2.append("visual"); return "vuruldu"
 
     try:
-        sup.run_gps_approach, sup.run_visual_lead = fake_gps2, fake_visual_vurus
+        sup.run_gps_guidance, sup.run_visual_lead = fake_gps2, fake_visual_vurus
         sup._ga.status["d_h"] = 10.0
         stop = threading.Event()
         th = threading.Thread(target=sup.run_hybrid,
@@ -301,7 +301,7 @@ def main():
                 olaylar2 == ["gps", "visual"] and sup.status["faz"] == "VURULDU",
                 f"olaylar={olaylar2} faz={sup.status['faz']}")
     finally:
-        sup.run_gps_approach, sup.run_visual_lead = _og, _ov
+        sup.run_gps_guidance, sup.run_visual_lead = _og, _ov
         sup._ga.status["d_h"] = None
 
     # ── T24/T25: visual_lead terminal (kör dalış → vuruş / süre dolunca ıska) ──
