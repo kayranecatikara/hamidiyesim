@@ -1,0 +1,11 @@
+{
+  "aday": "cand_mrs_f450",
+  "durum": "HATALI",
+  "cikis_kodu": 0,
+  "hata_sayisi": 4,
+  "eksik_modeller": "",
+  "eklenti_hatalari": "Failed to load system plugin [MrsGazeboCommonResources_MulticopterMotorModel] ",
+  "duvar_saati_sn": 5.14,
+  "sim_zamani_sn": 3.00,
+  "rtf": 0.584
+}

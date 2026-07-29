@@ -1,0 +1,805 @@
+<?xml version='1.0'?>
+<sdf version="1.9">
+  <model name="avci_net_interceptor_display">
+    <static>true</static>
+    <include>
+      <static>true</static>
+      <uri>model://iris_with_standoffs</uri>
+    </include>
+
+    <!--
+      visual markers for debugging
+      - blade root    - teal
+      - blade tip     - orange
+      - blade cp      - yellow
+      - blade forward - red
+      - blade upward  - blue
+    -->
+    <!--
+    <link name="rotor_0_blade_1_cp">
+      <pose>0.13 -0.22 0.216 0 0 0</pose>
+      <visual name='rotor_0_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_tip'>
+        <pose>0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp'>
+        <pose>0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp_forward'>
+        <pose>0.084 0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp_upward'>
+        <pose>0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="rotor_0_blade_2_cp">
+      <gravity>0</gravity>
+      <pose>0.13 -0.22 0.216 0 0 0</pose>
+      <visual name='rotor_0_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_tip'>
+        <pose>-0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp'>
+        <pose>-0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp_forward'>
+        <pose>-0.084 -0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_0_visual_cp_upward'>
+        <pose>-0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <joint name="rotor_0_blade_1_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_0</parent>
+      <child>rotor_0_blade_1_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    <joint name="rotor_0_blade_2_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_0</parent>
+      <child>rotor_0_blade_2_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+
+    <link name="rotor_1_blade_1_cp">
+      <gravity>0</gravity>
+      <pose>-0.13 0.2 0.216 0 0 0</pose>
+      <visual name='rotor_1_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_tip'>
+        <pose>0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp'>
+        <pose>0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp_forward'>
+        <pose>0.084 0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp_upward'>
+        <pose>0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="rotor_1_blade_2_cp">
+      <gravity>0</gravity>
+      <pose>-0.13 0.2 0.216 0 0 0</pose>
+      <visual name='rotor_1_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_tip'>
+        <pose>-0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp'>
+        <pose>-0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp_forward'>
+        <pose>-0.084 -0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_1_visual_cp_upward'>
+        <pose>-0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <joint name="rotor_1_blade_1_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_1</parent>
+      <child>rotor_1_blade_1_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    <joint name="rotor_1_blade_2_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_1</parent>
+      <child>rotor_1_blade_2_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+
+    <link name="rotor_2_blade_1_cp">
+      <gravity>0</gravity>
+      <pose>0.13 0.22 0.216 0 0 0</pose>
+      <visual name='rotor_2_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_tip'>
+        <pose>0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp'>
+        <pose>0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp_forward'>
+        <pose>0.084 -0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp_upward'>
+        <pose>0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="rotor_2_blade_2_cp">
+      <gravity>0</gravity>
+      <pose>0.13 0.22 0.216 0 0 0</pose>
+      <visual name='rotor_2_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_tip'>
+        <pose>-0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp'>
+        <pose>-0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp_forward'>
+        <pose>-0.084 0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_2_visual_cp_upward'>
+        <pose>-0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <joint name="rotor_2_blade_1_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_2</parent>
+      <child>rotor_2_blade_1_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    <joint name="rotor_2_blade_2_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_2</parent>
+      <child>rotor_2_blade_2_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+
+    <link name="rotor_3_blade_1_cp">
+      <gravity>0</gravity>
+      <pose>-0.13 -0.2 0.216 0 0 0</pose>
+      <visual name='rotor_3_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_tip'>
+        <pose>0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp'>
+        <pose>0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp_forward'>
+        <pose>0.084 -0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp_upward'>
+        <pose>0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="rotor_3_blade_2_cp">
+      <gravity>0</gravity>
+      <pose>-0.13 -0.2 0.216 0 0 0</pose>
+      <visual name='rotor_3_visual_root'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 1 0.5</ambient>
+          <diffuse>0 1 1 0.5</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_tip'>
+        <pose>-0.12 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.01</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1.0 0.65 0</ambient>
+          <diffuse>1.0 0.65 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp'>
+        <pose>-0.084 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0</ambient>
+          <diffuse>1 1 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp_forward'>
+        <pose>-0.084 0.02 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0</ambient>
+          <diffuse>1 0 0</diffuse>
+        </material>
+      </visual>
+      <visual name='rotor_3_visual_cp_upward'>
+        <pose>-0.084 0 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.003</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 1</ambient>
+          <diffuse>0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <joint name="rotor_3_blade_1_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_3</parent>
+      <child>rotor_3_blade_1_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    <joint name="rotor_3_blade_2_cp_joint" type="revolute">
+      <parent>iris_with_standoffs::rotor_3</parent>
+      <child>rotor_3_blade_2_cp</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    -->
+
+    <!-- plugins -->
+    
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+
+    <!-- ================================================================ -->
+    <!-- TARET + AG FIRLATICI                                             -->
+    <!-- scripts/20_build_interceptor.py tarafindan eklendi               -->
+    <!-- ================================================================ -->
+
+    <!-- Taret tabani: govdeye sabit -->
+    <link name="turret_base_link">
+      <pose>0.16 0.0 0.0 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>4e-5</iyy><iyz>0</iyz>
+          <izz>4e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_base_collision">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_base_visual">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.15 0.15 0.18 1</ambient>
+          <diffuse>0.15 0.15 0.18 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_mount_joint" type="fixed">
+      <parent>iris_with_standoffs::base_link</parent>
+      <child>turret_base_link</child>
+    </joint>
+
+    <!-- 1. eksen: PAN (yaw, Z ekseni) -->
+    <link name="turret_yaw_link">
+      <pose>0.16 0.0 0.03 0 0 0</pose>
+      <inertial>
+        <mass>0.08</mass>
+        <inertia>
+          <ixx>3e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>3e-5</iyy><iyz>0</iyz>
+          <izz>3e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_yaw_collision">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+      </collision>
+      <visual name="turret_yaw_visual">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+        <material>
+          <ambient>0.25 0.25 0.28 1</ambient>
+          <diffuse>0.25 0.25 0.28 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_yaw_joint" type="revolute">
+      <parent>turret_base_link</parent>
+      <child>turret_yaw_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <!-- +-100 derece: govde donmeden genis tarama -->
+          <lower>-1.745</lower>
+          <upper>1.745</upper>
+          <effort>25.0</effort>
+          <velocity>6.0</velocity>
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- 2. eksen: TILT (pitch, Y ekseni) -->
+    <link name="turret_pitch_link">
+      <pose>0.16 0.0 0.045 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>6e-5</iyy><iyz>0</iyz>
+          <izz>6e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_pitch_collision">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_pitch_visual">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.35 0.35 0.38 1</ambient>
+          <diffuse>0.35 0.35 0.38 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_pitch_joint" type="revolute">
+      <parent>turret_yaw_link</parent>
+      <child>turret_pitch_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <!-- -60 (yukari) .. +30 (asagi) derece; SDF'te +pitch burnu asagi indirir -->
+          <lower>-1.047</lower>
+          <upper>0.524</upper>
+          <effort>25.0</effort>
+          <velocity>6.0</velocity>
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- Namlu: agin cikis noktasi. Ekseni +X. -->
+    <link name="muzzle_link">
+      <pose degrees="true">0.22 0.0 0.045 0 90 0</pose>
+      <inertial>
+        <mass>0.07</mass>
+        <inertia>
+          <ixx>2e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>2e-5</iyy><iyz>0</iyz>
+          <izz>1e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="muzzle_collision">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+      </collision>
+      <visual name="muzzle_visual">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+        <material>
+          <ambient>0.7 0.25 0.05 1</ambient>
+          <diffuse>0.7 0.25 0.05 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="muzzle_joint" type="fixed">
+      <parent>turret_pitch_link</parent>
+      <child>muzzle_link</child>
+    </joint>
+
+    <!-- ================ Taret kontrolu ================ -->
+    <!-- Aci komutu: gz topic -t /model/avci_net_interceptor/joint/turret_yaw_joint/0/cmd_pos
+                       -m gz.msgs.Double -p 'data: 0.5'  -->
+    
+
+    
+
+    <!-- ================ Ag tutucu / firlatici ================ -->
+    <!--
+      Kendi eklentimiz: agi namluya kilitler ve TEK komutla atar.
+      Once hazir sistemler denendi (gz-sim-detachable-joint-system +
+      gz-sim-apply-link-wrench-system) ama ayirma ve itki AYRI topic'lerden
+      geldigi icin aralarindaki gecikme kontrol edilemiyordu: ayni
+      parametrelerle menzil kosumlar arasi 2 m ile 108 m arasinda oynadi.
+      NetLauncherPlugin ikisini ayni fizik adiminda yapar ve impuls yerine
+      dogrudan cikis hizi verir (SetLinearVelocity) - sonuc tekrarlanabilir.
+
+      Ates:  gz topic -t /avci_net_interceptor/net/fire -m gz.msgs.Double -p 'data: 20'
+    -->
+    
+
+  </model>
+</sdf>

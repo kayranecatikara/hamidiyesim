@@ -1,0 +1,132 @@
+<?xml version="1.0" ?>
+<!--
+  Ag BALISTIK test dunyasi.
+
+  Neden ayri dunya: net_test.sdf'te interceptor yerde duruyor (z=0.26 m).
+  Oradan atilan ag 0.23 saniyede yere carpiyor, menzil olculemiyor.
+  Burada ag tek basina 10 m yukseklikte duruyor; sadece firlatma
+  parametrelerini (impuls / cikis acisi) kalibre etmek icin.
+
+  Gercek gorev senaryosu net_test.sdf ve (Asama 7) intercept_test.sdf'te.
+
+  Kullanim:  scripts/41_range_test.sh
+-->
+<sdf version="1.9">
+  <world name="net_ballistics">
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="gz-sim-contact-system"
+      name="gz::sim::systems::Contact">
+    </plugin>
+    <plugin filename="gz-sim-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench">
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <ambient>0.5 0.5 0.5</ambient>
+      <background>0.6 0.7 0.9</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material>
+            <ambient>0.3 0.45 0.3 1</ambient>
+            <diffuse>0.3 0.45 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 5 m araliklarla menzil direkleri -->
+    <model name="range_markers">
+      <static>true</static>
+      <link name="link">
+        <visual name="m5"><pose>5 0 5 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>10</length></cylinder></geometry>
+          <material><ambient>1 1 0 1</ambient><diffuse>1 1 0 1</diffuse></material></visual>
+        <visual name="m10"><pose>10 0 5 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>10</length></cylinder></geometry>
+          <material><ambient>1 0.6 0 1</ambient><diffuse>1 0.6 0 1</diffuse></material></visual>
+        <visual name="m15"><pose>15 0 5 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>10</length></cylinder></geometry>
+          <material><ambient>1 0.2 0 1</ambient><diffuse>1 0.2 0 1</diffuse></material></visual>
+        <visual name="m20"><pose>20 0 5 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>10</length></cylinder></geometry>
+          <material><ambient>0.7 0 0.7 1</ambient><diffuse>0.7 0 0.7 1</diffuse></material></visual>
+        <visual name="m25"><pose>25 0 5 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>10</length></cylinder></geometry>
+          <material><ambient>0.2 0.2 1 1</ambient><diffuse>0.2 0.2 1 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!--
+      Ag askisi: net_test.sdf'teki namlunun karsiligi.
+      Ag serbest biraksaydik sunucu acilir acilmaz dusmeye baslardi ve
+      atesleme komutu ona yetisemezdi (ilk denemede tam bu oldu: ag 1.4 sn'de
+      yere iniyordu). Statik askiya DetachableJoint ile baglayip atesleme
+      aninda ayirmak yarisi ortadan kaldiriyor - gercek namlu davranisi da bu.
+    -->
+    <model name="net_anchor">
+      <static>true</static>
+      <pose>0 0 10 0 0 0</pose>
+      <link name="anchor_link">
+        <visual name="anchor_visual">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+
+      <!--
+        Interceptor'daki ile AYNI firlatici eklenti; boylece burada olculen
+        menzil gercek namludaki davranisi temsil eder.
+        anchor_link dondurulmemis -> atis ekseni dogrudan +X.
+        Aci taramasi icin 41_range_test.sh bu modelin <pose> pitch'ini degistirir.
+      -->
+      <plugin filename="NetLauncherPlugin" name="avci::NetLauncherPlugin">
+        <muzzle_link>anchor_link</muzzle_link>
+        <net_model>net_cone</net_model>
+        <net_link>net_link</net_link>
+        <fire_topic>/avci_net_interceptor/net/fire</fire_topic>
+        <muzzle_speed>20.0</muzzle_speed>
+        <launch_axis>1 0 0</launch_axis>
+      </plugin>
+    </model>
+
+    <!-- Ag: 10 m yukseklikte, askiya bagli -->
+    <include>
+      <uri>model://net_cone</uri>
+      <name>net_cone</name>
+      <pose>0 0 10 0 0 0</pose>
+    </include>
+
+  </world>
+</sdf>

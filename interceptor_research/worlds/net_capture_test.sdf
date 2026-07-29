@@ -1,0 +1,154 @@
+<?xml version="1.0" ?>
+<!--
+  Ag YAKALAMA test dunyasi (Asama 5) - deterministik.
+
+  Neden ayri dunya: net_test.sdf'te interceptor YERDE duruyor; ag alcak
+  irtifadan atilinca yerde sekiyor ve hedefe carpip carpmamasi kaotik hale
+  geliyordu (ayni komutla bazen yakaliyor bazen yakalamiyordu).
+  Burada ag 10 m'den duz atiliyor ve hedef, OLCULEN yorunge uzerine konuyor
+  (docs/bench_raw/traj_h20_a0.csv): 20 m/s, tilt 0 -> x=10 m'de z=8.79 m.
+
+  Kullanim:  scripts/42_capture_test.sh
+-->
+<sdf version="1.9">
+  <world name="net_capture_test">
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="gz-sim-contact-system"
+      name="gz::sim::systems::Contact">
+    </plugin>
+    <plugin filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Yakalama: temas eden hedefi aga kilitler -->
+    <plugin filename="NetCapturePlugin" name="avci::NetCapturePlugin">
+      <net_model>net_cone</net_model>
+      <net_link>net_link</net_link>
+      <target_model>target_box</target_model>
+      <capture_topic>/net/captured</capture_topic>
+      <min_speed>1.0</min_speed>
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <ambient>0.5 0.5 0.5</ambient>
+      <background>0.6 0.7 0.9</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material>
+            <ambient>0.3 0.45 0.3 1</ambient>
+            <diffuse>0.3 0.45 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Ag askisi + firlatici (net_ballistics.sdf ile ayni) -->
+    <model name="net_anchor">
+      <static>true</static>
+      <pose>0 0 10 0 0 0</pose>
+      <link name="anchor_link">
+        <visual name="anchor_visual">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+
+      <plugin filename="NetLauncherPlugin" name="avci::NetLauncherPlugin">
+        <muzzle_link>anchor_link</muzzle_link>
+        <net_model>net_cone</net_model>
+        <net_link>net_link</net_link>
+        <fire_topic>/avci_net_interceptor/net/fire</fire_topic>
+        <muzzle_speed>20.0</muzzle_speed>
+        <launch_axis>1 0 0</launch_axis>
+      </plugin>
+    </model>
+
+    <include>
+      <uri>model://net_cone</uri>
+      <name>net_cone</name>
+      <pose>0 0 10 0 0 0</pose>
+    </include>
+
+    <!--
+      Hedef, OLCULEN yorunge uzerinde:
+      20 m/s tilt 0 atisinda ag x=10.74 m'de z=8.54 m'den geciyor
+      (docs/bench_raw/traj_h20_a0.csv). Kutu 0.5x0.5x0.4 -> z 8.34..8.74.
+    -->
+
+    <!-- Hedef diregi (target_box artik dinamik) -->
+    <model name="target_pole">
+      <static>true</static>
+      <pose>10.7 0 0 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <pose>0 0 4.17 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>8.34</length></cylinder></geometry>
+          <material><ambient>0.3 0.3 0.3 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse></material>
+        </visual>
+        <collision name="collision">
+          <pose>0 0 4.17 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>8.34</length></cylinder></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://target_box</uri>
+      <name>target_box</name>
+      <pose>10.7 0 8.54 0 0 0</pose>
+    </include>
+
+    <!-- Yakalama anini goruntuleyen kamera -->
+    <model name="capture_camera">
+      <static>true</static>
+      <!-- Ag x=0..10.7 arasinda ucuyor, z~10..8.5; yandan bakis -->
+      <pose>5.5 -13.0 9.2 0 0.02 1.5708</pose>
+      <link name="link">
+        <sensor name="cam" type="camera">
+          <always_on>1</always_on>
+          <update_rate>30</update_rate>
+          <topic>/capture_test/view</topic>
+          <camera>
+            <horizontal_fov>1.1</horizontal_fov>
+            <image><width>1440</width><height>810</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>200</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>

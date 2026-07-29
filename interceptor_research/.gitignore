@@ -1,0 +1,12 @@
+# Klonlanan kaynak repolar (3.2 GB) - 00_clone_all.sh ile yeniden cekilir
+repos/
+
+# Derleme ciktilari
+plugins/build/
+
+# Olcum ham verisi (12_bench.sh / 41_range_test.sh yeniden uretir)
+docs/bench_raw/*.log
+docs/bench_raw/traj_*.csv
+
+__pycache__/
+*.pyc

@@ -1,0 +1,145 @@
+<?xml version="1.0" ?>
+<!--
+  SKYCAT TVBS VITRINI - scripts/70_skycat_view.py tarafindan uretildi.
+
+  ArduPilot/SITL_Models'taki skycat_tvbs modelinin statik kopyasi, uc kameradan
+  (yan / on / ust) incelenmek uzere kaide uzerinde asili.
+
+  Kullanim:
+    source scripts/env.sh
+    gz sim -r worlds/skycat_view.sdf
+    python3 scripts/51_capture_shots.py --topic /skycat/yan --cikti skycat_yan.png
+-->
+<sdf version="1.9">
+  <world name="skycat_view">
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics"></plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands"></plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster"></plugin>
+    <plugin filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.70 0.70 0.74 1</ambient>
+      <background>0.55 0.68 0.85 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 12 0 0 0</pose>
+      <diffuse>0.95 0.95 0.92 1</diffuse>
+      <specular>0.35 0.35 0.35 1</specular>
+      <direction>-0.4 0.35 -0.85</direction>
+    </light>
+    <light type="directional" name="fill">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 8 0 0 0</pose>
+      <diffuse>0.40 0.40 0.46 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <direction>0.6 -0.5 -0.6</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>60 60</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>60 60</size></plane></geometry>
+          <material>
+            <ambient>0.32 0.34 0.36 1</ambient>
+            <diffuse>0.42 0.44 0.46 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Kaide: modeli 0.6 m'de asili tutan gorsel silindir -->
+    <model name="pedestal">
+      <static>true</static>
+      <pose>0 0 0.20 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.09</radius><length>0.40</length></cylinder></geometry>
+          <material>
+            <ambient>0.15 0.45 0.75 1</ambient>
+            <diffuse>0.20 0.55 0.85 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <include>
+      <pose>0 0 0.60 0 0 0</pose>
+      <uri>model://skycat_tvbs_display</uri>
+    </include>
+
+    <!-- yandan -->
+    <model name="cam_yan">
+      <static>true</static>
+      <pose>-0.10 -2.30 0.62 0 0.06 1.5708</pose>
+      <link name="link">
+        <sensor name="cam" type="camera">
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>/skycat/yan</topic>
+          <camera>
+            <horizontal_fov>0.75</horizontal_fov>
+            <image><width>1600</width><height>1100</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>200</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- onden -->
+    <model name="cam_on">
+      <static>true</static>
+      <pose> 2.20  0.00 0.62 0 0.06 3.1416</pose>
+      <link name="link">
+        <sensor name="cam" type="camera">
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>/skycat/on</topic>
+          <camera>
+            <horizontal_fov>0.8</horizontal_fov>
+            <image><width>1400</width><height>1100</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>200</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- usten -->
+    <model name="cam_ust">
+      <static>true</static>
+      <pose> 0.00  0.00 2.60 0 1.5708 0</pose>
+      <link name="link">
+        <sensor name="cam" type="camera">
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>/skycat/ust</topic>
+          <camera>
+            <horizontal_fov>0.95</horizontal_fov>
+            <image><width>1400</width><height>1400</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>200</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>
