@@ -27,6 +27,7 @@ Her ikisinde de namlu **+X**'e bakar, ağ **ileri** atılır; taret limitleri ay
 **Yığın:** ArduPilot · Gazebo Harmonic (gz-sim 8.14) · gz-transport 13 · ROS 2 Humble · Python 3.10
 
 📷 **Simülasyon görüntüleri: [`docs/GORUNTULER.md`](docs/GORUNTULER.md)**
+🚀 **Sadece mermi gövdeli taretli drone'u çalıştırmak: [`docs/BULLET_CALISTIRMA.md`](docs/BULLET_CALISTIRMA.md)**
 
 
 ---
