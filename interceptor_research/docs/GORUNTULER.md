@@ -74,6 +74,35 @@ python3 scripts/52_action_shots.py --topic /action/view --kare 8 --aralik 0.10
 
 ---
 
+## 2. tasarım — mermi gövde, taret tepede
+
+![Mermi gövde, atış öncesi](goruntuler/bullet_0_atis_oncesi.png)
+
+`bullet_net_interceptor`: dikey mermi gövde (r = 8 cm, h = 50 cm), ortasında
+turuncu tanıtım bandı, alt-orta bölgeden çıkan 4 kol + rotor + iniş bacağı.
+Burun konisinin yerinde **taret** duruyor: koyu kaide, pan silindiri, tilt bloğu
+ve öne bakan turuncu **namlu**. Namluya geçmiş yarı saydam ağ konisi hedefe
+doğru açık. Sağda direğin üstünde kırmızı hedef kutusu.
+
+![Mermi gövde, yakalama](goruntuler/bullet_1_yakalama.png)
+
+Ateşten ~0.2 sn sonra: hedef kutusu direğinden söküldü, ağ üstüne kilitlendi,
+ikisi birlikte menzil direklerini geçiyor. Namlu boşaldı.
+
+Üretmek için:
+```bash
+source scripts/env.sh
+gz sim -s -r --headless-rendering worlds/bullet_net_test.sdf &
+python3 scripts/turret_aim.py 0 -8 --model bullet_net_interceptor
+python3 scripts/52_action_shots.py --topic /action/view \
+        --model bullet_net_interceptor --kare 6 --aralik 0.10
+```
+
+Ölçülen: taret komut −8.00° → **−8.03°**, ağ ileri menzil **27.84 m**,
+yakalama tuttu.
+
+---
+
 ## Notlar
 
 - Bu dünyada interceptor **yerde duruyor** (henüz ArduPilot ile uçmuyor).
