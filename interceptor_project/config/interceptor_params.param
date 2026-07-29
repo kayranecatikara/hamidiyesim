@@ -1,0 +1,294 @@
+#===============================================================================
+# interceptor_params.param
+# ArduCopter SITL parameters for the bullet_interceptor (Bullet-shaped C-UAS UAV)
+#
+# Airframe    : Quad-X, 0.31 m motor-to-motor per axis (0.44 m diagonal)
+# Mass        : ~1.915 kg
+# Max thrust  : ~172 N   (thrust/weight = 8.7 : 1)
+# Measured in SITL (Gazebo Harmonic + ArduCopter 4.8.0, this param file):
+#     takeoff to 75 m ....... 14.2 s
+#     peak climb rate ....... 10.3 m/s  (WP_SPD_UP limited)
+#     sustained dash speed .. 222 km/h
+#     peak dash speed ....... 224 km/h
+# Target      : aggressive, high bandwidth attitude loop for 200+ km/h intercepts
+#
+# !! FIRMWARE COMPATIBILITY !!
+# This file targets ArduPilot 4.7-dev / master, which RENAMED and RE-UNITED a
+# large block of navigation parameters. All distances/speeds/accelerations are
+# now in m, m/s, m/s/s (previously cm, cm/s, cm/s/s) and lean angles are in
+# degrees (previously centidegrees). Key renames used below:
+#
+#   ANGLE_MAX        -> ATC_ANGLE_MAX   (deg, was cdeg)
+#   ATC_ACCEL_R_MAX  -> removed         (use ATC_RATE_R_MAX, deg/s)
+#   WPNAV_SPEED      -> WP_SPD          (m/s)
+#   WPNAV_SPEED_UP   -> WP_SPD_UP       (m/s)
+#   WPNAV_SPEED_DN   -> WP_SPD_DN       (m/s)
+#   WPNAV_ACCEL      -> WP_ACC          (m/s/s)
+#   WPNAV_ACCEL_C    -> WP_ACC_CNR      (m/s/s)
+#   WPNAV_ACCEL_Z    -> WP_ACC_Z        (m/s/s)
+#   WPNAV_RADIUS     -> WP_RADIUS_M     (m)
+#   PSC_POSXY_P      -> PSC_NE_POS_P
+#   PSC_POSZ_P       -> PSC_D_POS_P
+#   PSC_VELXY_*      -> PSC_NE_VEL_*
+#   PSC_VELZ_*       -> PSC_D_VEL_*
+#   PSC_ACCZ_*       -> PSC_D_ACC_*     (output now 0..1, was 0..1000)
+#   PSC_JERK_XY/Z    -> PSC_JERK_NE / PSC_JERK_D
+#   PILOT_SPEED_UP   -> PILOT_SPD_UP    (m/s)
+#   PILOT_SPEED_DN   -> PILOT_SPD_DN    (m/s)
+#   PILOT_ACCEL_Z    -> PILOT_ACC_Z     (m/s/s)
+#   PILOT_TKOFF_ALT  -> PILOT_TKO_ALT_M (m)
+#   LOIT_SPEED       -> LOIT_SPEED_MS   (m/s)
+#   LOIT_ACC_MAX     -> LOIT_ACC_MAX_M  (m/s/s)
+#   LOIT_BRK_ACCEL   -> LOIT_BRK_ACC_M  (m/s/s)
+#   LOIT_BRK_JERK    -> LOIT_BRK_JRK_M  (m/s/s/s)
+#   RTL_ALT          -> RTL_ALT_M       (m)
+#   RTL_SPEED        -> RTL_SPEED_MS    (m/s)
+#   LAND_SPEED       -> LAND_SPD_MS     (m/s)
+#   LAND_SPEED_HIGH  -> LAND_SPD_HIGH_MS(m/s)
+#   ARMING_CHECK     -> ARMING_SKIPCHK  (inverted: bitmask of checks to SKIP)
+#   GPS_TYPE         -> GPS1_TYPE
+#
+# On ArduCopter 4.5/4.6 the old names apply instead - see the mapping above.
+#
+# Load with:   sim_vehicle.py ... --add-param-file=config/interceptor_params.param
+# or directly: arducopter --defaults config/interceptor_params.param
+# or in MAVProxy:   param load config/interceptor_params.param
+#
+# Format: <NAME> <VALUE>
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# 1. FRAME / MOTOR CONFIGURATION
+#-------------------------------------------------------------------------------
+FRAME_CLASS      1        # 1 = Quad
+FRAME_TYPE       1        # 1 = X
+MOT_PWM_TYPE     0        # normal PWM
+MOT_PWM_MIN      1000
+MOT_PWM_MAX      2000
+MOT_SPIN_ARM     0.08     # rotor speed at arm  (low: huge thrust headroom)
+MOT_SPIN_MIN     0.12     # rotor speed at zero throttle in stabilised modes
+MOT_SPIN_MAX     0.95
+MOT_THST_EXPO    0.65     # linearises the quadratic prop thrust curve
+MOT_THST_HOVER   0.14     # measured in SITL; T/W = 8.7:1 (multiplier 1550)
+MOT_HOVER_LEARN  2        # keep learning and save the hover point
+MOT_BAT_VOLT_MAX 0
+MOT_BAT_VOLT_MIN 0
+MOT_YAW_HEADROOM 200      # extra PWM reserved for yaw authority
+MOT_SLEW_UP_TIME 0        # no throttle slew limiting - instant response
+MOT_SLEW_DN_TIME 0
+
+#-------------------------------------------------------------------------------
+# 2. RATE (INNER LOOP) PID - AGGRESSIVE
+#    Small, stiff, high thrust airframe -> higher P/D, high derivative filter.
+#-------------------------------------------------------------------------------
+ATC_RAT_RLL_P    0.200
+ATC_RAT_RLL_I    0.200
+ATC_RAT_RLL_D    0.0055
+ATC_RAT_RLL_IMAX 0.5
+ATC_RAT_RLL_FLTT 40       # target filter (Hz)
+ATC_RAT_RLL_FLTD 40       # derivative filter (Hz)
+ATC_RAT_RLL_FLTE 0
+ATC_RAT_RLL_SMAX 50       # slew limiter, guards against D-term oscillation
+ATC_RAT_RLL_FF   0
+
+ATC_RAT_PIT_P    0.200
+ATC_RAT_PIT_I    0.200
+ATC_RAT_PIT_D    0.0055
+ATC_RAT_PIT_IMAX 0.5
+ATC_RAT_PIT_FLTT 40
+ATC_RAT_PIT_FLTD 40
+ATC_RAT_PIT_FLTE 0
+ATC_RAT_PIT_SMAX 50
+ATC_RAT_PIT_FF   0
+
+ATC_RAT_YAW_P    0.450
+ATC_RAT_YAW_I    0.045
+ATC_RAT_YAW_D    0.0020
+ATC_RAT_YAW_IMAX 0.5
+ATC_RAT_YAW_FLTT 40
+ATC_RAT_YAW_FLTD 0
+ATC_RAT_YAW_FLTE 2.5
+ATC_RAT_YAW_SMAX 50
+ATC_RAT_YAW_FF   0
+
+#-------------------------------------------------------------------------------
+# 3. ATTITUDE (OUTER LOOP) - HIGH BANDWIDTH
+#-------------------------------------------------------------------------------
+ATC_ANG_RLL_P    12.0     # default 4.5 - very crisp angle tracking
+ATC_ANG_PIT_P    12.0
+ATC_ANG_YAW_P    6.5
+ATC_ANG_LIM_TC   0.8
+ATC_INPUT_TC     0.08     # sharp pilot/guidance input response
+
+# Maximum lean angle, DEGREES on this firmware (was ANGLE_MAX in centidegrees).
+# 75 deg with T/W 8.7 gives ~36 m/s/s horizontal acceleration, which is what
+# makes the 200+ km/h dash reachable. Firmware range is 10..80 deg.
+ATC_ANGLE_MAX    75
+PSC_ANGLE_MAX    0        # 0 = position controller reuses ATC_ANGLE_MAX
+
+# Body rate limits, deg/s. 0 = unlimited (most agile); explicit caps below keep
+# the airframe inside the rate PID's usable band during terminal manoeuvres.
+ATC_RATE_R_MAX   720
+ATC_RATE_P_MAX   720
+ATC_RATE_Y_MAX   360
+
+ATC_THR_MIX_MAN  0.5
+ATC_THR_MIX_MIN  0.15
+ATC_THR_MIX_MAX  0.9      # prioritise attitude over throttle during hard pulls
+
+#-------------------------------------------------------------------------------
+# 4. POSITION / VELOCITY CONTROL - HIGH SPEED
+#    NE = horizontal (north/east), D = vertical (down).
+#    PSC_D_ACC_* output is 0..1 throttle, so gains are ~1/10 of the old
+#    PSC_ACCZ_* values. Rule of thumb: PSC_D_ACC_P ~= MOT_THST_HOVER / 10.
+#-------------------------------------------------------------------------------
+PSC_NE_POS_P     1.6
+PSC_D_POS_P      1.5
+
+PSC_NE_VEL_P     3.0
+PSC_NE_VEL_I     1.0
+PSC_NE_VEL_D     0.35
+PSC_NE_VEL_IMAX  10
+PSC_NE_VEL_FLTE  4.0
+PSC_NE_VEL_FLTD  4.0
+
+PSC_D_VEL_P      6.0
+PSC_D_VEL_I      0.5
+PSC_D_VEL_D      0.0
+PSC_D_VEL_IMAX   10
+
+PSC_D_ACC_P      0.014    # ~= MOT_THST_HOVER / 10
+PSC_D_ACC_I      0.028    # ~= 2 * PSC_D_ACC_P
+PSC_D_ACC_D      0.0
+PSC_D_ACC_IMAX   0.8
+PSC_D_ACC_FLTT   0
+PSC_D_ACC_FLTD   0
+PSC_D_ACC_FLTE   20
+
+PSC_JERK_NE      40       # m/s/s/s - very snappy horizontal accel changes
+PSC_JERK_D       30
+
+#-------------------------------------------------------------------------------
+# 5. SPEED / ACCELERATION ENVELOPE   (all metric: m, m/s, m/s/s)
+#-------------------------------------------------------------------------------
+WP_SPD           20       # m/s = 72 km/h auto-mission cruise
+WP_SPD_UP        10       # m/s climb   (firmware default is only 2.5!)
+WP_SPD_DN        6        # m/s descent
+WP_ACC           15       # m/s/s horizontal
+WP_ACC_CNR       8        # m/s/s cornering
+WP_ACC_Z         5        # m/s/s vertical
+WP_JERK          20       # m/s/s/s
+WP_RADIUS_M      3        # m
+WP_RFND_USE      0
+
+LOIT_SPEED_MS    20       # m/s max loiter speed
+LOIT_ACC_MAX_M   9.81     # m/s/s
+LOIT_BRK_ACC_M   2.5      # m/s/s
+LOIT_BRK_JRK_M   50       # m/s/s/s
+LOIT_BRK_DELAY   0.2
+LOIT_ANG_MAX     0        # 0 = use ATC_ANGLE_MAX
+
+PILOT_SPD_UP     10       # m/s
+PILOT_SPD_DN     8        # m/s
+PILOT_ACC_Z      8        # m/s/s
+PILOT_THR_BHV    7        # feedback + high throttle arm check + expo
+PILOT_TKO_ALT_M  0
+
+ACRO_RP_RATE     720      # deg/s in ACRO - required for terminal manoeuvres
+ACRO_Y_RATE      360
+ACRO_RP_EXPO     0.20
+ACRO_Y_EXPO      0.10
+ACRO_THR_MID     0.20
+ACRO_BAL_ROLL    1.0
+ACRO_BAL_PITCH   1.0
+ACRO_TRAINER     0        # no auto-levelling - full authority
+
+#-------------------------------------------------------------------------------
+# 6. INS / FILTERING - HIGH BANDWIDTH GYRO PATH
+#-------------------------------------------------------------------------------
+INS_GYRO_FILTER  60       # Hz - small props allow a high cutoff
+INS_ACCEL_FILTER 20
+INS_HNTCH_ENABLE 1        # harmonic notch tracks the rotor fundamental
+INS_HNTCH_MODE   1        # throttle based
+INS_HNTCH_REF    0.14     # = MOT_THST_HOVER
+INS_HNTCH_FREQ   84       # Hz - hover rotor freq: 1550*0.34 rad/s / 2pi
+INS_HNTCH_BW     34
+INS_HNTCH_ATT    40
+INS_HNTCH_HMNCS  3
+INS_HNTCH_OPTS   0
+INS_LOG_BAT_MASK 0
+
+#-------------------------------------------------------------------------------
+# 7. EKF / NAVIGATION
+#-------------------------------------------------------------------------------
+AHRS_EKF_TYPE    3
+EK3_ENABLE       1
+EK2_ENABLE       0
+EK3_IMU_MASK     3
+EK3_SRC1_POSXY   3        # GPS
+EK3_SRC1_VELXY   3
+EK3_SRC1_POSZ    1        # baro
+EK3_SRC1_VELZ    3
+EK3_SRC1_YAW     1        # compass
+EK3_VELNE_M_NSE  0.3
+EK3_VELD_M_NSE   0.4
+EK3_POSNE_M_NSE  0.5
+EK3_ALT_M_NSE    1.5
+EK3_ACC_P_NSE    0.5      # raised: high-g manoeuvres are expected
+EK3_GYRO_P_NSE   0.02
+AHRS_TRIM_X      0
+AHRS_TRIM_Y      0
+GPS1_TYPE        1
+COMPASS_USE      1
+COMPASS_USE2     0
+COMPASS_USE3     0
+COMPASS_LEARN    0
+
+#-------------------------------------------------------------------------------
+# 8. SIM / SITL BINDINGS (Gazebo JSON backend)
+#-------------------------------------------------------------------------------
+SIM_GND_BEHAV    0
+SERIAL5_PROTOCOL 2        # spare MAVLink port for a companion / vision node
+SERIAL5_BAUD     921
+SERIAL2_PROTOCOL 2
+SERIAL2_BAUD     921
+
+#-------------------------------------------------------------------------------
+# 9. MODES / SAFETY
+#    Flight mode switch (RC5) layout for interception testing.
+#-------------------------------------------------------------------------------
+FLTMODE1         0        # STABILIZE
+FLTMODE2         2        # ALT_HOLD
+FLTMODE3         5        # LOITER
+FLTMODE4         4        # GUIDED   <- companion-computer intercept commands
+FLTMODE5         3        # AUTO
+FLTMODE6         6        # RTL
+FLTMODE_CH       5
+
+RTL_ALT_M        30       # m
+RTL_SPEED_MS     15       # m/s
+LAND_SPD_MS      0.8      # m/s
+LAND_SPD_HIGH_MS 3        # m/s
+
+# SITL-friendly failsafes: no RC/battery/GCS aborts mid-test run.
+FS_THR_ENABLE    0
+FS_GCS_ENABLE    0
+FS_EKF_ACTION    1
+FS_EKF_THRESH    1.0
+FS_OPTIONS       0
+
+DISARM_DELAY     0        # never auto-disarm while armed on the pad
+ARMING_SKIPCHK   0        # bitmask of pre-arm checks to SKIP; 0 = run them all
+ARMING_RUDDER    2
+
+# Crash / thrust-loss detection off: an 8.7:1 interceptor pulling hard
+# repeatedly trips the stock heuristics.
+FS_CRASH_CHECK   0
+FS_VIBE_ENABLE   0
+
+#-------------------------------------------------------------------------------
+# 10. LOGGING
+#-------------------------------------------------------------------------------
+LOG_BITMASK      176126   # default + PID + FastAtt, useful for tuning review
+LOG_DISARMED     0
+LOG_FILE_DSRMROT 1
