@@ -245,6 +245,11 @@ avci_sim/
 
 ### Dokümanlar
 
+> 📘 **Fonksiyon bazında kod açıklamaları + gezilebilir site:**
+> [dokumantasyon/](dokumantasyon/) — her fonksiyonun ne yaptığı, nasıl çalıştığı
+> ve neden öyle tasarlandığı (~5.800 satır). Siteyi açmak için
+> [`dokumantasyon/site/index.html`](dokumantasyon/site/index.html) dosyasına çift tıklayın.
+
 | Doküman | İçerik |
 |---------|--------|
 | [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) | Kopyala-yapıştır çalıştırma komutları (5 terminal) |
