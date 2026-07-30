@@ -254,7 +254,11 @@ tbody tr:hover td{background:var(--raised)}
 .res-empty{padding:14px 10px;font-size:12.5px;color:var(--ink-dim)}
 mark{background:var(--accent-soft);color:inherit;border-radius:2px;padding:0 1px;
   box-shadow:inset 0 -2px 0 var(--accent-line)}
-
+.nojs{
+  display:none;margin:0;padding:12px 18px;border-bottom:1px solid var(--line);
+  background:var(--accent-soft);color:var(--ink-mid);font-size:13.5px;line-height:1.5;
+}
+.nojs strong{color:var(--ink)}
 .foot{padding:22px 0 0;margin-top:40px;border-top:1px solid var(--line-soft);
   font-family:var(--mono);font-size:11px;color:var(--ink-dim);display:flex;gap:18px;flex-wrap:wrap}
 /* ══ DUYARLI YERLEŞİM ══════════════════════════════════════════════════
@@ -299,6 +303,19 @@ mark{background:var(--accent-soft);color:inherit;border-radius:2px;padding:0 1px
   <button class="iconbtn" id="theme" aria-label="Tema değiştir" title="Tema değiştir"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.8a6.2 6.2 0 0 0 0 12.4z" fill="currentColor"/></svg></button>
 </header>
 
+<noscript>
+  <style>
+    .panel[hidden]{display:block!important}
+    .rail,.toc{display:none!important}
+    .search,.menubtn,#theme{display:none!important}
+    .nojs{display:block!important}
+  </style>
+</noscript>
+<div class="nojs">
+  <strong>JavaScript kapalı.</strong> Gezinti, arama ve tema değiştirme
+  çalışmıyor; tüm bölümler alt alta gösteriliyor. Tam sürüm için dosyayı bir
+  tarayıcıda açın (iOS'ta: Dosyalar'da paylaş → Safari/Chrome ile aç).
+</div>
 <div class="wrap">
   <nav class="rail" id="rail" aria-label="Proje ağacı"><div class="nav-group"><div class="nav-group-hd">GENEL BAKIŞ</div><ul class="nav-list">
 <li><button class="nav-item" data-nav="01_proje_yapisi.md-all"><span class="nav-dot layer-genel"></span>Proje Yapısı</button></li>
@@ -339,7 +356,7 @@ mark{background:var(--accent-soft);color:inherit;border-radius:2px;padding:0 1px
 <li><button class="nav-item" data-nav="90_temizlik_kaydi.md-all"><span class="nav-dot layer-kayit"></span>Temizlik Kaydı</button></li>
 </ul></div></nav>
   <main class="main" id="main">
-    <article class="panel" id="01_proje_yapisi.md-all" hidden><header class="panel-hd"><div class="eyebrow"><span class="layer layer-genel">GENEL</span><span class="src">01_PROJE_YAPISI.md</span></div><h1 class="panel-title">01 — Proje Yapısı</h1></header><div class="prose"><blockquote class="cal cal-note"><p>Klasör ağacı, her klasörün işlevi ve tam dosya envanteri. Kod açıklamaları için: <span class="ref">10-15 numaralı dosyalar</span>.</p></blockquote>
+    <article class="panel" id="01_proje_yapisi.md-all"><header class="panel-hd"><div class="eyebrow"><span class="layer layer-genel">GENEL</span><span class="src">01_PROJE_YAPISI.md</span></div><h1 class="panel-title">01 — Proje Yapısı</h1></header><div class="prose"><blockquote class="cal cal-note"><p>Klasör ağacı, her klasörün işlevi ve tam dosya envanteri. Kod açıklamaları için: <span class="ref">10-15 numaralı dosyalar</span>.</p></blockquote>
 <hr class="rule">
 <h2 id="01_proje_yapisi.md-all-1.-klasor-agaci" class="hd hd2">1. Klasör ağacı</h2>
 <div class="code-wrap"><div class="code-lang">text</div><pre><code>avci_sim/
@@ -3112,7 +3129,7 @@ git push origin main</code></pre></div>
   const byId = Object.fromEntries(IDX.map(d => [d.id, d]));
   const $ = s => document.querySelector(s);
   const rail = $("#rail"), toc = $("#toc"), main = $("#main"), qin = $("#q");
-  let active = null, results = null;
+  let active = "01_proje_yapisi.md-all", results = null;   // ilk panel statik olarak açık
 
   /* ── tema ── */
   const root = document.documentElement;

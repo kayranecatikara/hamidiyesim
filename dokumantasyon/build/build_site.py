@@ -138,8 +138,11 @@ def main():
         subs = [h for h in heads if h["level"] == 2]
         katman_ad, _ = KATMAN[p["katman"]]
 
+        # İlk panel statik HTML'de GÖRÜNÜR kalır: JS çalışmayan ortamlarda
+        # (iOS Dosyalar/QuickLook önizlemesi gibi) sayfa boş kalmasın.
+        gizli = "" if pid == order[0] else " hidden"
         out_html.append(
-            f'<article class="panel" id="{pid}" hidden>'
+            f'<article class="panel" id="{pid}"{gizli}>'
             f'<header class="panel-hd">'
             f'<div class="eyebrow"><span class="layer layer-{p["katman"]}">{katman_ad}</span>'
             f'<span class="src">{p["file"]}</span></div>'
