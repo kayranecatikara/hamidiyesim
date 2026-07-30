@@ -31,7 +31,7 @@ LOG="$PROJ/logs"; mkdir -p "$LOG"
 WORLD="$PROJ/sim/gazebo_harmonic/worlds/avci_harmonic.sdf"
 
 stop_all() {
-    for pat in 'cessna_pose_relay' 'model JSON' 'model plane' '[s]im_vehicle' '[m]avproxy' '[g]z sim' '[r]uby.*gz'; do
+    for pat in 'model JSON' 'model plane' '[s]im_vehicle' '[m]avproxy' '[g]z sim' '[r]uby.*gz'; do
         pkill -9 -f "$pat" 2>/dev/null
     done
     sleep 3

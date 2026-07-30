@@ -164,7 +164,6 @@ def _stop_scenario_proc():
     _scenario_name = None
     # Emniyet: GCS yeniden başlatıldıysa elde referansı olmayan süreç kalmış olabilir
     subprocess.run(['pkill', '-9', '-f', 'run_plane_scenario'], capture_output=True)
-    subprocess.run(['pkill', '-9', '-f', 'run_plane_square'], capture_output=True)
 
 
 @app.post("/api/command/plane/scenario/{name}")
@@ -687,7 +686,7 @@ def _read_iris_telem_from_conn(conn):
 
 
 def _chase_thread():
-    """Chase altyapı thread'i: kalkış + chase_algorithm çağrısı."""
+    """Chase altyapı thread'i: kalkış + hibrit güdüm (supervisor.run_hybrid)."""
     global _chase_active
 
     print("=" * 50)
@@ -974,7 +973,7 @@ def video_feed(vehicle: str):
                              media_type="multipart/x-mixed-replace; boundary=frame")
 
 # -----------------------------------------------------------------------
-# MAVLINK TELEMETRİ (14551=plane, 14540=iris)
+# MAVLINK TELEMETRİ (14550=plane/ana GCS broadcast, 14541=iris)
 # -----------------------------------------------------------------------
 def _process_mavlink_msg(msg, vehicle_name):
     """Gelen MAVLink mesajını işle ve telemetry_state'e yaz."""

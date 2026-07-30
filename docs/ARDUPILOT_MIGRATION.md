@@ -1,7 +1,19 @@
 # AVCI SİM — ArduPilot Migrasyonu (Tamamlandı)
 
+> ⚠️ **TARİHSEL KAYIT.** Bu doküman PX4 → ArduPilot geçişinin *o dönemki*
+> durumunu anlatır; güncel çalıştırma talimatı DEĞİLDİR. Aşağıdaki bölümlerin bir
+> kısmı (Gazebo Classic + Cessna + pose relay, SPRINT→APPROACH→LOCK→STRIKE
+> chase/strike algoritmaları) sonradan tamamen değişti ve ilgili dosyalar
+> depodan kaldırıldı. Güncel mimari için:
+> [`GUIDANCE.md`](GUIDANCE.md) · Güncel çalıştırma için:
+> [`SIMULASYON_CALISTIRMA.md`](SIMULASYON_CALISTIRMA.md)
+>
+> Bu doküman, **ArduPilot'a özgü sözleşmelerin neden böyle olduğunu** (force ARM
+> magic, mod numaraları, `SYSID_MYGCS` kuralı, port haritası) açıkladığı için
+> saklanıyor.
+
 Bu doküman, projenin **PX4 → ArduPilot**, **Talon → Cessna**, **QGroundControl →
-Mission Planner** geçişini ve yeni çalıştırma akışını özetler.
+Mission Planner** geçişini ve o dönemki çalıştırma akışını özetler.
 
 ## Ne Değişti
 
@@ -91,7 +103,14 @@ cd ~/ardupilot && python3 Tools/autotest/sim_vehicle.py \
 9. ✅ Mission Planner 14551'de her iki aracı yayınlıyor (port katmanı)
 10. ✅ Gazebo iris kamerası Cessna'yı tespit ediyor; gcs_server MJPEG uçtan uca
 
-## Gazebo Modu (kamera dahil tam sistem)
+## Gazebo Modu (kamera dahil tam sistem) — ARTIK GEÇERSİZ
+
+> ⛔ **Bu bölüm tamamen aşıldı.** O dönemde hedef uçak (Cessna) ArduPlane'in
+> built-in fiziğinde uçuyor, `cessna_pose_relay` node'u onu Gazebo'ya taşıyordu.
+> **Bugün:** hedef (mini Talon) Gazebo Harmonic'te ArduPlane SITL ile kendi
+> FDM portundan (9012) **gerçekten uçuyor** — relay'e gerek kalmadı ve
+> `cessna_pose_relay.py` / `harmonic_pose_relay.py` depodan kaldırıldı.
+> Aşağıdakiler yalnız tarihsel kayıt olarak duruyor.
 
 iris'i Gazebo fiziğinde uçurup kamera görüntüsü almak için `-f gazebo-iris`
 kullanılır; hedef uçak (Cessna) ArduPlane built-in fizikte uçar ve

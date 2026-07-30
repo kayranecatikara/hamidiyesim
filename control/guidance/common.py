@@ -2,11 +2,11 @@
 guidance/common.py — GPS ve görsel güdüm hatlarının paylaştığı yardımcılar.
 
 Skaler matematik, ivme sınırlama ve MAVLink hız-setpoint göndericisi tek yerde.
-Hem GPS yaklaşma (gps_approach) hem görsel IBVS (adapter_copter / visual_lead)
+Hem GPS fazı (gps_guidance) hem görsel IBVS (adapter_copter / visual_lead)
 bu tabanı kullanır.
 
 Setpoint sözleşmesi:
-  send_velocity : sadece hız + yaw (GUIDED) — hem GPS yaklaşma hem IBVS hattı
+  send_velocity : sadece hız + yaw (GUIDED) — hem GPS fazı hem IBVS hattı
 """
 
 import math

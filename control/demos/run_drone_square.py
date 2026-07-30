@@ -8,8 +8,8 @@ dönüşlerindeki yatış/dönüş sırasında pervaneler kameraya girer — as�
 
 Kullanım (simülasyon + SITL çalışırken):
     cd ~/projects/avci_sim
-    python3 -m control.run_drone_square                # varsayılan: 25m irtifa, 40m kenar
-    python3 -m control.run_drone_square --alt 30 --side 60
+    python3 -m control.demos.run_drone_square                # varsayılan: 25m irtifa, 40m kenar
+    python3 -m control.demos.run_drone_square --alt 30 --side 60
 Ctrl+C → olduğu yerde LAND.
 """
 
@@ -19,7 +19,10 @@ import signal
 import sys
 import time
 
-sys.path.insert(0, "/home/kayra/projects/avci_sim")
+import os
+# Depo kökünü bu dosyanın konumundan türet (control/demos/ -> depo kökü)
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))))
 
 from control.drone_functions import (
     connect_drone,

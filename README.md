@@ -20,11 +20,17 @@ kontrol, görüntü işleme ve görev arayüzü tek bir web tabanlı Yer Kontrol
 | **iris** | Avcı drone | `iris_cam` | ArduCopter (`-I0`, sysid 5) | 9002 | 14541 | `/iris_cam/image` |
 | **Talon** | Hedef İHA | `mini_talon_vtail` | ArduPlane (`-I1`, sysid 2) | 9012 | 14542 | `/talon_cam/image` |
 
-- **iris** GUIDED modda pozisyon setpoint'leriyle uçar; kamerasından hedefi
-  (HSV renk tespiti) bulur, SPRINT→APPROACH→LOCK→STRIKE durum makinesiyle kovalar,
-  Oransal Seyrüsefer (Proportional Navigation) ile müdahale eder.
-- **Talon** ArduPlane ile Gazebo'da uçar; gcs arayüzündeki **"Kare Çiz"** butonu
-  onu otonom kalkırıp (TAKEOFF modu) kare rota çizdirir.
+- **iris** GUIDED modda hız + yaw setpoint'leriyle uçar. Hedefi kamerasından
+  **YOLO** ile bulur, **YOLO-pose** ile 6 keypoint'inden yönelimini çıkarır ve
+  **iki fazlı hibrit güdümle** müdahale eder:
+  1. **GPS fazı** — hedefi kamera kadrajının merkezine ve pose modelinin
+     güvenilir çalıştığı menzil bandına (~10-11 m) oturtur.
+  2. **Görsel faz (IBVS lead pursuit)** — menzilden bağımsız öne nişan (lead)
+     ile kesme rotasında kapanır, terminal kör dalışla vurur.
+
+  Geçişi `guidance/supervisor.py` yönetir; görsel temas kesilirse GPS'e döner.
+- **Talon** ArduPlane ile Gazebo'da uçar; gcs arayüzündeki senaryo butonları
+  onu otonom kaldırıp (TAKEOFF modu) **kare / daire / agresif** rota çizdirir.
 - **gcs_server** iki kamerayı da gz-transport'tan okur, MJPEG olarak web arayüzüne
   akıtır, telemetriyi toplar ve görev komutlarını yollar → `http://localhost:8000`
 
@@ -106,7 +112,7 @@ Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
 
 **Temizlik** (boş bir terminalde):
 ```bash
-pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server'; sleep 3
+pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server|run_plane_scenario'; sleep 3
 ```
 
 **Terminal 1 — Gazebo Harmonic** (açılması ~15 sn)
@@ -162,9 +168,13 @@ mono MissionPlanner.exe    # UDP 14551
 
 1. `http://localhost:8000` otomatik açılır (YKİ — Taktik Saha Ekranı).
 2. Kamera görünümü: **AVCI DRONE** sekmesi = iris kamerası, **HEDEF İHA** sekmesi = Talon burun kamerası.
-3. **Kare Çiz** → Talon kalkıp kare rota çizer. **Manuel Mod** → RC benzeri kontrol.
-4. iris kamerası hedefi görünce tespit + kilit overlay'i çizilir; chase/strike telemetriyle sürülür.
-5. **GPS Karıştırma** kaydırıcısı video/telemetri bozulmasını simüle eder.
+3. **Kare / Daire / Agresif** → Talon kalkıp seçilen rotayı çizer. **Manuel Mod** → RC benzeri kontrol.
+4. iris kamerası hedefi görünce YOLO tespiti + pose keypoint overlay'i çizilir.
+5. **Takip Başlat** → hibrit güdüm devreye girer (GPS fazı → görsel faz → vuruş).
+   Her uçuş `logs/gps_guidance_*.csv` ve `logs/visual_lead_*.csv` üretir;
+   `python3 tools/gps_log_viz.py --last 6 --open` ile tarayıcıda incelenir.
+6. **GPS Karıştırma** kaydırıcısı video/telemetri bozulmasını simüle eder — GPS
+   düşerse supervisor görsel faza geçerek jamming'e karşı yedek sağlar.
 
 ---
 
@@ -184,22 +194,42 @@ mono MissionPlanner.exe    # UDP 14551
 
 ```
 avci_sim/
-├── control/               # MAVLink kontrol + gcs_server (web/kamera/görev)
-│   ├── mav_common.py          # Ortak ArduPilot MAVLink altyapısı
-│   ├── drone_functions.py     # iris (ArduCopter) kontrol
-│   ├── plane_functions.py     # Talon (ArduPlane) kontrol
-│   ├── plane_patterns.py      # Kalkış + kare deseni
-│   ├── chase_algorithm.py     # SPRINT→APPROACH→LOCK→STRIKE
-│   ├── strike_algorithm.py    # Oransal Seyrüsefer (PN)
-│   └── gcs_server.py          # FastAPI + gz-transport kamera + görev API
-├── vision/                # OpenCV HSV hedef tespiti
+├── control/                    # MAVLink kontrol + güdüm + web GCS
+│   ├── mav_common.py               # Ortak ArduPilot MAVLink altyapısı
+│   ├── drone_functions.py          # iris (ArduCopter) kontrol
+│   ├── plane_functions.py          # Talon (ArduPlane) kontrol
+│   ├── plane_patterns.py           # Talon manevra desenleri
+│   ├── run_plane_scenario.py       # Hedef senaryoları (kare/daire/agresif)
+│   ├── arm_diag.py                 # ARM reddi teşhis aracı
+│   ├── gcs_server.py               # FastAPI + gz-transport kamera + görev API
+│   ├── gcs_ui/                     # Web arayüzü (HTML/CSS/JS)
+│   ├── guidance/                   # HİBRİT GÜDÜM
+│   │   ├── guidance_core.py            # IBVS lead pursuit çekirdeği (platformdan bağımsız)
+│   │   ├── adapter_copter.py           # Çekirdek çıktısı → copter hız+yaw komutu
+│   │   ├── visual_lead.py              # Görsel faz döngüsü (olay güdümlü)
+│   │   ├── gps_guidance.py             # GPS fazı (kadraj merkezleme)
+│   │   ├── supervisor.py               # GPS ↔ görsel faz geçişi (run_hybrid)
+│   │   └── common.py                   # Paylaşılan matematik + send_velocity
+│   └── demos/                      # Elle çalıştırılan bağımsız uçuş demoları
+├── vision/                     # YOLO tespit + YOLO-pose keypoint + veri/eğitim
+│   ├── detector.py                 # detect_talon()  → bbox
+│   ├── pose_detector.py            # detect_pose()   → bbox + 6 keypoint
+│   ├── geometry.py                 # Kamera projeksiyonu (otomatik etiketleme)
+│   ├── detection_state.py          # Thread-safe tespit paylaşımı
+│   ├── capture_*.py                # Otomatik etiketli veri toplayıcılar
+│   ├── train_yolo*.py              # Model eğitimi
+│   └── models/                     # avci_yolo.pt, avci_pose.pt
 ├── sim/
-│   ├── gazebo_harmonic/       # Harmonic world + modeller (iris_cam, mini_talon_vtail)
-│   └── ardupilot_params/      # avci_copter.parm, avci_plane.parm
-├── scripts/               # start_harmonic.sh, setup/start_mission_planner.sh
-├── tools/mission_planner/ # (git'e dahil değil — setup script ile kurulur)
-├── requirements.txt
-└── docs/ARDUPILOT_MIGRATION.md
+│   ├── gazebo_harmonic/            # World + modeller (iris_cam, mini_talon_vtail)
+│   └── ardupilot_params/           # avci_copter.parm, avci_plane.parm
+├── scripts/                    # start_harmonic.sh, setup/start_mission_planner.sh
+├── tests/                      # Gazebo'suz kabul testleri (saf mantık)
+├── tools/
+│   ├── gps_log_viz.py              # Uçuş CSV'lerini HTML panele çevirir
+│   └── mission_planner/            # (git'e dahil değil — setup script ile kurulur)
+├── docs/                       # Mimari, çalıştırma, güdüm, loglama dokümanları
+├── logs/                       # Çalışma çıktıları (git'e dahil değil)
+└── requirements.txt
 ```
 
 ---
@@ -210,7 +240,19 @@ avci_sim/
   yukarıdaki kurulum adımlarıyla ayrıca kurulur.
 - iris ve Talon **ayrı FDM portları** (9002/9012) kullanır — aynı world'de çakışmaz.
 - Talon V-kuyruk servo eşlemesi (SERVO2/4 = Sol/Sağ V-Tail) `avci_plane.parm`'dadır.
-- Ayrıntılı geçiş notları: `docs/ARDUPILOT_MIGRATION.md`.
+- Kod değiştirmeden önce Gazebo'suz kabul testlerini çalıştırın:
+  `python3 -m tests.test_visual_lead` ve `python3 -m tests.test_gps_guidance`.
+
+### Dokümanlar
+
+| Doküman | İçerik |
+|---------|--------|
+| [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) | Kopyala-yapıştır çalıştırma komutları (5 terminal) |
+| [docs/GUIDANCE.md](docs/GUIDANCE.md) | Güdüm mimarisi — kodda şu an çalışan sistem |
+| [docs/GUIDANCE_ROADMAP.md](docs/GUIDANCE_ROADMAP.md) | Güdüm yol haritası (plan/vizyon) |
+| [docs/GPS_LOGGING.md](docs/GPS_LOGGING.md) | CSV log formatı + görselleştirme aracı |
+| [docs/COLAB_TRAINING.md](docs/COLAB_TRAINING.md) | Colab GPU'sunda YOLO eğitimi |
+| [docs/ARDUPILOT_MIGRATION.md](docs/ARDUPILOT_MIGRATION.md) | PX4 → ArduPilot geçiş notları (tarihsel) |
 
 ---
 

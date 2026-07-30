@@ -1,10 +1,11 @@
 """
 control.guidance — Avcı drone güdüm hatları.
 
-İki fazlı hibrit müdahale (GPS yaklaşma → görsel IBVS), supervisor geçişli:
-  - gps_approach.py  : GPS yaklaşma yasası — eski sistemin (ana_kontrol.py)
-                       kanıtlanmış portu (kuyruk-standoff + göreli fren +
-                       look-up alttan bakış + handoff histerezisi)
+İki fazlı hibrit müdahale (GPS kadraj merkezleme → görsel IBVS), supervisor
+geçişli:
+  - gps_guidance.py  : GPS fazı — hedefi kamera kadrajının MERKEZİNE ve pose
+                       modelinin güvenilir çalıştığı menzil bandına oturtur
+                       (geometrik kadraj noktası + PD hız + hedef-hızı feedforward)
   - guidance_core.py : IBVS lead pursuit çekirdeği (platformdan bağımsız:
                        pose keypoint → menzil bağımsız lead → u_govde/hata açıları)
   - adapter_copter.py: copter komut adaptörü (u_govde → NED hız + yaw;

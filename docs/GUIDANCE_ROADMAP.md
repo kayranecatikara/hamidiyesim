@@ -1,7 +1,16 @@
 # AVCI SİM — Güdüm Yol Haritası: GPS + Görsel (IBVS) Hibrit Müdahale
 
-> Durum: **PLAN** (uygulama onayı bekliyor). Bu belge kodun mevcut analizine
-> dayanır; her faz onaylandıkça uygulanır.
+> **Durum:** Faz 1-4 UYGULANDI. Bu belge **planı ve gerekçeleri** kayıt altına
+> alır — "neden böyle tasarlandı" sorusunun cevabıdır.
+>
+> ⚠️ Aşağıdaki **"2. Mevcut Durum"** bölümü planın YAZILDIĞI ANDAKİ kodu anlatır
+> (chase_algorithm / strike_algorithm dönemi). O dosyalar artık yok; yerlerini
+> `control/guidance/` paketi aldı. **Kodda şu an çalışan sistem** için:
+> [`GUIDANCE.md`](GUIDANCE.md).
+>
+> Ayrıca GPS hattı plandan sonra bir kez daha yeniden inşa edildi: `gps_approach`
+> (kuyruk-standoff + göreli fren) yerini `gps_guidance`'a (kadraj merkezleme)
+> bıraktı. Metinde geçen `gps_approach` adı bu yüzden tarihseldir.
 
 ## 1. Bağlam ve Hedef
 
@@ -19,7 +28,7 @@ farklı olduğu için. Bir **supervisor** hangi hattın aktif olduğunu ve geçi
 yönetir. Ek fayda: GPS karıştırma (jamming) altında görsel hatta düşerek
 dayanıklılık (mevcut `_apply_gps_noise` senaryosu tam bunu test eder).
 
-## 2. Mevcut Durum (kod analizi — 3 keşif ajanı bulgusu)
+## 2. Mevcut Durum (plan yazıldığı andaki kod — TARİHSEL)
 
 - **chase + strike %100 GPS girdili.** `chase_algorithm.py` ve
   `strike_algorithm.py` gerçek piksele/bbox'a hiç dokunmuyor.
@@ -132,8 +141,9 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
 
 ### Faz 4 — Supervisor: geçiş + fallback — UYGULANDI (2026-07-23)
 - `control/guidance/supervisor.py` `run_hybrid`:
-  `GPS (gps_approach) → (görsel kilit) → VISUAL (visual_lead) → (temas kaybı) → GPS ...`
-  stop_chase'e kadar döner.
+  `GPS → (görsel kilit) → VISUAL (visual_lead) → (temas kaybı) → GPS ...`
+  stop_chase'e kadar döner. (GPS fazı o gün `gps_approach`'tı; bugün
+  `gps_guidance` — arayüz sözleşmesi aynı kaldı.)
 - **GPS→görsel:** KILIT_N=10 ardışık pose karesi (conf ≥ 0.5) **VE**
   (handoff ≤40 m **VEYA** GPS DROPOUT). Menzil kapısının nedeni: görsel fazın
   kapanma hızı sabit (V_KAPANMA) — uzaktan erken geçilirse hızlı hedefe yetişilemez;

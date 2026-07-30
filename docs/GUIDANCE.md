@@ -5,8 +5,9 @@
 > **Kapsam:** `control/guidance/` paketi + `control/gcs_server.py` giriş noktaları.
 
 Avcı drone (ArduCopter, quad), hedef İHA'yı (Talon, ArduPlane) hava-havada
-kovalayıp vurur. Güdüm iki fazlı: **GPS yaklaşma** ile menzile girilir, **görsel
-IBVS** ile kilitlenip vurulur. Bir denetleyici (supervisor) iki faz arasında geçiş yapar.
+kovalayıp vurur. Güdüm iki fazlı: **GPS fazı** hedefi kamera kadrajının merkezine
+ve pose'un çalıştığı menzil bandına oturtur, **görsel IBVS** kilitlenip vurur.
+Bir denetleyici (supervisor) iki faz arasında geçiş yapar.
 
 ---
 
@@ -16,9 +17,9 @@ IBVS** ile kilitlenip vurulur. Bir denetleyici (supervisor) iki faz arasında ge
 flowchart TD
     UI["POST /api/command/iris/start_chase"] --> CT["_chase_thread (gcs_server)"]
     CT -->|kalkış + callback'ler| SUP["supervisor.run_hybrid"]
-    CT -.->|AVCI_HYBRID=off| GA0["gps_approach (tek başına)"]
+    CT -.->|AVCI_HYBRID=off| GA0["gps_guidance (tek başına)"]
 
-    SUP -->|GPS fazı| GA["gps_approach.run_gps_approach"]
+    SUP -->|GPS fazı| GA["gps_guidance.run_gps_guidance"]
     SUP -->|görsel faz| VL["visual_lead.run_visual_lead"]
     SUP -. izci: pose akışını sayar .-> GA
 
@@ -32,10 +33,10 @@ flowchart TD
 
 **Varsayılan görev yolu:** `start_chase` → `_chase_thread` (port bağlantısı +
 kalkış) → `supervisor.run_hybrid` → GPS ↔ görsel geçişli döngü → `CopterAdapter`
-veya `gps_approach` → `common.send_velocity` → ArduCopter GUIDED.
+veya `gps_guidance` → `common.send_velocity` → ArduCopter GUIDED.
 
 **Yan giriş noktaları:**
-- `AVCI_HYBRID=off` → hibrit yerine saf `gps_approach` (GPS'i tek başına test için).
+- `AVCI_HYBRID=off` → hibrit yerine saf `gps_guidance` (GPS'i tek başına test için).
 - `POST /api/command/iris/start_visual` → `_visual_thread` → `run_visual_lead`
   doğrudan (görsel hattı izole test; supervisor yok).
 
@@ -53,31 +54,52 @@ ve kameranın pose çıktısını kullanır.
 | `common.py` | Paylaşılan matematik + tek MAVLink göndericisi | `clamp/normalize_angle/vec3_len/limit_acceleration`, `send_velocity(conn, vx,vy,vz, yaw)` |
 | `guidance_core.py` | **Platformdan bağımsız** IBVS çekirdeği (pose→lead) + frame dönüşümleri | pose 6 keypoint + attitude → `u_govde` (nişan yönü FRD) + `yaw_hata/pitch_hata` + kalite |
 | `adapter_copter.py` | Copter adaptörü: nişan yönü → multirotor komutu | `u_govde` → NED hız (`V_KAPANMA`) + slew-limitli yaw; dikey yumuşatma/PN/co-altitude; ivme sınırı |
-| `gps_approach.py` | GPS yaklaşma yasası (kuyruk-standoff + göreli fren + alttan bakış) | `get_plane/get_iris` → hız+yaw setpoint (20 Hz) |
+| `gps_guidance.py` | GPS fazı: kadraj merkezleme (geometrik istasyon + PD hız + hedef-hızı feedforward) | `get_plane/get_iris` → hız+yaw setpoint (20 Hz) + CSV log |
 | `visual_lead.py` | Görsel IBVS döngüsü (kameraya kilitli, olay güdümlü) + CSV log + terminal kör-dalış | pose akışı → çekirdek → adaptör → `send_velocity` |
 | `supervisor.py` | Faz 4: GPS ↔ görsel geçiş denetleyicisi | tek görev döngüsü `run_hybrid` |
 | `__init__.py` | Paket dokümantasyonu | — |
 
 Bağımlılık grafiği (yaprak → tepe): `common` ve `guidance_core` tabandır;
-`adapter_copter` ikisine dayanır; `visual_lead` çekirdek+adaptör+common; `gps_approach`
-common; `supervisor` gps_approach+visual_lead+çekirdek(Cfg).
+`adapter_copter` ikisine dayanır; `visual_lead` çekirdek+adaptör+common;
+`gps_guidance` common+çekirdek(`hedef_kadraj_hatasi`);
+`supervisor` gps_guidance+visual_lead+çekirdek(Cfg).
 
 ---
 
 ## 3. İki faz
 
-### GPS yaklaşma (`gps_approach.py`)
-Eski kanıtlanmış `ana_kontrol.py` güdüm yasasının portu. 20 Hz döngü:
-- **Kuyruk-standoff:** komut istasyonu, hedefin **hız yönünün** `APPROACH_STANDOFF`
-  (10 m) gerisinde → drone yandan yetişse bile arkaya süzülür, hedef hep kadrajda.
-- **Göreli fren:** hız tavanı `min(V_CAP_FAR, hedef_hızı + kapanma_payı(d))`;
-  kapanma payı `BRAKE_DIST` altında `V_CLOSE_FAR→V_CLOSE_NEAR` iner (overshoot yok,
-  ama tavan hedefin kendi hızının altına inmez).
-- **Alttan bakış (look-up):** avcı hedefin `APPROACH_ALT_OFFSET` (≈5 m) **altında**
-  uçar → hedef gökyüzü önünde siluet, kamera 25° yukarı tilt'li → kadraj oturur,
-  pose tespiti kopmaz. (Pose dataset'i de bu geometriyle toplandı.)
-- **Handoff histerezisi:** `d_h < HANDOFF_RANGE` → KILIT bayrağı; supervisor bunu
+### GPS fazı (`gps_guidance.py`)
+**Amacı vuruş değil, kadraj merkezleme.** Başarı ölçütü: hedef kameranın tam
+ortasında, pose modelinin güvenilir çalıştığı menzil bandında (~10-11 m) ve
+kararlı görünsün → supervisor görsel faza devretsin. 20 Hz döngü:
+
+- **Geometrik kadraj noktası (istasyon):** slant menzil `RANGE_SET` (11 m) ve
+  merkez yükselişi `CENTER_ELEV_DEG` (25° = kamera tilt'i) bir istasyon noktası
+  belirler: hedefin `RANGE_SET·cos25° ≈ 9.97 m` **gerisi** + `RANGE_SET·sin25°
+  ≈ 4.65 m` **altı**. Bu noktada durulduğunda hedef geometrik olarak kadrajın
+  merkezindedir (test G7 bunu doğrular).
+- **"Geri" yönünün seçimi:** hedefin yatay hızı `TRACK_MIN_SPD` (3 m/s) üstündeyse
+  **hız yönünün gerisi** (kuyruk takibi), altındaysa **LOS gerisi** (drone tarafı)
+  — duran/yavaş hedefte hız yönü gürültülü olduğu için.
+- **Alttan bakış (look-up):** istasyon hedefin altında olduğundan hedef gökyüzü
+  önünde siluet kalır, kamera 25° yukarı tilt'li → pose tespiti kopmaz.
+  (Pose dataset'i de bu geometriyle toplandı.) `LOOKUP_MIN_ALT` (8 m) yere
+  çakılmayı önler.
+- **Hız komutu:** hedef-hızı **feedforward** + istasyon hatasına **PD**
+  (`KP_H/KD_H` yatay, `KP_Z` dikey). Feedforward sayesinde kilitlenince drone
+  hedefin hızıyla birlikte gider — kararlı hold, sürekli kovalama salınımı yok.
+  `V_MAX`, `VZ_MAX` ve `MAX_ACCEL` ile sınırlanır.
+- **Yaw:** burun daima **gerçek hedefe** döner (istasyona değil), rate-limitli.
+- **Kadraj hatası ölçümü:** her karede `guidance_core.hedef_kadraj_hatasi` ile
+  drone'un GERÇEK attitude'undan azimut/yükseliş hatası ve piksel (u,v) kapalı
+  formda hesaplanıp CSV'ye yazılır → merkezleme başarısı ölçülebilir.
+- **Tazelik:** hedef telemetrisi `HOLD_S` (3 sn) donuk kalırsa `DROPOUT` — hover
+  edilir ve supervisor jamming fallback'i devreye alır.
+- **Devir etiketi:** `d_h < HANDOFF_RANGE` (20 m) → `durum=KILIT`; supervisor bunu
   görsel kilit sayacıyla birleştirir.
+
+> **Kademe notu:** Bu sürüm KADEME 1 — istasyon geometrik olarak kurulur.
+> KADEME 2'de ölçülen kadraj hatası doğrudan geri beslemeye girecek.
 
 ### Görsel IBVS (`visual_lead.py` + `guidance_core.py` + `adapter_copter.py`)
 Sabit Hz'te DÖNMEZ — kamera karesi (30 Hz) geldikçe işler. Her kabul edilen karede:
@@ -113,7 +135,7 @@ hızlı hedefe yetişilemez. Pose asıl 10-12 m'de sağlam; kapı 20 m bandı se
 | Sınıf | Dosya | Alan (domain) | Örnek parametreler |
 |---|---|---|---|
 | `Cfg` | `guidance_core.py:40` | **IBVS/görsel** | `K_LEAD`, `V_KAPANMA`, `KP_YAW`, `IVME_TAVAN`, `TERMINAL_MENZIL/SURE`, `VURUS_MENZIL`, `ELEV_EMA`, `PN_LEAD_SURE`, `TERMINAL_COALT_*` |
-| `Cfg` | `gps_approach.py:62` | **GPS yaklaşma** | `APPROACH_STANDOFF`, `V_CAP_FAR/CLOSE_*`, `BRAKE_DIST`, `KP_H/KD_H`, `KP_Z_POS/VZ_MAX`, `HANDOFF_RANGE`, `POS_EMA/VEL_EMA` |
+| `Cfg` | `gps_guidance.py:43` | **GPS fazı (kadraj)** | `RANGE_SET`, `CENTER_ELEV_DEG`, `TRACK_MIN_SPD`, `LOOKUP_MIN_ALT`, `KP_H/KD_H`, `KP_Z/VZ_MAX`, `V_MAX/MAX_ACCEL`, `HANDOFF_RANGE`, `POS_EMA/VEL_EMA`, `HOLD_S` |
 | `SupCfg` | `supervisor.py:28` | **geçiş** | `KILIT_N`, `KAYIP_M`, `POSE_CONF_MIN`, `GATE_KILIT`, `GATE_MENZIL` |
 
 > **Not:** İki config sınıfı da `Cfg` adında; `supervisor` içine `LeadCfg` olarak
@@ -124,6 +146,7 @@ hızlı hedefe yetişilemez. Pose asıl 10-12 m'de sağlam; kapı 20 m bandı se
 `AVCI_IBVS_K_LEAD`, `AVCI_IBVS_V_KAPANMA`, `AVCI_IBVS_TERMINAL_MENZIL`,
 `AVCI_IBVS_TERMINAL_SURE`, `AVCI_IBVS_VURUS_MENZIL`, `AVCI_IBVS_PN_SURE`,
 `AVCI_IBVS_COALT_MENZIL`, `AVCI_POSE_KPT_CONF` (guidance_core);
+`AVCI_GPS_RANGE` (gps_guidance: slant menzil setpoint);
 `AVCI_HYBRID_GATE_MENZIL` (supervisor); `AVCI_HYBRID` (gcs_server: hibrit/saf-GPS seçimi).
 
 ---
@@ -146,13 +169,20 @@ merkez = boresight +25° (kamera tilt'i).
 
 ## 6. Test ve loglar
 
-- **Testler:** `tests/test_visual_lead.py` (elle yazılı, `python3 -m tests.test_visual_lead`).
-  30 senaryo; çoğunlukla `guidance_core` (T1-16,21) ve `adapter_copter` (T17-20,27-29),
-  ayrıca `supervisor` geçiş zinciri (T22-23) ve `visual_lead` terminal (T24-26).
-  `gps_approach`, `supervisor` gerçek döngüsü ve `common` doğrudan testsiz (bilinen boşluk).
-- **Uçuş logu:** `visual_lead.py` her görsel fazda `logs/visual_lead_<zaman>.csv` yazar
-  (pose ölçümleri, nişan yönü, komutlar, `pn_dikey_deg`, `coalt_deg`, `menzil_gercek_m`).
-  CSV'nin varlığı görsel faza gerçekten geçildiğini gösterir.
+- **Görsel hat testleri:** `python3 -m tests.test_visual_lead` — 30 senaryo (T1-T30);
+  çoğunlukla `guidance_core` (T1-16,21) ve `adapter_copter` (T17-20,27-29), ayrıca
+  `supervisor` geçiş zinciri (T22-23) ve `visual_lead` terminal (T24-26).
+- **GPS fazı testleri:** `python3 -m tests.test_gps_guidance` — 9 senaryo (G1-G9):
+  kadraj hatası matematiği (G1-G6), istasyon geometrisinin merkezleme tutarlılığı
+  (G7-G8) ve sahte bağlantıyla döngü duman testi (G9).
+- **Bilinen boşluk:** `supervisor`ın gerçek döngüsü ve `common` doğrudan testsiz.
+- **Uçuş logları:** her faz kendi CSV'sini yazar —
+  `logs/visual_lead_<zaman>.csv` (pose ölçümleri, nişan yönü, komutlar,
+  `pn_dikey_deg`, `coalt_deg`, `menzil_gercek_m`) ve
+  `logs/gps_guidance_<zaman>.csv` (istasyon, komutlar, kadraj açıları, `u_px/v_px`).
+  `visual_lead` CSV'sinin varlığı görsel faza gerçekten geçildiğini gösterir.
+  Görselleştirme: `python3 tools/gps_log_viz.py --last 6 --open`
+  (format: [`GPS_LOGGING.md`](GPS_LOGGING.md)).
 
 ---
 
