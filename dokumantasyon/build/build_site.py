@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """AVCI SİM dokümantasyon sitesini tek dosyalık HTML olarak üretir."""
+import datetime
 import json
 import os
 import re
@@ -194,6 +195,8 @@ def main():
             .replace("__FIRST__", order[0])
             .replace("__STAT_PANEL__", str(stats["panel"]))
             .replace("__STAT_SATIR__", f'{stats["satir"]:,}'.replace(",", "."))
+            .replace("__BUILD__",
+                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
             )
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
