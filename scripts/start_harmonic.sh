@@ -19,7 +19,11 @@
 #   GZ_HEADLESS=1 bash scripts/start_harmonic.sh   # görüntüsüz
 #   bash scripts/start_harmonic.sh stop       # durdur
 
-PROJ="$HOME/projects/avci_sim"
+# Depo kökü, script'in kendi konumundan türetilir — böylece depo başka bir
+# dizine klonlandığında da kendi world/model/param/log dosyalarını kullanır.
+# (Eskiden $HOME/projects/avci_sim sabit yazılıydı; başka bir yoldan
+#  çalıştırıldığında script yine o dizinden okumaya çalışıyordu.)
+PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AP="$HOME/ardupilot"
 APT="$AP/Tools/autotest"
 APGZ="$HOME/ardupilot_gazebo"
