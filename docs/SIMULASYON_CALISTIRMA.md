@@ -35,8 +35,28 @@ gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON -I0 --sysid 5 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
+APT=$HOME/ardupilot/Tools/autotest
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
+  -I0 --sysid 5 --no-rebuild \
+  --add-param-file=$APT/default_params/copter.parm \
+  --add-param-file=$APT/default_params/gazebo-iris.parm \
+  --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
+  --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
 ```
+
+**Hazır olduğunun işareti:** `AP: Frame: QUAD/X` ve `AP: ArduPilot Ready`.
+
+> **⚠️ İlk iki `--add-param-file` neden zorunlu:** Güncel ArduPilot'ta
+> `sim_vehicle.py` artık SITL'e `--defaults` göndermiyor; SITL frame
+> varsayılanlarını gömülü `vehicleinfo.json`'dan **`--model` anahtarına göre**
+> çözüyor. Burada `--model JSON` verildiği için arama anahtarı `JSON` oluyor ve
+> o anahtarın frame varsayılanı yok (`-f gazebo-iris` yalnızca `sim_vehicle.py`
+> tarafını ilgilendirir). Bu iki dosya olmadan `FRAME_CLASS`/`FRAME_TYPE`
+> tanımsız kalır:
+> `AP: Frame: UNSUPPORTED` + `AP: PreArm: Motors: Check frame class and type`
+> → iris motorlarını yapılandıramaz, `NAV_TAKEOFF` başarısız olur, kovalama
+> görevi hiç başlamaz. Sıra da önemlidir: `avci_copter.parm` en sonda olmalı ki
+> kendi ayarları (ANGLE_MAX, WPNAV_SPEED, FS_*) üstte kalsın.
 
 ---
 

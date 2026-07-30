@@ -121,8 +121,17 @@ gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 **Terminal 2 — ArduCopter (avcı iris, FDM 9002)**
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON -I0 --sysid 5 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
+APT=$HOME/ardupilot/Tools/autotest
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
+  -I0 --sysid 5 --no-rebuild \
+  --add-param-file=$APT/default_params/copter.parm \
+  --add-param-file=$APT/default_params/gazebo-iris.parm \
+  --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
+  --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551
 ```
+> İlk iki `--add-param-file` zorunlu — yoksa `FRAME_CLASS`/`FRAME_TYPE` tanımsız
+> kalır, `AP: Frame: UNSUPPORTED` çıkar ve iris kalkamaz. Ayrıntı:
+> [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) Terminal 2.
 
 **Terminal 3 — ArduPlane (hedef Talon, FDM 9012)**
 ```bash

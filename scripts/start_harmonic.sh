@@ -21,6 +21,7 @@
 
 PROJ="$HOME/projects/avci_sim"
 AP="$HOME/ardupilot"
+APT="$AP/Tools/autotest"
 APGZ="$HOME/ardupilot_gazebo"
 LOG="$PROJ/logs"; mkdir -p "$LOG"
 WORLD="$PROJ/sim/gazebo_harmonic/worlds/avci_harmonic.sdf"
@@ -59,9 +60,26 @@ for i in $(seq 1 30); do ss -ln 2>/dev/null | grep -q ':9002' && break; sleep 1;
 sleep 3
 
 # 2) ArduCopter SITL (Harmonic JSON FDM)
+#
+# İlk iki --add-param-file ZORUNLU. Güncel ArduPilot'ta sim_vehicle.py artık
+# SITL'e --defaults göndermiyor; SITL frame varsayılanlarını gömülü
+# vehicleinfo.json'dan --model anahtarına göre çözüyor. Burada --model JSON
+# verildiği için arama anahtarı "JSON" oluyor ve o anahtarın frame varsayılanı
+# yok (-f gazebo-iris yalnızca sim_vehicle.py tarafını ilgilendiriyor). Bu iki
+# dosya olmadan FRAME_CLASS/FRAME_TYPE tanımsız kalıyor:
+#   AP: Frame: UNSUPPORTED
+#   AP: PreArm: Motors: Check frame class and type
+# ve iris motorlarını yapılandıramadığı için NAV_TAKEOFF başarısız oluyor —
+# kovalama görevi hiç başlamıyor. (copter.parm ayrıca INS_ACCOFFS/INS_ACCSCAL
+# kalibrasyon işaretlerini ve MOT_THST_HOVER'ı da getiriyor.)
+# SIRA ÖNEMLİ: avci_copter.parm en sonda kalmalı ki proje değerleri
+# (ANGLE_MAX, WPNAV_SPEED, FS_*) üstte kalsın.
 echo "[HARMONIC] ArduCopter (gazebo-iris --model JSON) başlatılıyor..."
 ( cd "$AP" && nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
-    -I0 --sysid 5 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_copter.parm" \
+    -I0 --sysid 5 --no-rebuild \
+    --add-param-file="$APT/default_params/copter.parm" \
+    --add-param-file="$APT/default_params/gazebo-iris.parm" \
+    --add-param-file="$PROJ/sim/ardupilot_params/avci_copter.parm" \
     --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
     --mavproxy-args="--daemon --streamrate=10" > "$LOG/copter_harmonic.log" 2>&1 & )
 
