@@ -63,7 +63,7 @@ echo "[HARMONIC] ArduCopter (gazebo-iris --model JSON) başlatılıyor..."
 ( cd "$AP" && nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
     -I0 --sysid 5 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_copter.parm" \
     --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" > "$LOG/copter_harmonic.log" 2>&1 & )
+    --mavproxy-args="--daemon --streamrate=25" > "$LOG/copter_harmonic.log" 2>&1 & )
 
 # 3) ArduPlane SITL (Gazebo mini_talon_vtail — GERÇEK uçuş, fdm 9012)
 #    Talon artık Gazebo'da ArduPilotPlugin ile uçuyor; relay YOK.
@@ -72,7 +72,7 @@ echo "[HARMONIC] ArduPlane (gazebo mini_talon --model JSON:9012) başlatılıyor
     --model JSON:127.0.0.1:9012 \
     -I1 --sysid 2 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_plane.parm" \
     --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" > "$LOG/plane_harmonic.log" 2>&1 & )
+    --mavproxy-args="--daemon --streamrate=25" > "$LOG/plane_harmonic.log" 2>&1 & )
 
 echo "[HARMONIC] SITL'lerin açılması bekleniyor (25s)..."
 sleep 25

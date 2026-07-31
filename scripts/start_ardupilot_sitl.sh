@@ -52,7 +52,7 @@ nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad \
     --out udp:127.0.0.1:14541 \
     --out udp:127.0.0.1:14550 \
     --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" \
+    --mavproxy-args="--daemon --streamrate=25" \
     > "$LOG_DIR/copter_sitl.log" 2>&1 &
 
 echo "[SITL] ArduPlane başlatılıyor (instance 1, sysid 2, udp:14542)..."
@@ -62,7 +62,7 @@ nohup python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane \
     --out udp:127.0.0.1:14542 \
     --out udp:127.0.0.1:14550 \
     --out udp:127.0.0.1:14551 \
-    --mavproxy-args="--daemon --streamrate=10" \
+    --mavproxy-args="--daemon --streamrate=25" \
     > "$LOG_DIR/plane_sitl.log" 2>&1 &
 
 echo "[SITL] Araçların açılması bekleniyor (~20s)..."
