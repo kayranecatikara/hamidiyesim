@@ -45,9 +45,21 @@ if not os.path.exists(ui_path):
     os.makedirs(ui_path)
 app.mount("/ui", StaticFiles(directory=ui_path, html=True), name="ui")
 
+# Uçuş log paneli — gps_log_viz.py'nin ürettiği HTML tarayıcıdan açılsın diye
+# logs/ dizini servis edilir. Panel her GPS uçuşu bitince otomatik tazelenir
+# (bkz. control/guidance/gps_guidance.py:_panel_tazele). Kısayol: /panel
+_logs_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+os.makedirs(_logs_path, exist_ok=True)
+app.mount("/loglar", StaticFiles(directory=_logs_path), name="loglar")
+
 @app.get("/")
 def read_root():
     return RedirectResponse(url="/ui/index.html")
+
+@app.get("/panel")
+def log_paneli():
+    """Uçuş log paneli kısayolu — en son uçuşları görselleştirir."""
+    return RedirectResponse(url="/loglar/gps_log_panel.html")
 
 # -----------------------------------------------------------------------
 # GLOBAL STATE

@@ -54,7 +54,12 @@ class Cfg:
     KD_H = 0.20               # yatay türev sönümleme
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
-    V_MAX = 20.0             # m/s; yatay hız tavanı
+    # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
+    # ortaya çıktı — 18-23 m/s (4 Hz'de EMA sönümlemesi 14-15 gösteriyordu). 20 m/s
+    # tavanında komut %98 doygundu: hedef 19-23 giderken drone tavanda kalınca
+    # yaklaşma hızı ≈ 0, açı hiç kapanmıyordu. Yüksek hızda eski salınımın sebebi
+    # 250 ms telemetri faz gecikmesiydi; 25 Hz ile ~40 ms'e indi.
+    V_MAX = 28.0             # m/s; yatay hız tavanı
     MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
 
@@ -284,6 +289,25 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     finally:
         f.close()
         print(f"[GPS] log kapatıldı: {csv_yol}")
+        _panel_tazele()
+
+
+def _panel_tazele():
+    """Uçuş biter bitmez log panelini yeniden üret ve linkini yazdır.
+
+    Panel HER GPS fazının sonunda tazelenir; en yeni uçuşlar otomatik girer,
+    ayrıca elle `python3 tools/gps_log_viz.py` çalıştırmaya gerek kalmaz.
+    Panel üretimi uçuşu asla düşürmemeli → tüm hatalar yutulur.
+    """
+    try:
+        from tools.gps_log_viz import panel_uret, _VARSAYILAN_CIKTI
+        yol = panel_uret(last=12, out=_VARSAYILAN_CIKTI, sessiz=True)
+        if yol:
+            print(f"[GPS] Log paneli güncellendi → http://localhost:8000/loglar/"
+                  f"{os.path.basename(yol)}")
+            print(f"[GPS]   (GCS kapalıysa: file://{os.path.abspath(yol)})")
+    except Exception as e:
+        print(f"[GPS] Log paneli üretilemedi ({e}) — uçuş etkilenmedi.")
 
 
 def _sleep(t_start, period):

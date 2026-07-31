@@ -626,7 +626,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -643,7 +643,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -661,7 +661,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -678,7 +678,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -696,7 +696,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -713,7 +713,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -731,7 +731,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>
@@ -748,7 +748,7 @@
         name="gz::sim::systems::LiftDrag">
       <a0>0.3</a0>
       <alpha_stall>1.4</alpha_stall>
-      <cla>4.2500</cla>
+      <cla>6.0000</cla>
       <cda>0.10</cda>
       <cma>0.0</cma>
       <cla_stall>-0.025</cla_stall>

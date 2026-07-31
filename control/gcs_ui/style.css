@@ -89,6 +89,23 @@ body {
 }
 .network-stats span span { color: var(--text-main); }
 
+/* Uçuş log paneli linki — her GPS uçuşu bitince otomatik tazelenen HTML rapor */
+.log-panel-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    border: 1px solid var(--text-dim);
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    transition: color .12s, border-color .12s;
+}
+.log-panel-link:hover, .log-panel-link:focus-visible {
+    color: var(--text-main);
+    border-color: var(--text-main);
+}
+
 /* Main Grid Layout */
 .gcs-main {
     flex: 1;          /* kalan yüksekliği al, footer'a yer bırak */

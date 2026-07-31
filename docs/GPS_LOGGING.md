@@ -61,42 +61,85 @@ devralabileceği pozisyona (kadraj merkezi, ~11 m slant) getirmek — vurmak de�
 
 ---
 
-## 3. Görselleştirme aracı — `tools/gps_log_viz.py`
+## 3. Görselleştirme paneli — `tools/gps_log_viz.py`
 
-Bir veya daha çok CSV logunu **tek, kendine yeten HTML paneline** çevirir
-(internet/CDN gerektirmez). Panelde uçuş başına:
+Logları **tek, kendine yeten HTML paneline** çevirir (internet/CDN gerektirmez).
 
-- **Kuşbakışı yörünge** (drone vs hedef, N-E) — "drone hedefin dışında mı orbit atıyor" bunu gösterir.
-- **Kamera nişangâhı** — hedefin (u,v) izi, merkeze göre sapma.
-- **Menzil d_h** zaman serisi (11 m istasyon çizgisiyle).
-- **Kadraj açıları** (elev/yaw, hedef çizgileriyle).
-- Veriden türetilen **otomatik yorum** (yaklaşamadı / kadraja girdi / kilitlenemedi).
+### 3.1 Otomatik güncelleme — elle çalıştırmaya gerek yok
 
-### Kullanım
+**Panel her GPS uçuşu bitince kendiliğinden tazelenir.** `run_gps_guidance()`
+sonlanırken `_panel_tazele()` çağrılır (bkz. `control/guidance/gps_guidance.py`),
+en yeni 12 log yeniden işlenir ve panel üzerine yazılır. Panel üretimi hata alsa
+bile uçuş etkilenmez (istisna yutulur).
+
+Uçuş sonunda konsola link basılır. Panele üç yoldan erişilir:
+
+| Yol | Adres |
+|---|---|
+| **GCS arayüzü** | Sağ üstteki **📊 UÇUŞ LOGLARI** düğmesi |
+| **Kısayol URL** | <http://localhost:8000/panel> |
+| **Doğrudan dosya** | `logs/gps_log_panel.html` (GCS kapalıyken `file://…` ile aç) |
+
+`gcs_server` `logs/` dizinini `/loglar` altında servis eder; kısayol `/panel`
+oraya yönlendirir.
+
+### 3.2 Panelde ne var
+
+**Özet kartları** — en yakın menzil · hız farkı (drone−hedef) · komut doygunluğu ·
+KILIT oranı · telemetri Hz.
+
+**Grafikler** (hepsi hover'lı: imleci gezdir → o andaki tüm değerler + dönüş
+etiketi). Dönüş (manevra) fazları grafiklerde **gölgeli bant**tır.
+
+| Grafik | Ne söyler |
+|---|---|
+| **Hız** — drone gerçek / hedef / komut | **Ana teşhis.** Drone çizgisi hedefin altındaysa açı kapanmaz. Komut ile gerçek arasındaki fark = aracın uygulayamadığı istek (fizik limiti). Komut düz bir tavana yapışıksa yazılım `V_MAX` sınırlıyordur. |
+| Kuşbakışı yörünge | Drone hedeften **büyük** yay çiziyorsa dışarıda orbit atıyordur (dönen hedefi içeriden kesemiyor). |
+| Kamera nişangâhı | Hedefin (u,v) izi; merkez (320,240) = kadrajlandı. |
+| Menzil d_h | 11 m istasyon çizgisine iniyor mu, yoksa sabit yükseklikte mi asılı. |
+| Kadraj açıları | elev→25°, yaw→0° oturuyor mu. |
+| Araç eğimi \|roll\|/\|pitch\| | Eğim ≈ yatay ivme (a ≈ g·tan θ). Dönüşte düşük kalıyorsa itki rezervi yok. |
+| İrtifa profili | Drone hedefin ~4.6 m altında mı (kamera 25° yukarı baksın diye). |
+
+**Faz kırılımı tablosu** — aynı uçuşun *düz uçuş* ve *dönüş* rejimleri yan yana:
+manevrada ne kaybedildiğini sayıyla gösterir.
+
+**Tüm uçuşlar tablosu** — süre, telemetri Hz, d_h min/ort, KILIT %, drone/hedef
+hız, Δhız, doygunluk. Satıra tıkla → o uçuş yukarıda açılır.
+
+**Otomatik yorum** — veriden türetilir: hız yetersizliği, manevra kaybı,
+yaklaşamama, kadraj sonucu, yavaş telemetri uyarısı.
+
+### 3.3 Türetilmiş metrikler (CSV'de yok, panel hesaplar)
+
+| Metrik | Nasıl |
+|---|---|
+| **Drone gerçek hızı** | `iris_x/y`'nin türevi (yalnız taze telemetri örnekleri arası). Komut hızıyla karıştırma — araç komutu uygulayamıyor olabilir. EKF sıçramaları (>60 m/s) elenir, 7'lik kayan medyan ile örnekleme artefaktı süzülür. |
+| **Telemetri Hz** | `tgt_x` / `iris_x` değerinin kaç saniyede bir *değiştiği*. Log döngüsü 20 Hz olduğu için tavan 20'dir; 4 Hz görüyorsan MAVProxy `--streamrate` düşüktür. |
+| **Faz (düz/dönüş)** | Hedefin hız vektörü yönünün değişim hızı: ≥15°/s dönüş, <8°/s düz. |
+| **Komut doygunluğu** | Komut hızının, uçuşta gözlenen tavanın %98'ini aştığı kare oranı. Yüksekse `V_MAX` darboğazdır. |
+
+### 3.4 Elle çalıştırma
 
 ```bash
-# En yeni 6 log:
-python3 tools/gps_log_viz.py
-
-# En yeni 8 log:
-python3 tools/gps_log_viz.py --last 8
-
-# Belirli dosyalar:
-python3 tools/gps_log_viz.py logs/gps_guidance_20260728_152012.csv \
-                             logs/gps_guidance_20260728_152524.csv
-
-# Çıktı yolu + oluşturunca tarayıcıda aç:
+python3 tools/gps_log_viz.py                 # en yeni 8 log
+python3 tools/gps_log_viz.py --last 20       # en yeni 20 log
+python3 tools/gps_log_viz.py logs/a.csv logs/b.csv
 python3 tools/gps_log_viz.py --last 4 -o rapor.html --open
 ```
 
-Varsayılan çıktı: `logs/gps_log_panel.html`. Üstteki düğmelerden uçuşlar arasında
-geçilir. Büyük loglar panele ~600 noktaya indirilerek gömülür (downsample).
+Büyük loglar panele ~700 noktaya indirilerek gömülür (downsample); **özet
+istatistikler her zaman tam veriden** hesaplanır. 20 kareden kısa loglar
+(anlık başlat/durdur) panele alınmaz.
 
-### Panel nasıl okunur (hızlı)
+### 3.5 Panel nasıl okunur (hızlı)
 
 | Görülen | Anlamı |
 |---|---|
+| Drone hız çizgisi hedefin **altında** | Yetişemez — araç yavaş ya da `V_MAX` düşük (doygunluğa bak). |
+| Komut çizgisi düz **tavan**, gerçek çok altında | Araç komutu uygulayamıyor: itki/fizik limiti. |
+| Dönüş bantlarında drone hızı **çöküyor** | Manevra kabiliyeti yetersiz (itki rezervi yok; \|roll\| grafiğine bak). |
 | d_h 11 m'e iniyor, nişangâhta noktalar merkezde | GPS güdüm çalışıyor, kadrajladı. |
 | d_h 60-90 m'de asılı, 0 KILIT, drone yörüngesi hedeften **büyük** | Dönen hedefi yakalayamıyor (dışarıda orbit). |
 | Nişangâh noktaları merkezin **altında** (v_px > 240) | Dikeyde aşağı bias (elev < 25°). |
-| yaw sık sık ±90° aşıyor, hedef arkaya düşüyor | Overshoot / yüksek-hız kararsızlığı. |
+| Telemetri kartı **4 Hz** | MAVProxy `--streamrate` düşük → faz gecikmesi, yüksek hızda salınım. |
