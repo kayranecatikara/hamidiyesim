@@ -4,18 +4,21 @@ run_drone_hover.py — Drone kalkış + hareket + yaw demo scripti.
 
 Kullanım:
     cd ~/projects/avci_sim
-    python -m control.run_drone_hover
+    python3 -m control.demos.run_drone_hover
 
 Ön koşullar:
     - Simülasyon çalışıyor olmalı
-    - iris portu 14540 üzerinde erişilebilir olmalı
+    - iris kontrol portu 14541 erişilebilir olmalı
 """
 
 import time
 import signal
 import sys
 
-sys.path.insert(0, "/home/kayra/projects/avci_sim")
+import os
+# Depo kökünü bu dosyanın konumundan türet (control/demos/ -> depo kökü)
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))))
 
 from control.drone_functions import (
     connect_drone,

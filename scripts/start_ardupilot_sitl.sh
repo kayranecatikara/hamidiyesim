@@ -68,4 +68,4 @@ nohup python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane \
 echo "[SITL] Araçların açılması bekleniyor (~20s)..."
 sleep 20
 echo "[SITL] Hazır olmalı. Loglar: $LOG_DIR/{copter,plane}_sitl.log"
-echo "[SITL] Kontrol: python3 -m control.run_drone_takeoff  /  python -m control.gcs_server"
+echo "[SITL] Kontrol: python3 -m control.demos.run_drone_takeoff  /  python3 -m control.gcs_server"

@@ -1,5 +1,6 @@
 # vision/detection_state.py
-# Thread-safe wrapper for sharing detection results with chase_algorithm
+# Kamera thread'i ile güdüm döngüleri arasında tespit/pose sonuçlarını paylaşan
+# thread-safe köprü (gcs_server yazar; control.guidance okur).
 import threading
 
 _lock = threading.Lock()

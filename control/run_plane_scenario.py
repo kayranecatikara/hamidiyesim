@@ -12,9 +12,9 @@ override ile seçilen desen. Desen, GCS süreci öldürene (manuel moda geçiş
 veya durdur butonu) kadar süresiz döner.
 
 Kare dönüşleri PUSULA (ATTITUDE yaw) tabanlıdır: FBWA'da roll komutu verilir,
-heading 90° değişince kenara geçilir. Eski run_plane_square zaman bazlı
+heading 90° değişince kenara geçilir. (Kaldırılan eski run_plane_square zaman bazlı
 rudder(yaw) dönüşü kullanıyordu — FBWA'da rudder tek başına dönüş üretmediği
-için kare bozuktu.
+için kare bozuktu.)
 
 Throttle GCS'teki slider'dan okunur (http://127.0.0.1:8000/api/plane_throttle);
 agresif manevralar kendi throttle'ını kullanır.

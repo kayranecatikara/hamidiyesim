@@ -7,11 +7,11 @@ Her araç kendi bağımsız görevini yapar.
 
 Kullanım:
     cd ~/projects/avci_sim
-    python -m control.run_dual_demo
+    python3 -m control.demos.run_dual_demo
 
 Ön koşullar:
     - Simülasyon çalışıyor olmalı
-    - iris portu 14540, plane portu 14541 üzerinde erişilebilir olmalı
+    - iris 14541 ve Talon 14542 kontrol portları erişilebilir olmalı
 """
 
 import time
@@ -19,7 +19,10 @@ import signal
 import sys
 import threading
 
-sys.path.insert(0, "/home/kayra/projects/avci_sim")
+import os
+# Depo kökünü bu dosyanın konumundan türet (control/demos/ -> depo kökü)
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))))
 
 
 def drone_task():
