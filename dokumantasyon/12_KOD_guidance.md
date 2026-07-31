@@ -201,12 +201,102 @@ Kritik olanlar `AVCI_IBVS_*` ortam değişkenleriyle canlı override edilir
 |------|------:|-----|
 | `V_KAPANMA` | 25 m/s | Sabit kapanma hızı |
 | `KP_YAW` | 1.2 | Yaw oransal kazancı |
-| `YAW_HIZ_MAX` | **1080** °/s | ⚠️ Pratikte slew kapalı (eski ayarlı değer: 90) |
-| `IVME_TAVAN` | **1000** m/s² | ⚠️ Pratikte rampa kapalı (eski ayarlı değer: 4) |
+| `YAW_HIZ_MAX` | 90 °/s | Yaw slew tavanı — `AVCI_IBVS_YAW_HIZ_MAX` ile override |
+| `IVME_TAVAN` | 4 m/s² | Hız rampası — `AVCI_IBVS_IVME_TAVAN` ile override |
+| `DT_TAVAN_S` | 0.1 s | Limit hesabındaki dt kırpması — `AVCI_IBVS_DT_TAVAN` ile override |
+| `AZIMUT_TAM_YUKSELIS_DEG` | 60° | Altında azimut tam güvenilir (`azimut_kalite`=1) |
+| `AZIMUT_TEKIL_YUKSELIS_DEG` | 75° | Üstünde azimut tekil (`azimut_kalite`=0, yaw susar) |
 
-> **"Limitsiz test" ayarı (2026-07-25):** Yazılım tavanları güdümün gerçek
-> davranışını maskeliyordu. Tek sınır artık firmware (`WPNAV_*`, `ANGLE_MAX`).
-> Geri almak için yorumda yazan eski değerler kullanılır.
+> **Tavanlar geri alındı (2026-07-31).** 2026-07-25'teki "limitsiz test" ayarı
+> (`YAW_HIZ_MAX=1080`, `IVME_TAVAN=1000`) slew ve rampayı fiilen kapatıyordu;
+> tespit gürültüsü doğrudan gövdeye geçti. `141017` uçuşu: tek karede 136° yaw
+> komut sıçraması, 4.1 s'te 637° dönüş, `vz_cmd`'de 8.2 m/s kare-arası sıçrama
+> (247 m/s² talep). Tavanlar ayarlı değerlerine döndürüldü, tarama için ikisi de
+> env ile override edilebilir.
+
+> **Kadraj tutma — "metre altta kal" değil "AÇI altta kal" (2026-07-31).**
+> GPS fazı hedefin **sabit 4.65 m** altında istasyon tutuyor
+> (`RANGE_SET·sin(CENTER_ELEV_DEG)`). Sabit METRE, kapanan menzilde sabit AÇI
+> değildir — 11 m'de 25° (kadraj merkezi), 6 m'de 51°, 4 m'de kadrajın **dışı**
+> (üst sınır +80.2°). Hedef kadrajın tepesinden çıkıyor, tespit kopuyor, drone
+> altından geçiyor. GPS fazına dokunmadan görsel faz bunu düzeltir: nişanın
+> **gövde çerçevesindeki** yükselişi kadraj merkezinden (`KAMERA_TILT_DEG`)
+> saptıkça `KP_KADRAJ` ile orantılı düzeltme uygulanır. Ofset böylece menzille
+> orantılı küçülür ve sabit görüş açısı = çarpışma rotası olur.
+>
+> Bu **PN değildir** ve PN'in başarısız olduğu yerde çalışır: PN açının
+> DEĞİŞİMİNİ sıfırlar (hangi açıdaysa onu kilitler), buradaki terim açının
+> KENDİSİNİ merkeze geri çeker. Kazanç kapalı çevrim simülasyonda tarandı:
+> **0.5 en iyi** (ıska 0.59→0.55 m, en kötü 1.39→1.15 m); 1.0 ve üstü zararlı
+> (1.5'te 0/24 vuruş — yüksek kazanç yakınsamayla savaşıp salınım üretiyor).
+> CSV: `kadraj_hata_deg` (0 ⇒ hedef tam merkezde), `kadraj_duz_deg`.
+
+> **Görsel fazı erken bırakma düzeltmesi (2026-07-31).** Görsel faz 19:35
+> uçuşunda **4 KEZ** başlayıp koptu (her biri 1-1.9 s). Her kopuşta GPS fazı
+> drone'u istasyona geri çekiyor — görsel fazın kazandığı irtifa geri alınıyor.
+> Dikey ıskanın asıl dinamiği bu. Sebep: `KAYIP_M` **ARDIŞIK** pose'suz kare
+> ölçütü; tespit kümelenmiş koptuğu için (karelerin %28'i `tespit_yok`) sık
+> sağlanıyordu. Yeni ölçüt kayan pencere: son `KAYIP_PENCERE` (40) karede en az
+> `KAYIP_MIN_ISABET` (4) tespit varsa temas sürüyor sayılır.
+> **Gerçek loglara uygulandığında 5 erken bırakma → 0.**
+> Aynı desen giriş kapısında da uygulandı (`SupCfg.KILIT_PENCERE`): 10 ardışık
+> yerine son 15 karenin 10'u — matematiksel olarak asla daha geç tetiklenmez,
+> ama eldeki loglarda ölçülebilir fark üretmedi (giriş GPS fazında olur, orası
+> loglanmıyor).
+
+> **Menzil makullük kapısı (2026-07-31).** `menzil_gercek_m` fiziksel olarak
+> imkânsız zıplıyor: `193559` uçuşunda 33 ms'de 22.4 → 6.6 m (= 479 m/s) örneği
+> geldi ve kod bunu **VURULDU** saydı — oysa drone hedefin altından geçip
+> uzaklaşıyordu. Doğrulanan 7 gerçek uçuş vuruşunun 1'i bu şekilde sahteydi.
+> Sinyal yalnız log değil: kör dalış tetiğini (`_terminal_giris_ok`) ve terminal
+> co-altitude kilidini de besliyor. `visual_lead._MenzilKapisi` iki örnek
+> arasındaki değişim `MENZIL_HIZ_TAVAN·dt`'yi aşarsa örneği reddeder, son
+> geçerli değeri korur; `MENZIL_RESENK_N` ardışık red sonrası yeni seviyeye
+> senkronize olur (bayat değere kilitlenmesin). CSV'de `menzil_ham_m` ve
+> `menzil_red` sütunlarıyla izlenir — sessiz filtreleme yok.
+>
+> Tüm gerçek uçuş loglarına uygulandığında: **sahte vuruş elendi, 6 gerçek
+> vuruşun hepsi korundu.** Bu kapı SEMPTOMU keser; verinin neden zıpladığı ayrı
+> iş (baş şüpheli `gcs_server._frame_off` dikey kalibrasyonu).
+
+> **Gerçek PN denendi ve GERİ ALINDI (2026-07-31).** Dikey ıskayı çözmek için
+> klasik oransal seyrüsefer (`γ += N·Δλ`) uygulandı, kapalı çevrim
+> simülasyonda ıska **0.66 m → 1.5-2.1 m'ye çıktı**. Sebep: devir anında λ
+> zaten doğal olarak azalıyor (drone hedefe yakınsıyor); PN bunu "sıfırlanacak
+> LOS hızı" sanıp yakınsamayla savaşıyor ve hedef yukarıdayken γ eksiye
+> (dalışa) gidiyor. PN küçük sapmaları düzeltmek içindir, büyük bir başlangıç
+> ofsetini kapatmak için değil.
+>
+> **Dikey ıskanın kökü bu yasa değil.** Ölçüm (`193548`): drone dikey komutu
+> sadıkla uyguluyor — komut −0.32 m/s, gerçekleşen −0.39 m/s. Komutun KENDİSİ
+> küçük, çünkü GPS fazı hedefin **4.65 m altında** istasyon tutuyor
+> (`RANGE_SET·sin(CENTER_ELEV_DEG)`) ve görsel faz devraldığında (6-10 m)
+> farkı kapatacak zaman kalmıyor. Sabit METRE ofset, kapanan menzilde sabit
+> AÇI değildir: 11 m'de 25°, 6 m'de 51°, 4 m'de kadraj dışı (üst sınır +80.2°).
+> Düzeltme GPS fazının istasyon geometrisine ait.
+
+> **Limit dt tavanı (2026-07-31).** `YAW_HIZ_MAX` ve `IVME_TAVAN` birer **hız**
+> limitidir; adaptör bunları kare başına paya çevirirken `dt` ile çarpar. `dt`
+> ardışık kare zaman damgası farkıdır ve tespit kesildiğinde **şişer** —
+> `process()` çağrılmadığı için boşluğun tamamı tek `dt`'ye biner. `160249`
+> uçuşu satır 60: 15 kare kör dalıştan sonra `dt=0.825 s` geldi, yaw tavanı
+> `90 × 0.825 = 74.2°` oldu ve adımın **tamamı tek MAVLink mesajında** gitti;
+> araç bunu rampa değil basamak olarak gördü. Limit hesabı artık
+> `min(dt, DT_TAVAN_S)` kullanır. Ham `dt` filtre/PN'de aynen kalır — orada
+> `dt` bir türev paydası, harcanacak bir pay değil.
+>
+> Aynı log yeni kodla tekrar oynatıldığında: max yaw adımı **74.2° → 9.0°**,
+> toplam dönme 397° → 318°, `vz` kare-arası sıçraması 2.3 → 0.3 m/s.
+
+> **Azimut tekilliği kapısı (2026-07-31).** `yaw_hata = atan2(u_govde[1],
+> u_govde[0])` gövde azimutudur; hedef kadraj tepesine çıkınca nişan vektörü
+> dikeye yaklaşır, yatay bileşen (= cos(yükseliş)) sıfıra iner ve `atan2`
+> **tanımsızlaşır**. `141017`'de ardışık üç kare: yatay 0.446 → 0.027 → 0.156,
+> `yaw_hata` +64.7° → −154.2° → +130.8°. `guidance_core` artık her karede
+> `azimut_kalite` (0..1) üretir, `adapter_copter` yaw adımını onunla çarpar.
+> Tepedeki hedefte yaw susar — o geometride düzeltmeyi dikey kanal (PN +
+> co-altitude) yapar. CSV'de `yatay_bilesen`, `azimut_kalite`, `yaw_adim_deg`
+> sütunlarıyla izlenir.
 
 ### Terminal ayarları
 

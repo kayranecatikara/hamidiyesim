@@ -60,12 +60,56 @@ class Cfg:
     # kapanma_hizi_ms ile doğrula. K_LEAD taramasında SABİT tut.
     V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s
     KP_YAW = 1.2
-    # ── LİMİTSİZ TEST (2026-07-25): yazılım kısıtlamaları kaldırıldı ──
-    # Kullanıcı isteği: ivme/hız/yaw yazılım tavanları güdümün gerçek
-    # davranışını maskeliyordu. Tek sınır artık firmware (WPNAV/ANGLE_MAX).
-    # Eski ayarlı değerler: YAW_HIZ_MAX=90, IVME_TAVAN=4 (geri almak için bunlar).
-    YAW_HIZ_MAX = 1080.0     # deg/s — pratikte slew kapalı (eski 90)
-    IVME_TAVAN = 1000.0      # m/s² — pratikte rampa kapalı (eski 4)
+    # ── TAVANLAR GERİ ALINDI (2026-07-31) ──
+    # 2026-07-25'te "limitsiz test" için YAW_HIZ_MAX=1080 / IVME_TAVAN=1000
+    # yapılmıştı (pratikte slew ve rampa KAPALI). 141017 uçuşunda bu iki tavanın
+    # yokluğu tespit gürültüsünü doğrudan gövdeye geçirdi:
+    #   - tek karede 136° yaw komut sıçraması, 4.1 s'te 637° dönüş
+    #   - vz_cmd kare-arası 8.2 m/s sıçrama = 247 m/s² talep
+    # Tavanlar ayarlı değerlerine döndürüldü; tarama için env ile override edilir.
+    # IVME_TAVAN=4 fiziksel bir sınırdır, keyfi değil: quad ileri ivmelenmek için
+    # burnunu aşağı eğer, kamera gövdeye +25° bağlı → ~5 m/s² üstünde kamera
+    # dünyada aşağı bakar, gökyüzü arka planı kaybolur (bkz. adapter_copter).
+    YAW_HIZ_MAX = _env_f("AVCI_IBVS_YAW_HIZ_MAX", 90.0)   # deg/s
+    # İVME TAVANI YATAY/DİKEY AYRILDI (2026-07-31 — dikey ıska düzeltmesi).
+    # Tek 3B tavan, kameranın YATAY kısıtını dikeye de dayatıyordu:
+    #   YATAY ivme burun eğimi gerektirir → kamera (+25° sabit) aşağı bakar.
+    #     4 m/s² → eğim 22° → kamera +2.8° (gökyüzü zar zor duruyor)
+    #     8 m/s² → eğim 39° → kamera −14°  (gökyüzü kayıp, tespit bozulur)
+    #   DİKEY ivme burun eğimi GEREKTİRMEZ — yalnız itki artar, kamera sabit.
+    #     22° eğimde 10 m/s² → 2.18x hover itkisi → gaz %85 (yaw için pay kalır)
+    #     12 m/s² → %94, 15 m/s² → %107 SATÜRE (yaw yetkisi gider)
+    # Ölçüm: 4 m/s² tek tavanla dikey PN %27-78 oranında 15° tavanında "yukarı"
+    # derken v_doygun %93-99 idi — komut rampada yok oluyor, drone hedefin ~2 m
+    # altından geçiyordu. 25 m/s'te hız vektörünün dönme hızı = ivme/hız:
+    # 4 m/s² → 9.2°/s (2 sn'de 18°), 10 m/s² → 23°/s (2 sn'de 46°).
+    IVME_TAVAN = _env_f("AVCI_IBVS_IVME_TAVAN", 4.0)             # m/s² — YATAY
+    IVME_TAVAN_DIKEY = _env_f("AVCI_IBVS_IVME_TAVAN_DIKEY", 10.0)  # m/s² — DİKEY
+
+    # ── LİMİT dt TAVANI (2026-07-31) ──
+    # YAW_HIZ_MAX ve IVME_TAVAN birer HIZ limitidir; adaptör bunları kare
+    # başına paya çevirirken dt ile çarpıyor. dt ardışık kare zaman damgası
+    # farkıdır ve kamera hedefi kaybedince ŞİŞİYOR — tespit dönene kadar
+    # process() çağrılmadığı için boşluğun tamamı tek dt'ye biniyor.
+    # 160249 uçuşu satır 60: 15 kare kör dalıştan sonra dt=0.825 s → yaw tavanı
+    # 90*0.825 = 74.2° oldu ve 74°'lik adımın TAMAMI tek MAVLink mesajında
+    # gitti. Araç bunu rampa değil BASAMAK olarak gördü, savruldu.
+    # Limit hesabında kullanılan dt bu tavanla kırpılır; boşluktan sonra tek
+    # hamle yerine birkaç karede toparlanır. Ham dt filtre/PN'de aynen kalır
+    # (oradaki kullanım türev/zaman sabiti, "biriken hak" değil).
+    DT_TAVAN_S = _env_f("AVCI_IBVS_DT_TAVAN", 0.1)   # s (~3 kare @30 Hz)
+
+    # ── AZİMUT TEKİLLİĞİ KAPISI (2026-07-31) ──
+    # yaw_hata = atan2(u_govde[1], u_govde[0]); hedef kadraj tepesinden çıkarken
+    # nişan vektörü dikeye yaklaşır, yatay bileşen (=cos(yükseliş)) sıfıra iner ve
+    # atan2 TANIMSIZLAŞIR. 141017 uçuşunda ardışık üç kare: yatay 0.446 → 0.027 →
+    # 0.156, yaw_hata +64.7° → −154.2° → +130.8°. KP_YAW bunu doğrudan komuta
+    # çevirince drone kendi etrafında döndü.
+    # Çözüm: yatay bileşene göre azimut GÜVENİ (0..1) üret, adaptör yaw adımını
+    # bununla söndürsün. Hedef tam tepedeyken yaw zaten işe yaramaz — o geometride
+    # düzeltmeyi dikey kanal (PN + co-altitude) yapar.
+    AZIMUT_TAM_YUKSELIS_DEG   = 60.0   # altında azimut tam güvenilir (güven=1)
+    AZIMUT_TEKIL_YUKSELIS_DEG = 75.0   # üstünde tekil sayılır (güven=0, yaw kapalı)
     # ── terminal (kör dalış + vuruş) ──
     # Son ~6 m'de hedef kadraj tepesinden çıkıp tespit kopuyor; GPS'e dönmek
     # yerine son nişan komutunu kısa süre SÜRDÜR (çarpışmayı tamamla).
@@ -78,6 +122,15 @@ class Cfg:
     # Hedef telemetrisi ~4-5 Hz, drane 25 m/s → menzil örnekleri ~5 m aralıklı;
     # +araç açıklıkları ~1.3 m. 3 m merkez-merkez ≈ fiziksel temas.
     VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 3.0)      # m; altı = VURULDU
+
+    # ── MENZİL MAKULLÜK KAPISI (2026-07-31 sahte VURULDU düzeltmesi) ──
+    # Ground-truth menzil zıplıyor: 193559 uçuşunda 33 ms'de 22.4→6.6 m (479 m/s)
+    # örneği geldi ve VURULDU sayıldı; drone aslında altından geçip uzaklaşıyordu.
+    # Tavan, kafa-kafaya en kötü kapanmanın üstünde tutulur: bizim 25 m/s +
+    # hedef ~15 m/s = 40 m/s; 50 gerçek kapanmayı asla kırpmaz ama 479'u eler.
+    MENZIL_HIZ_TAVAN = _env_f("AVCI_IBVS_MENZIL_HIZ_TAVAN", 50.0)  # m/s
+    MENZIL_RESENK_N  = 8    # bu kadar ARDIŞIK red sonrası yeni seviyeye senkronize
+                            # ol (kalıcı kayma olmuşsa bayat değere kilitlenme)
 
     # ── DİKEY PN + TERMİNAL CO-ALTITUDE (2026-07-25 alttan-geçiş düzeltmesi) ──
     # Son uçuşta SAF TAKİP, tırmanan hedefin ALTINDAN geçti: menzil kapandıkça
@@ -93,9 +146,60 @@ class Cfg:
     #      yanlılığı → drone hedef seviyesine çıkıp kafa-kafaya vursun.
     ELEV_EMA          = 0.4     # dikey aim EMA (bimodal kpt gürültüsü → vz chatter'ı kes)
     ELEV_STEP_MAX_DEG = 10.0    # tek-karede dikey aim slew kırpması (gürültü sıçraması sınırı)
-    PN_LEAD_SURE      = _env_f("AVCI_IBVS_PN_SURE", 0.4)   # s; dikey LOS lead anticipasyonu
-    PN_DIKEY_MAX_DEG  = 15.0    # dikey lead açı tavanı (25→15; aşırı komut sınırı)
-    PN_RATE_EMA       = 0.3     # yumuşatılmış yükseliş oranı EMA
+    # ── DİKEY PN GÜÇLENDİRİLDİ (2026-07-31 dikey ıska) ──
+    # Terminalde düzeltme FİZİKSEL OLARAK imkânsız: hız vektörünü eğmek yay
+    # çizer, R = v²/a. 25 m/s + 10 m/s² → 62 m yarıçap; çarpışma 3-20 m'de
+    # oluyor. 62 m'lik yayla 3 m'lik düzeltme yapılamaz. Tek çıkış: kesme
+    # rotasına UZAKTAN girip terminalde dönüşe hiç ihtiyaç bırakmamak — bunu
+    # yapan şey dikey PN'dir, o yüzden erken ve güçlü davranmalı.
+    #   PN_LEAD_SURE 0.4→0.6  : anticipasyon süresi (kesme rotası daha erken kurulur)
+    #   PN_DIKEY_MAX_DEG 15→30: gerçek uçuşlarda PN karelerin %27-78'inde 15°
+    #                           tavanına ÇAKILIYORDU — kapı daralttığı için
+    #                           komut kırpılıyordu
+    #   PN_RATE_EMA 0.3→0.45  : oran filtresinin gecikmesi azaltıldı
+    # ELEV_EMA/ELEV_STEP_MAX_DEG BİLEREK DEĞİŞMEDİ: onlar bimodal kpt gürültüsüne
+    # karşı chatter kalkanı. Lead'in sert aç/kapa titremesi (ayrı görev) durduğu
+    # sürece gevşetilmemeli.
+    # Dikey lead: yumuşatılmış LOS yükseliş oranıyla orantılı anticipasyon.
+    # NOT: klasik PN (γ += N·Δλ) 2026-07-31'de denendi ve GERİ ALINDI —
+    # simülasyonda ıska 0.66 → 1.5-2.1 m'ye çıktı, gerekçe adapter_copter
+    # `_dikey_pn` docstring'inde. Dikey ıskanın kökü bu yasa değil, GPS
+    # fazının istasyon geometrisi (hedefin 4.65 m altında park etmesi).
+    PN_LEAD_SURE      = _env_f("AVCI_IBVS_PN_SURE", 0.6)   # s
+    PN_DIKEY_MAX_DEG  = _env_f("AVCI_IBVS_PN_MAX_DEG", 30.0)
+    PN_RATE_EMA       = 0.45
+    # ── KADRAJ TUTMA: "metre altta kal" DEĞİL, "AÇI altta kal" (2026-07-31) ──
+    # Dikey ıskanın kökü: GPS fazı hedefin SABİT 4.65 m altında istasyon tutuyor
+    # (RANGE_SET·sin(25°)). Sabit METRE, kapanan menzilde sabit AÇI değildir —
+    # 11 m'de 25° (kadraj merkezi), 6 m'de 51°, 4 m'de kadrajın DIŞI (+80.2°
+    # üst sınır). Hedef kadrajın tepesinden çıkıyor, tespit kopuyor, drone
+    # altından geçiyor. GPS fazına dokunmadan görsel faz bunu düzeltebilir:
+    # hedef kadraj merkezinden YUKARI kaçtıkça nişanı orantılı olarak yukarı it,
+    # yani açıyı KAMERA_TILT_DEG'de tutmaya çalış. Ofset böylece menzille
+    # orantılı küçülür ve sabit görüş açısı = çarpışma rotası olur.
+    #
+    # NOT — bu PN DEĞİLDİR ve PN'in başarısız olduğu yerde çalışır: PN açının
+    # DEĞİŞİMİNİ sıfırlar, yani hangi açıdaysa onu KİLİTLER (2026-07-31'de
+    # denendi, ıskayı 0.66→2.1 m'ye çıkardı). Buradaki terim açının KENDİSİNİ
+    # kadraj merkezine geri çeker.
+    # Kazanç kapalı çevrim simülasyonda tarandı: 0.5 en iyi (ıska 0.59→0.55 m,
+    # en kötü 1.39→1.15 m). 1.0 ve üstü ZARARLI (1.5'te 0/24 vuruş) — yüksek
+    # kazanç yakınsamayla savaşıp salınım üretiyor.
+    KP_KADRAJ      = _env_f("AVCI_IBVS_KP_KADRAJ", 0.5)   # oransal kazanç
+    KADRAJ_MAX_DEG = 30.0    # düzeltmenin açı tavanı (aşırı komut sınırı)
+
+    # ── GÖRSEL FAZI ERKEN BIRAKMA (2026-07-31) ──
+    # Eskiden KAYIP_M ARDIŞIK pose'suz kare görsel fazı bitiriyordu. Tespit
+    # kümelenmiş koptuğu için (karelerin %28'i tespit_yok) bu şart sık sağlanıyor:
+    # 19:35 uçuşunda görsel faz 4 KEZ başlayıp koptu, her biri 1-1.9 s. Her
+    # kopuşta GPS fazı drone'u istasyona (hedefin 4.65 m altına) GERİ ÇEKİYOR —
+    # görsel fazın kazandığı irtifa geri alınıyor. Dikey ıskanın asıl dinamiği bu.
+    # Yeni ölçüt: son KAYIP_PENCERE karede en az KAYIP_MIN_ISABET tespit varsa
+    # temas SÜRÜYOR sayılır. Uzun kopukluk kümelerini tolere eder, gerçekten
+    # kaybedince yine bırakır.
+    KAYIP_PENCERE    = 40   # kare (~1.3 s @30 Hz)
+    KAYIP_MIN_ISABET = 4    # bu pencerede bu kadar tespit varsa temas sürüyor
+
     TERMINAL_COALT_DEG    = 10.0   # terminalde sabit yukarı nişan yanlılığı
     TERMINAL_COALT_MENZIL = _env_f("AVCI_IBVS_COALT_MENZIL", 12.0)  # m; altında co-altitude (kilitli)
 
@@ -322,8 +426,19 @@ class LeadPursuitCore:
         u_govde = kamera_to_govde(u_nisan, tilt)
 
         # ── Adım 8: hata açıları (gövde FRD) ──
+        # u_govde birim → yatay = cos(yükseliş). Nişan dikeye yaklaştıkça yatay→0
+        # ve azimut tanımsızlaşır; azimut_kalite bunu 1→0 arası sürekli ölçer.
+        # yaw_hata HAM bırakılır (log dürüst kalsın), sönümlemeyi adaptör yapar.
+        yatay = math.hypot(u_govde[0], u_govde[1])
         yaw_hata = math.atan2(u_govde[1], u_govde[0])                          # sağ +
-        pitch_hata = math.atan2(-u_govde[2], math.hypot(u_govde[0], u_govde[1]))  # yukarı +
+        pitch_hata = math.atan2(-u_govde[2], yatay)                            # yukarı +
+        _y_tam = math.cos(math.radians(cfg.AZIMUT_TAM_YUKSELIS_DEG))
+        _y_tekil = math.cos(math.radians(cfg.AZIMUT_TEKIL_YUKSELIS_DEG))
+        azimut_kalite = max(0.0, min(1.0, (yatay - _y_tekil) / (_y_tam - _y_tekil))) \
+            if _y_tam > _y_tekil else 1.0
+        if azimut_kalite <= 0.0:
+            warn.append("azimut_tekil")   # durum'a dokunma: bu poz kalitesi değil,
+                                          # geometri — görünürlük azimut_kalite'de
 
         return {
             "durum": durum, "warn": warn, "dt": dt,
@@ -334,6 +449,7 @@ class LeadPursuitCore:
             "d_birim": d_birim, "u": u, "u_nisan": u_nisan, "u_govde": u_govde,
             "u_govde_hedef": u_govde_hedef,
             "yaw_hata": yaw_hata, "pitch_hata": pitch_hata,
+            "yatay_bilesen": yatay, "azimut_kalite": azimut_kalite,
             "yaw_hata_deg": math.degrees(yaw_hata),
             "pitch_hata_deg": math.degrees(pitch_hata),
             "eksen_disi_deg": math.degrees(

@@ -220,9 +220,11 @@ def main():
             f"|v|={vn:.3f} m/s yön·u_dunya={yon:.6f}")
 
     # ── T20: ivme rampası — hız sıçramasında uygulanan ivme ≤ IVME_TAVAN ──
-    # Not: varsayılan IVME_TAVAN "limitsiz test" için çok yükseğe çekildi;
-    # rampa MEKANİZMASINI test etmek için burada açıkça sonlu bir değere sabitle.
-    cfg = cfg_copy(); cfg.IVME_TAVAN = 4.0
+    # Tavan env ile override edilebildiği için testte açıkça sabitlenir.
+    # KP_KADRAJ=0: kadraj tutma düzeltmesi kapatılır, yoksa yatay nişan
+    # kadraj merkezinden (25°) saptığı için DİKEY bileşen doğar ve ölçülen
+    # ivme yatay tavanla kıyaslanamaz hâle gelir (bu test yatayı ölçüyor).
+    cfg = cfg_copy(); cfg.IVME_TAVAN = 4.0; cfg.KP_KADRAJ = 0.0
     ad = CopterAdapter(cfg)                   # v_onceki = 0
     dt = 1.0 / 30.0
     out = ad.compute(np.array([1.0, 0.0, 0.0]), 0.0, (0, 0, 0), dt, 0.0)
@@ -414,7 +416,9 @@ def main():
     # ── T29: DİKEY AIM YUMUŞATMA — tek karede dev yükseliş sıçraması KIRPILIR ──
     # (kpt bimodal ~49° zıplama vz'yi chatter'a sokuyordu). Komut yükselişi ham
     # 70°'ye fırlamamalı (slew kırpma) ve |v|=V_KAPANMA korunmalı.
-    cfg = cfg_copy()
+    # Rampa BURADA kapatılır: ölçülen şey dikey aim yumuşatması, ivme tavanı değil
+    # (tavan açıkken |v| 4 karede V_KAPANMA'ya oturamaz — T20 rampayı ayrıca test eder).
+    cfg = cfg_copy(); cfg.IVME_TAVAN = 1e6; cfg.IVME_TAVAN_DIKEY = 1e6
     ad = CopterAdapter(cfg)
     for e_deg in (20.0, 20.5, 21.0):                  # sakin seyir → yumuşatma otursun
         e = math.radians(e_deg)
@@ -423,10 +427,214 @@ def main():
     out = ad.compute(np.array([math.cos(e), 0.0, -math.sin(e)]), 0.0, (0, 0, 0), dt, 0.0)
     cikis_elev = math.degrees(math.asin(max(-1.0, min(1.0, -float(out["u_dunya"][2])))))
     vn = np.linalg.norm(np.array(out["v_cmd"]))
+    # ÖLÇÜLEN ŞEY YUMUŞATILMIŞ AIM — PN ve co-altitude çıkarılır. Aksi hâlde test
+    # PN tavanına bağlı kalır ve PN her ayarlandığında yanlış alarm verir
+    # (2026-07-31: PN 15°→30° olunca eski sabit 45° sınırı kırılmıştı; yumuşatma
+    # bozulduğu için değil, teste PN de dâhil olduğu için).
+    yumusatilmis = (cikis_elev - out["pn_dikey_deg"] - out["coalt_deg"]
+                    - out["kadraj_duz_deg"])
     kontrol("T29 dikey aim yumuşatma sıçramayı kırpar",
-            cikis_elev < 45.0 and abs(out["pn_dikey_deg"]) <= cfg.PN_DIKEY_MAX_DEG + 1e-6
+            yumusatilmis < 30.0                       # ham 70° → yumuşatılmış ≪
+            and abs(out["pn_dikey_deg"]) <= cfg.PN_DIKEY_MAX_DEG + 1e-6
             and abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01,
-            f"ham=70° komut_yükseliş={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}° |v|={vn:.2f}")
+            f"ham=70° yumuşatılmış={yumusatilmis:.2f}° (komut {cikis_elev:.2f}° "
+            f"− pn {out['pn_dikey_deg']:.2f}° − coalt {out['coalt_deg']:.2f}° "
+            f"− kadraj {out['kadraj_duz_deg']:.2f}°) |v|={vn:.2f}")
+
+    # ══ T30-T33: AZİMUT TEKİLLİĞİ (2026-07-31 kendi-etrafında-dönme düzeltmesi) ══
+    # 141017 uçuşu, ardışık üç kare — nişan dikeye yaklaşınca atan2(y,x) tanımsız:
+    #   u_govde (+0.190,+0.403,-0.895) yatay 0.446 → yaw_hata  +64.7°
+    #   u_govde (-0.024,-0.012,-0.9996) yatay 0.027 → yaw_hata -154.2°
+    #   u_govde (-0.102,+0.118,-0.988)  yatay 0.156 → yaw_hata +130.8°
+    # Sonuç: tek karede 136° yaw komut sıçraması, 4.1 s'te 637° dönüş.
+
+    # ── T30: azimut_kalite yükselişle 1→0 iner, tekil karede TAM 0 ──
+    cfg = cfg_copy(); cfg.K_LEAD = 0.0
+    def _kalite(ug):
+        """u_govde'yi doğrudan Adım 8 geometrisinden geçir (pose üretmeden)."""
+        yatay = math.hypot(ug[0], ug[1])
+        yt = math.cos(math.radians(cfg.AZIMUT_TAM_YUKSELIS_DEG))
+        yk = math.cos(math.radians(cfg.AZIMUT_TEKIL_YUKSELIS_DEG))
+        return max(0.0, min(1.0, (yatay - yk) / (yt - yk)))
+    k_saglam = _kalite((0.9, 0.1, -0.42))          # yükseliş ~25° → sağlam
+    k_sinir  = _kalite((0.190, 0.403, -0.895))     # yatay 0.446, yükseliş ~63°
+    k_tekil  = _kalite((-0.0245, -0.0118, -0.9996))  # yatay 0.027, yükseliş ~88°
+    kontrol("T30 azimut_kalite: sağlam=1, tekil=0",
+            abs(k_saglam - 1.0) < 1e-9 and k_tekil == 0.0 and 0.0 < k_sinir < 1.0,
+            f"25°={k_saglam:.2f} 63°={k_sinir:.2f} 88°={k_tekil:.2f}")
+
+    # ── T31: process() azimut_kalite üretir ve tekilde 'azimut_tekil' uyarır ──
+    # DİKKAT: u_govde GÖVDE çerçevesindedir (kamera_to_govde), attitude'dan
+    # BAĞIMSIZ. Tekillik attitude'la değil, hedefin KADRAJ TEPESİNE çıkmasıyla
+    # oluşur: cy=0 → kamera açısı +55.2°, +25° tilt ile gövde yükselişi 80.2°
+    # (> AZİMUT_TEKIL 75°). Canlıda lead bunu 88°'ye kadar itmişti.
+    cfg = cfg_copy(); cfg.K_LEAD = 0.0
+    r_dik = tek_kare(cfg, make_pose(8, 90, cy=0), att=ATT_KAMERA_YATAY)
+    r_duz = tek_kare(cfg_copy(), make_pose(8, 90), att=ATT_KAMERA_YATAY)
+    kontrol("T31 tekil geometride azimut_kalite=0 + uyarı",
+            r_dik["azimut_kalite"] == 0.0 and "azimut_tekil" in r_dik["warn"]
+            and r_duz["azimut_kalite"] == 1.0,
+            f"dik={r_dik['azimut_kalite']:.2f} warn={r_dik['warn']} "
+            f"düz={r_duz['azimut_kalite']:.2f}")
+
+    # ── T32: ASIL DÜZELTME — tekil karede yaw adımı SUSAR ──
+    # Aynı ±154°'lik saçma yaw_hata, kapı olmadan tavana çakılır; kapıyla 0 olur.
+    cfg = cfg_copy()
+    dt = 1.0 / 30.0
+    yaw_hata_saçma = math.radians(-154.2)
+    kapali = CopterAdapter(cfg).compute(
+        np.array([-0.0245, -0.0118, -0.9996]), yaw_hata_saçma,
+        (0, 0, 0), dt, 0.0, azimut_kalite=1.0)          # kapı YOK (eski davranış)
+    acik = CopterAdapter(cfg).compute(
+        np.array([-0.0245, -0.0118, -0.9996]), yaw_hata_saçma,
+        (0, 0, 0), dt, 0.0, azimut_kalite=0.0)          # kapı VAR
+    kontrol("T32 tekil karede yaw adımı susar",
+            abs(acik["yaw_adim_deg"]) < 1e-9 and abs(kapali["yaw_adim_deg"]) > 1.0,
+            f"kapısız={kapali['yaw_adim_deg']:.2f}°/kare "
+            f"kapılı={acik['yaw_adim_deg']:.2f}°/kare")
+
+    # ── T33: yaw slew tavanı geri geldi + yaw_cmd ±π'ye sarmalı ──
+    # 1080°/s iken tavan 36°/kare idi (fiilen kapalı); 90°/s ile 3°/kare.
+    cfg = cfg_copy()
+    out = CopterAdapter(cfg).compute(np.array([0.9, 0.1, -0.42]),
+                                     math.radians(150.0), (0, 0, 0), dt, 0.0)
+    tavan_kare = cfg.YAW_HIZ_MAX * dt
+    # sarmalama: mevcut_yaw π'ye yakınken komut ±π dışına TAŞMAMALI
+    out_sarma = CopterAdapter(cfg).compute(np.array([0.9, 0.1, -0.42]),
+                                           math.radians(150.0), (0, 0, 0), dt,
+                                           math.pi - 0.01)
+    kontrol("T33 yaw slew tavanı + ±π sarmalama",
+            abs(out["yaw_adim_deg"]) <= tavan_kare + 1e-9 and out["yaw_doygun"]
+            and abs(out_sarma["yaw_cmd"]) <= math.pi + 1e-9,
+            f"adım={out['yaw_adim_deg']:.2f}° tavan={tavan_kare:.2f}°/kare "
+            f"sarmalı_cmd={math.degrees(out_sarma['yaw_cmd']):.1f}°")
+
+    # ══ T34-T35: LİMİT dt TAVANI (2026-07-31 kare-boşluğu savrulması) ══
+    # 160249 uçuşu satır 60: 15 kare kör dalıştan sonra dt=0.825 s geldi.
+    # Tavan YAW_HIZ_MAX*dt = 90*0.825 = 74.2° olmuş, 74°'lik adımın tamamı
+    # tek MAVLink mesajında gitmişti. DT_TAVAN_S bunu kırpar.
+
+    # ── T34: şişmiş dt'de yaw adımı DT_TAVAN_S payıyla sınırlı ──
+    cfg = cfg_copy()
+    dt_sismis = 0.825                                  # canlıdaki gerçek değer
+    beklenen_tavan = cfg.YAW_HIZ_MAX * cfg.DT_TAVAN_S  # 90 * 0.1 = 9°
+    out = CopterAdapter(cfg).compute(np.array([0.9, 0.1, -0.42]),
+                                     math.radians(77.8),    # canlıdaki yaw_hata
+                                     (0, 0, 0), dt_sismis, 0.0)
+    eski_tavan = cfg.YAW_HIZ_MAX * dt_sismis           # kırpma olmasa 74.2°
+    kontrol("T34 şişmiş dt'de yaw adımı kırpılır",
+            abs(out["yaw_adim_deg"]) <= beklenen_tavan + 1e-9
+            and eski_tavan > 5 * beklenen_tavan,
+            f"dt={dt_sismis}s adım={out['yaw_adim_deg']:.2f}° "
+            f"(kırpmalı tavan {beklenen_tavan:.1f}°, kırpmasız olsaydı {eski_tavan:.1f}°)")
+
+    # ── T35: aynı kırpma ivme rampasında da geçerli ──
+    # v_onceki=0'dan V_KAPANMA'ya sıçrama: uygulanan ivme IVME_TAVAN'ı aşmamalı
+    # VE tek karede alınan hız DT_TAVAN_S payını geçmemeli.
+    cfg = cfg_copy(); cfg.KP_KADRAJ = 0.0              # bkz. T20 gerekçesi
+    ad = CopterAdapter(cfg)                            # v_onceki = (0,0,0)
+    out = ad.compute(np.array([1.0, 0.0, 0.0]), 0.0, (0, 0, 0), dt_sismis, 0.0)
+    dv = np.linalg.norm(np.array(out["v_cmd"]))
+    beklenen_dv = cfg.IVME_TAVAN * cfg.DT_TAVAN_S      # 4 * 0.1 = 0.4 m/s
+    kirpmasiz_dv = cfg.IVME_TAVAN * dt_sismis          # 3.3 m/s
+    kontrol("T35 şişmiş dt'de ivme rampası kırpılır",
+            dv <= beklenen_dv + 1e-6 and kirpmasiz_dv > 5 * beklenen_dv,
+            f"Δv={dv:.3f} m/s (kırpmalı sınır {beklenen_dv:.2f}, "
+            f"kırpmasız olsaydı {kirpmasiz_dv:.2f})")
+
+    # ══ T36-T37: YATAY/DİKEY AYRI İVME TAVANI (2026-07-31 dikey ıska) ══
+    # Tek 3B tavan, kameranın YATAY kısıtını (burun eğimi → gökyüzü kaybı)
+    # dikeye de dayatıyordu. Dikey ivme burun eğimi gerektirmez; sınır itkidir.
+    # Ölçüm: dikey PN %27-78 oranında 15° tavanında "yukarı" derken v_doygun
+    # %93-99 idi — komut rampada yok oluyor, drone hedefin ~2 m altından geçiyordu.
+
+    # ── T36: dikey ivme YATAY tavandan bağımsız, DİKEY tavanla sınırlı ──
+    cfg = cfg_copy()
+    dt = 1.0 / 30.0
+    ad = CopterAdapter(cfg)                      # v_onceki = (0,0,0)
+    # Saf DİKEY nişan (gövde ileri-yukarı 90°): tüm hız değişimi z ekseninde
+    out = ad.compute(np.array([0.0, 0.0, -1.0]), 0.0, (0, 0, 0), dt, 0.0)
+    dvz = abs(out["v_cmd"][2])
+    kontrol("T36 dikey ivme DİKEY tavanı kullanır",
+            abs(dvz - cfg.IVME_TAVAN_DIKEY * dt) < 1e-6
+            and cfg.IVME_TAVAN_DIKEY > cfg.IVME_TAVAN,
+            f"Δvz={dvz:.3f} m/s (dikey tavan {cfg.IVME_TAVAN_DIKEY}×dt="
+            f"{cfg.IVME_TAVAN_DIKEY*dt:.3f}; yatay tavan olsaydı "
+            f"{cfg.IVME_TAVAN*dt:.3f})")
+
+    # ── T37: yatay ivme DEĞİŞMEDİ — kamera kısıtı korunuyor ──
+    # (Burun eğimi yatay ivmeyle belirlenir; bu tavan gevşerse kamera yere bakar.)
+    cfg = cfg_copy()
+    ad = CopterAdapter(cfg)
+    out = ad.compute(np.array([1.0, 0.0, 0.0]), 0.0, (0, 0, 0), dt, 0.0)
+    dvh = math.hypot(out["v_cmd"][0], out["v_cmd"][1])
+    kontrol("T37 yatay ivme tavanı korunur (kamera kısıtı)",
+            abs(dvh - cfg.IVME_TAVAN * dt) < 1e-6,
+            f"Δv_yatay={dvh:.3f} m/s (tavan {cfg.IVME_TAVAN}×dt="
+            f"{cfg.IVME_TAVAN*dt:.3f})")
+
+    # ══ T38: MENZİL MAKULLÜK KAPISI (2026-07-31 sahte VURULDU düzeltmesi) ══
+    # 193559 uçuşu "vuruldu" diye bitti; bir önceki karede menzil 10.4 m'ydi.
+    # 33 ms'de 22.4 → 6.6 m = 479 m/s — fiziksel olarak imkânsız. Doğrulanan
+    # 7 gerçek uçuş vuruşunun 1'i bu şekilde sahteydi. Sinyal yalnız log değil:
+    # kör dalış tetiğini ve terminal co-altitude kilidini de besliyor.
+    # ── T38: menzil makullük kapısı — imkânsız sıçrama reddedilir ──
+    cfg = cfg_copy()
+    kapi = vlmod._MenzilKapisi(cfg)
+    kapi.ekle(22.4, None)                       # ilk örnek: kabul
+    d1, ok1 = kapi.ekle(21.7, 1.0 / 30.0)       # makul (21 m/s) → kabul
+    # 193559 uçuşundaki gerçek sıçrama: 33 ms'de 22.4 → 6.6 m = 479 m/s
+    d2, ok2 = kapi.ekle(6.6, 1.0 / 30.0)
+    kontrol("T38 imkânsız menzil sıçraması reddedilir",
+            ok1 and not ok2 and abs(d2 - 21.7) < 1e-9 and kapi.red_sayaci == 1,
+            f"makul {d1:.1f}m kabul={ok1}; sıçrama sonrası menzil {d2:.1f}m "
+            f"(korundu), red={kapi.red_sayaci}")
+
+    # ── T38b: ısrarlı sapma → yeni seviyeye SENKRONİZE ol (bayat değere kilitlenme)
+    for _ in range(cfg.MENZIL_RESENK_N):
+        d3, ok3 = kapi.ekle(6.6, 1.0 / 30.0)
+    kontrol("T38b ısrarlı sapmada yeniden senkronize",
+            abs(d3 - 6.6) < 1e-9 and ok3,
+            f"{cfg.MENZIL_RESENK_N} ardışık red sonrası menzil {d3:.1f}m")
+
+    # ══ T39: KADRAJ TUTMA — "metre altta kal" değil "AÇI altta kal" ══
+    # GPS fazı hedefin SABİT 4.65 m altında park ediyor. Sabit metre, kapanan
+    # menzilde sabit açı değildir: 11 m'de 25° (kadraj merkezi), 6 m'de 51°,
+    # 4 m'de kadraj DIŞI (+80.2°). Görsel faz hedefi merkeze geri çekmeli.
+    cfg = cfg_copy()
+    dt = 1.0 / 30.0
+    merkez = math.radians(cfg.KAMERA_TILT_DEG)     # kadraj merkezi = tilt açısı
+
+    def _kadraj(elev_govde_deg):
+        e = math.radians(elev_govde_deg)
+        ad = CopterAdapter(cfg)
+        return ad.compute(np.array([math.cos(e), 0.0, -math.sin(e)]), 0.0,
+                          (0, 0, 0), dt, 0.0)
+
+    tam_merkez = _kadraj(cfg.KAMERA_TILT_DEG)      # hedef TAM merkezde
+    yukarida = _kadraj(cfg.KAMERA_TILT_DEG + 25.0)  # merkezden 25° yukarıda
+    asagida = _kadraj(cfg.KAMERA_TILT_DEG - 15.0)   # merkezden 15° aşağıda
+    kontrol("T39 kadraj merkezinde düzeltme YOK",
+            abs(tam_merkez["kadraj_hata_deg"]) < 1e-6
+            and abs(tam_merkez["kadraj_duz_deg"]) < 1e-6,
+            f"hata={tam_merkez['kadraj_hata_deg']:.3f}° "
+            f"düzeltme={tam_merkez['kadraj_duz_deg']:.3f}°")
+    kontrol("T39b hedef yukarı kaçınca nişan YUKARI itilir",
+            yukarida["kadraj_duz_deg"] > 0
+            and abs(yukarida["kadraj_duz_deg"]
+                    - cfg.KP_KADRAJ * yukarida["kadraj_hata_deg"]) < 1e-6,
+            f"hata={yukarida['kadraj_hata_deg']:+.1f}° → "
+            f"düzeltme={yukarida['kadraj_duz_deg']:+.1f}° (KP={cfg.KP_KADRAJ})")
+    kontrol("T39c simetrik: hedef aşağıdayken nişan AŞAĞI iner",
+            asagida["kadraj_duz_deg"] < 0,
+            f"hata={asagida['kadraj_hata_deg']:+.1f}° → "
+            f"düzeltme={asagida['kadraj_duz_deg']:+.1f}°")
+    # tavan: aşırı sapmada düzeltme KADRAJ_MAX_DEG'i aşmaz
+    asiri = _kadraj(cfg.KAMERA_TILT_DEG + 80.0)
+    kontrol("T39d düzeltme tavanı",
+            abs(asiri["kadraj_duz_deg"]) <= cfg.KADRAJ_MAX_DEG + 1e-6,
+            f"hata={asiri['kadraj_hata_deg']:+.1f}° → "
+            f"düzeltme={asiri['kadraj_duz_deg']:+.1f}° (tavan {cfg.KADRAJ_MAX_DEG}°)")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

@@ -16,6 +16,7 @@ histerezisi (≤40 m) zaten "yetişilmiş" durumu işaretler. GPS jam/DROPOUT'ta
 menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 """
 
+import collections
 import os
 import threading
 
@@ -26,7 +27,15 @@ from control.guidance.visual_lead import run_visual_lead
 
 
 class SupCfg:
-    KILIT_N = 10          # ardışık güvenli pose karesi → görsel faza geç (~0.33 s)
+    # ── DEVİR KAPISI: ARDIŞIK → KAYAN PENCERE (2026-07-31) ──
+    # Eskiden KILIT_N ARDIŞIK güvenli kare aranıyordu. Tespit gürültülü olduğu
+    # için (gerçek uçuşlarda karelerin yalnız %12'si temiz `ok`) bu şart çok geç
+    # sağlanıyordu: devir kapısı 20 m'ye ayarlı olmasına rağmen görsel faz
+    # 6-10 m'de başlıyordu ve elinde 0.6-1.9 s kalıyordu — hedefin 4.65 m altında
+    # devralınan dikey farkı kapatmaya yetmiyor.
+    # Kayan pencere aynı güveni verir ama tek bir kötü kare sayacı sıfırlamaz.
+    KILIT_N = 10          # son KILIT_PENCERE karenin bu kadarı güvenliyse geç
+    KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
     POSE_CONF_MIN = 0.5
     GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
@@ -63,17 +72,17 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         tetik = {"gorsel": False}
 
         def izci():
-            sayac, son_seq = 0, 0
+            pencere = collections.deque(maxlen=sup_cfg.KILIT_PENCERE)
+            son_seq = 0
             while not faz_stop.is_set():
                 kayit = wait_pose(son_seq, timeout=0.5)
                 if kayit is None:
                     continue
                 son_seq = kayit["seq"]
                 pose = kayit["pose"]
-                if pose is not None and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN:
-                    sayac += 1
-                else:
-                    sayac = 0
+                pencere.append(pose is not None
+                               and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
+                sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
                     d_h = _ga.status.get("d_h")

@@ -148,7 +148,32 @@ FS_THR_ENABLE 0         # throttle failsafe kapalı
 > gerçek davranışını görmek için firmware tavanları sonuna kadar açıldı.
 > **Önceki ayarlı değerler:** `ANGLE_MAX 5500`, `WPNAV_SPEED 2200`,
 > `WPNAV_SPEED_UP/DN 1000`, `WPNAV_ACCEL 600`, `LOIT_SPEED 2200`.
-> Aynı karar `guidance_core.Cfg`'de de var (`IVME_TAVAN`, `YAW_HIZ_MAX`).
+>
+> **Not (2026-07-31): `ANGLE_MAX 7000` motorları doyuruyor — BULGU, henüz
+> uygulanmadı.** Yazılım tarafındaki tavanlar (`IVME_TAVAN`, `YAW_HIZ_MAX`)
+> geri alındı (bkz. `12_KOD_guidance.md`), ama `ANGLE_MAX` **kullanıcı isteğiyle
+> 7000'de bırakıldı**. Ölçüm şunu gösteriyor: 70° eğim aracın **fiziksel itki
+> kapasitesinin üstünde**.
+>
+> | Eğim | Gereken itki | Kullanılan gaz | Yaw yetkisi |
+> |------|-------------:|---------------:|-------------|
+> | 55° | 1.74x | %68 | sağlam |
+> | 65° | 2.37x | %92 | sınırda |
+> | 70° | 2.92x | **%114** | **doygun — yaw feda edilir** |
+>
+> (`MOT_THST_HOVER=0.39` → itki/ağırlık 2.56x.) ArduCopter motor doygunluğunda
+> önce yaw'ı feda eder; yaw yetkisi sıfırlanınca araç serbest döner. `181940`
+> uçuşunda yaw komutu sabit 99.2°'de dururken araç **500-1100 °/s** hızlanarak
+> döndü. Dönme yalnız manevrada oluyor, düz uçuşta kendiliğinden duruyordu.
+> `iris_roll_deg`/`iris_pitch_deg` yaw ile çeyrek faz kaymalı salınıyordu —
+> fiziksel dönmenin imzası (telemetri hatası değil).
+>
+> **Bu bulgu GPS fazı incelemesine bırakıldı.** Düzeltmek isteyen `ANGLE_MAX`'i
+> 5500'e çeker (gereken 1.74x, gaz %68, yaw için bol pay; yatay ivme tavanı
+> 14 m/s² ve guidance `MAX_ACCEL=12` bunun altında kalır).
+>
+> Diğer firmware tavanları (`WPNAV_*`, `LOIT_SPEED`, `PSC_VELXY_P`) açık kaldı —
+> onlar hız/ivme tavanı, itki bütçesini tüketmiyorlar.
 
 ### `avci_plane.parm` — Hedef uçak (27 satır)
 
