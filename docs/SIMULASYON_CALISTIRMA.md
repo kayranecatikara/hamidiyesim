@@ -89,7 +89,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON 
   --add-param-file=$APT/default_params/gazebo-iris.parm \
   --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
   --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-  --mavproxy-args="--daemon --streamrate=25"
+  --mavproxy-args="--streamrate=25"
 ```
 
 **Hazır olduğunun işaretleri:**
@@ -120,7 +120,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0
   -I1 --sysid 2 --no-rebuild \
   --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm \
   --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
-  --mavproxy-args="--daemon --streamrate=25"
+  --mavproxy-args="--streamrate=25"
 ```
 
 **Hazır olduğunun işareti:** `AP: EKF3 IMU0 is using GPS`
