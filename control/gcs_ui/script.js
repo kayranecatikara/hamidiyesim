@@ -490,10 +490,24 @@ setInterval(async () => {
     } catch (e) { /* sessiz */ }
 }, 2000);
 
-// === UÇAK THROTTLE SLIDER ===
+// === UÇAK (HEDEF) THROTTLE SLIDER ===
+// Her modda görünür: senaryo modunda hedefin gazını, manuel modda doğrudan gazı sürer.
 const planeThrSlider = document.getElementById('plane-thr-slider');
 const planeThrValue  = document.getElementById('plane-thr-value');
 let planeThrTimeout  = null;
+
+// Açılışta sunucudaki GERÇEK değeri göster — yoksa slider "60%" derken sunucu
+// başka bir değerde olabilir (sayfa yenilendiğinde kafa karıştırıyordu).
+if (planeThrSlider) {
+    fetch('/api/plane_throttle')
+        .then(r => r.json())
+        .then(d => {
+            const pct = Math.round((d.throttle ?? 600) / 10);   // 0-1000 → 0-100
+            planeThrSlider.value = pct;
+            planeThrValue.textContent = pct + '%';
+        })
+        .catch(() => {});
+}
 
 if (planeThrSlider) {
     planeThrSlider.addEventListener('input', () => {
@@ -551,14 +565,13 @@ async function enterManualMode() {
         const data = await res.json();
         if (data.status === 'success') {
             manualActive = true;
-            keysDown = {}; mAil = 0; mElv = 0; mThr = 60;
+            keysDown = {}; mAil = 0; mElv = 0;
+            // Gaz slider'ı senaryo modunda da görünür olduğu için değerini SIFIRLAMA —
+            // kullanıcının ayarladığı gazla devam et (manuel/senaryo geçişi tutarlı kalsın).
+            mThr = planeThrSlider ? (parseInt(planeThrSlider.value, 10) || 60) : 60;
             isDragging = false; jsAil = 0; jsElv = 0;
             setKnob(0, 0);
             manualBlock.classList.remove('hidden');
-            // Gaz slider'ı yalnızca manuel modda görünür ve gazı sürer
-            const speedBlock = document.getElementById('plane-speed-block');
-            if (speedBlock) speedBlock.classList.remove('hidden');
-            if (planeThrSlider) { planeThrSlider.value = 60; planeThrValue.textContent = '60%'; }
             btnManual.textContent = '✖ MANUEL KAPAT';
             btnManual.style.borderLeftColor = 'var(--danger-red)';
             addLog('SYS', 'Manuel Mod AKTİF — W/S: pitch, A/D: roll, L: hızlan, I: yavaşla', 'warn');
@@ -582,8 +595,7 @@ async function exitManualMode() {
     joystickKnob.classList.remove('active');
     setKnob(0, 0);
     manualBlock.classList.add('hidden');
-    const speedBlock = document.getElementById('plane-speed-block');
-    if (speedBlock) speedBlock.classList.add('hidden');
+    // Gaz slider'ı GİZLENMEZ — senaryo modunda hedefin gazını sürmeye devam eder.
     btnManual.textContent = '🕹 MANUEL MOD';
     btnManual.style.borderLeftColor = '';
     addLog('SYS', 'Manuel Mod KAPALI.', 'info');

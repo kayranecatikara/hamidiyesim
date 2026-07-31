@@ -78,9 +78,12 @@
                         </div>
                     </div>
 
-                    <!-- GAZ AYARI — yalnızca manuel modda görünür (L/I ile senkron) -->
-                    <div id="plane-speed-block" class="hidden mt-1">
-                        <h3 class="section-title">✈ GAZ AYARI</h3>
+                    <!-- HEDEF GAZ AYARI — HER ZAMAN görünür: senaryo (Kare/Daire/Agresif)
+                         modunda hedefin gazını, manuel modda doğrudan gazı sürer (L/I ile senkron).
+                         Senaryo süreci bu değeri /api/plane_throttle'dan 0.5 sn'de bir okur, yani
+                         uçuş SIRASINDA da değiştirilebilir. -->
+                    <div id="plane-speed-block" class="mt-1">
+                        <h3 class="section-title">✈ HEDEF GAZ AYARI</h3>
                         <div class="gps-jam-panel">
                             <div class="gps-jam-header">
                                 <span class="gps-jam-label">THROTTLE:</span>
@@ -256,6 +259,6 @@
         </footer>
     </div>
 
-    <script src="script.js?v=8"></script>
+    <script src="script.js?v=9"></script>
 </body>
 </html>

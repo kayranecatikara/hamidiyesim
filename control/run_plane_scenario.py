@@ -40,7 +40,6 @@ from control.plane_functions import (
     start_gcs_keepalive,
     stop_gcs_keepalive,
     THROTTLE_CRUISE,
-    THROTTLE_FULL,
 )
 from control.mav_common import (
     set_mode,
@@ -226,39 +225,54 @@ def scenario_circle(conn):
         hold(conn, 0.5, roll=500, pitch=150)
 
 
+TIRMANIS_MIN_THR = 600      # tırmanış/spiral için taban gaz (= THROTTLE_CRUISE)
+
+
+def tirmanis_throttle():
+    """Tırmanış manevralarında gaz: GCS slider'ını dinler ama TABAN uygular.
+
+    Neden taban var: burun yukarıdayken gaz düşük olursa uçak hız kaybedip
+    stall eder ve düşer — senaryo biter. Slider daha yükseği isterse ona uyar,
+    daha düşüğü isterse tırmanış boyunca tabanda kalır (düz/dönüş kısımlarında
+    slider aynen geçerli). Yani "hedefi yavaşlat" isteği çalışır, uçak düşmez.
+    """
+    return max(gcs_throttle(), TIRMANIS_MIN_THR)
+
+
 def scenario_aggressive(conn):
-    print("[SCN] AGRESİF — rastgele manevralar")
+    print("[SCN] AGRESİF — rastgele manevralar (gaz: GCS slider'ı)")
     maneuvers = ["climb", "dive", "bank_l", "bank_r", "s_turn", "spiral"]
     while not _abort:
         m = random.choice(maneuvers)
         if m == "climb":
             print("[SCN] Sert tırmanış")
             hold(conn, random.uniform(1.5, 3.0),
-                 pitch=random.randint(500, 800), throttle=THROTTLE_FULL)
+                 pitch=random.randint(500, 800), throttle=tirmanis_throttle())
         elif m == "dive":
             # irtifa emniyeti: 40m altındaysa dalma, yerine tırman
             if -_pos["z"] > 40.0:
                 print("[SCN] Dalış")
+                # dalışta gaz KESİLİR (slider'dan bağımsız) — burun aşağıyken
+                # gaz vermek uçağı hedefin yakalanamayacağı hıza fırlatır
                 hold(conn, random.uniform(1.0, 2.0),
                      pitch=-random.randint(350, 600), throttle=200)
             else:
                 print("[SCN] İrtifa düşük — dalış yerine tırmanış")
-                hold(conn, 2.0, pitch=500, throttle=THROTTLE_FULL)
+                hold(conn, 2.0, pitch=500, throttle=tirmanis_throttle())
         elif m in ("bank_l", "bank_r"):
             s = -1 if m == "bank_l" else 1
             print("[SCN] Sert yatışlı dönüş" + (" (sol)" if s < 0 else " (sağ)"))
             hold(conn, random.uniform(1.5, 3.0),
-                 roll=s * random.randint(600, 900), pitch=200,
-                 throttle=THROTTLE_FULL)
+                 roll=s * random.randint(600, 900), pitch=200)   # throttle=None → slider
         elif m == "s_turn":
             print("[SCN] Keskin S-dönüşü")
-            hold(conn, 1.5, roll=-750, pitch=200, throttle=THROTTLE_FULL)
-            hold(conn, 1.5, roll=750, pitch=200, throttle=THROTTLE_FULL)
+            hold(conn, 1.5, roll=-750, pitch=200)                # throttle=None → slider
+            hold(conn, 1.5, roll=750, pitch=200)
         elif m == "spiral":
             print("[SCN] Spiral tırmanış")
             hold(conn, random.uniform(3.0, 5.0),
-                 roll=450, pitch=450, throttle=THROTTLE_FULL)
-        # toparlanma: kısa düz uçuş
+                 roll=450, pitch=450, throttle=tirmanis_throttle())
+        # toparlanma: kısa düz uçuş (gaz: slider)
         hold(conn, random.uniform(1.0, 2.0))
 
 
