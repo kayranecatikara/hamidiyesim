@@ -14,6 +14,8 @@ Kullanım (gcs_server): run_visual_lead(conn, wait_pose, get_plane_truth, stop_e
   wait_pose        : vision.detection_state.wait_new_pose
   get_plane_truth  : hedefin GERÇEK NED pozu (çerçeve-ofset düzeltmeli) — SADECE
                      menzil_gercek/kapanma_hizi logu için, güdüme girmez.
+  gercek           : Gazebo ground truth okuyucusu (control.gz_truth.get_ikisi) —
+                     CSV doğruluk kolonları için, güdüme girmez (bkz. §8).
 """
 
 import csv
@@ -25,8 +27,12 @@ from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
 from control.guidance.guidance_core import Cfg, LeadPursuitCore, govde_to_dunya
+from vision import dogruluk
 
-_LOG_DIR = os.path.join(
+# CSV çıktı dizini. AVCI_LEAD_LOG_DIR ile taşınabilir — testler bunu geçici bir
+# dizine çevirir, yoksa test koşuları logs/ içine sahte CSV bırakıp gerçek uçuş
+# verisinin arasına karışır (analiz scriptleri onları uçuş sanır).
+_LOG_DIR = os.environ.get("AVCI_LEAD_LOG_DIR") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "logs")
 
@@ -39,7 +45,7 @@ _CSV_ALANLAR = [
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "kapanma_hizi_ms", "mod",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
-]
+] + dogruluk.KOLONLAR      # Gazebo gerçeğiyle karşılaştırma — SADECE log/analiz
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
 #                      bayat / mod_hata / attitude_yok / kor_dalis / vuruldu
@@ -82,8 +88,12 @@ def _menzil_hesapla(get_plane_truth, iris_pos):
 
 
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
-                    kayip_kare_esik=None):
-    """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
+                    kayip_kare_esik=None, gercek=None):
+    """gercek: () -> (iris_poz, hedef_poz) Gazebo dünya çerçevesinde gerçek pozlar
+    (gz_truth.get_ikisi). Verilirse her karede doğruluk kolonları CSV'ye yazılır.
+    SADECE log içindir — güdüm hesabına girmez, None verilirse davranış aynıdır.
+
+    kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
     Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu' (menzil
     < VURUS_MENZIL). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
@@ -107,6 +117,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     coalt_latch = False         # terminal co-altitude KİLİDİ (menzil bir kez eşik
                                 # altına inince kilitli; ground-truth menzil gürültüsü
                                 # yukarı yanlılığı titretmesin)
+    dogruluk_hata_bildirildi = [False]   # ölçüm hatası kare başına spam etmesin
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -229,6 +240,19 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             gecikme = (time.time() - wall_recv) if wall_recv else 0.0
             satir["gecikme_s"] = round(gecikme, 4)
             satir["bbox"] = "|".join(str(v) for v in pose["bbox"])
+
+            # ── DOĞRULUK ÖLÇÜMÜ (yalnız log) ──
+            # Bayat kare kapısından ÖNCE: o karede de geçerli bir tespit vardı,
+            # ölçümü atmanın anlamı yok. Hata olursa güdüm ETKİLENMEZ.
+            if gercek is not None:
+                try:
+                    iris_g, hedef_g = gercek()
+                    satir.update(dogruluk.olc(pose, iris_g, hedef_g))
+                except Exception as e:
+                    if not dogruluk_hata_bildirildi[0]:
+                        print(f"[LEAD WARN] doğruluk ölçümü kapandı: {e}")
+                        dogruluk_hata_bildirildi[0] = True
+
             if gecikme > cfg.GECIKME_TAVAN_S:
                 bayat_sayaci += 1
                 satir["durum"] = "bayat"

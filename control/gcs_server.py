@@ -608,6 +608,8 @@ def pnp_telemetry():
     }
 
 
+# Gazebo ground truth (doğruluk analizi referansı — güdüme GİRMEZ, bkz. gz_truth.py)
+from control import gz_truth
 from control.guidance import gps_guidance as _gps_guidance_mod
 from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
@@ -623,6 +625,75 @@ from control.guidance.supervisor import run_hybrid as _run_hybrid
 _visual_active = False
 _visual_stop_event = threading.Event()
 
+# start_visual kalkışında hedefin NE KADAR ALTINA çıkılacağı (m, NED'de +aşağı).
+# gps_guidance istasyonu hedefin 4.65 m altına koyuyor (RANGE_SET 11 m × sin25°);
+# görsel fazın devraldığı geometri bu, izole test de aynı yerden başlamalı.
+GORSEL_BASLANGIC_ALT_OFSET_M = 4.65
+# Aynı istasyonun YATAY bileşeni: 11 m × cos25°.
+GORSEL_BASLANGIC_GERI_OFSET_M = 9.97
+# Konumlandırma "vardı" sayılma yarıçapı (m) ve azami süre (s).
+GORSEL_VARIS_YARICAP_M = 25.0
+GORSEL_KONUMLANDIRMA_SURE_S = 120.0
+
+
+def _gorsel_istasyona_git(conn, timeout=GORSEL_KONUMLANDIRMA_SURE_S):
+    """IBVS'i GPS fazından İZOLE test edebilmek için avcıyı hedefin kuyruk
+    istasyonuna götürür; oraya varınca True döner.
+
+    NEDEN GEREKLİ: `start_visual` görsel güdümü doğrudan çalıştırır ama görsel
+    faz YATAY MESAFEYİ KAPATAMAZ — hedefi kadrajda görmesi gerekir. Ölçüm
+    (2026-08-01): konumlandırma olmadan drone hedefin 2.5 km gerisinde kaldı ve
+    üretilen visual_lead CSV'sinin 736 karesinin TAMAMI `tespit_yok` oldu.
+    Bu adım, GPS fazının hız marjı sorununu beklemeden lead yasasını ölçmeyi
+    sağlar (bkz. docs/GUDUM_ARIZA_ZINCIRI_20260801.md, "IBVS'e nereden devam").
+
+    İstasyon gps_guidance'ınkiyle AYNI: hedefin hız yönünün GERİ_OFSET kadar
+    gerisi, ALT_OFSET kadar altı. Hedef yavaşsa (hız yönü güvenilmez) LOS
+    gerisi kullanılır — gps_guidance.TRACK_MIN_SPD ile aynı mantık.
+
+    NOT: Bu bir POZİSYON setpoint'idir, güdüm değil. Görsel faz başlayınca
+    kontrolü tamamen IBVS devralır; buradan hiçbir şey ona sızmaz.
+    """
+    print(f"[VISUAL] İstasyona konumlandırılıyor "
+          f"({GORSEL_BASLANGIC_GERI_OFSET_M:.0f} m geri, "
+          f"{GORSEL_BASLANGIC_ALT_OFSET_M:.1f} m alt; en fazla {timeout:.0f} s)")
+    t0 = time.time()
+    son_rapor = 0.0
+    while time.time() - t0 < timeout:
+        if _visual_stop_event.is_set():
+            return False
+        t = telemetry_state["plane"]
+        vx, vy = t.get("vx", 0.0), t.get("vy", 0.0)
+        hiz = math.hypot(vx, vy)
+        ip = telemetry_state["iris"]
+        if hiz > 3.0:                       # hız yönü güvenilir → kuyruk istasyonu
+            bx, by = -vx / hiz, -vy / hiz
+        else:                               # yavaş/duruyor → LOS gerisi
+            dx, dy = ip["x"] - t["x"], ip["y"] - t["y"]
+            n = math.hypot(dx, dy) or 1.0
+            bx, by = dx / n, dy / n
+        sx = t["x"] + bx * GORSEL_BASLANGIC_GERI_OFSET_M
+        sy = t["y"] + by * GORSEL_BASLANGIC_GERI_OFSET_M
+        sz = t["z"] + GORSEL_BASLANGIC_ALT_OFSET_M
+        # Burun hedefe dönük olsun ki kamera onu görsün.
+        yaw = math.atan2(t["y"] - ip["y"], t["x"] - ip["x"])
+        _send_position_setpoint(conn, sx, sy, sz, yaw=yaw)
+        _read_iris_telem_from_conn(conn)
+        ip = telemetry_state["iris"]
+        d = math.sqrt((t["x"] - ip["x"]) ** 2 + (t["y"] - ip["y"]) ** 2
+                      + (t["z"] - ip["z"]) ** 2)
+        if d < GORSEL_VARIS_YARICAP_M:
+            print(f"[VISUAL] ✓ İstasyona varıldı (menzil {d:.1f} m) — IBVS devralıyor")
+            return True
+        if time.time() - son_rapor >= 10:
+            son_rapor = time.time()
+            print(f"[VISUAL] konumlanıyor… menzil {d:.0f} m "
+                  f"(hedef < {GORSEL_VARIS_YARICAP_M:.0f} m)")
+        time.sleep(SETPOINT_RATE)
+    print(f"[VISUAL WARN] konumlandırma {timeout:.0f} s'de tamamlanamadı — "
+          "IBVS yine de başlatılıyor (hedef kadrajda olmayabilir)")
+    return False
+
 
 def _visual_thread():
     """Görsel güdüm altyapısı: kalkış + IBVS lead pursuit döngüsü."""
@@ -636,12 +707,28 @@ def _visual_thread():
         conn = df_connect_drone(port=14541)
         print(f"[VISUAL] Iris bağlantısı: target_sys={conn.target_system}")
 
-        success = df_takeoff(target_z=-5.0)          # drone havada olmalı
+        # Kalkış irtifası HEDEFE bağlı (2026-08-01). Eskiden -5.0 m sabitti; o
+        # değer hedeflerin alçak uçtuğu dönemden kalmaydı. Hedef artık 58 m'de
+        # seyrediyor (TKOFF_ALT 60) ve 5 m'den bakan bir kamera onu asla göremez
+        # — bu uç tam da görsel fazı GPS fazından İZOLE etmek için var, o yüzden
+        # başlangıç geometrisi de görsel fazın devraldığı geometriye benzemeli:
+        # hedefin biraz altında (gökyüzü arka planı, pose kopmaz).
+        plane_z = telemetry_state["plane"]["z"]
+        target_z = (plane_z + GORSEL_BASLANGIC_ALT_OFSET_M) if plane_z < -10.0 else -5.0
+        print(f"[VISUAL] Kalkış irtifası: z={target_z:.1f}m (NED, hedef {-plane_z:.0f}m)")
+        success = df_takeoff(target_z=target_z)
         if not success:
             print("[VISUAL] Kalkış başarısız!")
             _visual_active = False
             return
-        print("[VISUAL] ✓ Kalkış tamam — lead pursuit başlatılıyor")
+        print("[VISUAL] ✓ Kalkış tamam")
+
+        # Hedefe yaklaş — görsel faz mesafe kapatamaz, kadrajda hedef ister.
+        _visual_stop_event.clear()
+        _gorsel_istasyona_git(conn)
+        if _visual_stop_event.is_set():
+            return
+        print("[VISUAL] lead pursuit başlatılıyor")
 
         def get_plane_truth():
             """Hedefin GERÇEK pozu (çerçeve-ofset düzeltmeli NED) — SADECE
@@ -649,8 +736,11 @@ def _visual_thread():
             t = telemetry_state["plane"]
             return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
-        _visual_stop_event.clear()
-        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event)
+        # NOT: stop_event burada TEKRAR clear() EDİLMEZ. Konumlandırma sırasında
+        # gelen bir stop_visual sinyalini silerdi ve durdurma isteği sessizce
+        # kaybolurdu. Tek clear() kalkıştan hemen sonra yapılıyor.
+        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event,
+                         gercek=gz_truth.get_ikisi)
 
     except Exception as e:
         import traceback
@@ -715,9 +805,23 @@ def _chase_thread():
         print(f"[CHASE] Iris bağlantısı kuruldu: target_sys={conn.target_system}")
 
         # ---- KALKIŞ ----
+        # Eşik neden -15 (2026-08-01): eskiden `plane_z < -1.0` idi. Hedef daha
+        # KALKIŞ KOŞUSUNDAYKEN (irtifa ~1 m) bu koşulu geçiyor ve avcının kalkış
+        # irtifası 1.15 m oluyordu. Drone yerden bir metre yükseklikte havada
+        # kalıyor, hedef 60 m'de daire çizerken "avcı hareket etmiyor" gibi
+        # görünüyordu. (Ölçüldü: `[DRONE] Kalkış hedefi z=-1.15`.)
+        # -15 m, uçağın gerçekten seyre geçtiğini gösteren en düşük irtifa.
+        # Hedef henüz havalanmadıysa makul bir başlangıca çıkılır; dikey kanal
+        # zaten istasyon irtifasını 0.05 m hatayla yakalıyor, gerisini o halleder.
         plane_z = telemetry_state["plane"]["z"]
-        target_z = plane_z if plane_z < -1.0 else -5.0
-        print(f"[CHASE] Kalkış irtifası: z={target_z:.1f}m (NED)")
+        if plane_z < -15.0:
+            target_z = plane_z
+            print(f"[CHASE] Kalkış irtifası: z={target_z:.1f}m (hedefe eşlendi)")
+        else:
+            target_z = -30.0
+            print(f"[CHASE] UYARI: hedef henüz havada değil (irtifa {-plane_z:.1f} m) "
+                  f"— kalkış {-target_z:.0f} m'ye yapılıyor. Senaryoyu başlatıp "
+                  f"hedefin irtifası oturduktan SONRA chase vermek daha iyi sonuç verir.")
 
         success = df_takeoff(target_z=target_z)
         if not success:
@@ -768,7 +872,8 @@ def _chase_thread():
                 return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
             _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
-                        get_plane_truth, chase_stop)
+                        get_plane_truth, chase_stop,
+                        gercek=gz_truth.get_ikisi)
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
@@ -1158,6 +1263,12 @@ async def startup_event():
         threading.Thread(target=gz_talon_camera_thread, daemon=True).start()  # hedef Talon
     else:
         threading.Thread(target=ros2_spin_thread, daemon=True).start()
+
+    # Gazebo ground truth — SADECE doğruluk analizi logu için (bkz. gz_truth.py).
+    # AVCI_TRUTH=off ile kapatılır; kapalıyken CSV'nin *_gercek kolonları boş kalır.
+    if os.environ.get("AVCI_TRUTH", "on").lower() not in ("off", "0"):
+        gz_truth.baslat()
+
     if os.environ.get("AVCI_NO_BROWSER", "0") != "1":
         threading.Timer(2.0, lambda: webbrowser.open("http://localhost:8000")).start()
 

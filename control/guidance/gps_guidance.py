@@ -54,18 +54,67 @@ class Cfg:
     KD_H = 0.20               # yatay türev sönümleme
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
-    # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
-    # ortaya çıktı — 18-23 m/s (4 Hz'de EMA sönümlemesi 14-15 gösteriyordu). 20 m/s
-    # tavanında komut %98 doygundu: hedef 19-23 giderken drone tavanda kalınca
-    # yaklaşma hızı ≈ 0, açı hiç kapanmıyordu. Yüksek hızda eski salınımın sebebi
-    # 250 ms telemetri faz gecikmesiydi; 25 Hz ile ~40 ms'e indi.
-    V_MAX = 28.0             # m/s; yatay hız tavanı
+    # V_MAX 28→15 (2026-08-01, iki uçuşun ölçümü: gps_guidance_20260801_151839
+    # ve _152542; 3674 + 3875 kare, toplam 380 s).
+    #
+    # 28 m/s KOMUT EDİLEBİLİR AMA UÇULAMAZ, ve fazlası aktif ZARAR veriyordu:
+    #   komut medyanı 28.0 (karelerin %84'ü tavanda doygun)
+    #   GERÇEKLEŞEN  medyan 8.2 m/s, p95 16.0, p99 19.8 → airframe tavanı ~20
+    #   menzil >50 m iken (tam gaz gitmesi gereken yer): gerçekleşen 6.8 m/s,
+    #     GERÇEK/KOMUT oranı 0.24
+    #   menzil <50 m iken (yavaşlaması gereken yer):     gerçekleşen 9.9 m/s
+    # Uzaktayken YAKINDAKİNDEN YAVAŞ olması patolojinin imzası: 28 m/s'lik hız
+    # hatası PSC_VELXY_P=2.0 ile ~56 m/s² ivme talebine dönüşüyor, bu ANGLE_MAX
+    # ile ulaşılabilir ivmenin (~17 m/s², irtifa korunurken) çok üstünde. Attitude
+    # kontrolcüsü tavana yapışıyor, itki vektörü irtifayı korumak için yatışı geri
+    # çekiyor → yatış açısında limit çevrimi, ortalama ivme düşüyor. Hata küçükken
+    # (yakın menzil) kontrolcü doğrusal bölgede kalıyor ve DAHA İYİ çalışıyor.
+    #
+    # 15→18 (aynı gün, ikinci tur): 15'te kontrolcü SAĞLIKLI çalıştı —
+    # gerçekleşen/komut oranı 0.24'ten 0.78'e çıktı, medyan hız 8.2→11.7 m/s,
+    # tepe 15.1 (yani komut tavanına DAYANDI, airframe'de pay kaldı).
+    # Ama 11.7 m/s hedefin sürdürülebilir en düşük hızının (11 m/s, AIRSPEED_MIN)
+    # ancak 0.7 m/s üstü; menzil kapanmıyor. Hedefi daha da yavaşlatmak stall
+    # ettiriyor (ölçüm: 9.6 m/s'de kare dönüşünde düştü), dolayısıyla marj
+    # AVCI tarafından açılmalı.
+    # 18→20 (aynı gün, üçüncü tur): 18'de avcı komutu TAM uyguluyordu
+    # (gerçekleşen/komut = 1.00, sabit 18.0 m/s) — yani tavana dayanmıştı,
+    # airframe'de hâlâ pay vardı (V_MAX=28 ölçümünde p99 19.8, tepe 20.5).
+    # Ama hedef 16.3 m/s uçuyor; 1.7 m/s marj kare dönüşlerinin salınımını
+    # yenemedi: menzil 441→84.6 m'ye indi, orada dibe vurup 97.8'e geri açıldı.
+    # 20 ile marj 3.7 m/s'ye çıkar (iki katından fazla).
+    #
+    # Doygunluk patolojisine geri dönme riski DÜŞÜK, çünkü eşik V_MAX değil hız
+    # HATASININ büyüklüğü: PSC_VELXY_P=2.0 ile 20−16.3 = 3.7 m/s hata → 7.4 m/s²
+    # ivme talebi, ulaşılabilir ~17 m/s²'nin çok altında. (28'de hata 20 m/s →
+    # 40 m/s² talebiyle attitude tavana yapışıp limit çevrimine giriyordu.)
+    # Doğrulama: analiz_gps "GERÇEKLEŞEN/KOMUT" oranı 0.9'un altına düşerse
+    # patoloji geri gelmiş demektir, V_MAX düşürülmeli.
+    V_MAX = 20.0             # m/s; yatay hız tavanı
     MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
 
     # --- YAW ---
+    # YAW_RATE_MAX 120→45 °/s (2026-08-01 ölçümü). GPS fazının GÖREVİ hedefi
+    # kameranın ortasında TUTMAK; burnu hızla çevirmek bunun tam tersini yapıyordu.
+    #
+    # Ölçüm (gps_guidance_20260801_172851.csv, 1300 kare):
+    #   komut yaw dönme hızı : med 0 °/s, p90 66, p99 94, max 120  ← tavana dayalı
+    #   gerçek yaw dönme hızı: med 30 °/s, p90 96, p99 196, max 368
+    # Kamera gövdeye sabit ve HFOV 125°. Hedefin kadrajı kat etme süresi:
+    #   120 °/s → 1.04 s (31 kare) | 200 °/s → 0.62 s (19) | 368 °/s → 0.34 s (10)
+    # Aynı gün ölçülen en uzun ARDIŞIK pose tespiti: 6, 8, 18 kare. Birebir bu
+    # aralık — yani hedef kaçmıyordu, avcı onu KENDİ burun hareketiyle kadrajdan
+    # süpürüyordu. Devir kapısı 10 ardışık kare istiyor ve zar zor yetişiyordu.
+    #
+    # 45 °/s neden yeterli: burun hedefin KERTERİZİNİ takip etmeli, kerteriz
+    # değişim hızı = yanal bağıl hız / menzil. Hedef 15 m/s, kritik menzil bandı
+    # 20-50 m → 17-43 °/s. 45 bu bandı kapsar. Kazanç: hedefin kadrajda kalma
+    # süresi 2.8 s'ye (≈83 kare) çıkar — kapının istediği 10 karenin sekiz katı.
+    # Daha düşürmek kerteriz takibini kaybettirir; DOĞRULAMA: analiz_gps'te
+    # "kadraj yaw hatası" medyanı büyürse bu değer fazla düşük demektir.
     YAW_DEADBAND = math.radians(3.0)
-    YAW_RATE_MAX = math.radians(120.0)
+    YAW_RATE_MAX = math.radians(45.0)
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -82,7 +131,10 @@ status = {
     "kadraj_yaw_deg": None, "kadraj_elev_deg": None, "none_count": 0,
 }
 
-_LOG_DIR = os.path.join(
+# CSV çıktı dizini. AVCI_LEAD_LOG_DIR ile taşınabilir — testler bunu geçici bir
+# dizine çevirir, yoksa test koşuları logs/ içine sahte CSV bırakır ve analiz
+# scriptleri onları gerçek uçuş sanır (visual_lead.py ile aynı kural).
+_LOG_DIR = os.environ.get("AVCI_LEAD_LOG_DIR") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "logs")
 

@@ -9,8 +9,15 @@ Kullanım: python3 -m tests.test_visual_lead
 """
 
 import math
+import os
+import tempfile
 
 import numpy as np
+
+# Güdüm CSV'lerini geçici dizine yönlendir — testler logs/ altına sahte uçuş
+# dosyası bırakmasın (analiz scriptleri onları gerçek uçuş sanardı).
+# _LOG_DIR import anında okunduğu için bu satır importlardan ÖNCE olmalı.
+os.environ.setdefault("AVCI_LEAD_LOG_DIR", tempfile.mkdtemp(prefix="avci_test_lead_"))
 
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.guidance_core import (
@@ -250,7 +257,8 @@ def main():
         olaylar.append("gps")
         stop_event.wait(5.0)          # izci görsel kilitle tetikleyene kadar
 
-    def fake_visual(conn, wait_pose, gpt, stop_event, cfg=None, kayip_kare_esik=None):
+    def fake_visual(conn, wait_pose, gpt, stop_event, cfg=None,
+                    kayip_kare_esik=None, gercek=None):
         olaylar.append("visual")
         return "kayip" if olaylar.count("visual") == 1 else "durduruldu"
 
@@ -286,7 +294,8 @@ def main():
     def fake_gps2(conn, gp, gi, stop_event):
         olaylar2.append("gps"); stop_event.wait(5.0)
 
-    def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None, kayip_kare_esik=None):
+    def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None,
+                          kayip_kare_esik=None, gercek=None):
         olaylar2.append("visual"); return "vuruldu"
 
     try:
@@ -427,6 +436,72 @@ def main():
             cikis_elev < 45.0 and abs(out["pn_dikey_deg"]) <= cfg.PN_DIKEY_MAX_DEG + 1e-6
             and abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01,
             f"ham=70° komut_yükseliş={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}° |v|={vn:.2f}")
+
+    # ══ T30-T33: DOĞRULUK REFERANSI (vision/dogruluk.py) ══
+    # Bu testler ANALİZ ZEMİNİNİ doğrular: MÜKEMMEL bir pose modeli taklit edilip
+    # (gerçek keypoint projeksiyonu aynen pose olarak verilir) ölçüm sıfır hata
+    # vermeli. Vermezse uçuş verisinde göreceğimiz her sapma referansın kendi
+    # hatasıyla karışır ve analiz anlamını yitirir.
+    from vision import dogruluk
+
+    def sentetik_sahne(menzil_m, hedef_yaw):
+        """iris orijinde ve düz; hedef optik eksende `menzil_m` ötede.
+        Dönüş: (pose, iris_truth, hedef_truth)."""
+        iris_pos, iris_rpy = (0.0, 0.0, 10.0), (0.0, 0.0, 0.0)
+        cam_pos, R_cam = geo.camera_world_pose(iris_pos, iris_rpy)
+        tgt = cam_pos + menzil_m * (R_cam @ np.array([1.0, 0.0, 0.0]))
+        rpy = (0.0, 0.0, hedef_yaw)
+        kg, _onde, _kad, _ort = dogruluk._gercek_kpts(tgt, rpy, iris_pos, iris_rpy)
+        bb = geo.target_bbox(tgt, rpy, iris_pos, iris_rpy)
+        pose = {"cx": (bb[0] + bb[2]) / 2, "cy": (bb[1] + bb[3]) / 2, "conf": 0.9,
+                "bbox": tuple(int(v) for v in bb),
+                "kpts": [(kg[i, 0], kg[i, 1], 1.0) for i in range(6)]}
+        it = {"x": iris_pos[0], "y": iris_pos[1], "z": iris_pos[2],
+              "roll": 0.0, "pitch": 0.0, "yaw": 0.0, "stamp": 1.0}
+        ht = {"x": tgt[0], "y": tgt[1], "z": tgt[2],
+              "roll": 0.0, "pitch": 0.0, "yaw": hedef_yaw, "stamp": 1.0}
+        return pose, it, ht
+
+    # T30: mükemmel model → keypoint hatası sıfır (boru hattı doğru bağlanmış)
+    p, it, ht = sentetik_sahne(20.0, math.pi / 2)
+    r = dogruluk.olc(p, it, ht)
+    kontrol("T30 mükemmel model → kpt hatası ~0",
+            r["kpt_hata_px_ort"] < 0.01 and r["kpt_hata_px_max"] < 0.01,
+            f"ort={r['kpt_hata_px_ort']} max={r['kpt_hata_px_max']}")
+
+    # T31: ölçekten menzil, GERÇEK menzile %2 içinde — yükselti düzeltmesi şart.
+    # Düzeltme uygulanmazsa 25° bakışta ~%8 kısa okunur (2026-07-27 ölçümü).
+    sapmalar = []
+    for R in (10.0, 20.0, 30.0):
+        for yaw in (0.0, math.pi / 4, math.pi / 2, math.pi):
+            p, it, ht = sentetik_sahne(R, yaw)
+            rr = dogruluk.olc(p, it, ht)
+            sapmalar.append(abs(rr["menzil_olcek_gercek_m"] - R) / R)
+    kontrol("T31 ölçek→menzil sapması < %2 (her açı/menzil)",
+            max(sapmalar) < 0.02, f"maks sapma=%{100 * max(sapmalar):.1f}")
+
+    # T32: yandanlik_gercek ≈ |sin(aspect)| — guidance_core lead büyüklüğünü
+    # bu ilişkiye dayandırıyor; bozulursa lead yasasının varsayımı çöker.
+    farklar = []
+    for yaw in (0.0, math.pi / 4, math.pi / 2, 3 * math.pi / 4, math.pi):
+        p, it, ht = sentetik_sahne(15.0, yaw)
+        rr = dogruluk.olc(p, it, ht)
+        farklar.append(abs(rr["yandanlik_gercek"] - rr["sin_aspect_gercek"]))
+    kontrol("T32 yandanlik_gercek ≈ sin(aspect)",
+            max(farklar) < 0.06, f"maks fark={max(farklar):.3f}")
+
+    # T33: burun/kuyruk takas tespiti — kasıtlı takas edilmiş pose yakalanmalı.
+    # Bu kolon guidance_core'un flip korumasının GÖREMEDİĞİ kalıcı yanlış
+    # etiketlemeyi ölçer; çalışmazsa 180° belirsizliği sessiz kalır.
+    p, it, ht = sentetik_sahne(15.0, math.pi / 2)
+    kpts_takas = list(p["kpts"])
+    kpts_takas[0], kpts_takas[1] = kpts_takas[1], kpts_takas[0]
+    p_takas = dict(p, kpts=kpts_takas)
+    r_norm = dogruluk.olc(p, it, ht)
+    r_takas = dogruluk.olc(p_takas, it, ht)
+    kontrol("T33 burun/kuyruk takası tespit edilir",
+            r_norm["burun_kuyruk_takas"] == 0 and r_takas["burun_kuyruk_takas"] == 1,
+            f"normal={r_norm['burun_kuyruk_takas']} takas={r_takas['burun_kuyruk_takas']}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

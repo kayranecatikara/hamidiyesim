@@ -147,7 +147,8 @@ def _wait_gps_ready(conn, timeout: float = 60.0):
 
 
 def takeoff_to_z(target_z: float = DEFAULT_TAKEOFF_Z,
-                 timeout: float = 30.0):
+                 timeout: float = 120.0,
+                 tolerans: float = 1.5):
     """
     GUIDED modda drone'u hedef irtifaya kaldırır.
 
@@ -157,6 +158,15 @@ def takeoff_to_z(target_z: float = DEFAULT_TAKEOFF_Z,
     3. ARM (force, retry'li)
     4. MAV_CMD_NAV_TAKEOFF ile |target_z| metreye kalk
     5. Hedef z'ye ulaşana kadar telemetri izle
+
+    timeout / tolerans (2026-08-01): eskiden 30 s ve 0.3 m sabitti. Chase artık
+    5 m'ye değil HEDEFİN İRTİFASINA kalkıyor (ölçülen uçuşlarda ~57 m) ve bu
+    makinede simülasyon gerçek zamanın ~%60'ında koşuyor, yani 30 s duvar saati
+    ~18 s sim demek. Kopter 57 m'ye o sürede çıkamıyordu; `takeoff_to_z` False
+    dönüyor, `_chase_thread` "Kalkış başarısız!" yazıp çıkıyor ve chase HİÇ
+    başlamıyordu — dışarıdan "avcı hedefi takip etmiyor" gibi görünüyordu.
+    0.3 m tolerans da hover gürültüsü için fazla dar; 1.5 m güdümün istasyon
+    hassasiyetinin (4.65 m dikey ofset) çok altında, bir şey kaybettirmez.
 
     Returns:
         True ise kalkış başarılı
@@ -180,7 +190,7 @@ def takeoff_to_z(target_z: float = DEFAULT_TAKEOFF_Z,
         while time.time() - t0 < timeout:
             _send_position_setpoint(conn, cx, cy, target_z)
             pos = get_local_position(conn, timeout=0.2)
-            if pos and abs(pos["z"] - target_z) < 0.3:
+            if pos and abs(pos["z"] - target_z) < tolerans:
                 print(f"[DRONE] Hedefe ulaşıldı: z={pos['z']:.2f}")
                 return True
             time.sleep(SETPOINT_RATE)
@@ -219,7 +229,7 @@ def takeoff_to_z(target_z: float = DEFAULT_TAKEOFF_Z,
     t0 = time.time()
     while time.time() - t0 < timeout:
         pos = get_local_position(conn, timeout=0.5)
-        if pos and abs(pos["z"] - target_z) < 0.3:
+        if pos and abs(pos["z"] - target_z) < tolerans:
             print(f"[DRONE] Hedefe ulaşıldı: z={pos['z']:.2f}")
             return True
 

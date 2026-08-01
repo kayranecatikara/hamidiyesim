@@ -18,6 +18,7 @@ menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 
 import os
 import threading
+import time
 
 from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
@@ -38,7 +39,9 @@ class SupCfg:
 
 
 # Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
-status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None}
+status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None,
+          # Devir kapısı teşhisi (izci doldurur; /api/chase_status ile okunur)
+          "pose_toplam": 0, "pose_var": 0, "pose_guvenli": 0, "kilit_en_uzun": 0}
 
 
 def _kopru(parent_event, child_event):
@@ -52,8 +55,11 @@ def _kopru(parent_event, child_event):
 
 
 def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
-               stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg):
-    status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
+               stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg, gercek=None):
+    """gercek: Gazebo ground truth okuyucusu (gz_truth.get_ikisi) — görsel faza
+    aktarılır, yalnız CSV doğruluk kolonları için. Güdüme girmez."""
+    status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None,
+                  pose_toplam=0, pose_var=0, pose_guvenli=0, kilit_en_uzun=0)
 
     while not stop_event.is_set():
         # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
@@ -64,17 +70,39 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
 
         def izci():
             sayac, son_seq = 0, 0
+            # Devir kapısı açılmadığında SEBEBİNİ söyleyebilmek için sayaçlar.
+            # 2026-08-01 ölçümünde menzil 5.5 m'ye indi ama kilit 4'te kaldı ve
+            # NEDEN kaldığı hiçbir logdan çıkarılamadı: GPS fazı sırasındaki pose
+            # tespitleri hiçbir yere yazılmıyordu. Bu sayaçlar "hedef hiç
+            # görünmedi mi, göründü de güven mi düşüktü, yoksa görünüp kayboldu
+            # mu" sorusunu ayırır.
+            top = var = guvenli = 0
+            en_uzun = 0
+            son_rapor = time.time()
             while not faz_stop.is_set():
                 kayit = wait_pose(son_seq, timeout=0.5)
                 if kayit is None:
                     continue
                 son_seq = kayit["seq"]
                 pose = kayit["pose"]
+                top += 1
+                if pose is not None:
+                    var += 1
                 if pose is not None and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN:
+                    guvenli += 1
                     sayac += 1
+                    en_uzun = max(en_uzun, sayac)
                 else:
                     sayac = 0
-                status["kilit_sayac"] = sayac
+                status.update(kilit_sayac=sayac, pose_toplam=top, pose_var=var,
+                              pose_guvenli=guvenli, kilit_en_uzun=en_uzun)
+                if time.time() - son_rapor >= 10.0 and top:
+                    son_rapor = time.time()
+                    d_h = _ga.status.get("d_h")
+                    print(f"[SUPERVISOR] pose: {var}/{top} kare tespit "
+                          f"(%{100.0*var/top:.0f}), {guvenli} güvenli, "
+                          f"en uzun ardışık {en_uzun}/{sup_cfg.KILIT_N}"
+                          + (f", d_h={d_h:.0f}m" if d_h is not None else ""))
                 if sayac >= sup_cfg.KILIT_N:
                     d_h = _ga.status.get("d_h")
                     yakin = (d_h is not None and d_h < sup_cfg.GATE_MENZIL)
@@ -99,7 +127,8 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
               f"(geçiş #{status['gecis_sayisi']})")
         sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
-                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M)
+                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                gercek=gercek)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"

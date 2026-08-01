@@ -11,8 +11,14 @@ Kapsam:
 """
 
 import math
+import os
+import tempfile
 import threading
 import time
+
+# CSV'yi geçici dizine yönlendir — testler logs/ altına sahte uçuş dosyası
+# bırakmasın. _LOG_DIR import anında okunur, bu satır importlardan ÖNCE olmalı.
+os.environ.setdefault("AVCI_LEAD_LOG_DIR", tempfile.mkdtemp(prefix="avci_test_gps_"))
 
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance import gps_guidance as gg
