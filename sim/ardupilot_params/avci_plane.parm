@@ -6,13 +6,107 @@
 # Varsayılan SITL plane'i LOITER'da 22-29 m/s yapıyordu; avcı drone ~18.6 m/s
 # max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
 
-# Cruise / airspeed hedefleri (cm/s)
-TRIM_ARSPD_CM 1500
-ARSPD_FBW_MIN 1200
-ARSPD_FBW_MAX 2200
+# =============================================================
+#  Hız bandı — hedefin gaz slider'ının ANLAMI budur
+# =============================================================
+# DİKKAT (2026-08-01): eski adlar TRIM_ARSPD_CM / ARSPD_FBW_MIN / ARSPD_FBW_MAX
+# bu ArduPlane sürümünde ARTIK YOK. Parametre dosyasında bilinmeyen ad SESSİZCE
+# yok sayılır — hata vermez. Yani bu üç satır uzun süredir hiçbir şey yapmıyordu
+# ve uçak firmware varsayılanlarıyla uçuyordu. Yeni adlar ve BİRİM cm/s DEĞİL m/s:
+#   TRIM_ARSPD_CM 1500 → AIRSPEED_CRUISE 15
+#   ARSPD_FBW_MIN 1200 → AIRSPEED_MIN     12
+#   ARSPD_FBW_MAX 2200 → AIRSPEED_MAX     22
+#
+# FBWB'de gaz slider'ı doğrudan HIZ komutudur (ArduPlane navigation.cpp:177):
+#   slider ≤ %50 → hız = AIRSPEED_MIN … AIRSPEED_CRUISE arası doğrusal
+#   slider ≥ %50 → hız = AIRSPEED_CRUISE … AIRSPEED_MAX arası doğrusal
+# Yani hedefin ulaşabileceği EN DÜŞÜK hız = AIRSPEED_MIN.
+#
+# Hız bandı neden 9/10 (2026-08-01, sekiz uçuşun ölçümü):
+#
+# İki ayrı kısıt var ve BANDI İKİSİ BİRDEN belirliyor.
+#
+# (a) ÜST SINIR — irtifa tutabilme. Airframe makul gazda ~11-12 m/s seyrediyor
+#     (TRIM_THROTTLE 45). Daha yükseğini talep etmek TECS'i irtifayı hıza TAKAS
+#     etmeye zorluyor; uçak süzülerek iniyor. Ölçüm (hepsi FBWB, 60 m'den):
+#       talep 14 m/s, yatış 42° → düştü
+#       talep 14 m/s, yatış 29° → düştü   ← yatış DEĞİL, hız talebi sorunmuş
+#       talep 11.5 m/s, yatış 32° → 58 m'de 24 s ±0.1 m ✓
+#       talep 12 m/s, yatış 29° → 58 m'de 30 s −0.57 m ✓
+#
+# (b) TALEP ≠ GERÇEKLEŞEN. 12 m/s talebinde hedef GERÇEKTE 15.4 m/s uçuyor
+#     (gz_truth konum türevi, medyan 15.41; rüzgâr YOK — SIM_WIND_SPD 0).
+#     ~3.4 m/s'lik fark açıklanamadı; muhtemel sebepler yatışta
+#     STALL_PREVENTION'ın talebi yükseltmesi ve ARSPD_RATIO ölçeği.
+#     Bu fark yüzünden avcı (13.9 m/s ortalama, kare dönüşleriyle) hedeften
+#     1.6 m/s YAVAŞ kalıyordu ve menzil 34 m'nin altına inemiyordu.
+#
+# SONUÇ: bant, uçağın GERÇEKTE uçtuğu hıza göre dürüstçe ayarlandı.
+# VFR_HUD ölçümü (bkz. aşağıdaki THR_MAX notu) uçağın talepten bağımsız
+# ~15.3 m/s'de seyrettiğini gösterdi. Talebi 10'a indirmek gerçekleşen hızı
+# yalnız 14.2'ye çekebildi ve dosyayı gerçeğe aykırı hale getirdi.
+# 15/12, uçağın yaptığı işi tarif eder: irtifasını tutar, stall etmez, ve
+# "ne komutlandığı" ile "ne uçtuğu" arasında yanıltıcı bir fark bırakmaz.
+# Hedefi bundan daha yavaş uçurmak AYRI BİR İŞ KALEMİDİR (TKOFF_THR_MAX + THR_MAX
+# çifti ya da senaryonun kendi hız kontrolü) — bkz. docs/GUDUM_ARIZA_ZINCIRI.
+AIRSPEED_MIN 12
+AIRSPEED_CRUISE 15
+AIRSPEED_MAX 22
 
+# ── HIZ SENSÖRÜNÜ KULLAN (2026-08-01, asıl irtifa arızasının kökü) ──
+# Uçakta sensör VARDI ve kalibre oluyordu ("AP: Airspeed 1 calibrated",
+# ARSPD_TYPE 2) ama ARSPD_USE firmware varsayılanı 0 olduğu için TECS onu
+# KULLANMIYORDU. İki sonucu vardı:
+#   1) TECS gerçek hızı bilmeden enerji yönetiyor → FBWB'ye geçer geçmez irtifa
+#      sızdırıyordu. Ölçüm: mod değişiminden hemen sonra 65→55→45→35→24→14→yer,
+#      dönüşlerden BAĞIMSIZ (yatış 42°→29° düşürüldüğünde de aynen tekrarlandı).
+#   2) FBWB'nin "gaz slider'ı = hedef HIZ" eşlemesi hız sensörü ister
+#      (ArduPlane/navigation.cpp:177, ahrs.airspeed_sensor_enabled() dalı).
+#      Sensörsüzken slider yalnız gaz dürtmesi oluyordu — slider'ın hedefin
+#      hızını değiştirmemesinin sebebi buydu.
+ARSPD_USE 1
+
+# Stall hızı tanımsızdı (0) — STALL_PREVENTION=1 açık ama koruyacağı eşiği
+# bilmiyordu. AIRSPEED_MIN'in altında bir değer, TECS'in hız tabanını tanımlar.
+AIRSPEED_STALL 8
+
+# ── DENENDİ VE VAZGEÇİLDİ: THR_MAX ile hedefi yavaşlatmak ──
+# Gerekçe kaydı, aynısını tekrar denemeyelim diye:
+# Ölçüm (MAVLink VFR_HUD, 1195 örnek, 50 s seyir) hız talebinin işlemediğini
+# gösterdi — BİLDİRİLEN hava hızı 15.26 m/s, YER hızı 15.26 m/s (ikisi AYNI,
+# rüzgâr yok → sensör SAĞLAM), talep ise 10 m/s. Yani TECS talebi uygulamıyor.
+# Sıradaki fikir gazın kendisini kısmaktı: `THR_MAX 40`. SONUÇ: uçak KALKAMADI,
+# yerde kaldı. Sebep: `TKOFF_THR_MAX 0` "sınırsız" DEĞİL, "THR_MAX'ı kullan"
+# demek — kalkış da 40'a kısılıyor ve uçuş hızına erişemiyor.
+# THR_MAX denenecekse TKOFF_THR_MAX açıkça 100 yapılmalı; o da kalkışı
+# hızlandırıp seyirde yavaşlatır, yani ayrı bir ayar turu ister.
+#
 # LOITER yarıçapını küçült — hedef daha dar bir bölgede kalsın
 WP_LOITER_RAD 80
+
+# Otonom kalkışın seviyeleneceği irtifa (m). FBWB'ye geçiş bu irtifada olduğu
+# için hedefin SEYİR İRTİFASINI da bu belirler (bkz. run_plane_scenario.takeoff).
+# Firmware varsayılanıyla ~19 m'de seviyeleniyordu (ölçüm 2026-08-01: hedef
+# 17.5 m'de kilitlendi). O bant chase için dar: GPS fazı drone'u hedefin 4.65 m
+# ALTINA koyuyor → drone 12.9 m'de kalır, gps_guidance.LOOKUP_MIN_ALT=8 m yer
+# koruması hemen devreye girer ve görsel fazın terminal dalışı zemine yaklaşır.
+# 60 m, önceki uçuşların (40-85 m) ölçüm bandına denk gelir.
+TKOFF_ALT 60
+
+# =============================================================
+#  FBWB — senaryoların uçuş modu (2026-08-01)
+# =============================================================
+# Senaryolar FBWA'dan FBWB'ye alındı: FBWA'da nötr elevator "0° pitch AÇISI"
+# demekti ve uçak seviye uçuş için pozitif pitch gerektirdiğinden sürekli
+# batıyordu (ölçüm: kare senaryosu 65 m'den 50 m alçalıp yere çakıldı,
+# pitch −1.6…−2.8°). FBWB nötr elevatorda irtifayı TECS ile kilitler.
+#
+# FBWB'de elevator = TIRMANMA HIZI komutu; tam stik ±FBWB_CLIMB_RATE verir.
+# Firmware varsayılanı 2 m/s: kare/daire için yeterli (onlar zaten nötr elevator
+# kullanıyor) ama AGRESİF senaryonun "sert tırmanış/dalış"ını 1 m/s'lik uysal
+# bir harekete indirirdi. 8 m/s, Talon'un cruise hızında (~15 m/s) sürdürebileceği
+# tırmanma açısına (~32°) karşılık gelir — manevra agresif kalır, uçak stall etmez.
+FBWB_CLIMB_RATE 8
 
 # =============================================================
 #  Gazebo mini_talon_vtail V-KUYRUK servo eşlemesi

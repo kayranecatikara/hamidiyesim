@@ -7,13 +7,27 @@ Kullanım:
     python -m control.run_plane_scenario circle      # daire çiz
     python -m control.run_plane_scenario aggressive  # rastgele agresif manevralar
 
-Akış: bağlan → force ARM → TAKEOFF modu ile otonom kalkış → FBWA + RC
+Akış: bağlan → force ARM → TAKEOFF modu ile otonom kalkış → FBWB + RC
 override ile seçilen desen. Desen, GCS süreci öldürene (manuel moda geçiş
 veya durdur butonu) kadar süresiz döner.
 
-Kare dönüşleri PUSULA (ATTITUDE yaw) tabanlıdır: FBWA'da roll komutu verilir,
-heading 90° değişince kenara geçilir. (Kaldırılan eski run_plane_square zaman bazlı
-rudder(yaw) dönüşü kullanıyordu — FBWA'da rudder tek başına dönüş üretmediği
+NEDEN FBWB, FBWA DEĞİL (2026-08-01 uçuş ölçümü):
+  FBWA'da nötr elevator = "0° PİTCH AÇISI" komutudur, "irtifayı koru" değil.
+  Uçak seviye uçuş için pozitif pitch'e ihtiyaç duyar; 0°'de sürekli batar.
+  Ölçüm: kare senaryosu 65 m'ye çıktı, sonra pitch −1.6…−2.8° ile 50 m
+  kesintisiz alçalıp yere çakıldı (irtifa 65→55→45→35→24→14→yer). Yatışlı
+  dönüşler kaybı hızlandırdı. Bunu telafi etmek için daire senaryosu pitch=150,
+  turn_by pitch=180 taşıyordu — kare senaryosunun düz kenarları taşımıyordu.
+  FBWB nötr elevatorda İRTİFAYI KİLİTLER (TECS), dönüşlerde de kendi korur;
+  bu pitch biası tahminlerinin hepsi gereksizleşir.
+
+  FBWB'de elevator artık AÇI değil TIRMANMA HIZI komutudur (FBWB_CLIMB_RATE,
+  varsayılan 2 m/s tam stikte). Yani pitch=0 → irtifa sabit, pitch>0 → tırman.
+  Agresif senaryodaki pitch değerleri bu yeni anlamla da doğru yönde çalışır.
+
+Kare dönüşleri PUSULA (ATTITUDE yaw) tabanlıdır: roll komutu verilir,
+heading 90° değişince kenara geçilir. (Kaldırılan eski run_plane_square zaman
+bazlı rudder(yaw) dönüşü kullanıyordu — rudder tek başına dönüş üretmediği
 için kare bozuktu.)
 
 Throttle GCS'teki slider'dan okunur (http://127.0.0.1:8000/api/plane_throttle);
@@ -44,11 +58,17 @@ from control.plane_functions import (
 from control.mav_common import (
     set_mode,
     PLANE_MODE_TAKEOFF,
-    PLANE_MODE_FBWA,
+    PLANE_MODE_FBWB,
 )
 
 # Havada devralma eşiği: bu irtifanın üstünde armlıysak kalkış ATLANIR.
 AIRBORNE_ALT_M = 15.0
+
+# Hedefin seyir irtifası (m). avci_plane.parm'daki TKOFF_ALT ile AYNI olmalı:
+# TAKEOFF modu oraya tırmanır, takeoff() orada FBWB'ye geçer, FBWB orayı kilitler.
+# İkisi ayrışırsa kalkış ya erken kesilir ya da boşuna bekler.
+SEYIR_IRTIFA_M = 60.0
+IRTIFA_TOLERANS_M = 3.0
 
 CONTROL_RATE = 0.05   # 20 Hz komut döngüsü
 
@@ -138,11 +158,20 @@ def _angdiff(a, b):
     return d
 
 
-def turn_by(conn, deg, bank=650, timeout=20.0):
-    """Heading tabanlı dönüş: hedef yaw'a ulaşana dek FBWA roll komutu.
+def turn_by(conn, deg, bank=450, timeout=25.0):
+    """Heading tabanlı dönüş: hedef yaw'a ulaşana dek roll komutu.
 
-    Dönüşte hafif up-elevator irtifa kaybını azaltır. 10° toleransta bırakılır
-    (FBWA kanatları düzeltirken kalan momentum farkı kapatır).
+    Elevator NÖTR bırakılır: FBWB yatışın irtifa kaybını kendi telafi eder
+    (eskiden FBWA için pitch=180 up-elevator biası vardı; FBWB'de bu artık
+    "2 m/s tırman" demek olurdu ve dönüşlerde uçağı yukarı kaçırırdı).
+    10° toleransta bırakılır (kanatlar düzelirken kalan momentum farkı kapatır).
+
+    bank 650→450 (2026-08-01): 650 → LIM_ROLL_CD 65° ile ~42° yatış. O açıda yük
+    faktörü 1.35 ve dönüş enerji yiyor; TECS irtifayı hız için takas edip alçalıyordu
+    — hedef 14 m/s'de bile 65 m'den yere indi (üç ardışık uçuşta tekrarlandı).
+    450 → ~29° yatış, yük faktörü 1.14. Referans: `circle` senaryosu roll=500 (~32°)
+    ile 58 m'yi 24 saniye boyunca ±0.1 m tuttu, yani bu bant sürdürülebilir.
+    Dönüşler genişler, kare şekli korunur; timeout 20→25 s bunu karşılar.
     """
     _pump(conn)
     if not _att["ok"]:
@@ -155,7 +184,7 @@ def turn_by(conn, deg, bank=650, timeout=20.0):
         _pump(conn)
         if _att["ok"] and abs(_angdiff(target, _att["yaw"])) < math.radians(10):
             break
-        _rc(conn, roll=roll_cmd, pitch=180, throttle=gcs_throttle())
+        _rc(conn, roll=roll_cmd, pitch=0, throttle=gcs_throttle())
         time.sleep(CONTROL_RATE)
 
 
@@ -186,17 +215,37 @@ def _read_vehicle_state(conn, wait=1.5):
     return armed, -_pos["z"]
 
 
-def takeoff(conn, climb_time=8.0):
+def takeoff(conn, timeout=90.0):
     """Otonom kalkış: TAKEOFF modu motoru açıp TKOFF_ALT'a tırmandırır,
-    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir."""
-    print("[SCN] Otonom kalkış (TAKEOFF modu)...")
+    ardından FBWB'ye geçilip kısa düz uçuşla stabilize edilir.
+
+    FBWB'ye geçiş anındaki irtifa TECS'in KİLİTLEYECEĞİ irtifa olduğu için
+    geçiş, SEYIR_IRTIFA_M'e ulaşınca yapılır — sabit süreyle DEĞİL. (Eskiden
+    `climb_time=8.0` sabitti; ölçüm 2026-08-01: 8 saniyede ancak 17.6 m'ye
+    çıkıyor ve hedef oraya kilitleniyordu. O bant chase için fazla alçak.)
+
+    Tırmanış durursa (TAKEOFF modu seviyeleniyor ya da tırmanamıyor) hedefe
+    ulaşılmasa da geçilir — sonsuza kadar beklemek yerine eldeki irtifa kilitlenir.
+    """
+    print(f"[SCN] Otonom kalkış (TAKEOFF modu, hedef {SEYIR_IRTIFA_M:.0f} m)...")
     set_mode(conn, PLANE_MODE_TAKEOFF)
     t0 = time.time()
-    while not _abort and time.time() - t0 < climb_time:
+    son_alt, durgun_t0 = -_pos["z"], time.time()
+    while not _abort and time.time() - t0 < timeout:
         _pump(conn)
+        alt = -_pos["z"]
+        if alt >= SEYIR_IRTIFA_M - IRTIFA_TOLERANS_M:
+            break
+        # tırmanış durdu mu (5 s boyunca +1 m'den az) → daha fazla bekleme
+        if alt > son_alt + 1.0:
+            son_alt, durgun_t0 = alt, time.time()
+        elif time.time() - durgun_t0 > 5.0 and alt > AIRBORNE_ALT_M:
+            print(f"[SCN] Tırmanış durdu ({alt:.0f} m) — hedefe ulaşılamadı, "
+                  "eldeki irtifa kilitleniyor")
+            break
         time.sleep(0.2)
-    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → FBWA")
-    set_mode(conn, PLANE_MODE_FBWA)
+    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → FBWB (irtifa kilidi)")
+    set_mode(conn, PLANE_MODE_FBWB)
     hold(conn, 2.0)
 
 
@@ -222,7 +271,9 @@ def scenario_circle(conn):
     # roll=500 → ~22° yatış: ~18 m/s'de ~80m yarıçaplı daire
     print("[SCN] DAİRE — sabit yatışla süresiz tur")
     while not _abort:
-        hold(conn, 0.5, roll=500, pitch=150)
+        # pitch=0: FBWB irtifayı kendi tutar. (FBWA'dayken buradaki 150,
+        # yatışın irtifa kaybını telafi eden elle konmuş bir biastı.)
+        hold(conn, 0.5, roll=500)
 
 
 TIRMANIS_MIN_THR = 600      # tırmanış/spiral için taban gaz (= THROTTLE_CRUISE)
@@ -240,6 +291,10 @@ def tirmanis_throttle():
 
 
 def scenario_aggressive(conn):
+    """FBWB notu: buradaki pitch değerleri artık AÇI değil TIRMANMA HIZI
+    komutudur (±1000 ↔ ±FBWB_CLIMB_RATE). Dikey otoriteyi korumak için
+    avci_plane.parm FBWB_CLIMB_RATE'i 8 m/s'e çeker (firmware varsayılanı 2 —
+    onunla 'sert tırmanış' 1 m/s'lik uysal bir yükselişe dönerdi)."""
     print("[SCN] AGRESİF — rastgele manevralar (gaz: GCS slider'ı)")
     maneuvers = ["climb", "dive", "bank_l", "bank_r", "s_turn", "spiral"]
     while not _abort:
@@ -262,12 +317,14 @@ def scenario_aggressive(conn):
         elif m in ("bank_l", "bank_r"):
             s = -1 if m == "bank_l" else 1
             print("[SCN] Sert yatışlı dönüş" + (" (sol)" if s < 0 else " (sağ)"))
+            # pitch=0: yatışın irtifa kaybını FBWB telafi eder (eski 200 biası
+            # FBWB'de "tırman" komutu olurdu). throttle=None → slider
             hold(conn, random.uniform(1.5, 3.0),
-                 roll=s * random.randint(600, 900), pitch=200)   # throttle=None → slider
+                 roll=s * random.randint(600, 900))
         elif m == "s_turn":
             print("[SCN] Keskin S-dönüşü")
-            hold(conn, 1.5, roll=-750, pitch=200)                # throttle=None → slider
-            hold(conn, 1.5, roll=750, pitch=200)
+            hold(conn, 1.5, roll=-750)                           # throttle=None → slider
+            hold(conn, 1.5, roll=750)
         elif m == "spiral":
             print("[SCN] Spiral tırmanış")
             hold(conn, random.uniform(3.0, 5.0),
@@ -303,11 +360,11 @@ def main():
     armed, alt = _read_vehicle_state(conn)
     if armed and alt > AIRBORNE_ALT_M:
         # HAVADA DEVRALMA — önceki senaryodan/manuelden geçiş. Kalkış YOK;
-        # önceki RC override 3 sn içinde düşmeden FBWA + desen devralır.
+        # önceki RC override 3 sn içinde düşmeden FBWB + desen devralır.
         print(f"[SCN] Araç zaten havada (irtifa {alt:.0f}m, armlı) — "
-              "kalkış atlanıyor, doğrudan FBWA + desen")
+              "kalkış atlanıyor, doğrudan FBWB + desen")
         _rc(conn, throttle=gcs_throttle())        # override akışı hemen başlasın
-        set_mode(conn, PLANE_MODE_FBWA, confirm_timeout=0)
+        set_mode(conn, PLANE_MODE_FBWB, confirm_timeout=0)
         hold(conn, 1.0)                           # düz uçuşla kısa stabilizasyon
     elif armed:
         print(f"[SCN] Armlı ama yerde (irtifa {alt:.0f}m) — doğrudan kalkış")
