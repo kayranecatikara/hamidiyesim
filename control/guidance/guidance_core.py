@@ -71,6 +71,11 @@ class Cfg:
     # burnunu aşağı eğer, kamera gövdeye +25° bağlı → ~5 m/s² üstünde kamera
     # dünyada aşağı bakar, gökyüzü arka planı kaybolur (bkz. adapter_copter).
     YAW_HIZ_MAX = _env_f("AVCI_IBVS_YAW_HIZ_MAX", 90.0)   # deg/s
+    # Ardışık kaç kare AYNI YÖNDE yaw doygunluğuna izin verilir. Aşılırsa yaw
+    # susturulur: adım sürekli tavandaysa hata kapanmıyor demektir (algı bayat/
+    # hatalı), dönmeye devam etmek yalnız aracı çevirir. 15 kare @30 Hz = 0.5 s
+    # → kaçak en fazla ~45° ile sınırlanır (ölçülen: 33.6 TUR).
+    YAW_DOYGUN_N = int(_env_f("AVCI_IBVS_YAW_DOYGUN_N", 15))
     # İVME TAVANI YATAY/DİKEY AYRILDI (2026-07-31 — dikey ıska düzeltmesi).
     # Tek 3B tavan, kameranın YATAY kısıtını dikeye de dayatıyordu:
     #   YATAY ivme burun eğimi gerektirir → kamera (+25° sabit) aşağı bakar.
@@ -121,7 +126,10 @@ class Cfg:
     TERMINAL_SURE   = _env_f("AVCI_IBVS_TERMINAL_SURE", 0.6)     # s; kör dalış süresi
     # Hedef telemetrisi ~4-5 Hz, drane 25 m/s → menzil örnekleri ~5 m aralıklı;
     # +araç açıklıkları ~1.3 m. 3 m merkez-merkez ≈ fiziksel temas.
-    VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 3.0)      # m; altı = VURULDU
+    # 3.0 → 1.5 (2026-08-01): 3 m FİZİKSEL TEMAS DEĞİL, yakın geçiştir. Talon'un
+    # kanat açıklığı 1.3 m; drone hedefin 2.9 m altından geçerken "VURULDU"
+    # raporlanıyordu. 1.5 m gerçek çarpışmaya çok daha yakın bir ölçüt.
+    VURUS_MENZIL    = _env_f("AVCI_IBVS_VURUS_MENZIL", 1.5)      # m; altı = VURULDU
 
     # ── MENZİL MAKULLÜK KAPISI (2026-07-31 sahte VURULDU düzeltmesi) ──
     # Ground-truth menzil zıplıyor: 193559 uçuşunda 33 ms'de 22.4→6.6 m (479 m/s)

@@ -13,7 +13,8 @@ Saat tasarımı (sim/duvar saati birbirine karıştırılmaz):
 Kullanım (gcs_server): run_visual_lead(conn, wait_pose, get_plane_truth, stop_event)
   wait_pose        : vision.detection_state.wait_new_pose
   get_plane_truth  : hedefin GERÇEK NED pozu (çerçeve-ofset düzeltmeli) — SADECE
-                     menzil_gercek/kapanma_hizi logu için, güdüme girmez.
+                     menzil_gercek/kapanma_hizi ve CEVAP ANAHTARI sütunları için,
+                     güdüme girmez (bkz. _cevap_anahtari).
 """
 
 import collections
@@ -25,7 +26,9 @@ import time
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
-from control.guidance.guidance_core import Cfg, LeadPursuitCore, govde_to_dunya
+from control.guidance.guidance_core import (Cfg, LeadPursuitCore, govde_to_dunya,
+                                            hedef_kadraj_hatasi)
+from vision import geometry as geo
 
 _LOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -44,6 +47,10 @@ _CSV_ALANLAR = [
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
     "kadraj_hata_deg", "kadraj_duz_deg",
+    # ── CEVAP ANAHTARI (bkz. _cevap_anahtari) — ölçüm, güdüme GİRMEZ ──
+    "gercek_yaw_deg", "gercek_elev_deg", "gercek_menzil_ham_m",
+    "gercek_u_px", "gercek_v_px", "gercek_onde", "gercek_kadraj_ici",
+    "pose_yaw_sapma_deg", "pose_elev_sapma_deg", "pose_menzil_sapma_m",
 ]
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
@@ -84,6 +91,59 @@ def _menzil_hesapla(get_plane_truth, iris_pos):
         return None
     return math.sqrt((p["x"] - iris_pos[0]) ** 2 + (p["y"] - iris_pos[1]) ** 2
                      + (p["z"] - iris_pos[2]) ** 2)
+
+
+def _cevap_anahtari(satir, hedef_ned, aras, res=None):
+    """CEVAP ANAHTARI — hedefin GERÇEK açıları, yalnız ÖLÇÜM için.
+
+    ⚠ BU SÜTUNLAR GÜDÜME GİRMEZ VE GİRMEMELİDİR. Hedefin telemetrisi bir
+    simülasyon kolaylığıdır; gerçek harekâtta düşman uçağın konumu bilinmez —
+    görsel güdümün varlık sebebi zaten budur. Buradaki değerler komut yoluna
+    bağlanırsa drone hedefi vurur ama kamera hattının çalışıp çalışmadığı bir
+    daha ölçülemez, ve bu daldaki tüm kazanç ayarları (KP_KADRAJ taraması, faz
+    kapıları, menzil kapısı) dayandıkları gürültü varsayımını kaybeder.
+    Fonksiyon bu yüzden yalnız `satir` sözlüğüne yazar, hiçbir şey döndürmez.
+
+    Ne ölçer: pose zincirinin LEAD'SİZ hedef kestirimi (res["u_govde_hedef"])
+    ile saf geometrinin verdiği gerçek yön yan yana → fark = ALGI hatası.
+    Lead'li nişan (u_govde) bilerek hedeften kaydırılmıştır, kıyas ona yapılmaz.
+
+    Neden ayrıca piksel: gercek_kadraj_ici, hedefin o karede kameranın görüş
+    alanında OLUP OLMADIĞINI söyler. "tespit_yok" satırlarında bu sütun,
+    modelin mi kaçırdığını yoksa hedefin kadrajdan çıktığını mı ayırt eder —
+    dikey ıska probleminin (sabit 4.65 m ofset) doğrudan kanıtı.
+
+    ZAMAN NOTU: telemetri ile kare AYNI ana ait değildir (kare gecikme_s kadar
+    bayat, telemetri ayrı hızda akar). Sapma sütunları bu kadar zamanlama
+    gürültüsü taşır; analizde gecikme_s ile süzülmeli.
+    """
+    if hedef_ned is None or aras.pos is None or aras.attitude is None:
+        return
+    kad = hedef_kadraj_hatasi(hedef_ned, aras.pos, *aras.attitude)
+    satir["gercek_yaw_deg"] = round(math.degrees(kad["yaw_hata"]), 2)
+    satir["gercek_elev_deg"] = round(math.degrees(kad["elev"]), 2)
+    satir["gercek_menzil_ham_m"] = round(kad["menzil"], 3)
+    satir["gercek_onde"] = int(kad["onde"])
+    if kad["u"] is not None:
+        satir["gercek_u_px"] = round(kad["u"], 1)
+        satir["gercek_v_px"] = round(kad["v"], 1)
+        satir["gercek_kadraj_ici"] = int(0 <= kad["u"] < geo.IMG_W
+                                         and 0 <= kad["v"] < geo.IMG_H)
+    else:
+        satir["gercek_kadraj_ici"] = 0        # hedef kameranın arkasında
+
+    if res is None:
+        return                                 # tespit yok → kıyaslanacak kestirim yok
+    uh = res["u_govde_hedef"]                  # LEAD'SİZ saf hedef yönü (kamera zinciri)
+    kam_yaw = math.atan2(float(uh[1]), float(uh[0]))
+    kam_elev = math.atan2(-float(uh[2]), math.hypot(float(uh[0]), float(uh[1])))
+    # yaw farkı ±180°'e sarılır (±179° ile ∓179° arası 2°'dir, 358° değil)
+    d_yaw = (kam_yaw - kad["yaw_hata"] + math.pi) % (2 * math.pi) - math.pi
+    satir["pose_yaw_sapma_deg"] = round(math.degrees(d_yaw), 2)
+    satir["pose_elev_sapma_deg"] = round(math.degrees(kam_elev - kad["elev"]), 2)
+    if kad["menzil"] > 1e-6:
+        satir["pose_menzil_sapma_m"] = round(
+            res["menzil_kestirim_m"] - kad["menzil"], 2)
 
 
 class _MenzilKapisi:
@@ -163,6 +223,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     coalt_latch = False         # terminal co-altitude KİLİDİ (menzil bir kez eşik
                                 # altına inince kilitli; ground-truth menzil gürültüsü
                                 # yukarı yanlılığı titretmesin)
+    hedef_ned = None            # hedefin gerçek NED pozu — YALNIZ cevap anahtarı logu
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -173,7 +234,11 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     print(f"[LEAD] IBVS lead pursuit başladı (copter, "
           f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}) — log: {csv_yol}")
 
-    def _satir(row):
+    def _satir(row, res=None):
+        # Cevap anahtarı HER satıra yazılır (tespit_yok/kör dalış dahil — asıl
+        # sorulacak soru zaten "kaçırdığımız karede hedef neredeydi"). Ölçüm
+        # amaçlı; güdüm bu değerleri okumaz, bkz. _cevap_anahtari.
+        _cevap_anahtari(row, hedef_ned, aras, res)
         w.writerow(row)
         f.flush()
 
@@ -241,11 +306,14 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             aras.drenaj(conn)
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
                      "mod": aras.mode}
+            hedef_ned = None      # her karede tazelenir; gelmezse sütun BOŞ kalır
+                                  # (bayat ground-truth sessizce loglanmasın)
 
             # menzil_gercek + kapanma hızı + terminal durum takibi
             if aras.pos is not None and get_plane_truth is not None:
                 p = get_plane_truth()
                 if p is not None:
+                    hedef_ned = (p["x"], p["y"], p["z"])   # cevap anahtarı kaynağı
                     d_ham = math.sqrt((p["x"] - aras.pos[0]) ** 2
                                       + (p["y"] - aras.pos[1]) ** 2
                                       + (p["z"] - aras.pos[2]) ** 2)
@@ -290,6 +358,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 kayip_sayaci += 1
                 temas_pencere.append(False)
+
                 # KAYAN PENCERE: ardışık sayaç yerine "son N karede en az M tespit".
                 # Ardışık ölçüt kümelenmiş kopukluklarda görsel fazı erken
                 # bırakıyordu ve GPS fazı drone'u istasyona geri çekiyordu.
@@ -403,7 +472,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             else:
                 satir["durum"] = satir["durum"] if res["warn"] else "attitude_yok"
 
-            _satir(satir)
+            _satir(satir, res)     # res → pose kestirimi ile gerçek yan yana
         return "durduruldu"
     finally:
         f.close()

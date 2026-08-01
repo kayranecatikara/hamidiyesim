@@ -49,6 +49,10 @@ class CopterAdapter:
         self.elev_rate_f = 0.0        # EMA'lı λ̇ (rad/s) — yalnız log/gözlem
         self.gama = None              # komut edilen uçuş yolu yükselişi (rad, log)
         self.kadraj_duz = 0.0         # kadraj tutma düzeltmesi (rad, log)
+        # Yaw kaçak kapısı durumu (bkz. compute): kaç ardışık karedir adım
+        # tavanda OLUP hata kapanmıyor, ve kıyas için son |yaw_hata|.
+        self._yaw_doygun_n = 0
+        self._yaw_hata_ref = None
 
     def _dikey_pn(self, u_dunya, dt, kalite, terminal, kadraj_elev=None):
         """Aim yönünü dikey düzlemde yukarı döndür. Sıra:
@@ -174,10 +178,49 @@ class CopterAdapter:
         # (agresif yaw quad'ı savurur, kamerayı bulanıklaştırır).
         # AZİMUT KAPISI: nişan dikeye yaklaştığında yaw_hata atan2 tekilliğinden
         # ötürü ±180° savrulur; azimut_kalite ile söndürülür (1=güvenilir, 0=kapalı).
+        #
+        # NOT — "mutlak hedefe slew" denendi ve GERİ ALINDI (2026-08-01):
+        # cmd_yaw'ı kalıcı durumda tutup hedef_yaw = mevcut_yaw + yaw_hata'ya
+        # slew etmek, GPS fazındaki desene benziyor ama BURADA daha kötü.
+        # Kapalı çevrim ölçümü (algı hatayı güncellemediği arıza koşulunda,
+        # 30 s): mevcut kod 1.0 tur, "mutlak" biçim 7.4 tur döndü. Sebep:
+        # mevcut biçim komutu her karede aracın GERÇEK başlığına yeniden
+        # demirler, yani komut asla actual+adim'den fazla öne geçemez — bu bir
+        # güvenlik özelliğidir. Kalıcı cmd_yaw bu demirlemeyi kaybeder.
         adim_ham = cfg.KP_YAW * yaw_hata * clamp(azimut_kalite, 0.0, 1.0)
         tavan = math.radians(cfg.YAW_HIZ_MAX) * (dt_lim if dt_lim else 1.0 / 30.0)
         adim = clamp(adim_ham, -tavan, tavan)
         yaw_doygun = abs(adim_ham) > tavan
+
+        # ── SÜREKLİ DOYGUNLUK KAPISI (2026-08-01 dönme sınırlaması) ──
+        # Ölçüm: yaw_doygun karelerin %91-100'ünde 1 ve adımlar TEK YÖNLÜ
+        # (bir logda 28 negatif / 4 pozitif). Adım sürekli tavandaysa yaw_hata
+        # kapanmıyor demektir — yani algı, dönüşe rağmen aynı hatayı bildiriyor
+        # (bayat/hatalı ölçüm). O durumda dönmeye devam etmek hatayı kapatmaz,
+        # yalnız aracı çevirir: araç 443 s'de 33.6 tur döndü, DesYaw dönüşü
+        # birebir takip etti (yani komut buydu) ve motorlar HİÇ doymadı (%0.0).
+        # Ortalama 91.5 °/s ≈ YAW_HIZ_MAX(90) — tam olarak "her karede tavan
+        # adımı" imzası.
+        # Ölçüt DOYGUNLUK DEĞİL, HATANIN KAPANMAMASI. Büyük ama meşru bir dönüş
+        # de doygundur (60°'lik hata ~20 kare tavanda kalır) — onu kesmemeliyiz.
+        # Ayırt edici soru: tavan adımı komut ettik, hata buna karşılık AZALDI mı?
+        #   azaldıysa  → döngü kapanıyor, algı sağlıklı, sayaç sıfırlanır
+        #   azalmadıysa→ dönüşe rağmen aynı hata bildiriliyor (bayat/hatalı ölçüm)
+        # Eşik: komut edilen adımın en az dörtte biri kadar hata azalması.
+        if yaw_doygun:
+            ilerleme = (None if self._yaw_hata_ref is None
+                        else self._yaw_hata_ref - abs(yaw_hata))
+            if ilerleme is not None and ilerleme > 0.25 * abs(adim):
+                self._yaw_doygun_n = 0        # hata kapanıyor → yetki tam
+            else:
+                self._yaw_doygun_n += 1
+            self._yaw_hata_ref = abs(yaw_hata)
+        else:
+            self._yaw_doygun_n = 0
+            self._yaw_hata_ref = None
+        if self._yaw_doygun_n > cfg.YAW_DOYGUN_N:
+            adim = 0.0            # ölçüm loop'u kapatmıyor → yaw'ı sustur
+
         # ±π'ye sarmala: mevcut_yaw+adim aksi halde ±3.8 rad'a çıkabiliyordu
         yaw_cmd = normalize_angle(mevcut_yaw + adim)
 

@@ -132,6 +132,47 @@ def main():
             f"vx_cmd={vx_cmd} (~{TV}) durum={snap['durum']} d_h={snap['d_h']} "
             f"elev={snap['kadraj_elev_deg']}°")
 
+    # ── G10: istasyon ofseti SABİT AÇI (sabit metre değil) ──
+    # Dikey ıskanın kök nedeni buydu: 4.65 m sabit ofset, menzil kapandıkça
+    # büyüyen bir LOS yükselişine dönüşüp hedefi kadrajın tepesinden çıkarıyordu.
+    # Artık etkin standoff menzille orantılı küçülür → yükseliş her menzilde
+    # CENTER_ELEV_DEG kalır. Uzakta (menzil ≥ RANGE_SET) davranış değişmez.
+    cfg = gg.Cfg
+    ce = math.radians(cfg.CENTER_ELEV_DEG)
+    tilt_hedef = cfg.CENTER_ELEV_DEG
+
+    def _istasyon_elev(menzil):
+        """Verilen menzilde istasyona park etmiş drone'un gördüğü LOS yükselişi.
+        gps_guidance'ın 4. adımıyla AYNI hesap (r_eff → arka/alt ofset)."""
+        r_eff = min(menzil, cfg.RANGE_SET)
+        d_arka = r_eff * math.cos(ce)
+        d_alt = r_eff * math.sin(ce)
+        # hedef orijinde, drone d_arka geride + d_alt altta (NED: +z aşağı)
+        r = hedef_kadraj_hatasi([0.0, 0.0, 0.0], [-d_arka, 0.0, d_alt], 0, 0, 0)
+        return math.degrees(r["elev"])
+
+    sapmalar = [(m, _istasyon_elev(m) - tilt_hedef) for m in (20, 11, 8, 6, 4, 2)]
+    en_kotu = max(abs(s) for _, s in sapmalar)
+    kontrol("G10 istasyon yükselişi HER menzilde kadraj merkezinde",
+            en_kotu < 0.5,
+            "  ".join(f"{m}m:{s:+.1f}°" for m, s in sapmalar)
+            + f"  (hedef {tilt_hedef:.0f}°, en kötü sapma {en_kotu:.2f}°)")
+
+    # Eski davranış (sabit metre) aynı testte SINIFTA KALIRDI — regresyon koruması
+    def _eski_elev(menzil):
+        d_arka = cfg.RANGE_SET * math.cos(ce)      # menzilden BAĞIMSIZ
+        d_alt = cfg.RANGE_SET * math.sin(ce)
+        # eski kod yakınlaşınca yatayı kapatıyordu ama dikey ofset sabit kalıyordu
+        yatay = min(menzil * math.cos(ce), d_arka)
+        r = hedef_kadraj_hatasi([0.0, 0.0, 0.0], [-yatay, 0.0, d_alt], 0, 0, 0)
+        return math.degrees(r["elev"])
+
+    eski_4m = _eski_elev(4.0)
+    kontrol("G10b eski sabit-metre davranışı 4 m'de kadrajı taşırırdı",
+            eski_4m - tilt_hedef > 20.0,
+            f"eski: {eski_4m:.1f}° (merkezden {eski_4m - tilt_hedef:+.1f}°), "
+            f"yeni: {_istasyon_elev(4.0):.1f}°")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

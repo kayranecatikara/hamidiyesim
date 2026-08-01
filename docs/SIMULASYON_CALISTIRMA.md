@@ -25,7 +25,16 @@ Sonra tarayıcıda: <http://localhost:8000>
 **Durdurmak için:**
 
     cd ~/projects/avci_sim
-    bash scripts/start_harmonic.sh stop
+    bash scripts/start_harmonic.sh stop        # Terminal A tarafı
+                                               # Terminal B: Ctrl+C yeterli
+
+> ⚠ **Terminal A'da Ctrl+C İŞE YARAMAZ.** Script Gazebo'yu ve iki SITL'i
+> `nohup ... &` ile başlatıp kendisi çıkar; Ctrl+C'ye bastığınızda script zaten
+> bitmiştir, arkadaki süreçler yaşamaya devam eder. Ölçüldü: Ctrl+C sonrası
+> `gz sim`, 2× `arduplane`, 2× `sim_vehicle`, 4× `mavproxy` hâlâ ayaktaydı.
+> Bir sonraki koşudaki `pkill` onları temizlediği için fark edilmiyor, ama
+> arada CPU/GPU yerler ve bayat telemetri değerleri üretirler.
+> **Terminal B (gcs_server) ön planda çalıştığı için orada Ctrl+C doğrudur.**
 
 ---
 
@@ -146,6 +155,30 @@ Sistem çalışırken boş bir terminalde:
 Arayüz `307`, videolar `200` dönmeli. Video `200` değilse headless rendering
 çalışmıyordur.
 
+### Simülasyon hızı (RTF) — ölçerken dikkat
+
+    gz topic -e -t /stats -n 2
+
+**SITL'LER BAĞLIYKEN ÖLÇÜN.** İki araç modeli de `<lock_step>1</lock_step>`
+kullanıyor (`models/iris_cam/model.sdf`, `models/mini_talon_vtail/model.sdf`):
+ArduPilotPlugin her fizik adımında SITL'den FDM paketi bekleyip bloklar. Yalnız
+`gz sim` açıkken alınan RTF **anlamsızdır** — plugin her adımda boşa bekler,
+sayı gerçek sistemin üçte birine kadar düşer. SITL bağlanıp sonra ölürse sim
+tamamen donar ve `/stats` yayını kesilir.
+
+Mesajdaki `real_time_factor` alanına da tek başına güvenmeyin — kayan pencere
+olduğu için oynak (1.17 gibi 1'in üstünde değerler görülebilir). Güvenilir
+yöntem iki örnek arasındaki **fark**:
+
+    RTF = (sim_time₂ − sim_time₁) / (real_time₂ − real_time₁)
+
+Ölçümden önce ~60 sn bekleyin; açılış maliyeti kümülatif oranı aşağı çeker.
+
+**Sağlıklı değerler** (2026-08-01, RTX 3060, headless, 30 s pencere): SITL'ler
+bağlı ve boşta `RTF 0.994` / kamera `30.2 FPS`; `gcs_server` + YOLO çalışırken
+`RTF 0.982` / `29.7 FPS` (GPU %14). Yani YOLO yükü simülasyonu yavaşlatmıyor.
+Çapraz kontrol: ölçülen FPS ≈ `30 × RTF` olmalı (kamera 30 Hz'e ayarlı).
+
 MAVLink akışını da görmek isterseniz:
 
     python3 - <<'EOF'
@@ -173,7 +206,8 @@ Talon ≈ `(0, 12, -0.12)` (spawn konumları).
 |---------|-------|
 | Kamera topic'i var ama `✓ Iris kamerasından ilk görüntü!` hiç gelmiyor | `--headless-rendering` unutulmuş — Terminal 1 komutuna ekleyin |
 | Video endpoint'i `200` dönmüyor | Aynı sebep, ya da `AVCI_GZ_CAMERA=1` verilmemiş. Önce `gz topic -e -t /iris_cam/image -n 1` ile Gazebo tarafını doğrulayın |
-| `libEGL` / `Failed to create render context` | GPU/EGL erişimi yok: `export LIBGL_ALWAYS_SOFTWARE=1` (yavaş ama çalışır) |
+| `libEGL` + `OGRE EXCEPTION` + `Segmentation fault` (render penceresi 11 denemede açılamıyor) | GPU/EGL erişimi yok — genelde NVIDIA sürücüsü yarım kurulu (`dpkg -l \| grep nvidia` çıktısında `iF`/`iU` satırları). Asıl çözüm sürücüyü onarmak; `nvidia-smi` çalışıyorsa hazırsınız. **`LIBGL_ALWAYS_SOFTWARE=1` İŞE YARAMAZ** — Ogre EGL cihazını ismen seçtiği için libEGL reddeder (*"Not allowed to force software rendering when API explicitly selects a hardware device"*). Geçici çözüm: `export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast` (ayrıntı aşağıda) |
+| Yalnız `libEGL warning: egl: failed to create dri2 screen` — arkasından Ogre hatası YOK | **Zararsız.** GPU sağlıklıyken de çıkar: EGL önce dri2'yi dener, olmayınca NVIDIA cihazına düşer ve render çalışır. Arıza işareti bu satır değil, arkasından gelen `OGRE EXCEPTION` + `Segmentation fault` |
 | GCS açılışta takılıyor, `MESA-LOADER` uyarıları | `export AVCI_NO_BROWSER=1` |
 | Uzak makineden arayüze erişemiyorum | SSH tüneli: `ssh -L 8000:localhost:8000 kullanici@makine` |
 | `AP: Frame: UNSUPPORTED` | Terminal 2'deki üç `--add-param-file` eksik veya sırası bozuk |
@@ -181,3 +215,22 @@ Talon ≈ `(0, 12, -0.12)` (spawn konumları).
 | Uçak kendi kendine hareket ediyor / komutlar tutmuyor | Önceki oturumdan kalan `run_plane_scenario` süreci — temizlik komutunu çalıştırın |
 | `Address already in use` (8000) | `fuser -k 8000/tcp` |
 | GUI'de `Unable to open display ":1"` | `export DISPLAY=:1` satırını silin |
+
+### GPU'suz makinede çalıştırma (`kms_swrast`)
+
+Ekran kartı yoksa ya da sürücü bozuksa Mesa'nın yazılım rasterleştiricisi
+kullanılabilir — sistemde zaten kurulu, ek paket gerekmez:
+
+    export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast
+    GZ_HEADLESS=1 bash scripts/start_harmonic.sh
+
+Doğrulandı: Gazebo çökmeden koşuyor ve kamera topic'leri gerçekten kare
+yayınlıyor (`/iris_cam/image`, `/talon_cam/image`).
+
+> **Yalnız geliştirme ve duman testi için.** Yazılım render'ı GPU'ya göre kat
+> kat yavaştır; simülasyon gerçek zamanın çok altına düşer. Bu modda alınan
+> uçuş logları GPU'lu koşulardaki sayılarla **karşılaştırılamaz** — ıska
+> ölçümü, kazanç taraması veya faz kapısı ayarı için kullanmayın. Kodun
+> çalıştığını görmek için uygundur.
+
+Sürücü onarıldığında `MESA_LOADER_DRIVER_OVERRIDE` satırını kaldırın.

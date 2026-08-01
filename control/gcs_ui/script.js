@@ -961,41 +961,61 @@ window.onload = () => {
     }
     drawNoise();
 
-    // === PnP POSE TAHMİNİ — Kamera tabanlı telemetri güncelleme ===
-    const pnpDist   = document.getElementById('pnp-dist');
-    const pnpSpeed  = document.getElementById('pnp-speed');
-    const pnpPos    = document.getElementById('pnp-pos');
-    const pnpAccel  = document.getElementById('pnp-accel');
-    const pnpYaw    = document.getElementById('pnp-yaw');
-    const pnpModel  = document.getElementById('pnp-model-status');
+    // === GÖRÜŞ HATTI & FAZ KAPILARI ===
+    // Eski hali ground-truth'a yapay gürültü ekleyip "PnP tahmini" diye
+    // gösteriyordu (rapor fotoğrafı için yazılmış maket). Artık kameranın
+    // GERÇEK kestirimi ile ground-truth ayrı ayrı, faz kapıları da canlı.
+    const pnpFaz   = document.getElementById('pnp-faz');
+    const pnpDet   = document.getElementById('pnp-det');
+    const pnpPose  = document.getElementById('pnp-pose');
+    const pnpDist  = document.getElementById('pnp-dist');
+    const pnpTruth = document.getElementById('pnp-truth');
+    const pnpErr   = document.getElementById('pnp-err');
+    const pnpLock  = document.getElementById('pnp-lock');
+    const pnpDh    = document.getElementById('pnp-dh');
+    const pnpBlock = document.getElementById('pnp-block');
+
+    const _yaz = (el, txt, cls) => { el.textContent = txt; el.className = 'val ' + (cls || ''); };
 
     function updatePnPTelemetry() {
         fetch('/api/telemetry/pnp')
             .then(r => r.json())
             .then(d => {
-                if (d && d.active) {
-                    pnpDist.textContent  = d.distance.toFixed(1) + ' m';
-                    pnpSpeed.textContent = d.speed.toFixed(1) + ' m/s';
-                    pnpPos.textContent   = d.x.toFixed(1) + ', ' + d.y.toFixed(1) + ', ' + d.z.toFixed(1);
-                    pnpAccel.textContent = d.accel.toFixed(2) + ' m/s²';
-                    pnpYaw.textContent   = d.yaw.toFixed(1) + '°';
+                if (!d) return;
+                // gecis_sayisi = GPS→görsel faza kaçıncı GEÇİŞ. Yüksek sayı,
+                // görsel temasın kopup kopup yeniden kurulduğunu gösterir
+                // (faz gidip gelmesi) — 1 ideal, 5+ sorunlu.
+                _yaz(pnpFaz, d.faz + (d.gecis_sayisi ? `  ${d.gecis_sayisi}. geçiş` : ''),
+                     d.faz === 'VISUAL' ? 'green' : d.faz === 'VURULDU' ? 'green' : 'warning');
 
-                    pnpModel.textContent = 'AKTİF';
-                    pnpModel.className   = 'val green';
+                _yaz(pnpDet, d.tespit_var ? `VAR  ${d.tespit_conf}` : 'YOK',
+                     d.tespit_var ? 'green' : 'red');
 
-                    pnpDist.className  = d.distance < 10 ? 'val red' : d.distance < 30 ? 'val warning' : 'val green';
-                    pnpSpeed.className = 'val';
-                } else {
-                    // Model henüz aktif değil
-                    pnpModel.textContent = 'BEKLEMEDE';
-                    pnpModel.className   = 'val warning';
-                }
+                // Kanat uçları görünmüyorsa ölçek (dolayısıyla menzil) güvenilmez
+                _yaz(pnpPose, d.pose_var ? `VAR  ${d.pose_conf}${d.kanat_gorunur ? '' : '  (kanat yok)'}` : 'YOK',
+                     d.pose_var ? (d.kanat_gorunur ? 'green' : 'warning') : 'red');
+
+                _yaz(pnpDist, d.gorus_menzil != null ? d.gorus_menzil.toFixed(1) + ' m' : '--',
+                     d.gorus_menzil == null ? '' :
+                     d.gorus_menzil < 10 ? 'red' : d.gorus_menzil < 30 ? 'warning' : 'green');
+
+                _yaz(pnpTruth, d.gercek_menzil != null ? d.gercek_menzil.toFixed(1) + ' m' : '--', '');
+
+                if (d.menzil_hata != null) {
+                    const h = d.menzil_hata;
+                    _yaz(pnpErr, (h >= 0 ? '+' : '') + h.toFixed(1) + ' m',
+                         Math.abs(h) < 3 ? 'green' : Math.abs(h) < 8 ? 'warning' : 'red');
+                } else _yaz(pnpErr, '--', '');
+
+                _yaz(pnpLock, `${d.kilit_sayac}/${d.kilit_n}  (son ${d.kilit_pencere} kare)`,
+                     d.poz_kapi_ok ? 'green' : 'warning');
+
+                _yaz(pnpDh, d.d_h != null ? `${d.d_h.toFixed(1)} / ${d.gate_menzil} m` : '--',
+                     d.menzil_kapi_ok ? 'green' : 'warning');
+
+                _yaz(pnpBlock, d.engel, d.engel === '—' ? 'green' : 'red');
             })
-            .catch(() => {
-                // API endpoint henüz yok — pose modeli gelince aktifleşecek
-                pnpModel.textContent = 'BEKLEMEDE';
-                pnpModel.className   = 'val warning';
-            });
+            .catch(() => { _yaz(pnpBlock, 'API YOK', 'red'); });
     }
     setInterval(updatePnPTelemetry, 1000);
 

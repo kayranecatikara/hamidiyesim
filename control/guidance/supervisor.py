@@ -46,6 +46,8 @@ class SupCfg:
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
 
 
+
+
 # Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
 status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None}
 

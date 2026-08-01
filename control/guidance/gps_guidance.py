@@ -59,7 +59,10 @@ class Cfg:
     # tavanında komut %98 doygundu: hedef 19-23 giderken drone tavanda kalınca
     # yaklaşma hızı ≈ 0, açı hiç kapanmıyordu. Yüksek hızda eski salınımın sebebi
     # 250 ms telemetri faz gecikmesiydi; 25 Hz ile ~40 ms'e indi.
-    V_MAX = 28.0             # m/s; yatay hız tavanı
+    # 2026-08-01: 28 → 18. 28 m/s'den MAX_ACCEL=12 m/s² ile durma mesafesi
+    # v²/2a = 32.7 m, oysa istasyon standoff'u yalnız 10 m yatay — araç
+    # geometrik olarak zamanında yavaşlayamıyor, hedefin etrafında savruluyor.
+    V_MAX = _env_f("AVCI_GPS_V_MAX", 18.0)   # m/s; yatay hız tavanı
     MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
 
@@ -126,7 +129,8 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     print("=" * 60)
     print("[GPS] Kadraj güdümü (yeniden inşa) — hedefi kamera merkezine getir")
     print(f"[GPS] setpoint: slant {cfg.RANGE_SET:.1f}m → {d_behind:.1f}m arka + "
-          f"{d_below:.1f}m alt (yükseliş {cfg.CENTER_ELEV_DEG:.0f}°) — log: {csv_yol}")
+          f"{d_below:.1f}m alt; yakınlaşınca ofset menzille ORANTILI küçülür, "
+          f"yükseliş her menzilde {cfg.CENTER_ELEV_DEG:.0f}° kalır — log: {csv_yol}")
     print("=" * 60)
 
     def _hover():
@@ -195,6 +199,29 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             menzil = math.sqrt(ex * ex + ey * ey + (est_z - iz) ** 2)
 
             # ── 4) KADRAJ NOKTASI (istasyon): hedefin gerisi + altı ──
+            #
+            # SABİT METRE DEĞİL, SABİT AÇI (2026-08-01 dikey ıska düzeltmesi).
+            # Eskiden ofset RANGE_SET'ten bir kez hesaplanıp sabit metre olarak
+            # kullanılıyordu (d_behind 9.97 m, d_below 4.65 m). Ama sabit metre
+            # kapanan menzilde sabit açı DEĞİLDİR — drone RANGE_SET'ten daha
+            # yakına girdiğinde aynı 4.65 m giderek büyüyen bir LOS yükselişine
+            # dönüşüyordu:
+            #     menzil 11 m → 25° (kadraj merkezi, kamera tilt'i)
+            #     menzil  8 m → 35°
+            #     menzil  6 m → 51°
+            #     menzil  4 m → >90°  (kadrajın DIŞI; üst sınır +80.2°)
+            # Hedef kadrajın tepesinden çıkıyor, tespit kopuyor, drone altından
+            # geçiyordu. Yani tasarım, korumak istediği görsel temasını yakın
+            # menzilde kendi bozuyordu.
+            #
+            # Düzeltme: etkin standoff, menzil RANGE_SET'in altına inince onunla
+            # birlikte küçülür. Böylece LOS yükselişi HER menzilde CENTER_ELEV_DEG
+            # (=kamera tilt'i) kalır ve hedef kadraj merkezinde durur.
+            # Uzakta (menzil ≥ RANGE_SET) davranış AYNEN eskisi gibidir.
+            r_eff = min(menzil, cfg.RANGE_SET)
+            d_behind_eff = r_eff * math.cos(center_elev)
+            d_below_eff = r_eff * math.sin(center_elev)
+
             tgt_spd_h = math.hypot(vel_x, vel_y)
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
                 bx, by = -vel_x / tgt_spd_h, -vel_y / tgt_spd_h   # hız yönünün gerisi (kuyruk)
@@ -202,9 +229,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 bx, by = -ex / d_h, -ey / d_h                     # LOS gerisi (drone tarafı)
             else:
                 bx, by = 0.0, 0.0
-            st_x = est_x + bx * d_behind
-            st_y = est_y + by * d_behind
-            st_z = est_z + d_below                                # NED: altında (+z aşağı)
+            st_x = est_x + bx * d_behind_eff
+            st_y = est_y + by * d_behind_eff
+            st_z = est_z + d_below_eff                            # NED: altında (+z aşağı)
             if -st_z < cfg.LOOKUP_MIN_ALT:                        # yere çakılma koruması
                 st_z = -cfg.LOOKUP_MIN_ALT
 

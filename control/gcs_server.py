@@ -25,7 +25,8 @@ import uvicorn
 
 # Cessna renk tabanlı tespit
 from vision.detection_state import (set_detection, set_pose_detection,
-                                    wait_new_pose)
+                                    wait_new_pose, get_detection,
+                                    get_pose_detection)
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
 # Kare scriptinin de kullandığı, kanıtlanmış çalışan modüller (ArduPilot)
@@ -34,8 +35,12 @@ from control.mav_common import (
     GCSKeepalive,
     set_mode,
     wait_ack,
+    arm as mav_arm,
+    disarm as mav_disarm,
     PLANE_MODE_MANUAL,
     PLANE_MODE_FBWA,
+    PLANE_MODE_FBWB,
+    PLANE_MODE_TAKEOFF,
 )
 
 app = FastAPI(title="Avcı GCS")
@@ -145,6 +150,20 @@ _manual_aileron  = 1500
 _manual_elevator = 1500
 _manual_throttle = 1000
 
+# Manuel mod: FBWA→FBWB geçiş irtifası ve otonom kalkış için beklenecek süre.
+# FBWB irtifa TUTAR, o yüzden yerdeyken kullanılamaz (kalkamaz); FBWA ise açı
+# tutar ama irtifa tutmaz (stick ortada uçak alçalır). Bu yüzden yerde FBWA,
+# eşiği geçince FBWB.
+_MANUAL_FBWB_ALT = float(os.environ.get("AVCI_MANUAL_FBWB_ALT", "15.0"))
+_MANUAL_TAKEOFF_SURE = float(os.environ.get("AVCI_MANUAL_TAKEOFF_SURE", "20.0"))
+
+
+def _havada_mi(esik=None):
+    """Uçak FBWB'ye geçebilecek kadar yüksekte mi? NED: -z = yükseklik.
+    Telemetri yoksa (z=0) YERDE sayılır — yanlış tarafa hata yapmayalım."""
+    return -telemetry_state["plane"].get("z", 0.0) >= (
+        _MANUAL_FBWB_ALT if esik is None else esik)
+
 def id_to_name(sysid):
     # ArduPilot SITL: iris/copter sysid=5, plane sysid=2
     if sysid in (1, 5):      # iris (ArduCopter)
@@ -227,8 +246,9 @@ class ManualCmd(BaseModel):
 @app.post("/api/command/plane/start_manual")
 def start_manual_mode():
     """Hangi senaryo uçuyorsa durdurur, uçağı klavye kontrolüne devralır.
-    FBWA modunda: W/S = pitch açı hedefi, A/D = yatış açı hedefi (stall'a
-    karşı açı limitli — ham MANUAL moddan çok daha kontrol edilebilir)."""
+    Yerdeyken FBWA (tırmanabilsin), AVCI_MANUAL_FBWB_ALT eşiğini geçince
+    FBWB (irtifa tutsun, burun aşağı düşmesin). W/S = pitch/tırmanış,
+    A/D = yatış açı hedefi. Bkz. _manual_control_thread."""
     global _manual_active
     global _manual_aileron, _manual_elevator, _manual_throttle
 
@@ -247,12 +267,13 @@ def start_manual_mode():
     t = threading.Thread(target=_manual_control_thread, daemon=True)
     t.start()
     print("[GCS] Manuel kontrol thread'i başlatıldı.")
-    return {"status": "success", "message": "Manuel mod aktif (FBWA)"}
+    return {"status": "success", "message": "Manuel mod aktif (yerde FBWA → havada FBWB)"}
 
 
 def _manual_control_thread():
     """
-    Uçağı FBWA'da klavye/joystick kontrolüne devralır (10 Hz RC override).
+    Uçağı klavye/joystick kontrolüne devralır (10 Hz RC override).
+    Mod irtifaya göre seçilir: yerde FBWA (kalkabilsin), havada FBWB (irtifa tutsun).
 
     ÖNEMLİ: Bu thread paylaşılan _mav_conn üzerinde ASLA blocking recv yapmaz.
     Eski kod set_mode ile ACK/heartbeat okuyordu; aynı bağlantıyı async
@@ -281,26 +302,76 @@ def _manual_control_thread():
         keepalive = GCSKeepalive(conn, interval=0.1)
         keepalive.start()
 
-        def _send_fbwa():
-            # ArduPlane FBWA (5): RC override açı hedefi olarak işlenir (açı
-            # limitli, stall korumalı). Ham MANUAL (0) havada elle uçulamıyordu.
+        # ── YERDEN KALKIŞ: ARM + TAKEOFF ──
+        # 2026-08-01: manuel mod yerdeki uçağı HİÇ kaldıramıyordu. Sebep mod
+        # seçimi değil, mod DEĞİŞTİRMENİN TEK BAŞINA YETMEMESİ: uçak disarm
+        # halde ve motoru kapalı; RC override göndermek bir şey yapmıyor.
+        # run_plane_scenario bunu doğru yapıyor ("bağlan → force ARM → TAKEOFF
+        # modu ile otonom kalkış → FBWA + RC"); manuel modda o adımlar hiç yoktu.
+        # Manuel mod baştan "havadaki uçağı devral" için yazılmış; yerden
+        # başlatınca sessizce hiçbir şey olmuyordu.
+        # TAKEOFF sırasında RC override GÖNDERİLMEZ — senaryo da göndermiyor,
+        # otopilotun kalkış profilini bozar.
+        if not telemetry_state["plane"].get("armed", False) or not _havada_mi():
+            print("[MANUAL] Uçak yerde/disarm → ARM + TAKEOFF")
+            try:
+                mav_arm(conn, force=True)
+            except Exception as e:
+                print(f"[MANUAL] ARM hatası: {e}")
             conn.mav.command_long_send(
                 conn.target_system, conn.target_component,
                 mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                PLANE_MODE_FBWA, 0, 0, 0, 0, 0)
+                PLANE_MODE_TAKEOFF, 0, 0, 0, 0, 0)
+            t0 = time.time()
+            while (_manual_active and time.time() - t0 < _MANUAL_TAKEOFF_SURE
+                   and not _havada_mi()):
+                time.sleep(0.2)
+            print(f"[MANUAL] Kalkış bitti (irtifa "
+                  f"~{-telemetry_state['plane'].get('z', 0.0):.0f} m)")
 
-        print("[MANUAL] FBWA komutu gönderildi, RC override döngüsü başlıyor (10 Hz)...")
-        _send_fbwa()
+        # ── İRTİFAYA GÖRE MOD: yerde FBWA, havada FBWB ──
+        # Ham MANUAL (0) havada elle uçulamıyordu. FBWA (5) açıyı tutar ama
+        # İRTİFAYI TUTMAZ: stick ortada 0° pitch demek ve 0° pitch'te uçak
+        # alçalır — burun-aşağı şikâyetinin sebebi buydu. FBWB (6) irtifa tutar,
+        # ama TAM DA BU YÜZDEN yerdeyken kalkamaz: "mevcut irtifayı koru" =
+        # yerde kal. (Önce koşulsuz FBWB yapılmıştı, Talon hiç kalkmadı.)
+        # Çözüm: yerdeyken FBWA ile tırman, eşiği geçince FBWB'ye geç.
+        def _istenen_mod():
+            return PLANE_MODE_FBWB if _havada_mi() else PLANE_MODE_FBWA
+
+        fbwb_alt = _MANUAL_FBWB_ALT
+
+        def _send_manual_mode(hedef):
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                hedef, 0, 0, 0, 0, 0)
+
+        hedef_mod = _istenen_mod()
+        print(f"[MANUAL] {'FBWB' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'} "
+              f"komutu gönderildi (FBWB eşiği {fbwb_alt:.0f} m), "
+              f"RC override döngüsü başlıyor (10 Hz)...")
+        _send_manual_mode(hedef_mod)
         mode_ok = False
         tick = 0
         while _manual_active:
+            # İrtifa eşiği geçilince FBWA → FBWB (tırmanış bitti, irtifa tutulsun)
+            yeni_hedef = _istenen_mod()
+            if yeni_hedef != hedef_mod and yeni_hedef == PLANE_MODE_FBWB:
+                hedef_mod = yeni_hedef
+                mode_ok = False
+                print(f"[MANUAL] irtifa {-telemetry_state['plane'].get('z', 0.0):.0f} m "
+                      f"→ {'FBWB (irtifa tut)' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'}")
+                _send_manual_mode(hedef_mod)
             if not mode_ok:
-                if telemetry_state["plane"].get("mode") == PLANE_MODE_FBWA:
+                if telemetry_state["plane"].get("mode") == hedef_mod:
                     mode_ok = True
-                    print("[MANUAL] ✓ FBWA teyit edildi (heartbeat)")
+                    print(f"[MANUAL] ✓ {'FBWB' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'}"
+                          f" teyit edildi (heartbeat)")
                 elif tick > 0 and tick % 5 == 0:      # 0.5s'de bir tekrar dene
-                    _send_fbwa()
+                    _send_manual_mode(hedef_mod)
             conn.mav.rc_channels_override_send(
                 conn.target_system,
                 conn.target_component,
@@ -542,69 +613,132 @@ def chase_status():
 
 
 # -----------------------------------------------------------------------
-# PnP POSE TAHMİNİ — Gerçek veriden türetilmiş simüle PnP çıkışı
+# GÖRÜŞ & FAZ PANELİ — /api/telemetry/pnp
 # -----------------------------------------------------------------------
-_pnp_prev_speed = 0.0
-_pnp_prev_time  = 0.0
+# 2026-08-01: Bu endpoint ESKİDEN SAHTEYDİ. Ground-truth telemetriye yapay
+# gauss gürültüsü + sabit 8 m ofset ekleyip "PnP çıkışı" diye sunuyordu
+# ("rapor fotoğrafları için" notuyla). Pose modeline hiç dokunmuyordu, o
+# yüzden panele bakarak görsel fazın ne zaman devreye gireceği anlaşılamıyordu
+# ve saatlerce açık kalan GCS'te 6000 m gibi değerler görünüyordu.
+#
+# Yerine GERÇEK veri: kameranın ürettiği kestirim ile ground-truth YAN YANA,
+# ikisi ayrı ayrı etiketli ("cevap anahtarı" ilkesi: kameranın kestirimi ile
+# ground-truth yan yana, fark = algı hatası).
+# Ayrıca GPS→görsel geçişinin İKİ kapısı da canlı gösteriliyor, çünkü asıl
+# sorulan soru bu: "neden hâlâ görsel faza geçmedi?"
+#   • pose kilidi : son KILIT_PENCERE karenin kaçında conf ≥ POSE_CONF_MIN
+#   • menzil kapısı: yatay mesafe d_h < GATE_MENZIL mi
+# Hangisinin bağlayıcı olduğu panelden tek bakışta görünür.
+
+def _gorus_menzil_kestirimi(pose, iris_att):
+    """Pose keypoint'lerinden ölçek tabanlı menzil (m) — guidance_core ile AYNI
+    formül (Adım 2-3). Kamera dışında hiçbir bilgi kullanmaz.
+
+    iris_att verilirse yükselti düzeltmesi de uygulanır (hedef seviyeli uçuyor
+    varsayımı); yoksa ham ölçek kullanılır ve değer bir miktar iyimser çıkar.
+    Dönüş: (menzil_m, kanat_gorunur_mu) veya (None, False).
+    """
+    try:
+        kpts = pose["kpts"]
+        burun, kuyruk = kpts[0], kpts[1]
+        solk, sagk = kpts[2], kpts[3]
+        a = math.hypot(burun[0] - kuyruk[0], burun[1] - kuyruk[1])
+        b = math.hypot(solk[0] - sagk[0], solk[1] - sagk[1])
+        olcek = math.sqrt(a * a + (_GOVDE_KANAT_ORANI * b) ** 2)
+        if olcek <= 1e-9:
+            return None, False
+        if iris_att is not None:
+            # Kamera ışını → gövde → dünya: LOS yükselişi (eps) ile ölçek düzeltilir
+            u = np.array([(pose["cx"] - _geo.CX) / _geo.FX,
+                          (pose["cy"] - _geo.CY) / _geo.FY, 1.0])
+            u = u / np.linalg.norm(u)
+            u_g = _kamera_to_govde(u, math.radians(_LeadCfg.KAMERA_TILT_DEG))
+            u_d = _govde_to_dunya(u_g, *iris_att)
+            eps = math.asin(max(-1.0, min(1.0, -float(u_d[2]))))
+            olcek = olcek / _yukselti_duzeltme(eps)
+        kanat_ok = (solk[2] >= _LeadCfg.KPT_CONF_MIN
+                    and sagk[2] >= _LeadCfg.KPT_CONF_MIN)
+        return _geo.FX * _GOVDE_BOYU_M / olcek, kanat_ok
+    except Exception:
+        return None, False
+
 
 @app.get("/api/telemetry/pnp")
 def pnp_telemetry():
-    """
-    Pose modeli henüz eğitilmedi.
-    Gerçek telemetri verilerine gerçekçi gürültü ekleyerek
-    PnP çıkışını simüle eder — rapor fotoğrafları için.
-    """
-    global _pnp_prev_speed, _pnp_prev_time
+    """Görüş hattının GERÇEK çıktısı + faz kapıları + ground-truth kıyası.
 
+    Buradaki hiçbir değer güdüme girmez; panel yalnız gözlem içindir.
+    """
+    det = get_detection()
+    pose = get_pose_detection()
+    iris = telemetry_state["iris"]
     plane = telemetry_state["plane"]
-    iris  = telemetry_state["iris"]
 
-    # Plane verisi yoksa (henüz telemetri gelmediyse)
-    if plane["x"] == 0 and plane["y"] == 0 and plane["z"] == 0:
-        return {"active": False}
+    iris_att = None
+    if any(iris.get(k) for k in ("roll", "pitch", "yaw")):
+        iris_att = (iris.get("roll", 0.0), iris.get("pitch", 0.0),
+                    iris.get("yaw", 0.0))
 
-    # Gerçek mesafe
-    dx = plane["x"] - iris["x"]
-    dy = plane["y"] - iris["y"]
-    dz = plane["z"] - iris["z"]
-    real_dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+    # ── Kameranın kendi menzil kestirimi (ölçek tabanlı) ──
+    gorus_menzil, kanat_ok = (None, False)
+    if pose is not None:
+        gorus_menzil, kanat_ok = _gorus_menzil_kestirimi(pose, iris_att)
 
-    # Gerçek hız (plane)
-    real_speed = math.sqrt(
-        plane.get("vx", 0)**2 +
-        plane.get("vy", 0)**2 +
-        plane.get("vz", 0)**2
-    )
+    # ── Ground-truth (SİM KOLAYLIĞI — gerçek harekâtta yok, etiketli göster) ──
+    gercek_menzil = None
+    telem_var = not (plane["x"] == 0 and plane["y"] == 0 and plane["z"] == 0)
+    if telem_var:
+        gercek_menzil = math.sqrt((plane["x"] - iris["x"]) ** 2
+                                  + (plane["y"] - iris["y"]) ** 2
+                                  + (plane["z"] - iris["z"]) ** 2)
 
-    # Gerçek yaw
-    real_yaw = plane.get("yaw", 0.0)
+    # ── Faz kapıları: "neden hâlâ geçmedi" sorusunun cevabı ──
+    sup = _supervisor_mod.status
+    sup_cfg = _supervisor_mod.SupCfg
+    gps_st = _gps_guidance_mod.status
+    d_h = gps_st.get("d_h")
 
-    # İvme tahmini (hız farkından türet)
-    now = time.monotonic()
-    dt_pnp = now - _pnp_prev_time if _pnp_prev_time > 0 else 1.0
-    dt_pnp = max(dt_pnp, 0.1)
-    real_accel = abs(real_speed - _pnp_prev_speed) / dt_pnp
-    _pnp_prev_speed = real_speed
-    _pnp_prev_time  = now
+    kilit_sayac = sup.get("kilit_sayac", 0)
+    poz_kapi_ok = kilit_sayac >= sup_cfg.KILIT_N
+    menzil_kapi_ok = (not sup_cfg.GATE_KILIT) or (
+        d_h is not None and d_h < sup_cfg.GATE_MENZIL) or (
+        gps_st.get("durum") == "DROPOUT")
 
-    # ── GERÇEKÇİ GÜRÜLTÜ EKLE (PnP sensor noise) ──
-    dist_noise  = random.gauss(0, 0.15 + real_dist * 0.01)
-    speed_noise = random.gauss(0, 0.2)
-    pos_noise_x = random.gauss(0, 0.3)
-    pos_noise_y = random.gauss(0, 0.3)
-    pos_noise_z = random.gauss(0, 0.15)
-    accel_noise = random.gauss(0, 0.15)
-    yaw_noise   = random.gauss(0, 2.0)
+    if sup["faz"] != "GPS":
+        engel = "—"
+    elif not poz_kapi_ok and not menzil_kapi_ok:
+        engel = "POSE + MENZİL"
+    elif not poz_kapi_ok:
+        engel = "POSE KİLİDİ"
+    elif not menzil_kapi_ok:
+        engel = "MENZİL KAPISI"
+    else:
+        engel = "—"
 
     return {
-        "active":   True,
-        "distance": round(max(0, real_dist + 8.0 + dist_noise + random.uniform(-0.5, 0.5)), 1),
-        "speed":    round(max(0, real_speed + speed_noise), 1),
-        "x":        round(plane["x"] + pos_noise_x, 1),
-        "y":        round(plane["y"] + pos_noise_y, 1),
-        "z":        round(plane["z"] + pos_noise_z, 1),
-        "accel":    round(max(0, real_accel + accel_noise), 2),
-        "yaw":      round(real_yaw + yaw_noise, 1)
+        "active": det is not None or pose is not None or telem_var,
+        "faz": sup.get("faz", "GPS"),
+        "gecis_sayisi": sup.get("gecis_sayisi", 0),
+        # görüş hattı
+        "tespit_var": det is not None,
+        "tespit_conf": round(float(det["conf"]), 2) if det else None,
+        "pose_var": pose is not None,
+        "pose_conf": round(float(pose.get("conf", 0.0)), 2) if pose else None,
+        "kanat_gorunur": bool(kanat_ok),
+        "gorus_menzil": round(gorus_menzil, 1) if gorus_menzil else None,
+        # ground-truth (etiketli)
+        "gercek_menzil": round(gercek_menzil, 1) if gercek_menzil else None,
+        "menzil_hata": (round(gorus_menzil - gercek_menzil, 1)
+                        if (gorus_menzil and gercek_menzil) else None),
+        # faz kapıları
+        "kilit_sayac": kilit_sayac,
+        "kilit_n": sup_cfg.KILIT_N,
+        "kilit_pencere": sup_cfg.KILIT_PENCERE,
+        "d_h": round(d_h, 1) if d_h is not None else None,
+        "gate_menzil": sup_cfg.GATE_MENZIL,
+        "poz_kapi_ok": poz_kapi_ok,
+        "menzil_kapi_ok": bool(menzil_kapi_ok),
+        "engel": engel,
     }
 
 
@@ -613,6 +747,138 @@ from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
+
+# Görüş paneli (/api/telemetry/pnp) menzil kestirimini guidance_core'un AYNI
+# formülüyle üretir — panelin gösterdiği sayı güdümün gördüğü sayı olsun diye
+# ayrı bir kopya YAZILMADI.
+from control.guidance.guidance_core import (
+    Cfg as _LeadCfg, GOVDE_BOYU_M as _GOVDE_BOYU_M,
+    GOVDE_KANAT_ORANI as _GOVDE_KANAT_ORANI,
+    kamera_to_govde as _kamera_to_govde, govde_to_dunya as _govde_to_dunya,
+    yukselti_duzeltme as _yukselti_duzeltme)
+from vision import geometry as _geo
+
+
+# ══════════════════════════════════════════════════════════
+#  HASAR MODÜLÜ — çarpışmada hedef imha olsun
+# ══════════════════════════════════════════════════════════
+# Gazebo ÇARPIŞMA fiziğini zaten uyguluyor: iki gövde temas edince itilir, hafif
+# avcı savrulup düşer (kara kutuda t=148s'de |roll|>90°, irtifa 595→533 m).
+# Eksik olan HASAR: hedef vurulduğunu "bilmiyor", darbeden sonra dengesini
+# toplayıp uçmaya devam ediyordu — görev başarılı olsa bile ekranda öyle
+# görünmüyordu.
+#
+# ⚠ 2026-08-02: VARSAYILAN KAPALI. İlk sürüm yakınlık eşiği (<2 m) kullanıyordu
+# ve ıskalayıp yanından geçtiğinde de hedefi düşürüyordu — yanlıştı. Contact
+# sensörlü sürüm için gereken SDF değişiklikleri (dünya eklentisi + talon
+# sensörü) GERİ ALINDI, o yüzden bu modül şu an tetiklenemez. AVCI_HASAR=1 ile
+# açılırsa yalnız temas topic'ini dinler; topic yoksa hiçbir şey yapmaz.
+#
+# TETİK: GAZEBO CONTACT SENSÖRÜ — yani GERÇEK fiziksel temas.
+# İlk sürüm ground-truth menzil < 2 m'yi "çarpışma" sayıyordu; bu YANLIŞTI ve
+# uçuşta ıskalayıp yakınından geçtiği halde hedefi düşürüyordu. Yakınlık
+# çarpışma değildir. Artık tek kaynak, mini_talon'un gövde/kanat/kuyruk
+# yüzeylerine bağlı `carpisma_sensoru` (bkz. models/mini_talon_vtail/model.sdf
+# ve worlds/avci_harmonic.sdf içindeki gz-sim-contact-system).
+#
+# SÜZGEÇ: hedef sürekli ZEMİNE de değiyor (kalkış, iniş, çakılma). Temasın
+# karşı tarafı iris değilse İMHA SAYILMAZ.
+#
+# NEDEN AYRI MODÜL: vuruş tespiti yalnız visual_lead içinde var, GPS fazında
+# yok — çarpışma GPS fazında olursa kimse fark etmiyordu. Bu modül hangi faz
+# çalışırsa çalışsın (hatta hiçbiri çalışmasa da) temasi dinler.
+_HASAR_AKTIF = os.environ.get("AVCI_HASAR", "0") == "1"
+_HASAR_TOPIC = os.environ.get(
+    "AVCI_HASAR_TOPIC",
+    "/world/avci/model/mini_talon/link/base_link/sensor/carpisma_sensoru/contact")
+# Temasın karşı tarafında bu geçiyorsa avcı ile çarpışmışız demektir.
+_HASAR_AVCI_ADI = os.environ.get("AVCI_HASAR_AVCI_ADI", "iris")
+hasar_durumu = {"imha": False, "menzil": None, "t": None,
+                "temas": None, "kaynak": "gazebo_contact"}
+
+
+def _hasar_uygula(detay):
+    """Hedefi imha et: force-disarm → motor kesilir, yüzeyler ölür, düşer."""
+    if hasar_durumu["imha"]:
+        return
+    ip, pp = telemetry_state["iris"], telemetry_state["plane"]
+    d = math.sqrt((pp["x"] - ip["x"]) ** 2 + (pp["y"] - ip["y"]) ** 2
+                  + (pp["z"] - ip["z"]) ** 2)
+    hasar_durumu.update(imha=True, t=time.time(), menzil=round(d, 2), temas=detay)
+    print("\n" + "=" * 50)
+    print(f"[HASAR] \u2738 GERÇEK ÇARPIŞMA — {detay}")
+    print(f"[HASAR] temas anındaki menzil {d:.2f} m")
+    print("[HASAR] Talon disarm ediliyor (motor + yüzeyler ölü)")
+    print("=" * 50)
+    if _mav_conn is not None and _plane_sysid is not None:
+        onceki = _mav_conn.target_system
+        try:
+            _mav_conn.target_system = _plane_sysid
+            mav_disarm(_mav_conn, force=True)
+        except Exception as e:
+            print(f"[HASAR] disarm hatası: {e}")
+        finally:
+            _mav_conn.target_system = onceki
+
+
+def _hasar_izleyici():
+    """gz-transport'tan temas mesajlarını dinler; karşı taraf avcıysa imha eder."""
+    if not _HASAR_AKTIF:
+        print("[HASAR] Modül KAPALI (AVCI_HASAR=0)")
+        return
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.contacts_pb2 import Contacts
+    except Exception as e:
+        print(f"[HASAR] gz-transport yok ({e}) — çarpışma tespiti DEVRE DIŞI. "
+              f"Hedef vurulsa da düşmeyecek.")
+        return
+
+    def cb(msg):
+        try:
+            if hasar_durumu["imha"]:
+                return
+            for c in msg.contact:
+                # Temasın iki tarafı: biri talon (sensörün kendisi), diğeri ne?
+                ad1 = getattr(c.collision1, "name", "") or ""
+                ad2 = getattr(c.collision2, "name", "") or ""
+                karsi = ad2 if _HASAR_AVCI_ADI in ad2 else (
+                    ad1 if _HASAR_AVCI_ADI in ad1 else None)
+                if karsi:
+                    _hasar_uygula(f"temas: {ad1} ↔ {ad2}")
+                    return
+        except Exception as e:
+            print(f"[HASAR] temas mesajı işlenemedi: {e}")
+
+    node = GzNode()
+    if not node.subscribe(Contacts, _HASAR_TOPIC, cb):
+        print(f"[HASAR] temas topic'ine abone olunamadı: {_HASAR_TOPIC}")
+        return
+    print(f"[HASAR] Gerçek çarpışma dinleniyor: {_HASAR_TOPIC}")
+    while True:
+        # menzili yalnız GÖZLEM için güncelle — tetikleyici DEĞİL
+        try:
+            ip, pp = telemetry_state["iris"], telemetry_state["plane"]
+            if not (pp["x"] == 0 and pp["y"] == 0 and pp["z"] == 0):
+                hasar_durumu["menzil"] = round(
+                    math.sqrt((pp["x"] - ip["x"]) ** 2 + (pp["y"] - ip["y"]) ** 2
+                              + (pp["z"] - ip["z"]) ** 2), 2)
+        except Exception:
+            pass
+        time.sleep(0.2)
+
+
+@app.get("/api/hasar")
+def hasar_get():
+    """Hasar durumu — arayüz/otomasyon için."""
+    return {**hasar_durumu, "aktif": _HASAR_AKTIF, "topic": _HASAR_TOPIC}
+
+
+@app.post("/api/hasar/sifirla")
+def hasar_sifirla():
+    """Yeni denemeden önce imha bayrağını temizler."""
+    hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
+    return {"status": "success", "message": "Hasar durumu sıfırlandı."}
 
 
 # ══════════════════════════════════════════════════════════
@@ -1071,7 +1337,26 @@ async def mavlink_listener():
             # Sadece UÇAĞA (FixedWing) ait MAVLink paketlerini "plane" olarak işle
             if sysid_is_plane.get(sys_id, False):
                 _process_mavlink_msg(msg, "plane")
-            
+            elif sysid_is_plane.get(sys_id) is False:
+                # QUADROTOR (avcı drone) — 14550'den de yayın var (start_harmonic.sh
+                # her iki SITL'i buraya da --out ediyor).
+                #
+                # NEDEN: 14541'i aynı anda TEK program dinleyebiliyor. Güdüm
+                # senaryosu çalışırken iris telem worker'ı susuyor (start/stop_iris_telem)
+                # ve portu güdüm alıyor; run_visual_lead veriyi kendi _ArasState'ine
+                # çekip telemetry_state'e HİÇ yazmıyor. Sonuç: arayüz son değerde
+                # DONUYOR — kalkıştan önceki spawn irtifası (~0.19 m) ekranda kalıyor,
+                # drone 50 m'ye çıksa bile. Değerler sıfırlanmıyor, donuyor.
+                #
+                # Bu dal İKİNCİ ve BAĞIMSIZ bir kaynak: güdüm 14541'i tutsa da
+                # arayüz 14550'den canlı kalır. Güdüm koduna dokunmaz.
+                #
+                # `is False` şart — `.get()` None dönerse sysid henüz HEARTBEAT ile
+                # tanınmamıştır; tanınmayan paketi iris sanıp yazmayalım. (sysid 255
+                # = GCS/mavproxy zaten sözlüğe hiç girmiyor.)
+                _process_mavlink_msg(msg, "iris")
+
+
         await asyncio.sleep(0.005)
 
 
@@ -1131,6 +1416,11 @@ def stop_iris_telem():
 async def startup_event():
     asyncio.create_task(mavlink_listener())          # plane — 14550
     start_iris_telem()                                # iris  — 14541 (background thread)
+    # Hasar modülü: çarpışma menzilini izler, temasta hedefi imha eder.
+    # Güdümden bağımsız — hangi faz çalışırsa çalışsın (veya hiçbiri) izler.
+    threading.Thread(target=_hasar_izleyici, daemon=True).start()
+    print(f"[GCS] Hasar modülü {'aktif' if _HASAR_AKTIF else 'KAPALI'} "
+          f"— GERÇEK Gazebo teması (yakınlık eşiği YOK; AVCI_HASAR=0 kapatır)")
     # YOLO detector'ı yükle (opsiyonel; AVCI_DETECTOR=off ile kapatılır)
     if os.environ.get("AVCI_DETECTOR", "yolo").lower() == "yolo":
         global _yolo_detector

@@ -158,16 +158,22 @@
                         </div>
                     </div>
 
-                    <!-- PnP POSE TAHMİNİ (Kamera Tabanlı) -->
+                    <!-- GÖRÜŞ HATTI & FAZ KAPILARI (gerçek veri) -->
                     <div class="section-divider"></div>
-                    <h3 class="section-title mt-2">📐 PnP POSE TAHMİNİ</h3>
+                    <h3 class="section-title mt-2">👁 GÖRÜŞ & FAZ</h3>
                     <div class="chase-info-panel">
-                        <div class="d-row"><span>MESAFE:</span> <span id="pnp-dist" class="val">-- m</span></div>
-                        <div class="d-row"><span>HIZ:</span> <span id="pnp-speed" class="val">-- m/s</span></div>
-                        <div class="d-row"><span>KONUM (X,Y,Z):</span> <span id="pnp-pos" class="val">--, --, --</span></div>
-                        <div class="d-row"><span>İVME:</span> <span id="pnp-accel" class="val">-- m/s²</span></div>
-                        <div class="d-row"><span>YAW:</span> <span id="pnp-yaw" class="val">--°</span></div>
-                        <div class="d-row"><span>MODEL:</span> <span id="pnp-model-status" class="val warning">BEKLEMEDE</span></div>
+                        <div class="d-row"><span>FAZ:</span> <span id="pnp-faz" class="val">--</span></div>
+                        <div class="d-row"><span>TESPİT (bbox):</span> <span id="pnp-det" class="val">--</span></div>
+                        <div class="d-row"><span>POSE:</span> <span id="pnp-pose" class="val">--</span></div>
+                        <div class="d-row"><span>MESAFE (görüş):</span> <span id="pnp-dist" class="val">-- m</span></div>
+                        <div class="d-row"><span>MESAFE (gerçek):</span> <span id="pnp-truth" class="val">-- m</span></div>
+                        <div class="d-row"><span>GÖRÜŞ HATASI:</span> <span id="pnp-err" class="val">--</span></div>
+                        <div class="d-row"><span>POSE KİLİDİ:</span> <span id="pnp-lock" class="val">--</span></div>
+                        <div class="d-row"><span>YATAY MESAFE:</span> <span id="pnp-dh" class="val">--</span></div>
+                        <div class="d-row"><span>GEÇİŞİ ENGELLEYEN:</span> <span id="pnp-block" class="val">--</span></div>
+                    </div>
+                    <div style="font-size:10px;opacity:.55;padding:2px 6px 0">
+                        "gerçek" = sim ground-truth, yalnız kıyas için — güdüme girmez.
                     </div>
                 </div>
             </aside>

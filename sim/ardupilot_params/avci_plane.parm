@@ -7,9 +7,16 @@
 # max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
 
 # Cruise / airspeed hedefleri (cm/s)
-TRIM_ARSPD_CM 1500
-ARSPD_FBW_MIN 1200
-ARSPD_FBW_MAX 2200
+# ── 2026-08-01: hız parametreleri de YANLIŞ ADLA yazılmıştı ──
+# Firmware bunları yeniden adlandırıp SI birimine geçmiş; eski adlar sessizce
+# yok sayılıyordu (bkz. avci_copter.parm başındaki uyarı):
+#   TRIM_ARSPD_CM 1500 cm/s → AIRSPEED_CRUISE 15 m/s   (varsayılan 12 idi)
+#   ARSPD_FBW_MIN 1200 cm/s → AIRSPEED_MIN     12 m/s   (varsayılan  9 idi)
+#   ARSPD_FBW_MAX 2200 cm/s → AIRSPEED_MAX     22 m/s   (zaten 22)
+# Talon bugüne kadar 12 m/s cruise ile uçtu, 15 değil.
+AIRSPEED_CRUISE 15
+AIRSPEED_MIN 12
+AIRSPEED_MAX 22
 
 # LOITER yarıçapını küçült — hedef daha dar bir bölgede kalsın
 WP_LOITER_RAD 80

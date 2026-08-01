@@ -15,7 +15,9 @@ import numpy as np
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
-    govde_to_dunya, yukselti_duzeltme)
+    govde_to_dunya, hedef_kadraj_hatasi, yukselti_duzeltme)
+from control.guidance.visual_lead import _cevap_anahtari
+from control.guidance.common import normalize_angle as _norm
 from vision import geometry as geo
 
 FX, FY, CX, CY = geo.FX, geo.FY, geo.CX, geo.CY
@@ -635,6 +637,100 @@ def main():
             abs(asiri["kadraj_duz_deg"]) <= cfg.KADRAJ_MAX_DEG + 1e-6,
             f"hata={asiri['kadraj_hata_deg']:+.1f}° → "
             f"düzeltme={asiri['kadraj_duz_deg']:+.1f}° (tavan {cfg.KADRAJ_MAX_DEG}°)")
+
+    # ── T40-T43: CEVAP ANAHTARI (ground-truth ölçüm sütunları) ──
+    # Kritik risk: pose zinciri (kamera→gövde) ile saf geometri (dünya→gövde)
+    # farklı konvansiyon kullanırsa sapma sütunları SABİT bir yanlılık gösterir
+    # ve olmayan bir algı hatası kovalanır. T40 iki zincirin aynı dili
+    # konuştuğunu kanıtlar.
+    class _Aras:
+        def __init__(self, pos, att):
+            self.pos, self.attitude = pos, att
+
+    cfg = cfg_copy()
+    drone, att0 = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+
+    def _anahtar(hedef, cx_kaydir=0.0, res_ver=True):
+        t = hedef_kadraj_hatasi(hedef, drone, *att0)
+        satir, res = {}, None
+        if res_ver and t["u"] is not None:
+            res = tek_kare(cfg, make_pose(11.0, 45.0, cx=t["u"] + cx_kaydir,
+                                          cy=t["v"]), att=att0)
+        _cevap_anahtari(satir, hedef, _Aras(drone, att0), res)
+        return satir, t
+
+    # hedef 10 m ileri, 4.65 m yukarıda → gerçek yükseliş ~24.9° (kadraj merkezi)
+    s40, t40 = _anahtar((10.0, 0.0, -4.65))
+    kontrol("T40 mükemmel pose'ta cevap anahtarı sapması ≈ 0",
+            abs(s40["pose_yaw_sapma_deg"]) < 0.01
+            and abs(s40["pose_elev_sapma_deg"]) < 0.01,
+            f"yaw sapma={s40['pose_yaw_sapma_deg']:+.4f}° "
+            f"elev sapma={s40['pose_elev_sapma_deg']:+.4f}° "
+            f"(gercek elev={s40['gercek_elev_deg']:.1f}°)")
+
+    # bbox'ı 30 px SAĞA kaydır → gerçek bir azimut sapması görünmeli (sağ +)
+    s41, _ = _anahtar((10.0, 0.0, -4.65), cx_kaydir=30.0)
+    bekle41 = math.degrees(math.atan(30.0 / FX))
+    kontrol("T41 kaydırılmış pose sapma olarak ölçülür (sağ +)",
+            s41["pose_yaw_sapma_deg"] > 0
+            and abs(s41["pose_yaw_sapma_deg"] - bekle41) < 2.0,
+            f"sapma={s41['pose_yaw_sapma_deg']:+.2f}° (beklenen ~{bekle41:+.2f}°)")
+
+    # Problem 1 geometrisi: sabit 4.65 m dikey ofset yakın menzilde kadrajı taşırır
+    s42a, _ = _anahtar((10.0, 0.0, -4.65), res_ver=False)
+    s42b, t42b = _anahtar((0.5, 0.0, -4.65), res_ver=False)
+    kontrol("T42 kadraj içi/dışı ayrımı (dikey ıska imzası)",
+            s42a["gercek_kadraj_ici"] == 1 and s42b["gercek_kadraj_ici"] == 0,
+            f"10 m'de içeride (elev {s42a['gercek_elev_deg']:.1f}°), "
+            f"0.5 m'de DIŞARIDA (elev {s42b['gercek_elev_deg']:.1f}°)")
+
+    # hedef ARKADA: piksel izdüşümü yok, kadraj_ici 0 olmalı (None'a düşmemeli)
+    s43, _ = _anahtar((-10.0, 0.0, 0.0), res_ver=False)
+    kontrol("T43 hedef arkadayken önde=0 ve kadraj dışı",
+            s43["gercek_onde"] == 0 and s43["gercek_kadraj_ici"] == 0
+            and "gercek_u_px" not in s43,
+            f"onde={s43['gercek_onde']} kadraj_ici={s43['gercek_kadraj_ici']} "
+            f"yaw={s43['gercek_yaw_deg']:.1f}°")
+
+    # ── T44-T45: YAW KAÇAK KAPISI (kendi etrafında dönme) ──
+    # 2026-08-01 kara kutu ölçümü: araç 443 s'de 33.6 TUR döndü, attitude hedefi
+    # (DesYaw) bu dönüşü birebir takip etti (yani komut buydu) ve motorlar HİÇ
+    # doymadı (%0.0). Ortalama 91.5 °/s ≈ YAW_HIZ_MAX(90) — "her karede tavan
+    # adımı" imzası. Uçuş CSV'lerinde yaw_doygun %91-100, adımlar tek yönlü.
+    # Mekanizma: yaw_hata kapanmıyor (bayat/hatalı algı) ama komut her karede
+    # aracı bir tavan adımı daha çeviriyor → araç sürekli dönüyor.
+    # Kapı bunu kesmeli AMA büyük meşru dönüşleri kesmemeli.
+    def _yaw_kapali_cevrim(bayat, hedef_deg=60.0, n=900, tau=0.033):
+        """Aracın komutu (neredeyse mükemmel) takip ettiği kapalı çevrim.
+        bayat=True: algı, dönüşe rağmen AYNI gövde hatasını bildirir (arıza)."""
+        ad = CopterAdapter(cfg_copy())
+        yaw, toplam = 0.0, 0.0
+        H = math.radians(hedef_deg)
+        sabit = _norm(H)
+        for _ in range(n):
+            yh = sabit if bayat else _norm(H - yaw)
+            u = np.array([math.cos(yh), math.sin(yh),
+                          -math.tan(math.radians(25.0))])
+            u = u / np.linalg.norm(u)
+            out = ad.compute(u, yh, (0.0, 0.0, yaw), 1.0 / 30, yaw)
+            y0 = yaw
+            yaw = _norm(yaw + _norm(out["yaw_cmd"] - yaw) * min(1.0, (1.0 / 30) / tau))
+            toplam += _norm(yaw - y0)
+        return math.degrees(toplam), math.degrees(_norm(H - yaw))
+
+    d60, k60 = _yaw_kapali_cevrim(False, 60.0)
+    d150, k150 = _yaw_kapali_cevrim(False, 150.0)
+    kontrol("T44 sağlıklı algıda büyük dönüş TAM yapılır (kapı yanlış tetiklenmez)",
+            abs(k60) < 2.0 and abs(k150) < 2.0,
+            f"hedef 60° → {d60:+.1f}° (kalan {k60:+.2f}°); "
+            f"hedef 150° → {d150:+.1f}° (kalan {k150:+.2f}°)")
+
+    dbayat, _ = _yaw_kapali_cevrim(True, 60.0)
+    kapisiz = 90.0 * 30.0        # YAW_HIZ_MAX × 30 s, kapı olmasaydı
+    kontrol("T45 bayat algıda yaw kaçağı sınırlanır (sürekli dönme bitiyor)",
+            abs(dbayat) < 90.0,
+            f"30 s'de {abs(dbayat):.0f}° ({abs(dbayat)/360:.2f} tur) — "
+            f"kapısız {kapisiz:.0f}° ({kapisiz/360:.1f} tur) olurdu")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
