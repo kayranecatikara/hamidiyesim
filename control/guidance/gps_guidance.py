@@ -66,8 +66,21 @@ class Cfg:
     #     gereken 2.85 m → %45 pay. En hızlı ölçülen kapanmada (4.3 m/s) bile
     #     2.47 s → 3.05 m, yine yeter.
     # BEDELİ: hedef kadraj merkezinde değil, ~10° altında görünür
-    # (v_px ≈ 269/480 — hâlâ rahat içeride). Pose kalitesine etkisi ÖLÇÜLECEK.
-    # G11 bu bütçeyi test olarak koruyor.
+    # (v_px ≈ 269/480 — hâlâ rahat içeride). G11 bütçeyi test olarak koruyor.
+    #
+    # ⚠ BU AYRIM HENÜZ KESİNLEŞMEDİ — bkz. UYGULANACAK.md B7.
+    # 25° tesadüf değildi, kamera tilt'i o; istasyon 25°'de kurulunca hedef
+    # kadrajın TAM MERKEZİNDE oluyordu. Ölçüm 15°'yi destekliyor (terminal
+    # `ok` oranı %8.7 → %18.2, kadraj içi %59.8 → %67.0, en yakın menzil
+    # medyanı 5.25 → 1.73 m) AMA bu kanıt karışık: algının iyileşmesi büyük
+    # ölçüde geometrinin SONUCU (drone seviyeye yakın kalınca hedef kadrajdan
+    # geç çıkıyor). Merkez dışı kadrajlamanın KENDİ bedeli izole ölçülmedi.
+    #
+    # İki şey denenmedi:
+    #   (1) 15° taranarak seçilmedi, ivme bütçesi hesabından çıktı — bütçeye
+    #       sığan en büyük açı (18°? 20°?) merkeze daha yakın olurdu.
+    #   (2) Asıl alternatif: istasyonu 25°'de bırakıp WP_ACC_Z'yi 1.0 → 2.5
+    #       yükseltmek. Tutarsa bu ayrım gereksiz hale gelir.
     ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 15.0)
     TRACK_MIN_SPD = 3.0       # m/s; üstünde istasyon HIZ yönünün gerisi (kuyruk), altında LOS gerisi
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)

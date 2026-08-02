@@ -31,7 +31,12 @@ en yakın menzil medyanı **1.73 m**, vuruş **3/17**, faz/uçuş **3.4**.
 Vuruşu belirleyen tek güçlü değişken: vuran 4 geçişin dördünde de
 `kor_dalis` ≤ **%3**, ıskalayanlarda medyan %19-27.
 
-**Bir sonraki iş — ikisinden biri:**
+**Bir sonraki iş — üçünden biri:**
+- **B7 (açık soru)** — istasyon açısını kamera tilt'inden ayırmak doğru muydu?
+  Ölçümler olumlu ama karışık; merkez dışı kadrajlamanın kendi bedeli izole
+  edilmedi ve asıl alternatif (`WP_ACC_Z` yükseltmek) hiç denenmedi.
+  B6'dan önce karara bağlanmalı — B6 algıyla uğraşacak, algının geometriden
+  ne kadar etkilendiği belirsizken çalışmak boşa gider.
 - **B6 (terminal algı sürekliliği)** — asıl kaldıraç. Hedefin son 1-2 s'de
   kadrajda kalması. `kpt_dusuk` terminalde %30-60.
 - **B5 (fly-past)** — her ıskadan sonra drone 5-7 m yukarı fırlıyor,
@@ -460,6 +465,58 @@ temas için ~0.3 m daha kapatmak gerekiyor.
       kadraj mı olduğu ayrıştırılmalı.
       *Ölçüt:* terminal `ok` oranı %50 üstüne çıkmalı; en yakın menzil
       dağılımının medyanı 1 m altına inmeli.
+      *Sonuç:*
+
+- [ ] **B7 — AÇIK SORU: istasyon açısını kamera tilt'inden ayırmak doğru muydu?**
+      · öncelik **ORTA**, B6'dan önce karara bağlanmalı
+      `control/guidance/gps_guidance.py` → `ISTASYON_ELEV_DEG`
+
+      *Şüphe:* 25° tesadüf değildi — kamera tilt'i o. İstasyon 25°'de
+      kurulunca hedef kadrajın TAM MERKEZİNDE oluyordu. 15°'ye indirince
+      hedef merkezin ~10° altına düştü. Pose modelinin merkez dışı
+      performansı, lens distorsiyonu, ve hedefin gökyüzü yerine zemin
+      önünde görünmeye başlaması (daha yatık bakış) bedel olabilir.
+      Değişiklik ölçüme dayanıyordu ama **bedeli izole ölçülmedi**.
+
+      *Elde olan (2026-08-02, 10 faz @25° vs 17 faz @15°):*
+
+      | | 25° | 15° |
+      |---|---:|---:|
+      | `ok` oranı (tüm faz) | %24.0 | **%32.0** |
+      | `ok` oranı (menzil < 8 m) | %8.7 | **%18.2** |
+      | hedef kadraj içi | %59.8 | **%67.0** |
+      | pose kalite medyanı | 1.00 | 1.00 |
+      | `pose_elev_sapma` medyanı | 3.10° | 3.51° |
+      | en yakın menzil medyanı | 5.25 m | **1.73 m** |
+      | vuruş | 1/10 | 3/17 |
+
+      ⚠ **Bu tablo şüpheyi ÇÜRÜTMÜYOR, çünkü karışık.** Algının iyileşmesi
+      büyük ölçüde geometrinin SONUCU: drone hedefin seviyesine yakın
+      kalınca hedef kadrajdan geç çıkıyor, tespit doğal olarak uzuyor.
+      Yani ölçülen şey "merkez dışı kadrajlama zararsız" değil, "net etki
+      olumlu". Merkez dışı olmanın kendi bedeli **hâlâ bilinmiyor**.
+
+      *Bilinmeyenler:*
+      1. 15° taranarak seçilmedi — dikey ivme bütçesi hesabından çıktı.
+         18° ve 20° hiç denenmedi. Bütçeye sığan **en büyük** açı hangisi?
+      2. **Asıl alternatif hiç denenmedi:** istasyonu 25°'de bırakıp
+         `WP_ACC_Z`'yi (1.0 → 2.5-3.0) yükseltmek. İşe yararsa hem merkez
+         kadrajlama hem dikey kapanma birlikte elde edilir ve bu ayrım
+         gereksiz hale gelir.
+
+      *Nasıl karara bağlanır — sırayla, tek değişken:*
+      - **Adım 1:** `ISTASYON_ELEV_DEG=25` geri + `avci_copter.parm`'a
+        `WP_ACC_Z 2.5`. Tek uçuş. ⚠ `WP_ACC_Z` global bir kopter
+        parametresi — kalkışı ve istasyon tutmayı da etkiler; irtifa
+        aşımı/salınım için `PSCD.DVD` vs `VD` bakılacak.
+      - **Adım 2:** Adım 1 tutmazsa açıyı tara: 20°, 18°. Bütçeye sığan
+        en büyük açı seçilir (test G11 sınırı zaten kontrol ediyor).
+
+      *Ölçüt — 15°'nin şu anki haline göre bozulmamalı:* en yakın menzil
+      medyanı ≤ 1.73 m · terminal `ok` oranı ≥ %18 · kadraj içi ≥ %67 ·
+      dikey artık medyanı |·| ≤ 0.9 m. Bunları tutturan **en yüksek**
+      istasyon açısı kazanır (merkez kadrajlamaya en yakın olan).
+      *Ölçüm aracı:* `python3 tools/gecis_analiz.py`
       *Sonuç:*
 
 - [ ] **B4 — `coalt` kapsamını daralt** · düşük öncelik

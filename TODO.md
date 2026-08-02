@@ -32,6 +32,15 @@ Güncelleme: 2026-08-02
 
 ## Sıradaki
 
+- [ ] **AÇIK SORU: istasyon açısı kamera tilt'inden ayrılmalı mıydı?**
+      2026-08-02'de `ISTASYON_ELEV_DEG` `CENTER_ELEV_DEG`'ten ayrıldı ve
+      25° → 15° indirildi (terminal dikey ivme bütçesi). Ölçümler olumlu
+      ama **kanıt karışık**: algının iyileşmesi geometrinin sonucu olabilir,
+      merkez dışı kadrajlamanın kendi bedeli izole ölçülmedi. Ayrıca asıl
+      alternatif (`WP_ACC_Z` 1.0 → 2.5 yükseltip istasyonu 25°'de bırakmak)
+      hiç denenmedi. **Karar prosedürü, ölçütler ve rakamlar:
+      `UYGULANACAK.md` → B7.** B6'dan (terminal algı) ÖNCE karara bağlanmalı.
+      (`control/guidance/gps_guidance.py` → `ISTASYON_ELEV_DEG`)
 - [ ] **`LOOKUP_MIN_ALT` kararı** — şu an 8 m sabit taban. Hedef yere düşüp
       sürünürken avcı 8 m'de asılı kalıyor, inemiyor. Hedefin irtifasına göre
       uyarlanmalı mı, yoksa "hedef yerdeyse görev bitti" mi sayılmalı?
