@@ -34,7 +34,34 @@ class SupCfg:
     # 6-10 m'de başlıyordu ve elinde 0.6-1.9 s kalıyordu — hedefin 4.65 m altında
     # devralınan dikey farkı kapatmaya yetmiyor.
     # Kayan pencere aynı güveni verir ama tek bir kötü kare sayacı sıfırlamaz.
-    KILIT_N = 10          # son KILIT_PENCERE karenin bu kadarı güvenliyse geç
+    # ⚠ 10 → 7 DENENDİ VE GERİ ALINDI (2026-08-02). DÜŞÜRMEYİN.
+    #
+    # Gerekçe iyiydi: A5 sonrası 17 geçişte vuranlar görsel faza medyan
+    # 11.11 m'de, ıskalayanlar 9.05 m'de girmişti. Kapıyı gevşetmek devri
+    # uzaklaştırıp terminale daha çok tırmanma süresi bırakacaktı.
+    #
+    # Ölçüm bunu ÇÜRÜTTÜ — her ölçütte kötüleşti:
+    #
+    #                        KILIT_N=10 (5 uçuş)   KILIT_N=7 (1 uçuş)
+    #   faz / uçuş                  3.4                  8.0
+    #   giriş menzili medyan      10.00 m               9.62 m   ← DÜŞTÜ
+    #   en yakın menzil medyan     1.73 m               2.08 m
+    #   kor_dalis medyan            %19                  %27
+    #   <1.5 s'de kopan faz        2/17                  4/8
+    #   vuruş                      3/17                 1/8
+    #
+    # MEKANİZMA: kapı cılız tespitte de açılıyor. Erken devirler gerçekten
+    # oluyor (14.73 m, 10.47 m'de girdi) ama hemen ölüyor — o iki faz 0.9 ve
+    # 1.3 s sürdü, birinde kareler %69 kör_dalış, diğerinde %100 tespit_yok.
+    # Faz KAYIP_M yiyip GPS'e dönüyor, drone bu arada yaklaşmış oluyor, bir
+    # sonraki devir DAHA YAKINDA gerçekleşiyor. Net etki ters.
+    #
+    # Yani devir menzili ile vuruş arasındaki bağıntı nedensel DEĞİL: ikisi de
+    # "tespit o an gerçekten sağlam mı"ya bağlı. Kapıyı gevşetmek sağlamlığı
+    # üretmiyor, sadece sağlam sanılan anları çoğaltıyor.
+    # Asıl kaldıraç terminal algı sürekliliği (vuran 4 geçişin dördünde de
+    # kor_dalis ≤ %3) — bkz. UYGULANACAK.md B6.
+    KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
     POSE_CONF_MIN = 0.5

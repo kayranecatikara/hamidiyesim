@@ -161,6 +161,17 @@ başı dikey bütçe.
 **Bunun üç maddeye etkisi:**
 - **B6** yeniden çerçevelenmeli: algıyı düzeltmek dikey bütçeyi düzeltmez.
   Önce dikey, sonra algı — sıra bu.
+- ⚠ **DENENDİ VE GERİ ALINDI: `supervisor.KILIT_N` 10 → 7.** Devir menzili ile
+  vuruş arasında güçlü bir bağıntı vardı (vuranlar 11.11 m'de, ıskalayanlar
+  9.05 m'de devraldı), kapıyı gevşetip devri uzaklaştırmak denendi. Her
+  ölçütte kötüleşti: faz/uçuş 3.4 → 8.0, giriş menzili medyanı 10.00 → 9.62 m
+  (**düştü**), en yakın menzil medyanı 1.73 → 2.08 m, `kor_dalis` medyanı
+  %19 → %27, 1.5 s'den kısa kopan faz 2/17 → 4/8, vuruş 3/17 → 1/8.
+  Mekanizma: kapı cılız tespitte de açılıyor, erken devir gerçekten oluyor
+  (14.73 ve 10.47 m) ama 0.9-1.3 s'de ölüyor, GPS'e dönülüyor, drone bu arada
+  yaklaşıyor, sonraki devir DAHA YAKINDA oluyor.
+  **Ders:** devir menzili ↔ vuruş bağıntısı nedensel değil; ikisi de "tespit
+  o an gerçekten sağlam mı"ya bağlı. Kapı sağlamlık üretmiyor.
 - Yeni aday: `WP_ACC_Z` (1.0 m/s²) terminalde geçici olarak yükseltilebilir
   mi, ya da istasyonun 4.65 m'lik dikey ofseti küçültülebilir mi? İkisi de
   **ölçülmeden değiştirilmeyecek** — bkz. `ATC_ANG_YAW_P` dersi.
