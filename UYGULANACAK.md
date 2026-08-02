@@ -1,29 +1,58 @@
 # UYGULANACAK — teker teker, ölçerek
 
-Depo `b55953d` (son push) haline döndürüldü. Aşağıdakiler **tek tek**
-uygulanacak; her maddeden sonra uçulup ölçülecek, sonuç maddenin altına
-yazılacak. Bir madde bitmeden diğerine geçilmeyecek.
+Aşağıdakiler **tek tek** uygulanacak; her maddeden sonra uçulup ölçülecek,
+sonuç maddenin altına yazılacak. Bir madde bitmeden diğerine geçilmeyecek.
 
-**Neden böyle:** push sonrası 8 grup değişiklik bir arada uçuruldu. Bazıları
-ölçümle işe yaradı (telemetri sıçraması 106.8 → 16.8 m/s), biri ölçülebilir
-zarar verdi (görsel kilit: kör uçuş %64, drone hedefin üstüne çıkıp zemine
-çakıldı). Hangisinin ne yaptığı ayırt edilemedi.
+**Neden böyle:** bir keresinde 8 grup değişiklik bir arada uçuruldu. Bazıları
+ölçümle işe yaradı, biri ölçülebilir zarar verdi (görsel kilit: kör uçuş %64,
+drone hedefin üstüne çıkıp zemine çakıldı). Hangisinin ne yaptığı ayırt
+edilemedi.
 
 **Kural:** her adımda `python3 -m tests.test_visual_lead` ve
-`python3 -m tests.test_gps_guidance` çalıştırılır. Push hali **50/50** ve
-**11/11**.
+`python3 -m tests.test_gps_guidance` çalıştırılır.
+
+---
+
+## DURUM — 2026-08-02 22:30 (yeni oturum buradan devam etsin)
+
+**Depo:** `kubra_masaustu`, temiz, `origin` ile eşit. Son commit `f5737ca`.
+Açık PR: **#4** (`gh pr view 4`). Testler: **53/53** ve **12/12**.
+
+**Bitenler:** A1 ✓ · A5 ✓ · dikey ıska 2. tur (istasyon 25° → 15°) ✓ ·
+başlatma/durdurma script hataları ✓
+**Sıradakiler:** A2, A3, A4, A6, A7 hâlâ **kodda YOK** · B1, B2, B3, B4, B5,
+B6 hiç uygulanmadı · A8 (görsel kilit) B1+B2 olmadan uygulanmayacak
+
+**Ölçülen son hal** (A5 + 15° istasyon, 17 geçiş):
+en yakın menzil medyanı **1.73 m**, vuruş **3/17**, faz/uçuş **3.4**.
+Vuruşu belirleyen tek güçlü değişken: vuran 4 geçişin dördünde de
+`kor_dalis` ≤ **%3**, ıskalayanlarda medyan %19-27.
+
+**Bir sonraki iş — ikisinden biri:**
+- **B6 (terminal algı sürekliliği)** — asıl kaldıraç. Hedefin son 1-2 s'de
+  kadrajda kalması. `kpt_dusuk` terminalde %30-60.
+- **B5 (fly-past)** — her ıskadan sonra drone 5-7 m yukarı fırlıyor,
+  toparlaması 10-20 s. Vuruş oranını değil görev süresini etkiliyor. A5
+  sonrası artık HER ıskada yaşanıyor. Ek olarak ölçüldü: faz biterken yaw
+  **hız** komutu iptal edilmiyor (bkz. B5 altındaki ⚑ notu).
+
+⚠ **Tekrar denenmeyecekler** (ölçümle çürütüldü, gerekçeleri ilgili yerlerde):
+`ATC_ANG_YAW_P` düşürmek · `supervisor.KILIT_N` düşürmek · hedef hızına
+ivme kapısı · "araç dikey/yaw komutunu uygulamıyor" teşhisi
 
 ---
 
 ## Yeni oturuma başlıyorsan
 
-**Deponun hali:** `b55953d`, temiz. `git status` yalnız bu dosyayı ve
-`TODO.md`'yi göstermeli. Aşağıdaki A/B maddeleri **kodda YOK** — hepsi
-yeniden yazılacak.
-
 **Sırayla git, atlama.** Her madde: uygula → testler → **uç** → ölç →
 *Sonuç:* satırına yaz → tikle. Bir madde bitmeden diğerine geçme. Bu kural
 var çünkü hepsi bir arada uygulanınca hangisinin ne yaptığı ayırt edilemedi.
+
+**Ölçüm yöntemi — CSV'ye tek başına güvenme.** Geometri sorularının dürüst
+kaynağı iki aracın kara kutusu: her iki `.BIN`'den `POS` (Lat/Lng/Alt) alınıp
+`GPS.GWk`+`GPS.GMS` ile ortak saate hizalanır, sonra aradaki yatay/dikey
+mesafe hesaplanır. CSV'deki `menzil_gercek_m` EKF çerçeve ofsetinden
+etkileniyor ve en yakın anı geriden gösteriyor.
 
 **Sistemi başlatma** (iki terminal, ayrıntı `docs/SIMULASYON_CALISTIRMA.md`):
 
