@@ -16,7 +16,7 @@ from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
     govde_to_dunya, hedef_kadraj_hatasi, yukselti_duzeltme)
-from control.guidance.visual_lead import _cevap_anahtari
+from control.guidance.visual_lead import _cevap_anahtari, _vurus_oldu
 from control.guidance.common import normalize_angle as _norm
 from vision import geometry as geo
 
@@ -731,6 +731,50 @@ def main():
             abs(dbayat) < 90.0,
             f"30 s'de {abs(dbayat):.0f}° ({abs(dbayat)/360:.2f} tur) — "
             f"kapısız {kapisiz:.0f}° ({kapisiz/360:.1f} tur) olurdu")
+
+    # ══════════════════════════════════════════════════════════
+    #  A5 — GERÇEK ÇARPIŞMA ÖLÇÜTÜ (T46-T48)
+    #  _vurus_oldu, temas kaynağını dışarıdan alır; sahte kaynakla test edilir.
+    # ══════════════════════════════════════════════════════════
+    class SahteKaynak:
+        def __init__(self, temas, kaynak):
+            self._t, self._k = temas, kaynak
+        def temas_var(self):  return self._t
+        def kaynak_var(self): return self._k
+
+    c = cfg_copy()
+
+    # ── T46: temas kaynağı ÇALIŞIYOR, temas YOK → yakınlık vuruş SAYILMAZ ──
+    # Ölçülen gerçek koşu: tek geçişte 0.61/0.69/0.75/1.06/1.16/1.20 m yaklaşma.
+    # Eski ölçütle 6 sahte vuruş; yenisiyle sıfır olmalı.
+    yakin = [0.61, 0.69, 0.75, 1.06, 1.16, 1.20]
+    kaynak = SahteKaynak(temas=False, kaynak=True)
+    sahte = [m for m in yakin if _vurus_oldu(m, c, kaynak)[0]]
+    kontrol("T46 temas yokken yakınlık VURUŞ DEĞİL (sahte vuruş elenir)",
+            not sahte,
+            f"{len(yakin)} yaklaşma ({min(yakin)}-{max(yakin)} m) → "
+            f"{len(sahte)} vuruş; eski ölçütle {len(yakin)} sahte vuruş olurdu")
+
+    # ── T47: gerçek temas geldi → menzil ne olursa olsun VURULDU ──
+    # Menzil bilinmiyor (None) olsa bile temas temastır; menzil kestirimi
+    # kopmuşken de vuruş raporlanabilmeli.
+    kaynak = SahteKaynak(temas=True, kaynak=True)
+    v_uzak, g_uzak = _vurus_oldu(9.9, c, kaynak)
+    v_yok, g_yok = _vurus_oldu(None, c, kaynak)
+    kontrol("T47 gerçek temas → menzilden bağımsız VURULDU",
+            v_uzak and v_yok and g_uzak == "gercek_temas" == g_yok,
+            f"menzil 9.9 m → {g_uzak}; menzil yok → {g_yok}")
+
+    # ── T48: temas kaynağı YOKSA yakınlık yedeği devreye girer ──
+    # gz-transport kurulu değil / AVCI_HASAR=0 kurulumlarında vuruş hiç
+    # raporlanamaz olmamalı; ama gerekçe 'yedek_menzil' diye işaretlenmeli.
+    kaynak = SahteKaynak(temas=False, kaynak=False)
+    v_ic, g_ic = _vurus_oldu(c.VURUS_MENZIL - 0.1, c, kaynak)
+    v_dis, _ = _vurus_oldu(c.VURUS_MENZIL + 0.1, c, kaynak)
+    kontrol("T48 temas kaynağı yokken yakınlık YEDEĞİ çalışır",
+            v_ic and (not v_dis) and g_ic == "yedek_menzil",
+            f"{c.VURUS_MENZIL-0.1:.2f} m → vuruldu ({g_ic}); "
+            f"{c.VURUS_MENZIL+0.1:.2f} m → ıska")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

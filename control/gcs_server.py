@@ -27,6 +27,7 @@ import uvicorn
 from vision.detection_state import (set_detection, set_pose_detection,
                                     wait_new_pose, get_detection,
                                     get_pose_detection)
+from control import carpisma_state       # A5 — gerçek temas, güdümle ortak durum
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
 # Kare scriptinin de kullandığı, kanıtlanmış çalışan modüller (ArduPilot)
@@ -579,6 +580,11 @@ def start_chase():
     if _chase_active:
         return {"status": "error", "message": "Chase zaten aktif!"}
 
+    # A5: temas mandalını yeni koşu için temizle. Yoksa önceki denemede gelen
+    # temas hâlâ latch'li kalır ve görsel faz daha ilk karede "vuruldu" der.
+    hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
+    carpisma_state.sifirla()
+
     _chase_active = True
     t = threading.Thread(target=_chase_thread, daemon=True)
     t.start()
@@ -787,7 +793,10 @@ from vision import geometry as _geo
 # NEDEN AYRI MODÜL: vuruş tespiti yalnız visual_lead içinde var, GPS fazında
 # yok — çarpışma GPS fazında olursa kimse fark etmiyordu. Bu modül hangi faz
 # çalışırsa çalışsın (hatta hiçbiri çalışmasa da) temasi dinler.
-_HASAR_AKTIF = os.environ.get("AVCI_HASAR", "0") == "1"
+# A5: VARSAYILAN AÇIK. Eskiden "0" idi ve modül hiç çalışmıyordu; vuruş kararı
+# tamamen visual_lead'deki 1.5 m yakınlık ölçütüne kalmıştı. Kapatmak için
+# AVCI_HASAR=0 — o zaman güdüm yakınlık yedeğine düşer (bkz. carpisma_state).
+_HASAR_AKTIF = os.environ.get("AVCI_HASAR", "1") == "1"
 _HASAR_TOPIC = os.environ.get(
     "AVCI_HASAR_TOPIC",
     "/world/avci/model/mini_talon/link/base_link/sensor/carpisma_sensoru/contact")
@@ -805,6 +814,7 @@ def _hasar_uygula(detay):
     d = math.sqrt((pp["x"] - ip["x"]) ** 2 + (pp["y"] - ip["y"]) ** 2
                   + (pp["z"] - ip["z"]) ** 2)
     hasar_durumu.update(imha=True, t=time.time(), menzil=round(d, 2), temas=detay)
+    carpisma_state.temas_bildir(detay)   # güdüm buradan okur (A5)
     print("\n" + "=" * 50)
     print(f"[HASAR] \u2738 GERÇEK ÇARPIŞMA — {detay}")
     print(f"[HASAR] temas anındaki menzil {d:.2f} m")
@@ -824,14 +834,16 @@ def _hasar_uygula(detay):
 def _hasar_izleyici():
     """gz-transport'tan temas mesajlarını dinler; karşı taraf avcıysa imha eder."""
     if not _HASAR_AKTIF:
-        print("[HASAR] Modül KAPALI (AVCI_HASAR=0)")
+        print("[HASAR] Modül KAPALI (AVCI_HASAR=0) — güdüm yakınlık yedeğine düşecek")
+        carpisma_state.kaynak_bildir(False)
         return
     try:
         from gz.transport13 import Node as GzNode
         from gz.msgs10.contacts_pb2 import Contacts
     except Exception as e:
         print(f"[HASAR] gz-transport yok ({e}) — çarpışma tespiti DEVRE DIŞI. "
-              f"Hedef vurulsa da düşmeyecek.")
+              f"Hedef vurulsa da düşmeyecek; güdüm yakınlık yedeğine düşecek.")
+        carpisma_state.kaynak_bildir(False)
         return
 
     def cb(msg):
@@ -853,8 +865,13 @@ def _hasar_izleyici():
     node = GzNode()
     if not node.subscribe(Contacts, _HASAR_TOPIC, cb):
         print(f"[HASAR] temas topic'ine abone olunamadı: {_HASAR_TOPIC}")
+        print("[HASAR] güdüm yakınlık yedeğine düşecek "
+              "(dünyada gz-sim-contact-system ve modelde carpisma_sensoru var mı?)")
+        carpisma_state.kaynak_bildir(False)
         return
-    print(f"[HASAR] Gerçek çarpışma dinleniyor: {_HASAR_TOPIC}")
+    carpisma_state.kaynak_bildir(True)
+    print(f"[HASAR] GERÇEK çarpışma dinleniyor: {_HASAR_TOPIC}")
+    print("[HASAR] vuruş ölçütü = fiziksel temas (yakınlık TEK BAŞINA vuruş değil)")
     while True:
         # menzili yalnız GÖZLEM için güncelle — tetikleyici DEĞİL
         try:
@@ -878,7 +895,16 @@ def hasar_get():
 def hasar_sifirla():
     """Yeni denemeden önce imha bayrağını temizler."""
     hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
+    carpisma_state.sifirla()      # güdüm tarafı da temizlensin, yoksa yeni
+                                  # görsel faz daha ilk karede "vuruldu" der
     return {"status": "success", "message": "Hasar durumu sıfırlandı."}
+
+
+@app.get("/api/debug/carpisma")
+def carpisma_debug():
+    """A5 tanılama: temas kaynağı çalışıyor mu, temas geldi mi.
+    kaynak_hazir=False ise güdüm hâlâ 1.5 m yakınlık yedeğindedir."""
+    return carpisma_state.durum()
 
 
 # ══════════════════════════════════════════════════════════
@@ -934,6 +960,9 @@ def start_visual():
         return {"status": "error", "message": "Görsel güdüm zaten aktif."}
     _chase_active = False       # aynı porta erişen GPS chase'i durdur
     time.sleep(0.3)
+    # A5: temas mandalını yeni koşu için temizle (bkz. start_chase).
+    hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
+    carpisma_state.sifirla()
     _visual_active = True
     threading.Thread(target=_visual_thread, daemon=True).start()
     return {"status": "success", "message": "Görsel güdüm (lead pursuit) başlatıldı."}

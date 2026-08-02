@@ -23,6 +23,7 @@ import math
 import os
 import time
 
+from control import carpisma_state
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
@@ -194,12 +195,53 @@ class _MenzilKapisi:
         return d, True
 
 
+_VURUS_ETIKET = {
+    "gercek_temas": "GERÇEK TEMAS",
+    # Yedek yolun raporu bilerek çirkin: log'a bakan biri bunun fiziksel temas
+    # DEĞİL, kaynak yokluğundan düşülen tahmin olduğunu görmeli.
+    "yedek_menzil": "yakınlık YEDEĞİ (temas kaynağı yok — gerçek temas DEĞİL)",
+}
+
+
+def _m_yaz(m):
+    return f"{m:.2f}" if m is not None else "?"
+
+
+def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
+    """A5 — VURUŞ ÖLÇÜTÜ. Dönüş: (vuruldu_mu, gerekce).
+
+    Öncelik sırası ve nedeni:
+
+    1. GERÇEK TEMAS (Gazebo contact sensörü). Tek dürüst ölçüt.
+    2. Temas kaynağı ÇALIŞIYOR ama temas yok → VURUŞ DEĞİL, menzile bakılmaz.
+       A5'in bütün amacı bu satır. Eski kod 1.5 m altını vuruş sayıyordu;
+       ölçüldü — tek koşuda 0.61 / 0.69 / 0.75 / 1.06 / 1.16 / 1.20 m
+       yaklaşma vardı, yani 6 SAHTE vuruş. Dahası sahte vuruş güdümü
+       DURDURUYOR: drone tam hızla giderken komutsuz kalıp savruluyordu
+       (00000108: vuruş sonrası 15 s boyunca ~350 °/s dönüş, 21.8 → 2.0 m).
+    3. Temas kaynağı YOKSA (gz-transport kurulu değil / AVCI_HASAR=0 /
+       dünyada contact-system eksik) yakınlık YEDEĞİ devreye girer. Yoksa
+       o kurulumlarda vuruş hiç raporlanamaz.
+
+    Not: 0.61 m'de bile Gazebo temas sensörü tetiklenmiyor (ölçüldü) — gerçek
+    temas için ~0.3 m daha kapatmak gerekiyor. Bu ölçüt bunu YARATMIYOR,
+    GÖRÜNÜR KILIYOR."""
+    if temas_kaynagi.temas_var():
+        return True, "gercek_temas"
+    if temas_kaynagi.kaynak_var():
+        return False, ""
+    if menzil is not None and menzil < cfg.VURUS_MENZIL:
+        return True, "yedek_menzil"
+    return False, ""
+
+
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     kayip_kare_esik=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
-    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu' (menzil
-    < VURUS_MENZIL). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
+    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'
+    (GERÇEK fiziksel temas — bkz. _vurus_oldu; yakınlık yalnız temas kaynağı
+    yoksa yedek). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
     koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
     dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
     core = LeadPursuitCore(cfg)
@@ -271,14 +313,19 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         m, _kabul = menzil_kapi.ekle(_menzil_hesapla(get_plane_truth, aras.pos), dt_t)
         if m is not None:
             terminal_min = min(terminal_min, m) if terminal_min is not None else m
-            if m < cfg.VURUS_MENZIL:
-                print(f"[LEAD] ✓ VURULDU (menzil {m:.2f} m)")
-                return "vuruldu"
+        vuruldu, gerekce = _vurus_oldu(m, cfg)
+        if vuruldu:
+            print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
+                  f"(menzil {_m_yaz(m)} m)")
+            return "vuruldu"
         if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
-            if terminal_min is not None and terminal_min < cfg.VURUS_MENZIL:
-                print(f"[LEAD] ✓ VURULDU (en yakın {terminal_min:.2f} m)")
+            vuruldu, gerekce = _vurus_oldu(terminal_min, cfg)
+            if vuruldu:
+                print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
+                      f"(en yakın {terminal_min:.2f} m)")
                 return "vuruldu"
-            print(f"[LEAD WARN] kör dalış bitti — en yakın {terminal_min:.2f} m, ıska")
+            en_yakin = f"{terminal_min:.2f}" if terminal_min is not None else "?"
+            print(f"[LEAD WARN] kör dalış bitti — en yakın {en_yakin} m, ISKA")
             return "kayip"
         return None
 
@@ -335,11 +382,13 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                         satir["kapanma_hizi_ms"] = round(
                             -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
                     menzil_onceki, t_menzil_onceki = d, stamp
-                    # VURUŞ: hedefe fiziksel temas mesafesi
-                    if d < cfg.VURUS_MENZIL:
+                    # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
+                    vuruldu, gerekce = _vurus_oldu(d, cfg)
+                    if vuruldu:
                         satir["durum"] = "vuruldu"
                         _satir(satir)
-                        print(f"[LEAD] ✓ VURULDU (menzil {d:.2f} m)")
+                        print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
+                              f"(menzil {_m_yaz(d)} m)")
                         return "vuruldu"
 
             if pose is None:                  # bu karede tespit yok

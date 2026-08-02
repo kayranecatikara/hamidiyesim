@@ -343,6 +343,31 @@
           </clip>
         </camera>
       </sensor>
+
+      <!-- A5 — GERÇEK ÇARPIŞMA SENSÖRÜ.
+           Vuruş ölçütü artık "1.5 m'ye yaklaştı" değil, fiziksel temas.
+           Yakınlık çarpışma değildir: bir koşuda 0.61 / 0.69 / 0.75 / 1.06 /
+           1.16 / 1.20 m yaklaşma ölçüldü — eski ölçütle 6 SAHTE vuruş.
+
+           ⚠ TEKERLEK BİLEREK YOK. main_wheel_collision main_wheel_link'te ve
+           bu sensöre dahil edilmedi; tekerlek pistte sürekli yere değiyor,
+           dahil edilseydi HER KALKIŞTA sahte çarpışma üretirdi.
+           Zemin teması yine de gelebilir (gövde çakılması) — onu
+           gcs_server'daki "karşı taraf iris değilse imha sayma" süzgeci eler.
+
+           Dünya tarafında gz-sim-contact-system ZORUNLU (avci_harmonic.sdf);
+           yoksa bu sensör sessizce hiçbir şey yayınlamaz. -->
+      <sensor name="carpisma_sensoru" type="contact">
+        <always_on>1</always_on>
+        <update_rate>100</update_rate>
+        <contact>
+          <collision>fuselage_collision</collision>
+          <collision>left_wing_collision</collision>
+          <collision>right_wing_collision</collision>
+          <collision>left_tail_collision</collision>
+          <collision>right_tail_collision</collision>
+        </contact>
+      </sensor>
     </link>
 
     <link name="main_wheel_link">
