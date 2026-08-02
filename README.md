@@ -112,8 +112,16 @@ Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
 
 **Temizlik** (boş bir terminalde):
 ```bash
-pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server|run_plane_scenario'; sleep 3
+cd ~/projects/avci_sim
+bash scripts/start_harmonic.sh stop     # öldürür + DOĞRULAR
+bash scripts/start_harmonic.sh durum    # ne kaldı? (hiçbir şeyi öldürmez)
 ```
+
+> ⚠ Buradaki eski `pkill -9 -f 'gz sim|sim_vehicle|mavproxy|...'` satırı
+> **kaldırıldı**: `pkill -f` deseni çağıran kabuğun komut satırında da arıyor,
+> o satırda da aynı kelimeler geçtiği için pkill kendi kabuğunu öldürüyordu —
+> ardındaki komutlar hiç çalışmıyor, süreçlerin bir kısmı ayakta kalıyordu.
+> Ayrıntı: [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md).
 
 **Terminal 1 — Gazebo Harmonic** (açılması ~15 sn)
 ```bash

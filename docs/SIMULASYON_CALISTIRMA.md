@@ -4,12 +4,45 @@
 
 İki terminal yeter. Sırayla:
 
-**Terminal A** — Gazebo + iki SITL (~45 sn sürer, bitince kendi kendine döner)
+**Terminal A** — Gazebo + iki SITL (~50 sn sürer, bitince kendi kendine döner)
 
     cd ~/projects/avci_sim
-    pkill -9 -f 'gz sim|sim_vehicle|mavproxy|arducopter|arduplane|control.gcs_server|run_plane_scenario'
-    sleep 3
     GZ_HEADLESS=1 bash scripts/start_harmonic.sh
+
+Script zaten kendi başında eski süreçleri temizliyor; temizleyemezse **yenisini
+başlatmaz** ve neyin ayakta kaldığını PID'leriyle yazar.
+
+> **Beklemek zorunda mısınız? Hayır — script sizin yerinize bekliyor.**
+> Eskiden burada kör bir `sleep 25` vardı ve "SITL'lerin açılması bekleniyor
+> (25s)" yazıyordu. Ölçüldü (2026-08-02): araçların EKF+GPS kilidi ~50 s'de
+> geliyor, yani script 25 s'de "hazır" derken SITL **hâlâ açılıyordu**.
+> Artık aracın kendi çıktısındaki `EKF3 IMU0 is using GPS` satırı bekleniyor.
+> Script hazır olmadan dönmez, olamazsa **çıkış kodu 1** verir.
+>
+**Bu kadar beklemek şart mı? Evet — ve kısaltılamaz.** Faz faz ölçüldü
+(2026-08-02, script bunu her koşuda kendi basıyor):
+
+| faz | süre |
+|---|---:|
+| Gazebo açılması + FDM portu | **~4 s** |
+| ArduPilot EKF + GPS kilidi | **~46 s** |
+| **Terminal A toplam** | **~50 s** |
+| Terminal B (`gcs_server`, iki kamera görüntüsü dahil) | **~5 s** |
+
+Sürenin %90'ı ArduPilot SITL'in kendi açılışı: 1421 parametrenin FTP ile
+inmesi, EKF ilklenmesi, tilt hizalaması, GPS origin. Bizim eklediğimiz bir
+gecikme değil ve **kalkış zaten bundan önce mümkün değil** — GPS kilidi
+olmadan arm edilmiyor. `SIM_GPS1_LCKTIME` ve `GPS1_DELAY_MS` zaten 0.
+
+> ⚠ **Terminaller AYNI ANDA başlatılamaz, sıra önemli.** Ölçüldü:
+> `gcs_server` Gazebo'dan **önce** başlatılırsa (1) `start_harmonic.sh`'ın
+> açılıştaki temizliği onu öldürür, (2) öldürmese bile Gazebo'dan önce açılan
+> gz kamera aboneliği geri gelmiyor — `✓ ... ilk görüntü` satırları hiç
+> çıkmıyor, arayüzde kamera kararıyor. Önce A, sonra B.
+>
+> Zincirlemek (`A && B`) çalışır ama bir faydası yok: toplam süreyi ~5 s
+> uzatır ve `gcs_server` aynı terminalde ön planda çalıştığı için **komut
+> satırı geri gelmez, çıktı akmaya devam eder**. Ayrı terminaller daha iyi.
 
 **Terminal B** — GCS (Terminal A "Tam sistem hazır" yazdıktan sonra)
 
@@ -28,13 +61,28 @@ Sonra tarayıcıda: <http://localhost:8000>
     bash scripts/start_harmonic.sh stop        # Terminal A tarafı
                                                # Terminal B: Ctrl+C yeterli
 
+Gerçekten durdu mu — **kontrol edin**, bu komut hiçbir şeyi öldürmez:
+
+    bash scripts/start_harmonic.sh durum
+
+`stop` artık **doğrulayarak** çalışıyor: öldürür, tekrar bakar, hâlâ ayakta
+kalan varsa `✓ Durduruldu` yerine PID listesi basar ve **çıkış kodu 1** döner.
+
 > ⚠ **Terminal A'da Ctrl+C İŞE YARAMAZ.** Script Gazebo'yu ve iki SITL'i
-> `nohup ... &` ile başlatıp kendisi çıkar; Ctrl+C'ye bastığınızda script zaten
-> bitmiştir, arkadaki süreçler yaşamaya devam eder. Ölçüldü: Ctrl+C sonrası
-> `gz sim`, 2× `arduplane`, 2× `sim_vehicle`, 4× `mavproxy` hâlâ ayaktaydı.
-> Bir sonraki koşudaki `pkill` onları temizlediği için fark edilmiyor, ama
-> arada CPU/GPU yerler ve bayat telemetri değerleri üretirler.
+> `setsid ... &` ile başlatıp kendisi çıkar; süreçler ayrı bir oturumda olduğu
+> için Ctrl+C onlara hiç ulaşmaz. Ölçüldü: Ctrl+C sonrası `gz sim`,
+> 2× `arduplane`, 2× `sim_vehicle`, 4× `mavproxy` hâlâ ayaktaydı.
 > **Terminal B (gcs_server) ön planda çalıştığı için orada Ctrl+C doğrudur.**
+
+> ⚠⚠ **`pkill -9 -f 'gz sim|sim_vehicle|mavproxy|...'` KULLANMAYIN.**
+> Bu belgede eskiden böyle bir satır vardı ve **kendi kabuğunuzu öldürüyordu**:
+> `pkill -f` deseni *çağıran kabuğun komut satırında* da arar, o satırda da
+> `sim_vehicle`, `gz sim`, `mavproxy` kelimeleri geçiyor. Sonuç ölçüldü
+> (2026-08-02): pkill kabuğu öldürüyor → `sleep 3 && ... start_harmonic.sh`
+> **hiç çalışmıyor**, ya da `stop` döngüsü ortasında kesiliyor ve geri kalan
+> desenler ('mavproxy', 'gz sim') uygulanmadan kalıyor. Ekranda hata yok,
+> süreçler ayakta. "Durdurdum ama hâlâ çalışıyor" şikâyetinin kaynağı buydu.
+> `stop`/`durum` kendi ata süreçlerini listeden düşer; güvenli olan onlardır.
 
 ---
 

@@ -12,15 +12,17 @@ ayağa kaldırır.
 ```bash
 bash scripts/start_harmonic.sh              # GUI (NVIDIA render, önerilen)
 GZ_HEADLESS=1 bash scripts/start_harmonic.sh # görüntüsüz
-bash scripts/start_harmonic.sh stop         # hepsini durdur
+bash scripts/start_harmonic.sh stop         # hepsini durdur (doğrulayarak)
+bash scripts/start_harmonic.sh durum        # ne ayakta? hiçbir şeyi öldürmez
 ```
 
 **Akış:**
 
 ```
-0. stop_all()  → eski süreçleri temizle
-       pkill kalıpları: 'model JSON', 'model plane', '[s]im_vehicle',
-                        '[m]avproxy', '[g]z sim', '[r]uby.*gz'
+0. stop_all()  → eski süreçleri temizle, SONRA TEKRAR BAK
+       pgrep -f AVCI_DESEN  →  kendi PID + ata zinciri listeden düşülür
+       →  TERM, TERM, KILL (arada 2 sn)  →  hâlâ varsa PID'leri bas, exit 1
+       Temizlenemezse yeni sistem BAŞLATILMAZ.
 1. Ortam        → ROS 2 source + GZ_SIM_SYSTEM_PLUGIN_PATH + GZ_SIM_RESOURCE_PATH
 2. Gazebo       → avci_harmonic.sdf (GUI veya headless)
                   ⏳ FDM portu 9002 açılana kadar bekle (max 30 sn) + 3 sn
@@ -57,8 +59,23 @@ bash scripts/start_harmonic.sh stop         # hepsini durdur
 > **SIRA ÖNEMLİ:** `avci_copter.parm` **en sonda** kalmalı ki proje değerleri
 > (`ANGLE_MAX`, `WPNAV_SPEED`, `FS_*`) üstte kalsın.
 
-> **Neden `pkill` kalıplarında köşeli parantez var?** `'[s]im_vehicle'` yazımı,
-> `pkill`'in kendi komut satırını eşleştirip kendini öldürmesini önler.
+> **⚠ DÜZELTME (2026-08-02) — eskiden burada şu yazıyordu:** *"`'[s]im_vehicle'`
+> yazımı `pkill`'in kendini öldürmesini önler."* **Bu YANLIŞTI ve hatanın
+> aylarca yaşamasının sebebiydi.** Köşeli parantez numarası yalnız
+> `ps aux | grep` için işe yarar: orada `grep`'in KENDİ komut satırında
+> *literal* `[s]im_vehicle` yazar, regex de ona uymaz. `pkill -f` ise
+> **çağıran kabuğun** komut satırına bakar; kullanıcı oraya düz `sim_vehicle`
+> yazmıştır ve `[s]im_vehicle` regex'i ona **tam uyar**.
+>
+> Ölçülen sonuç: `stop_all()` 3. desende (`[s]im_vehicle`) çağıran kabuğu
+> öldürüyor, kalan desenler (`[m]avproxy`, `[g]z sim`, `[r]uby.*gz`) hiç
+> çalışmıyor → `gz sim` ve `mavproxy` ayakta kalıyor, ama script koşulsuz
+> "Durduruldu." yazdığı için kimse fark etmiyordu.
+>
+> **Yeni yöntem:** `pgrep -f` ile aday listesi çıkarılır, kendi PID'imiz ve
+> `ps -o ppid=` ile bulunan **tüm ata zinciri** listeden düşülür, kalanlar
+> öldürülür, sonra **tekrar bakılır**. `-9` yerine önce `TERM` — SIGKILL
+> ArduPilot'un kara kutusunu (`.BIN`) yarım bırakıyordu.
 
 ---
 
