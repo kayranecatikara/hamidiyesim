@@ -39,7 +39,10 @@ SET_POSE_SVC = f"/world/{WORLD}/set_pose"
 
 # Drone (kamera) örnekleme — HAVADA bir hacimde, her yöne bakar
 CAM_XY_RANGE = 30.0            # x,y ∈ [-30, 30] m
-CAM_Z_RANGE = (15.0, 45.0)    # irtifa m
+CAM_Z_RANGE = (35.0, 75.0)    # irtifa m. 15-45 → 25-60 → 35-75. Kamera ne kadar
+                              # yüksekse hedefi 50 m uzağa koyarken yer altına
+                              # düşme ihtimali o kadar azalır; deneme çekiminde
+                              # eleme %66'ydı ve uzak kareler orantısız gidiyordu.
 CAM_ROLL_MAX = math.radians(25)   # drone roll eğimi (yaw tam tur)
 # Pitch: yukarı az (gökyüzü arka plan), AŞAĞI geniş (zemin arka plan — model yerdeki
 # hedefi de öğrensin). +pitch = burun aşağı (zemin), -pitch = yukarı (gökyüzü).
@@ -49,11 +52,28 @@ CAM_PITCH_HORIZON = math.radians(20)   # bu pitch'in üstü ≈ gökyüzü, alt�
 SKY_FRACTION = 0.70                     # karelerin ~%70'i gökyüzü arka plan olsun
 
 # Hedef örnekleme (kameranın FOV'una göre)
-DIST_MIN, DIST_MAX = 3.0, 15.0   # yakın ağırlıklı (**DIST_EXP). FOV 125° geniş olduğundan
-                                 # hedef yakında bile orta boyut; bu yüzden agresif yakın.
-DIST_EXP = 2.0                   # 2=yakın ağırlıklı, 1=düzgün dağılım
+# ★ UZAK MESAFE İÇİN GENİŞLETİLDİ (2026-07-29).
+# ESKİ: DIST_MAX=15, DIST_EXP=2.0 → ortalama örnekleme mesafesi 7 m, veri
+# setinde 15 m'nin ÖTESİ HİÇ YOKTU. Model 25 m'ye kadar genelleme yapıp
+# orada kesiyordu; 40 m'yi hiç görmediği için algılayamıyordu.
+# YENİ: 3-50 m, düz dağılım. Hesaplanan sonuç (20k örnek):
+#   ortalama 26.5 m | 35-45 m bandı %21 | ≥20px %34 | 10-20px %40
+#   | 7-10px %27 | <7px %0  (çöp kare üretmiyor)
+# DIST_EXP=0.7 (uzak ağırlıklı) denendi ve REDDEDİLDİ: örneklerin %51'i
+# 10 pikselin altına düşüyordu; model birkaç piksellik lekeden öğrenemez,
+# üstelik yakın mesafedeki mevcut başarı da bozulurdu.
+DIST_MIN, DIST_MAX = 3.0, 50.0
+DIST_EXP = 0.85                  # 2=yakın ağırlıklı, 1=düzgün, <1=uzak ağırlıklı.
+                                 # 1.0 ile 200'lük deneme çekildi: 35-45 m bandı
+                                 # %21 beklenirken %12 çıktı — uzak örnekler
+                                 # elemede orantısız kayboluyor (hedef yer altına
+                                 # düşüyor). 0.85 bu kaybı telafi eder.
 PIX_MARGIN = 0.12
-MIN_BOX_PX = 10.0             # bundan küçük bbox'ları at
+MIN_BOX_PX = 7.0              # bundan küçük bbox'ları at. 10 idi ve 40 m'deki
+                              # hedefi (9.4 px) ELİYORDU — yani o mesafeden
+                              # kare üretilse bile veri setine giremiyordu.
+                              # 7: 40 m'yi geçirir, 50 m'nin ötesini (7.5 px
+                              # altı) eler.
 MIN_TARGET_ALT = 0.5         # hedef yere yakın da olabilir (zemin arka plan); yer altı at
 ROLL_MAX = math.radians(65)  # hedef oryantasyon çeşitliliği
 PITCH_MAX = math.radians(45)
@@ -171,6 +191,9 @@ def main():
     ap.add_argument("--count", type=int, default=2000, help="hedef örnek sayısı")
     ap.add_argument("--out", default="vision/datasets/talon")
     ap.add_argument("--val-split", type=float, default=0.15)
+    ap.add_argument("--start-index", type=int, default=0,
+                    help="dosya numaralandırma başlangıcı; uzun çekim çökerse "
+                         "mevcut kare sayısı verilip üzerine devam edilir")
     ap.add_argument("--settle", type=float, default=0.20,
                     help="set_pose sonrası render bekleme (s) — kamera+hedef taşınır")
     ap.add_argument("--debug-overlay", action="store_true",
@@ -204,24 +227,30 @@ def main():
         if tpos is None:
             continue
 
-        # Her iki modeli de yeni pozlarına taşı
+        # ── ELEME ÖNCE, GAZEBO'YA DOKUNMADAN (2026-07-30 hız düzeltmesi) ──
+        # geo.target_bbox saf geometridir (konum+rotasyon+FOV), simülasyona
+        # bağlı değildir. Eskiden modeller ÖNCE taşınıp settle beklendikten
+        # SONRA eleniyordu; adayların ~2/3'ü elendiği için zamanın 2/3'ü
+        # boşa gidiyordu (ölçüm: 0.84 sn/kaydedilen kare).
+        bb = geo.target_bbox(tpos, trpy, iris_pos, iris_rpy)
+        if bb is None:
+            continue
+        if (bb[2] - bb[0]) < MIN_BOX_PX or (bb[3] - bb[1]) < MIN_BOX_PX:
+            continue
+
+        # Yalnızca KABUL EDİLEN aday için modelleri taşı + render bekle
         if not _set_pose(node, CAMERA, iris_pos, iris_rpy):
             time.sleep(0.02); continue
         if not _set_pose(node, TARGET, tpos, trpy):
             time.sleep(0.02); continue
         time.sleep(args.settle)                       # kamera+hedef render bekle
 
-        bb = geo.target_bbox(tpos, trpy, iris_pos, iris_rpy)
-        if bb is None:
-            continue
-        if (bb[2] - bb[0]) < MIN_BOX_PX or (bb[3] - bb[1]) < MIN_BOX_PX:
-            continue
         frame, _ = grabber.snapshot()
         if frame is None:
             continue
 
         split = "val" if random.random() < args.val_split else "train"
-        name = f"talon_{saved:05d}"
+        name = f"talon_{args.start_index + saved:05d}"
         cv2.imwrite(os.path.join(args.out, "images", split, name + ".jpg"), frame)
         cx, cy, w, h = geo.bbox_to_yolo(bb)
         with open(os.path.join(args.out, "labels", split, name + ".txt"), "w") as f:
