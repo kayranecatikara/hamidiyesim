@@ -261,6 +261,8 @@ avci_sim/
 
 | Doküman | İçerik |
 |---------|--------|
+| **[DEVAM.md](DEVAM.md)** | **Başka makinede/dalda kaldığın yerden devam** — dal senkronu, başlatma, ölçüm araçları, tekrar denenmeyecekler |
+| **[UYGULANACAK.md](UYGULANACAK.md)** | **Güncel iş listesi ve DURUM** — hangi madde bitti, sırada ne var, son ölçümler |
 | [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) | Kopyala-yapıştır çalıştırma komutları (5 terminal) |
 | [docs/GUIDANCE.md](docs/GUIDANCE.md) | Güdüm mimarisi — kodda şu an çalışan sistem |
 | [docs/GUIDANCE_ROADMAP.md](docs/GUIDANCE_ROADMAP.md) | Güdüm yol haritası (plan/vizyon) |

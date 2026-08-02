@@ -13,6 +13,9 @@ edilemedi.
 
 ---
 
+> Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
+> dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
+
 ## DURUM — 2026-08-02 22:30 (yeni oturum buradan devam etsin)
 
 **Depo:** `kubra_masaustu`, temiz, `origin` ile eşit. Son commit `f5737ca`.
@@ -470,7 +473,16 @@ temas için ~0.3 m daha kapatmak gerekiyor.
 ## Ölçüm komutları
 
 ```bash
-# Uçuş sırasında — hedef telemetrisi sağlığı
+# Uçuş SONRASI — geçişlerin gerçek geometrisi (iki aracın kara kutusundan).
+# CSV'deki menzil EKF ofsetinden etkileniyor; bu araç dürüst kaynağa bakar.
+python3 tools/gecis_analiz.py            # en son uçuş
+python3 tools/gecis_analiz.py 126 127    # belirli BIN'ler
+python3 tools/gecis_analiz.py --liste    # son 10 uçuş
+
+# Uçuş sırasında — gerçek temas kaynağı sağlam mı (A5)
+curl -s localhost:8000/api/debug/carpisma | python3 -m json.tool
+
+# Uçuş sırasında — hedef telemetrisi sağlığı (A6 uygulanınca)
 curl -s localhost:8000/api/debug/hedef_telem | python3 -m json.tool
 
 # Uçuş sırasında — faz ve kapılar
