@@ -29,9 +29,10 @@ def main():
     print("GPS kadraj güdümü kabul kriterleri")
     print("=" * 60)
     C = gg.Cfg
-    tilt = C.CENTER_ELEV_DEG
-    d_behind = C.RANGE_SET * math.cos(math.radians(tilt))
-    d_below = C.RANGE_SET * math.sin(math.radians(tilt))
+    tilt = C.CENTER_ELEV_DEG              # kamera tilt'i (kadraj MERKEZİ)
+    ist = C.ISTASYON_ELEV_DEG             # istasyonun LOS yükselişi (≤ tilt)
+    d_behind = C.RANGE_SET * math.cos(math.radians(ist))
+    d_below = C.RANGE_SET * math.sin(math.radians(ist))
 
     # ── G1: MERKEZ — hedef boresight yönünde, drone seviyeli → yaw 0, elev tilt, (CX,CY) ──
     b = govde_to_dunya([0.906, 0.0, -0.423], 0, 0, 0)
@@ -78,12 +79,18 @@ def main():
     st = [T[0] - vhat[0] * d_behind, T[1] - vhat[1] * d_behind, T[2] + d_below]
     yaw_to_tgt = math.atan2(T[1] - st[1], T[0] - st[0])
     r7 = hedef_kadraj_hatasi(T, st, 0, 0, yaw_to_tgt)   # drone seviyeli, burun hedefte
-    kontrol("G7  geometrik istasyonda hedef merkezde (yaw≈0, elev≈25°, menzil≈RANGE_SET)",
+    # Ölçüt "TAM MERKEZ" DEĞİL, "kadrajda paylı içeride". İstasyon yükselişi
+    # 2026-08-02'de kamera tilt'inden ayrıldı (dikey ivme bütçesi, bkz.
+    # Cfg.ISTASYON_ELEV_DEG); hedef artık merkezin (tilt − istasyon)° altında
+    # görünür. Asıl gereklilik hedefin kadrajı terk etmemesi.
+    v_marj = min(r7["v"], 480 - r7["v"]) if r7["v"] is not None else -1
+    kontrol(f"G7  istasyonda hedef kadrajda paylı (yaw≈0, elev≈{ist:.0f}°, menzil≈RANGE_SET)",
             abs(math.degrees(r7["yaw_hata"])) < 0.5
-            and abs(math.degrees(r7["elev"]) - tilt) < 0.5
-            and abs(r7["menzil"] - C.RANGE_SET) < 0.2,
+            and abs(math.degrees(r7["elev"]) - ist) < 0.5
+            and abs(r7["menzil"] - C.RANGE_SET) < 0.2
+            and v_marj > 100,
             f"yaw={math.degrees(r7['yaw_hata']):.2f}° elev={math.degrees(r7['elev']):.2f}° "
-            f"menzil={r7['menzil']:.2f}")
+            f"menzil={r7['menzil']:.2f} v={r7['v']:.0f}px (merkez 240, kenara pay {v_marj:.0f}px)")
 
     # ── G8: istasyon hedefin ALTINDA ve GERİSİNDE ──
     kontrol("G8  istasyon: altında (alt<hedef) ve gerisinde (x<hedef)",
@@ -126,8 +133,8 @@ def main():
     ok_hold = sent is not None and abs(vx_cmd - TV) < 3.0    # FF hedef hızına ~oturmuş
     ok_durum = snap["durum"] in ("KILIT", "ARAMA") and snap["d_h"] is not None
     ok_merkez = (snap["kadraj_elev_deg"] is not None
-                 and abs(snap["kadraj_elev_deg"] - tilt) < 3.0)
-    kontrol("G9  döngü: hold'da vx≈hedef hızı, durum+kadraj dolu ve merkezde",
+                 and abs(snap["kadraj_elev_deg"] - ist) < 3.0)
+    kontrol("G9  döngü: hold'da vx≈hedef hızı, durum+kadraj dolu, elev=istasyon açısı",
             ok_hold and ok_durum and ok_merkez,
             f"vx_cmd={vx_cmd} (~{TV}) durum={snap['durum']} d_h={snap['d_h']} "
             f"elev={snap['kadraj_elev_deg']}°")
@@ -138,8 +145,8 @@ def main():
     # Artık etkin standoff menzille orantılı küçülür → yükseliş her menzilde
     # CENTER_ELEV_DEG kalır. Uzakta (menzil ≥ RANGE_SET) davranış değişmez.
     cfg = gg.Cfg
-    ce = math.radians(cfg.CENTER_ELEV_DEG)
-    tilt_hedef = cfg.CENTER_ELEV_DEG
+    ce = math.radians(cfg.ISTASYON_ELEV_DEG)
+    tilt_hedef = cfg.ISTASYON_ELEV_DEG
 
     def _istasyon_elev(menzil):
         """Verilen menzilde istasyona park etmiş drone'un gördüğü LOS yükselişi.
@@ -153,7 +160,7 @@ def main():
 
     sapmalar = [(m, _istasyon_elev(m) - tilt_hedef) for m in (20, 11, 8, 6, 4, 2)]
     en_kotu = max(abs(s) for _, s in sapmalar)
-    kontrol("G10 istasyon yükselişi HER menzilde kadraj merkezinde",
+    kontrol("G10 istasyon yükselişi HER menzilde sabit (menzille orantılı ofset)",
             en_kotu < 0.5,
             "  ".join(f"{m}m:{s:+.1f}°" for m, s in sapmalar)
             + f"  (hedef {tilt_hedef:.0f}°, en kötü sapma {en_kotu:.2f}°)")
@@ -166,6 +173,28 @@ def main():
         yatay = min(menzil * math.cos(ce), d_arka)
         r = hedef_kadraj_hatasi([0.0, 0.0, 0.0], [-yatay, 0.0, d_alt], 0, 0, 0)
         return math.degrees(r["elev"])
+
+    # ── G11: TERMİNAL DİKEY BÜTÇESİ — istasyon aracın ivme sınırına SIĞMALI ──
+    # 2026-08-02, 3 uçuş, iki aracın kara kutusu: ArduPilot dikey hız komutunu
+    # WP_ACC_Z = 1.0 m/s² ile rampalıyor (DVD pozitif eğim medyanı üç uçuşta da
+    # tam 1.00). Güdümün istediği 8-22 m/s tamamen alakasız; hız tavanı
+    # (WP_SPD_UP=5) hiç görülmedi, yani sınırlayan İVME. Araç kusursuz uyguluyor
+    # (DVD↔VD hatası 0.1 m/s, gaz hiç %95'i aşmadı).
+    #
+    # Eski geometri (istasyon 25° = kamera tilt'i) bu bütçeye SIĞMIYORDU:
+    #   kapatılacak 4.65 m → 1 m/s² ile 3.05 s gerek, terminalde 2.4-2.8 s var
+    #   ölçülen kalan dikey: vurdu +0.03 m | ıskaladı +1.52 m, +2.06 m (alttan)
+    # Bu test o hatanın geri gelmesini engeller: istasyon açısı yükseltilirse
+    # (veya RANGE_SET küçültülürse) burada yakalanır.
+    A_DIKEY = 1.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
+    V_YATAY = 4.3        # m/s; ÖLÇÜLEN en hızlı terminal yatay kapanma (kötü hal)
+    t_var = d_behind / V_YATAY
+    tirmanilabilir = 0.5 * A_DIKEY * t_var ** 2
+    kontrol("G11 terminal dikey bütçesi: istasyonun altı ivme sınırında kapanabilir",
+            tirmanilabilir > d_below,
+            f"kapatılacak {d_below:.2f} m, {t_var:.2f} s var → {tirmanilabilir:.2f} m "
+            f"tırmanılabilir (pay {tirmanilabilir - d_below:+.2f} m); "
+            f"25°'de kapatılacak {C.RANGE_SET*math.sin(math.radians(25)):.2f} m olurdu")
 
     eski_4m = _eski_elev(4.0)
     kontrol("G10b eski sabit-metre davranışı 4 m'de kadrajı taşırırdı",

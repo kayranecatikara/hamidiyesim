@@ -35,7 +35,7 @@ Kaynak: `_CSV_ALANLAR`, `gps_guidance.py`. Çerçeve: **NED/FRD**, açılar dere
 | `tgt_vx` `tgt_vy` `tgt_vz` | m/s | Hedef hızı (konumdan sonlu-fark + EMA). |
 | `iris_x` `iris_y` `iris_z` | m | Avcı drone konumu (NED). |
 | `iris_roll_deg` `iris_pitch_deg` `iris_yaw_deg` | ° | Drone tutumu (attitude). |
-| `st_x` `st_y` `st_z` | m | **İstasyon** = kadraj hedef noktası (hedefin ~10 m gerisi + ~4.6 m altı). Drone buraya sürülür. |
+| `st_x` `st_y` `st_z` | m | **İstasyon** = kadraj hedef noktası. Sabit açı: `RANGE_SET`(11 m) uzaklıkta, yükseliş `ISTASYON_ELEV_DEG`(15°) → hedefin ~10.6 m gerisi + ~2.85 m altı. Drone buraya sürülür. |
 | `vx_cmd` `vy_cmd` `vz_cmd` | m/s | Araca gönderilen hız komutu (NED). Büyüklüğü `V_MAX`=20 ile sınırlı. |
 | `yaw_cmd_deg` | ° | Komut edilen burun yönü (hedefe kerteriz). |
 | `kadraj_yaw_deg` | ° | **Yatay kadraj hatası**: hedefin kameradaki yatay sapması. 0 = tam ortada. |

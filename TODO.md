@@ -3,33 +3,47 @@
 Tiklenebilir görev listesi. Çalıştırma ve sorun giderme için
 `docs/SIMULASYON_CALISTIRMA.md`.
 
-Güncelleme: 2026-08-01
+Güncelleme: 2026-08-02
+
+> ## ⚑ ÖNCE BUNU OKU — deponun şu anki hali
+>
+> Depo **`b55953d` (son push) haline geri döndürüldü** (2026-08-02 10:55).
+> Push'tan sonra yapılan 8 grup değişiklik hep birlikte uçurulmuş, hangisinin
+> ne yaptığı ayırt edilememişti; bazıları işe yaradı, biri zarar verdi.
+>
+> **Sıradaki iş `UYGULANACAK.md`'de** — 14 madde, teker teker uygulanıp
+> uçuşta ölçülecek. Yeni bir oturuma başlıyorsan ORADAN devam et.
+>
+> Bu dosyadaki maddeler `UYGULANACAK.md` bittikten SONRA sıraya girer.
+
+---
+
+## Sözlük (bu belgelerde geçen terimler)
+
+| terim | anlamı |
+|---|---|
+| **kara kutu** | ArduPilot'un kendi uçuş kaydı (`~/ardupilot/logs/*.BIN`). Aracın gördüğü attitude, motor çıkışları, kontrolcü hedefleri. Bizim CSV'lerimizden bağımsız — "araç komutu uyguladı mı" sorusunun tek dürüst kaynağı. |
+| **istasyon** | GPS fazının drone'a "şurada dur" dediği hayali nokta. Sabit metre DEĞİL sabit açı: hedeften `RANGE_SET` (11 m) uzakta, LOS yükselişi `ISTASYON_ELEV_DEG` (15°) → hedefin **10.63 m gerisi + 2.85 m altı**. Drone hedefi değil bu noktayı takip eder. |
+| **`ok` oranı** | `visual_lead` her kamera karesine `durum` etiketi yazar. `ok` = pose modeli hedefi temiz gördü, keypoint'ler güvenilir. Diğerleri: `kpt_dusuk`, `tespit_yok`, `kor_dalis`. "%51 ok" = karelerin yarısında güdüm sağlam veriyle çalışıyor. |
+| **faz** | GPS fazı (uzaktan yaklaşma, `gps_guidance`) ↔ görsel faz (terminal hücum, `visual_lead`). Geçişi `supervisor` yönetir. |
+| **geçiş sayısı** | GPS→görsel kaç kez geçildi. 1 ideal; yüksek sayı görsel temasın kopup kopup kurulduğunu gösterir. |
 
 ---
 
 ## Sıradaki
 
-- [ ] **Heading titremesini doğrula** — `ATC_ANG_YAW_P` 4.5 → 3.0 yapıldı,
-      uçuşta denenmedi. Ölçüt: kara kutuda `ATT.Yaw − ATT.DesYaw` std'si
-      1.4-2.4°'den **<1.0°**'ye inmeli. İnmezse geri al, `ATC_RAT_YAW_FLTE`
-      (2.5 Hz) denenir. (`sim/ardupilot_params/avci_copter.parm`)
 - [ ] **`LOOKUP_MIN_ALT` kararı** — şu an 8 m sabit taban. Hedef yere düşüp
       sürünürken avcı 8 m'de asılı kalıyor, inemiyor. Hedefin irtifasına göre
       uyarlanmalı mı, yoksa "hedef yerdeyse görev bitti" mi sayılmalı?
       (`control/guidance/gps_guidance.py:50`)
-- [ ] **Mesafeye göre hız profilini uçuşta doğrula** — sabit tavan yerine
-      `v = sqrt(2·a·kalan) + hedef_hızı` geldi (uzakta 28, 15 m'de ~19,
-      5 m'de ~9 m/s). Ölçüt: hedefe yetişiyor mu VE istasyonu geçip savrulmuyor
-      mu? (`gps_guidance._hiz_tavani`)
-- [ ] **Görsel kilidi uçuşta doğrula** — kısa kopmalarda artık GPS'e dönmüyor
-      (`kilit_kor` durumu). Ölçüt: `gecis_sayisi` 1'de kalmalı; CSV'de
-      `kilit_kor` kareleri görünmeli. (`AVCI_GORSEL_KILIT_SURE`, varsayılan 10 s)
-- [ ] **Gerçek çarpışma tespitini uçuşta doğrula** — Gazebo contact sensörü.
-      Ölçüt: ıskaladığında hedef DÜŞMEMELİ, gerçekten çarpınca düşmeli.
-      Konsolda `[HASAR] Gerçek çarpışma dinleniyor:` satırı görünmeli.
 - [ ] **`ATC_ANGLE_MAX`'i kademeli geri artır** — 45'te kaldı. 50-55 denenebilir;
       55'te yatay ivme 14 m/s². Her denemede kara kutudan motor doygunluğu ve
       toplam yaw dönüşü kontrol edilmeli. (`sim/ardupilot_params/avci_copter.parm`)
+- [ ] **Video kayıt butonları** — başlat / durdur / kayıt dosyası.
+      Iris kamera akışı zaten MJPEG olarak `latest_frames["iris"]` üzerinden
+      servis ediliyor (`gcs_server.process_iris_frame`). Kayıt, o kareleri
+      `cv2.VideoWriter` ile dosyaya yazan bir thread olur; dosyalar `logs/`
+      altına zaman damgalı düşer ve `/loglar/` üzerinden zaten servis ediliyor.
 
 ## Tekrar denenecekler
 
@@ -121,9 +135,14 @@ Her denemede **tek değişken** değiştirin ve eski sayıyla karşılaştırın
       30.5° → 4.5°.
 - [x] **`WP_YAW_BEHAVIOR` 2 → 0** — firmware, yaw komutu olmayan anlarda burnu
       gidiş yönüne çeviriyordu.
-- [x] **Dikey ıska (GPS istasyon geometrisi)** — sabit 4.65 m ofset yerine
-      `r_eff = min(menzil, RANGE_SET)`; LOS yükselişi her menzilde 25° (test
-      G10, sapma 0.00°).
+- [x] **Dikey ıska, 1. tur (GPS istasyon geometrisi)** — sabit 4.65 m ofset
+      yerine `r_eff = min(menzil, RANGE_SET)`; LOS yükselişi her menzilde sabit
+      (test G10, sapma 0.00°). ⚠ Bu YETMEDİ: açı sabitlendi ama istasyonun
+      KENDİSİ hâlâ 25°'deydi, yani terminal yine 4.65 m tırmanmak zorundaydı.
+- [x] **Dikey ıska, 2. tur (istasyon açısı ↓)** — `ISTASYON_ELEV_DEG` kamera
+      tilt'inden ayrıldı, 25° → 15°: kapatılacak dikey **4.65 → 2.85 m**.
+      Sebep ölçüldü: ArduPilot dikey rampası `WP_ACC_Z = 1.0 m/s²`, 4.65 m için
+      3.05 s gerekiyor, terminalde 2.4-2.8 s var. Test G11 bütçeyi koruyor.
 - [x] **Sahte vuruş** — `VURUS_MENZIL` 3.0 → 1.5 m. 3 m fiziksel temas değil,
       yakın geçişti.
 - [x] **Sahte PnP paneli** — ground-truth'a yapay gürültü ekleyip "tahmin" diye
@@ -133,6 +152,7 @@ Her denemede **tek değişken** değiştirin ve eski sayıyla karşılaştırın
 - [x] **Talon manuel modda kalkmıyor** — mod değiştirmek tek başına yetmiyordu;
       ARM + TAKEOFF adımları hiç yoktu. Eklendi (yerde FBWA, 15 m üstünde FBWB).
       **Uçuşta doğrulandı.**
-- [x] **Çarpışmada hedef uçmaya devam ediyor** — hasar modülü. İlk sürüm
-      yakınlık eşiği (<2 m) kullanıyordu ve ıskalayınca da hedefi düşürüyordu;
-      GERÇEK Gazebo contact sensörüne çevrildi (yakınlık eşiği kaldırıldı).
+- [ ] **Çarpışmada hedef uçmaya devam ediyor** — ⚠ TAMAMLANMADI, revert edildi.
+      `gcs_server`'da hasar modülü KODU duruyor ama **varsayılan KAPALI**
+      (`AVCI_HASAR=1` gerek) ve dayandığı Gazebo temas sensörü SDF'den geri
+      alındı — yani şu an tetiklenemez. Tam sürümü `UYGULANACAK.md` **A5**.

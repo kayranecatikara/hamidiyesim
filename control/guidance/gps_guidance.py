@@ -44,8 +44,31 @@ class Cfg:
     LOOP_HZ = 20.0
 
     # --- KADRAJ GEOMETRİSİ (merkezleme) ---
-    CENTER_ELEV_DEG = 25.0    # kamera tilt'i = merkez için gereken LOS yükselişi
+    CENTER_ELEV_DEG = 25.0    # kamera tilt'i (FİZİKSEL, iris_cam modelinden).
+                              # Hedefin kadrajın TAM MERKEZİNDE görünmesi için
+                              # gereken LOS yükselişi. Ölçüm/tanı referansı;
+                              # istasyon geometrisini ARTIK BELİRLEMİYOR.
     RANGE_SET = _env_f("AVCI_GPS_RANGE", 11.0)   # m; slant menzil setpoint (pose tatlı nokta)
+
+    # İSTASYONUN LOS yükselişi — kamera tilt'inden AYRILDI (2026-08-02).
+    #
+    # NEDEN AYRILDI: ikisi tek sayıya bağlıydı (25°), dolayısıyla istasyon
+    # RANGE_SET·sin25° = 4.65 m ALTTA kuruluyordu. Terminal hücum bu 4.65 m'yi
+    # kapatmak zorunda ve ÖLÇÜLDÜ (3 uçuş, kara kutu): ArduPilot dikey hız
+    # komutunu WP_ACC_Z = 1.0 m/s² ile rampalıyor — güdüm 8-22 m/s tırmanma
+    # istese de. Sıfırdan 4.65 m kapatmak 3.05 s sürer; terminalde eldeki süre
+    # 2.4-2.8 s. Yani geometri, aracın dikey ivme bütçesine SIĞMIYORDU:
+    #     vurdu   → kalan dikey +0.03 m   (rampayı erken başlatabildiği için)
+    #     ıskaladı→ kalan dikey +1.52 m, +2.06 m  (drone hedefin ALTINDAN geçti)
+    #
+    # 15°'de istasyon RANGE_SET·sin15° = 2.85 m altta, 10.63 m geride:
+    #     eldeki süre 10.63 / 3.7 m/s ≈ 2.87 s → 1 m/s² ile 4.13 m tırmanılır
+    #     gereken 2.85 m → %45 pay. En hızlı ölçülen kapanmada (4.3 m/s) bile
+    #     2.47 s → 3.05 m, yine yeter.
+    # BEDELİ: hedef kadraj merkezinde değil, ~10° altında görünür
+    # (v_px ≈ 269/480 — hâlâ rahat içeride). Pose kalitesine etkisi ÖLÇÜLECEK.
+    # G11 bu bütçeyi test olarak koruyor.
+    ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 15.0)
     TRACK_MIN_SPD = 3.0       # m/s; üstünde istasyon HIZ yönünün gerisi (kuyruk), altında LOS gerisi
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)
 
@@ -100,9 +123,9 @@ _CSV_ALANLAR = [
 
 def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     loop_period = 1.0 / cfg.LOOP_HZ
-    center_elev = math.radians(cfg.CENTER_ELEV_DEG)
-    d_behind = cfg.RANGE_SET * math.cos(center_elev)     # yatay standoff (~9.97 m)
-    d_below = cfg.RANGE_SET * math.sin(center_elev)      # dikey alt ofset (~4.65 m)
+    ist_elev = math.radians(cfg.ISTASYON_ELEV_DEG)
+    d_behind = cfg.RANGE_SET * math.cos(ist_elev)        # yatay standoff (15°'de ~10.63 m)
+    d_below = cfg.RANGE_SET * math.sin(ist_elev)         # dikey alt ofset (15°'de ~2.85 m)
 
     # hedef kestirimi (EMA pozisyon + sonlu-fark hız)
     est_x = est_y = est_z = None
@@ -130,7 +153,13 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     print("[GPS] Kadraj güdümü (yeniden inşa) — hedefi kamera merkezine getir")
     print(f"[GPS] setpoint: slant {cfg.RANGE_SET:.1f}m → {d_behind:.1f}m arka + "
           f"{d_below:.1f}m alt; yakınlaşınca ofset menzille ORANTILI küçülür, "
-          f"yükseliş her menzilde {cfg.CENTER_ELEV_DEG:.0f}° kalır — log: {csv_yol}")
+          f"yükseliş her menzilde {cfg.ISTASYON_ELEV_DEG:.0f}° kalır "
+          f"(kamera tilt'i {cfg.CENTER_ELEV_DEG:.0f}° → hedef merkezin "
+          f"{cfg.CENTER_ELEV_DEG - cfg.ISTASYON_ELEV_DEG:.0f}° altında) — log: {csv_yol}")
+    _t_terminal = d_behind / 3.7          # ölçülen terminal yatay kapanma hızı
+    print(f"[GPS] terminal dikey bütçe: {d_below:.2f} m kapatılacak, "
+          f"~{_t_terminal:.2f} s var → 1 m/s² rampayla {0.5*_t_terminal**2:.2f} m "
+          f"{'YETER' if 0.5*_t_terminal**2 > d_below else '⚠ YETMEZ'}")
     print("=" * 60)
 
     def _hover():
@@ -215,12 +244,16 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # menzilde kendi bozuyordu.
             #
             # Düzeltme: etkin standoff, menzil RANGE_SET'in altına inince onunla
-            # birlikte küçülür. Böylece LOS yükselişi HER menzilde CENTER_ELEV_DEG
-            # (=kamera tilt'i) kalır ve hedef kadraj merkezinde durur.
-            # Uzakta (menzil ≥ RANGE_SET) davranış AYNEN eskisi gibidir.
+            # birlikte küçülür. Böylece LOS yükselişi HER menzilde
+            # ISTASYON_ELEV_DEG kalır. Uzakta (menzil ≥ RANGE_SET) davranış
+            # AYNEN eskisi gibidir.
+            # NOT: bu açı 2026-08-02'de kamera tilt'inden (CENTER_ELEV_DEG=25°)
+            # AYRILDI ve 15°'ye indirildi — terminalin kapatması gereken dikey
+            # mesafe aracın 1 m/s²'lik dikey ivme bütçesine sığmıyordu. Ayrıntı
+            # ve ölçüm: Cfg.ISTASYON_ELEV_DEG.
             r_eff = min(menzil, cfg.RANGE_SET)
-            d_behind_eff = r_eff * math.cos(center_elev)
-            d_below_eff = r_eff * math.sin(center_elev)
+            d_behind_eff = r_eff * math.cos(ist_elev)
+            d_below_eff = r_eff * math.sin(ist_elev)
 
             tgt_spd_h = math.hypot(vel_x, vel_y)
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
@@ -305,7 +338,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if loop_count % int(cfg.LOOP_HZ * 3) == 0:
                 print(f"[GPS] {durum} d_h={d_h:.1f}m menzil={menzil:.1f}m "
                       f"kadraj(yaw={math.degrees(kad['yaw_hata']):+.0f}°,"
-                      f"elev={math.degrees(kad['elev']):+.0f}°/hedef {cfg.CENTER_ELEV_DEG:.0f}°) "
+                      f"elev={math.degrees(kad['elev']):+.0f}°/istasyon {cfg.ISTASYON_ELEV_DEG:.0f}°) "
                       f"v=({vx:+.1f},{vy:+.1f},{vz:+.1f}) tgt_v={tgt_spd_h:.1f}")
 
             _sleep(now, loop_period)

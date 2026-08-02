@@ -74,10 +74,19 @@ ortasında, pose modelinin güvenilir çalıştığı menzil bandında (~10-11 m
 kararlı görünsün → supervisor görsel faza devretsin. 20 Hz döngü:
 
 - **Geometrik kadraj noktası (istasyon):** slant menzil `RANGE_SET` (11 m) ve
-  merkez yükselişi `CENTER_ELEV_DEG` (25° = kamera tilt'i) bir istasyon noktası
-  belirler: hedefin `RANGE_SET·cos25° ≈ 9.97 m` **gerisi** + `RANGE_SET·sin25°
-  ≈ 4.65 m` **altı**. Bu noktada durulduğunda hedef geometrik olarak kadrajın
-  merkezindedir (test G7 bunu doğrular).
+  `ISTASYON_ELEV_DEG` (15°) bir istasyon noktası belirler: hedefin
+  `RANGE_SET·cos15° ≈ 10.63 m` **gerisi** + `RANGE_SET·sin15° ≈ 2.85 m` **altı**.
+  Hedef kadrajda, merkezin ~10° altında görünür (v≈269/480 px — test G7 hem
+  açıyı hem kenar payını doğrular).
+
+  > **İstasyon açısı kamera tilt'inden neden ayrı?** 2026-08-02'ye kadar tek
+  > sayıydı (25°) ve istasyon 4.65 m altta kuruluyordu. Üç uçuşun kara kutusu
+  > gösterdi ki ArduPilot dikey hız komutunu `WP_ACC_Z = 1.0 m/s²` ile
+  > rampalıyor — güdüm 8-22 m/s tırmanma istese de. Sıfırdan 4.65 m kapatmak
+  > 3.05 s sürer, terminalde 2.4-2.8 s var. Sonuç: drone hedefin **altından**
+  > geçiyordu (kalan dikey +1.52 m ve +2.06 m; vurabilen tek koşuda +0.03 m).
+  > 15°'de kapatılacak mesafe 2.85 m'ye iniyor ve ivme bütçesine sığıyor
+  > (test **G11** bunu koruyor). Ayar: `AVCI_GPS_ISTASYON_ELEV`.
 - **"Geri" yönünün seçimi:** hedefin yatay hızı `TRACK_MIN_SPD` (3 m/s) üstündeyse
   **hız yönünün gerisi** (kuyruk takibi), altındaysa **LOS gerisi** (drone tarafı)
   — duran/yavaş hedefte hız yönü gürültülü olduğu için.
