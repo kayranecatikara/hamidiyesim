@@ -348,6 +348,18 @@ function updateMissionStatus() {
     fetch('/api/chase_status')
         .then(r => r.json())
         .then(d => {
+            // ── Güdüm fazı ışıkları (GPS / GÖRSEL) — supervisor.faz'dan ──
+            const fazGps = document.getElementById('faz-gps');
+            const fazGorsel = document.getElementById('faz-gorsel');
+            if (fazGps && fazGorsel) {
+                const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
+                fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
+                fazGorsel.className = 'faz-isik' +
+                    (faz === 'VISUAL' ? ' aktif' :
+                     (faz === 'VURULDU' ? ' vuruldu' : ''));
+                fazGorsel.textContent = (faz === 'VURULDU') ? '● VURULDU' : '● GÖRSEL';
+            }
+
             const lockEl = document.getElementById('tele-lock-status');
             const termEl = document.getElementById('tele-terminal-status');
             if (!lockEl || !termEl) return;
@@ -961,42 +973,6 @@ window.onload = () => {
     }
     drawNoise();
 
-    // === PnP POSE TAHMİNİ — Kamera tabanlı telemetri güncelleme ===
-    const pnpDist   = document.getElementById('pnp-dist');
-    const pnpSpeed  = document.getElementById('pnp-speed');
-    const pnpPos    = document.getElementById('pnp-pos');
-    const pnpAccel  = document.getElementById('pnp-accel');
-    const pnpYaw    = document.getElementById('pnp-yaw');
-    const pnpModel  = document.getElementById('pnp-model-status');
-
-    function updatePnPTelemetry() {
-        fetch('/api/telemetry/pnp')
-            .then(r => r.json())
-            .then(d => {
-                if (d && d.active) {
-                    pnpDist.textContent  = d.distance.toFixed(1) + ' m';
-                    pnpSpeed.textContent = d.speed.toFixed(1) + ' m/s';
-                    pnpPos.textContent   = d.x.toFixed(1) + ', ' + d.y.toFixed(1) + ', ' + d.z.toFixed(1);
-                    pnpAccel.textContent = d.accel.toFixed(2) + ' m/s²';
-                    pnpYaw.textContent   = d.yaw.toFixed(1) + '°';
-
-                    pnpModel.textContent = 'AKTİF';
-                    pnpModel.className   = 'val green';
-
-                    pnpDist.className  = d.distance < 10 ? 'val red' : d.distance < 30 ? 'val warning' : 'val green';
-                    pnpSpeed.className = 'val';
-                } else {
-                    // Model henüz aktif değil
-                    pnpModel.textContent = 'BEKLEMEDE';
-                    pnpModel.className   = 'val warning';
-                }
-            })
-            .catch(() => {
-                // API endpoint henüz yok — pose modeli gelince aktifleşecek
-                pnpModel.textContent = 'BEKLEMEDE';
-                pnpModel.className   = 'val warning';
-            });
-    }
-    setInterval(updatePnPTelemetry, 1000);
+    // (PnP paneli ve /api/telemetry/pnp beslemesi kaldırıldı — 2026-08-02)
 
 };

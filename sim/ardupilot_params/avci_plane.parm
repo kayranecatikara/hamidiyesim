@@ -6,10 +6,14 @@
 # Varsayılan SITL plane'i LOITER'da 22-29 m/s yapıyordu; avcı drone ~18.6 m/s
 # max hıza sahip, bu yüzden hedefi asla yakalayamıyordu.
 
-# Cruise / airspeed hedefleri (cm/s)
-TRIM_ARSPD_CM 1500
-ARSPD_FBW_MIN 1200
-ARSPD_FBW_MAX 2200
+# Cruise / airspeed hedefleri (m/s — SI).
+# DİKKAT (2026-08-02, tools/parm_denetle.py bulgusu): eski adlar
+# (TRIM_ARSPD_CM 1500 / ARSPD_FBW_MIN 1200 / ARSPD_FBW_MAX 2200) bu firmware'de
+# YOK ve ArduPilot tanımadığı adı SESSİZCE yok sayıyor — Talon aylardır
+# varsayılanla uçtu (döküm: cruise 22, max 30!). Yeni adlar + aynı niyet:
+AIRSPEED_CRUISE 15
+AIRSPEED_MIN 12
+AIRSPEED_MAX 22
 
 # LOITER yarıçapını küçült — hedef daha dar bir bölgede kalsın
 WP_LOITER_RAD 80

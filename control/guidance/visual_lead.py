@@ -82,15 +82,41 @@ def _menzil_hesapla(get_plane_truth, iris_pos):
 
 
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
-                    kayip_kare_esik=None):
+                    kayip_kare_esik=None, get_temas=None, get_menzil=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
-    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu' (menzil
-    < VURUS_MENZIL). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
-    koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
-    dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
+    get_temas (sim_truth.temas): Gazebo ÇARPIŞMA olayı — True=fiziksel temas
+    (vuruldu), False=akış canlı temas yok (menzil-eşikli vuruş DEVRE DIŞI),
+    None=sensör yok (eski menzil<VURUS_MENZIL yöntemi yedek).
+    get_menzil (sim_truth.menzil): zaman hizalı GERÇEK mesafe — menzil_gercek
+    logu + kör dalış girişi; None dönerse telemetri hesabı yedek.
+    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'.
+    Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas koparsa GPS'e
+    DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör dalış)."""
     core = LeadPursuitCore(cfg)
     adapter = CopterAdapter(cfg)          # yalnız copter platformu
+
+    def _menzil_olc():
+        """Önce sim-truth (zaman hizalı gerçek poz), yoksa telemetri hesabı."""
+        if get_menzil is not None:
+            m = get_menzil()
+            if m is not None:
+                return m
+        return _menzil_hesapla(get_plane_truth, aras.pos)
+
+    def _temas_vurus():
+        """(vuruldu_mu, akış_canlı_mı). Temas akışı canlıyken vuruş kararının
+        tek sahibi fiziksel temastır (sahte menzil-vuruşlarına karşı)."""
+        if get_temas is None:
+            return False, False
+        t = get_temas()
+        if t is True:
+            print("[LEAD] ✓ VURULDU (FİZİKSEL TEMAS — Gazebo contact)")
+            return True, True
+        return False, t is not None
+
+    if get_temas is not None and get_temas() is not None:
+        print("[LEAD] Vuruş kararı: FİZİKSEL TEMAS sensörü (menzil eşiği devre dışı)")
 
     aras = _ArasState()
     son_seq = 0            # _pose_seq 0'dan başlar; ilk GERÇEK kareyi bekle
@@ -140,17 +166,22 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                   f"son nişan {cfg.TERMINAL_SURE:.1f} s sürdürülüyor")
         send_velocity(conn, *son_v_cmd)
         aras.drenaj(conn)
-        m = _menzil_hesapla(get_plane_truth, aras.pos)
+        vurus, temas_canli = _temas_vurus()
+        if vurus:
+            return "vuruldu"
+        m = _menzil_olc()
         if m is not None:
             terminal_min = min(terminal_min, m) if terminal_min is not None else m
-            if m < cfg.VURUS_MENZIL:
+            if not temas_canli and m < cfg.VURUS_MENZIL:
                 print(f"[LEAD] ✓ VURULDU (menzil {m:.2f} m)")
                 return "vuruldu"
         if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
-            if terminal_min is not None and terminal_min < cfg.VURUS_MENZIL:
+            if (not temas_canli and terminal_min is not None
+                    and terminal_min < cfg.VURUS_MENZIL):
                 print(f"[LEAD] ✓ VURULDU (en yakın {terminal_min:.2f} m)")
                 return "vuruldu"
-            print(f"[LEAD WARN] kör dalış bitti — en yakın {terminal_min:.2f} m, ıska")
+            en_yakin = f"{terminal_min:.2f}" if terminal_min is not None else "?"
+            print(f"[LEAD WARN] kör dalış bitti — en yakın {en_yakin} m, ıska")
             return "kayip"
         return None
 
@@ -179,26 +210,29 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
                      "mod": aras.mode}
 
+            # Fiziksel temas kontrolü (akış canlıysa vuruş kararının tek sahibi)
+            vurus, temas_canli = _temas_vurus()
+            if vurus:
+                satir["durum"] = "vuruldu"
+                _satir(satir)
+                return "vuruldu"
+
             # menzil_gercek + kapanma hızı + terminal durum takibi
-            if aras.pos is not None and get_plane_truth is not None:
-                p = get_plane_truth()
-                if p is not None:
-                    d = math.sqrt((p["x"] - aras.pos[0]) ** 2
-                                  + (p["y"] - aras.pos[1]) ** 2
-                                  + (p["z"] - aras.pos[2]) ** 2)
-                    satir["menzil_gercek_m"] = round(d, 3)
-                    kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
-                    if menzil_onceki is not None and stamp and t_menzil_onceki \
-                            and stamp > t_menzil_onceki:
-                        satir["kapanma_hizi_ms"] = round(
-                            -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
-                    menzil_onceki, t_menzil_onceki = d, stamp
-                    # VURUŞ: hedefe fiziksel temas mesafesi
-                    if d < cfg.VURUS_MENZIL:
-                        satir["durum"] = "vuruldu"
-                        _satir(satir)
-                        print(f"[LEAD] ✓ VURULDU (menzil {d:.2f} m)")
-                        return "vuruldu"
+            d = _menzil_olc()
+            if d is not None:
+                satir["menzil_gercek_m"] = round(d, 3)
+                kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
+                if menzil_onceki is not None and stamp and t_menzil_onceki \
+                        and stamp > t_menzil_onceki:
+                    satir["kapanma_hizi_ms"] = round(
+                        -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
+                menzil_onceki, t_menzil_onceki = d, stamp
+                # VURUŞ (menzil eşiği — yalnız temas sensörü YOKKEN yedek)
+                if not temas_canli and d < cfg.VURUS_MENZIL:
+                    satir["durum"] = "vuruldu"
+                    _satir(satir)
+                    print(f"[LEAD] ✓ VURULDU (menzil {d:.2f} m)")
+                    return "vuruldu"
 
             if pose is None:                  # bu karede tespit yok
                 # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).

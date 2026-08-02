@@ -8,6 +8,8 @@ Model: vision/models/avci_yolo.pt (train_yolo.py çıktısı). GPU varsa otomati
 
 import os
 
+import numpy as np
+
 _MODEL_PATH = os.environ.get(
     "AVCI_YOLO_MODEL",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -112,6 +114,52 @@ def detect_talon(frame_bgr, conf=None):
         "w": x2 - x1,
         "h": y2 - y1,
         "conf": float(boxes.conf[i]),
+        "bbox": (x1, y1, x2, y2),
+    }
+
+
+# Tracker'a giden ham tespit eşiği: HybridSort BYTE eşleşmesi (use_byte)
+# 0.1-0.5 bandındaki düşük güvenli tespitleri de kullanır — düşük tutulur.
+_TRACK_CONF = float(os.environ.get("AVCI_TRACK_CONF", "0.1"))
+
+
+def detect_all(frame_bgr, conf=None):
+    """TÜM tespitleri N×6 [x1,y1,x2,y2,conf,cls] float32 döndürür (tracker girişi).
+
+    Düşük eşikle çağrılır; yüksek güvenli alt küme detect_talon ile AYNIDIR:
+    NMS güveni azalan sırada gezer, düşük skorlu kutu yüksek skorluyu asla
+    bastıramaz — eşiği düşürmek conf>=_CONF_MIN kümesini değiştirmez."""
+    model = load()
+    res = model.predict(frame_bgr, device=_CIHAZ, imgsz=_imgsz,
+                        conf=(conf if conf is not None else _TRACK_CONF),
+                        verbose=False)[0]
+    boxes = res.boxes
+    if boxes is None or len(boxes) == 0:
+        return np.empty((0, 6), dtype=np.float32)
+    return np.concatenate([boxes.xyxy.cpu().numpy(),
+                           boxes.conf.cpu().numpy().reshape(-1, 1),
+                           boxes.cls.cpu().numpy().reshape(-1, 1)],
+                          axis=1).astype(np.float32)
+
+
+def best_det(dets, conf_min=None):
+    """N×6 tespit dizisinden conf>=eşik en güvenlisini detect_talon sözleşmesiyle
+    (dict veya None) döndürür — detect_all ile birlikte tek YOLO çıkarımından hem
+    tracker girişi hem eski tekil tespit elde edilir."""
+    cmin = _CONF_MIN if conf_min is None else conf_min
+    if dets is None or len(dets) == 0:
+        return None
+    cand = dets[dets[:, 4] >= cmin]
+    if len(cand) == 0:
+        return None
+    d = cand[int(cand[:, 4].argmax())]
+    x1, y1, x2, y2 = (int(v) for v in d[:4])
+    return {
+        "cx": (x1 + x2) // 2,
+        "cy": (y1 + y2) // 2,
+        "w": x2 - x1,
+        "h": y2 - y1,
+        "conf": float(d[4]),
         "bbox": (x1, y1, x2, y2),
     }
 

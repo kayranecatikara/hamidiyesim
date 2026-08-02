@@ -52,7 +52,8 @@ def _kopru(parent_event, child_event):
 
 
 def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
-               stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg):
+               stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg, get_temas=None,
+               get_menzil=None):
     status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
 
     while not stop_event.is_set():
@@ -99,7 +100,8 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
               f"(geçiş #{status['gecis_sayisi']})")
         sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
-                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M)
+                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                get_temas=get_temas, get_menzil=get_menzil)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"

@@ -17,6 +17,10 @@ import time
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance import gps_guidance as gg
 
+# Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
+import tempfile as _tf
+gg._LOG_DIR = _tf.mkdtemp(prefix="avci_test_logs_")
+
 _sonuclar = []
 
 

@@ -202,6 +202,43 @@ def target_keypoints(target_pos, target_rpy, iris_pos, iris_rpy):
 
 
 # ── Kamera pozu + projeksiyon ──
+def quat_to_rpy(qw, qx, qy, qz):
+    """Gazebo quaternion (w,x,y,z) → (roll, pitch, yaw) radyan (ZYX)."""
+    roll = math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+    pitch = math.asin(max(-1.0, min(1.0, 2.0 * (qw * qy - qz * qx))))
+    yaw = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    return roll, pitch, yaw
+
+
+def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
+    """Hedefin GERÇEK yöneliminden görsel güdümün rotasyon girdileri
+    (pose modeli DEVRE DIŞI modu, 2026-08-02 — keypoint işaretlemesiz):
+      d_birim   : hedef gövde ekseninin görüntü düzlemindeki birim yönü (px
+                  uzayı; burun yönü) — lead kaydırmasının yönü. Eksen bakış
+                  doğrultusuyla çakışıksa None.
+      yandanlik : gövde ekseninin LOS'a dik bileşeni |sin(θ)| (0=önden/arkadan,
+                  1=tam yandan) — lead büyüklüğü.
+      menzil    : kamera-hedef gerçek mesafe (m) — kalite kapısı için.
+    Hedef kamera arkasındaysa None döner."""
+    cam_pos, R_cam = camera_world_pose(iris_pos, iris_rpy)
+    hedef = np.asarray(hedef_pos, dtype=float)
+    f_w = rot_rpy(*hedef_rpy) @ np.array([1.0, 0.0, 0.0])   # hedef ileri (world)
+    P = np.vstack([hedef, hedef + f_w])                     # merkez + 1 m burun
+    u, v, valid = project_points(P, cam_pos, R_cam)
+    if not bool(valid.all()):
+        return None
+    los = hedef - cam_pos
+    menzil = float(np.linalg.norm(los))
+    if menzil < 1e-6:
+        return None
+    los_b = los / menzil
+    yandanlik = float(np.linalg.norm(f_w - float(np.dot(f_w, los_b)) * los_b))
+    d = np.array([u[1] - u[0], v[1] - v[0]])
+    n = float(np.linalg.norm(d))
+    d_birim = (float(d[0] / n), float(d[1] / n)) if n > 1e-9 else None
+    return {"d_birim": d_birim, "yandanlik": min(1.0, yandanlik), "menzil": menzil}
+
+
 def camera_world_pose(iris_pos, iris_rpy):
     """iris (drone) world poz + rpy'den kamera world (konum, rotasyon matrisi).
     iris_rpy = (roll, pitch, yaw) radyan — drone gövde oryantasyonu.

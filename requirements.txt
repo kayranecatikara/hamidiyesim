@@ -13,3 +13,5 @@ uvicorn>=0.20
 pydantic>=2.0
 pymavlink>=2.4
 ultralytics>=8.3   # YOLO detection (eğitim + çıkarım); torch ayrıca gerekli (CUDA'lı)
+boxmot==19.0.0     # HybridSORT takip (vision/tracker.py). SÜRÜM SABİT: 20+ numpy>=2.2
+                   # dayatır, numpy 2 buradaki cv2 4.9 / torch 2.5.1 kurulumunu bozar.

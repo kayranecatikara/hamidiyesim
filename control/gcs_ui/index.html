@@ -134,6 +134,13 @@
                     <div id="chase-info" class="chase-info-panel mt-1">
                         <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
                         <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
+                        <!-- Güdüm fazı göstergesi: aktif faz yeşil yanar (supervisor.faz) -->
+                        <div class="d-row"><span>GÜDÜM:</span>
+                            <span class="faz-grup">
+                                <span id="faz-gps" class="faz-isik">● GPS</span>
+                                <span id="faz-gorsel" class="faz-isik">● GÖRSEL</span>
+                            </span>
+                        </div>
                     </div>
 
 
@@ -158,17 +165,7 @@
                         </div>
                     </div>
 
-                    <!-- PnP POSE TAHMİNİ (Kamera Tabanlı) -->
-                    <div class="section-divider"></div>
-                    <h3 class="section-title mt-2">📐 PnP POSE TAHMİNİ</h3>
-                    <div class="chase-info-panel">
-                        <div class="d-row"><span>MESAFE:</span> <span id="pnp-dist" class="val">-- m</span></div>
-                        <div class="d-row"><span>HIZ:</span> <span id="pnp-speed" class="val">-- m/s</span></div>
-                        <div class="d-row"><span>KONUM (X,Y,Z):</span> <span id="pnp-pos" class="val">--, --, --</span></div>
-                        <div class="d-row"><span>İVME:</span> <span id="pnp-accel" class="val">-- m/s²</span></div>
-                        <div class="d-row"><span>YAW:</span> <span id="pnp-yaw" class="val">--°</span></div>
-                        <div class="d-row"><span>MODEL:</span> <span id="pnp-model-status" class="val warning">BEKLEMEDE</span></div>
-                    </div>
+                    <!-- (PnP paneli kaldırıldı — sahte "tahmin" gösteriyordu; 2026-08-02) -->
                 </div>
             </aside>
 

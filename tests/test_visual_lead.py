@@ -18,6 +18,13 @@ from control.guidance.guidance_core import (
     govde_to_dunya, yukselti_duzeltme)
 from vision import geometry as geo
 
+# Test CSV'leri GERÇEK uçuş loglarına karışmasın → tmp'ye yaz (2026-08-02)
+import tempfile as _tf
+import control.guidance.visual_lead as _vlmod_logfix
+import control.guidance.gps_guidance as _ggmod_logfix
+_vlmod_logfix._LOG_DIR = _tf.mkdtemp(prefix="avci_test_logs_")
+_ggmod_logfix._LOG_DIR = _vlmod_logfix._LOG_DIR
+
 FX, FY, CX, CY = geo.FX, geo.FY, geo.CX, geo.CY
 
 # Kamerayı yatay yapan attitude (tilt 25° yukarı → pitch -25° = eps 0, merkez hedef)
@@ -250,7 +257,8 @@ def main():
         olaylar.append("gps")
         stop_event.wait(5.0)          # izci görsel kilitle tetikleyene kadar
 
-    def fake_visual(conn, wait_pose, gpt, stop_event, cfg=None, kayip_kare_esik=None):
+    def fake_visual(conn, wait_pose, gpt, stop_event, cfg=None, kayip_kare_esik=None,
+                    **kw):                                # get_temas/get_menzil uyumu
         olaylar.append("visual")
         return "kayip" if olaylar.count("visual") == 1 else "durduruldu"
 
@@ -286,7 +294,8 @@ def main():
     def fake_gps2(conn, gp, gi, stop_event):
         olaylar2.append("gps"); stop_event.wait(5.0)
 
-    def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None, kayip_kare_esik=None):
+    def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None, kayip_kare_esik=None,
+                          **kw):                          # get_temas/get_menzil uyumu
         olaylar2.append("visual"); return "vuruldu"
 
     try:
