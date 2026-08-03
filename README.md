@@ -85,8 +85,8 @@ make -j4
 
 ### 5) Bu depo + Python paketleri
 ```bash
-git clone <bu-depo-url> ~/projects/avci_sim
-cd ~/projects/avci_sim
+git clone <bu-depo-url> ~/projects/hamidiyesim
+cd ~/projects/hamidiyesim
 pip install -r requirements.txt
 ```
 
@@ -99,7 +99,7 @@ bash scripts/setup_mission_planner.sh   # binary'yi tools/mission_planner/ altı
 ### 7) Ortam değişkenleri (her Gazebo terminaline ya da ~/.bashrc'ye)
 ```bash
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 ```
 
 ---
@@ -112,7 +112,7 @@ Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
 
 **Temizlik** (boş bir terminalde):
 ```bash
-cd ~/projects/avci_sim
+cd ~/projects/hamidiyesim
 bash scripts/start_harmonic.sh stop     # öldürür + DOĞRULAR
 bash scripts/start_harmonic.sh durum    # ne kaldı? (hiçbir şeyi öldürmez)
 ```
@@ -125,10 +125,10 @@ bash scripts/start_harmonic.sh durum    # ne kaldı? (hiçbir şeyi öldürmez)
 
 **Terminal 1 — Gazebo Harmonic** (açılması ~15 sn)
 ```bash
-cd ~/projects/avci_sim
+cd ~/projects/hamidiyesim
 source /opt/ros/humble/setup.bash
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 ```
 
@@ -140,7 +140,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON 
   -I0 --sysid 5 --no-rebuild \
   --add-param-file=$APT/default_params/copter.parm \
   --add-param-file=$APT/default_params/gazebo-iris.parm \
-  --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
+  --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_copter.parm \
   --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
   --mavproxy-args="--streamrate=25"
 ```
@@ -151,12 +151,12 @@ python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON 
 **Terminal 3 — ArduPlane (hedef Talon, FDM 9012)**
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
+python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
 ```
 
 **Terminal 4 — GCS Server (kamera + web arayüz + görev)**
 ```bash
-cd ~/projects/avci_sim
+cd ~/projects/hamidiyesim
 source /opt/ros/humble/setup.bash
 export AVCI_GZ_CAMERA=1
 python3 -m control.gcs_server
@@ -164,7 +164,7 @@ python3 -m control.gcs_server
 
 **Terminal 5 — Mission Planner**
 ```bash
-cd ~/projects/avci_sim/tools/mission_planner
+cd ~/projects/hamidiyesim/tools/mission_planner
 export LD_LIBRARY_PATH="$PWD/native_libs:$LD_LIBRARY_PATH"
 mono MissionPlanner.exe    # UDP 14551
 ```
@@ -275,7 +275,7 @@ avci_sim/
 ## 🤖 Claude Code ile Sıfırdan Otomatik Kurulum
 
 Elle kurulumla uğraşmak istemiyorsanız: temiz bir **Ubuntu 22.04** makinede bu depoyu
-`~/projects/avci_sim`'e klonlayın, sonra aşağıdaki prompt'u **Claude Code**'a yapıştırın.
+`~/projects/hamidiyesim`'e klonlayın, sonra aşağıdaki prompt'u **Claude Code**'a yapıştırın.
 Claude Code bütün bağımlılıkları (ROS 2, Gazebo Harmonic, ArduPilot, ardupilot_gazebo,
 Python paketleri, Mission Planner) kurar, her adımı doğrular ve sistemi çalıştırır.
 Sizin tek yapmanız gereken, istendiğinde **sudo şifrenizi** girmek.
@@ -299,9 +299,9 @@ mevcutsa) tekrar kurma, atla.
 
 --- ADIM 0: DEPOYU KLONLA ---
 Depo yoksa klonla, varsa güncelle:
-[ -d ~/projects/avci_sim/.git ] && (cd ~/projects/avci_sim && git pull) || git clone https://github.com/kayranecatikara/hamidiyesim.git ~/projects/avci_sim
-cd ~/projects/avci_sim
-DOĞRULA: ls ~/projects/avci_sim/control/gcs_server.py çıktı vermeli.
+[ -d ~/projects/hamidiyesim/.git ] && (cd ~/projects/hamidiyesim && git pull) || git clone https://github.com/kayranecatikara/hamidiyesim.git ~/projects/hamidiyesim
+cd ~/projects/hamidiyesim
+DOĞRULA: ls ~/projects/hamidiyesim/control/gcs_server.py çıktı vermeli.
 
 --- ADIM 1: SİSTEM PAKETLERİ ---
 sudo apt-get update
@@ -341,26 +341,26 @@ make -j$(nproc)
 DOĞRULA: ls ~/ardupilot_gazebo/build/libArduPilotPlugin.so
 
 --- ADIM 6: PYTHON PAKETLERİ ---
-cd ~/projects/avci_sim
+cd ~/projects/hamidiyesim
 pip install -r requirements.txt
 DOĞRULA: python3 -c "import cv2,numpy,fastapi,uvicorn,pymavlink; print('PY OK')"
 
 --- ADIM 7: MISSION PLANNER ---
 sudo apt-get install -y mono-complete libgdiplus
-bash ~/projects/avci_sim/scripts/setup_mission_planner.sh
-DOĞRULA: ls ~/projects/avci_sim/tools/mission_planner/MissionPlanner.exe
+bash ~/projects/hamidiyesim/scripts/setup_mission_planner.sh
+DOĞRULA: ls ~/projects/hamidiyesim/tools/mission_planner/MissionPlanner.exe
 
 --- ADIM 8: ORTAM DEĞİŞKENLERİ ---
 ~/.bashrc'de yoksa şu iki satırı ekle:
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 
 --- ADIM 9: KURULUM DOĞRULAMASI (kanıtla) ---
 Ortam değişkenlerini export ettikten ve /opt/ros/humble/setup.bash source ettikten sonra:
 (a) Gazebo world + iki kamera:
     gz sim'i arka planda başlat (gz sim -s -r <world> &), 9 sn bekle,
     gz topic -l | grep -E 'iris_cam/image|talon_cam/image'  -> İKİSİ de görünmeli.
-    (world: ~/projects/avci_sim/sim/gazebo_harmonic/worlds/avci_harmonic.sdf)
+    (world: ~/projects/hamidiyesim/sim/gazebo_harmonic/worlds/avci_harmonic.sdf)
     ÖNEMLİ: gz sim'i öldürürken 'kill <PID>' kullan; gz sim'i başlatan komutun içinde
     'pkill -f "gz sim"' KULLANMA — pkill komut satırında 'gz sim' geçtiği için kendi
     shell'ini de öldürür.

@@ -6,7 +6,7 @@
 
 **Terminal A** — Gazebo + iki SITL (~50 sn sürer, bitince kendi kendine döner)
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     GZ_HEADLESS=1 bash scripts/start_harmonic.sh
 
 Script zaten kendi başında eski süreçleri temizliyor; temizleyemezse **yenisini
@@ -46,7 +46,7 @@ olmadan arm edilmiyor. `SIM_GPS1_LCKTIME` ve `GPS1_DELAY_MS` zaten 0.
 
 **Terminal B** — GCS (Terminal A "Tam sistem hazır" yazdıktan sonra)
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     source /opt/ros/humble/setup.bash
     export AVCI_GZ_CAMERA=1
     export AVCI_NO_BROWSER=1
@@ -57,7 +57,7 @@ Sonra tarayıcıda: <http://localhost:8000>
 
 **Durdurmak için:**
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     bash scripts/start_harmonic.sh stop        # Terminal A tarafı
                                                # Terminal B: Ctrl+C yeterli
 
@@ -117,11 +117,11 @@ Bir şey ters gittiğinde hangi bileşenin sorunlu olduğunu görmek için. Sır
 
 ### Terminal 1 — Gazebo (headless)
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     source /opt/ros/humble/setup.bash
     unset DISPLAY
     export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-    export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+    export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
     gz sim -s -r --headless-rendering -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 
 `-s` yalnız sunucu, `-r` duraklatmadan başlat, `--headless-rendering` kameraları
@@ -139,7 +139,7 @@ bağlanamaz ve araç hiç uçmaz.
       -I0 --sysid 5 --no-rebuild \
       --add-param-file=$APT/default_params/copter.parm \
       --add-param-file=$APT/default_params/gazebo-iris.parm \
-      --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
+      --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_copter.parm \
       --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
       --mavproxy-args="--streamrate=25"
 
@@ -154,7 +154,7 @@ kalmalı. İlk ikisi olmadan `FRAME_CLASS`/`FRAME_TYPE` tanımsız kalır
     cd ~/ardupilot
     python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 \
       -I1 --sysid 2 --no-rebuild \
-      --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm \
+      --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_plane.parm \
       --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
       --mavproxy-args="--streamrate=25"
 
@@ -166,7 +166,7 @@ Yukarıdaki "Terminal B" ile aynı.
 
 ### Terminal 5 — Mission Planner (isteğe bağlı, ekran gerektirir)
 
-    cd ~/projects/avci_sim/tools/mission_planner
+    cd ~/projects/hamidiyesim/tools/mission_planner
     mono MissionPlanner.exe        # UDP 14551'den bağlanın
 
 ---
@@ -175,7 +175,7 @@ Yukarıdaki "Terminal B" ile aynı.
 
 Tek script:
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     bash scripts/start_harmonic.sh
 
 Elle çalıştıracaksanız yalnız Terminal 1 değişir:
@@ -193,7 +193,7 @@ açılmamasına sebep olur (`Unable to open display ":1"`). Ekranınızı
 
 Sistem çalışırken boş bir terminalde:
 
-    cd ~/projects/avci_sim
+    cd ~/projects/hamidiyesim
     ps aux | grep -E 'gz sim|arducopter|arduplane|gcs_server' | grep -v grep
     curl -s -o /dev/null -w 'arayuz: %{http_code}\n' http://127.0.0.1:8000/
     curl -s -o /dev/null -w 'iris video: %{http_code}\n' --max-time 5 http://127.0.0.1:8000/api/video_feed/iris
