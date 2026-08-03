@@ -615,7 +615,7 @@ def stop_chase():
 def chase_status():
     """Frontend için chase durumu."""
     if not _chase_active:
-        return {"active": False, "distance": 0}
+        return {"active": False, "distance": 0, "mode": _guidance_mode}
     plane = telemetry_state["plane"]
     iris  = telemetry_state["iris"]
     dist = math.sqrt(
@@ -623,11 +623,43 @@ def chase_status():
         (plane["y"] - iris["y"])**2 +
         (plane["z"] - iris["z"])**2
     )
-    resp = {"active": True, "distance": round(dist, 1)}
+    resp = {"active": True, "distance": round(dist, 1), "mode": _guidance_mode}
     # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
     resp["guidance"] = dict(_gps_guidance_mod.status)
     resp["supervisor"] = dict(_supervisor_mod.status)
     return resp
+
+
+# ── GÜDÜM MODU (UI seçimi): gps | visual | hybrid ──
+# gps    : görsel temas sağlansa bile devredilmez, hep GPS güdümü.
+# visual : yalnız görsel güdüm; temas koparsa GPS'e DÖNÜLMEZ, araç hover'da
+#          durur ve yeni görsel kilit bekler (kullanıcı kararı, 2026-08-03).
+# hybrid : mevcut supervisor davranışı (GPS ↔ görsel geçişli) — varsayılan.
+# Görev sırasında da değiştirilebilir: chase thread'i aktif fazı durdurup
+# seçilen modu kurar. AVCI_HYBRID=off eski bayrağı "gps" varsayılanına eşlenir.
+_GECERLI_MODLAR = ("gps", "visual", "hybrid")
+_guidance_mode = ("gps" if os.environ.get("AVCI_HYBRID", "on").lower()
+                  in ("off", "0") else "hybrid")
+
+
+class GuidanceModeCmd(BaseModel):
+    mode: str
+
+
+@app.post("/api/guidance_mode")
+def set_guidance_mode(cmd: GuidanceModeCmd):
+    global _guidance_mode
+    if cmd.mode not in _GECERLI_MODLAR:
+        return {"status": "error", "message": f"Geçersiz mod: {cmd.mode}"}
+    if cmd.mode != _guidance_mode:
+        _guidance_mode = cmd.mode
+        print(f"[CHASE] Güdüm modu seçildi: {_guidance_mode.upper()}")
+    return {"status": "success", "mode": _guidance_mode}
+
+
+@app.get("/api/guidance_mode")
+def get_guidance_mode():
+    return {"mode": _guidance_mode}
 
 
 # -----------------------------------------------------------------------
@@ -758,7 +790,6 @@ def pnp_telemetry():
         "menzil_kapi_ok": bool(menzil_kapi_ok),
         "engel": engel,
     }
-
 
 
 from control.guidance import gps_guidance as _gps_guidance_mod
@@ -998,7 +1029,14 @@ def _read_iris_telem_from_conn(conn):
     ve telemetry_state['iris']'e yaz. Non-blocking, birden fazla
     mesaj okuyabilir (kuyrukta birikenler).
     """
-    for _ in range(10):  # en fazla 10 mesaj oku (kuyruk temizliği)
+    # Kuyruğun TAMAMI boşaltılır (eski sınır 10 mesajdı). Neden: görsel faz
+    # sırasında bu bağlantıdan kimse okumaz, mesajlar OS kuyruğunda birikir;
+    # GPS'e dönüşte 10'arlı okuma birikimi ~50 s boyunca "geçmişi oynatıyordu"
+    # — iris konumu 9 s bayat kalıp d_h'ye 150+ m HAYALET mesafe yazdırdı
+    # (2026-08-03 12:16 uçuşu, gerçek menzil 6-9 m iken d_h=158.9). Tavan
+    # yalnız güvenlik içindir; tek çağrıda tüm birikim tüketilip en taze
+    # mesajda durulur.
+    for _ in range(2000):
         msg = conn.recv_match(
             type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
             blocking=False
@@ -1008,8 +1046,60 @@ def _read_iris_telem_from_conn(conn):
         _process_mavlink_msg(msg, "iris")
 
 
+def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
+    """GÖRSEL mod (UI seçimi): supervisor'suz tek-faz görsel güdüm.
+
+    Kilit oturana dek (KILIT_N ardışık güvenli pose — hibritteki sayaçla aynı)
+    araç hover'da bekler; sonra run_visual_lead koşar. Temas koparsa GPS'e
+    DÖNÜLMEZ (kullanıcı kararı): araç hover'da durur, yeni görsel kilit bekler.
+    Dönüş: vuruldu mu (bool)."""
+    from control.guidance.common import send_velocity
+    from control.guidance.supervisor import SupCfg
+    while not stop_event.is_set():
+        # ── kilit bekleme: hover'da, pose akışını sayarak ──
+        _supervisor_mod.status.update(faz="VISUAL", son_sebep="kilit-bekleniyor")
+        sayac, son_seq = 0, 0
+        while not stop_event.is_set():
+            kayit = wait_new_pose(son_seq, timeout=0.5)
+            _read_iris_telem_from_conn(conn)          # telemetri/UI taze kalsın
+            send_velocity(conn, 0.0, 0.0, 0.0,
+                          math.radians(telemetry_state["iris"]["yaw"]))
+            if kayit is None:
+                continue
+            son_seq = kayit["seq"]
+            pose = kayit["pose"]
+            if pose is not None and pose.get("conf", 0.0) >= SupCfg.POSE_CONF_MIN:
+                sayac += 1
+            else:
+                sayac = 0
+            _supervisor_mod.status["kilit_sayac"] = sayac
+            if sayac >= SupCfg.KILIT_N:
+                break
+        if stop_event.is_set():
+            return False
+        # ── görsel faz ──
+        _supervisor_mod.status["gecis_sayisi"] += 1
+        print(f"[CHASE] ✓ GÖRSEL KİLİT — lead pursuit başlıyor "
+              f"(geçiş #{_supervisor_mod.status['gecis_sayisi']}, GÖRSEL mod)")
+        sebep = _run_visual_lead(conn, wait_new_pose, get_plane_truth, stop_event,
+                                 kayip_kare_esik=SupCfg.KAYIP_M,
+                                 get_temas=sim_truth.temas,
+                                 get_menzil=sim_truth.menzil)
+        _supervisor_mod.status["son_sebep"] = sebep
+        if sebep == "vuruldu":
+            _supervisor_mod.status["faz"] = "VURULDU"
+            print("[CHASE] ✓✓ HEDEF VURULDU (GÖRSEL mod).")
+            return True
+        if sebep == "kayip":
+            print("[CHASE] Görsel temas koptu — GPS'e DÖNÜLMÜYOR (GÖRSEL mod); "
+                  "araç hover'da, yeni kilit bekleniyor.")
+            continue
+        return False                                  # durduruldu / mod değişti
+    return False
+
+
 def _chase_thread():
-    """Chase altyapı thread'i: kalkış + hibrit güdüm (supervisor.run_hybrid)."""
+    """Chase altyapı thread'i: kalkış + seçilen güdüm modu (gps/visual/hybrid)."""
     global _chase_active
 
     print("=" * 50)
@@ -1065,24 +1155,45 @@ def _chase_thread():
         watcher = threading.Thread(target=watch_active, daemon=True)
         watcher.start()
 
-        # ---- ALGORİTMAYI ÇAĞIR ----
-        # Varsayılan: HİBRİT (GPS yaklaşma ↔ görsel lead pursuit, supervisor
-        # geçişli). AVCI_HYBRID=off → saf GPS yaklaşma (tek başına test için).
-        if os.environ.get("AVCI_HYBRID", "on").lower() in ("off", "0"):
-            print("[CHASE] Güdüm yasası: GPS-YAKLASMA (saf GPS, AVCI_HYBRID=off)")
-            _run_gps_guidance(conn, get_plane, get_iris, chase_stop)
-        else:
-            print("[CHASE] Güdüm yasası: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
+        # ---- ALGORİTMAYI ÇAĞIR (UI'dan seçilen güdüm modu) ----
+        # gps: hep GPS. visual: yalnız görsel, kopunca DUR. hybrid: supervisor.
+        # Mod görev sırasında değişirse mod_izci aktif fazı kırar, döngü
+        # yeni modu kurar. Vuruş her modda görevi bitirir.
+        def get_plane_truth():
+            t = telemetry_state["plane"]
+            return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
-            def get_plane_truth():
-                t = telemetry_state["plane"]
-                return {"x": t["x"], "y": t["y"], "z": t["z"]}
+        sim_truth.temas_sifirla()          # temas latch'i görev başına taze
+        vuruldu = False
+        while not chase_stop.is_set() and not vuruldu:
+            mod = _guidance_mode
+            mod_stop = threading.Event()
 
-            sim_truth.temas_sifirla()      # temas latch'i görev başına taze
-            _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
-                        get_plane_truth, chase_stop,
-                        get_temas=sim_truth.temas,
-                        get_menzil=sim_truth.menzil)
+            def mod_izci(m=mod, ev=mod_stop):
+                # mod değişince ya da chase durunca aktif fazı kır
+                while not ev.is_set():
+                    if chase_stop.is_set() or _guidance_mode != m:
+                        ev.set()
+                        return
+                    time.sleep(0.2)
+            threading.Thread(target=mod_izci, daemon=True).start()
+
+            if mod == "gps":
+                print("[CHASE] Güdüm modu: GPS — görsel temas sağlansa da devredilmez")
+                _supervisor_mod.status.update(faz="GPS", son_sebep=None)
+                _run_gps_guidance(conn, get_plane, get_iris, mod_stop)
+            elif mod == "visual":
+                print("[CHASE] Güdüm modu: GÖRSEL — kilit bekleniyor; temas "
+                      "koparsa GPS'e dönülmez, araç durur")
+                vuruldu = _gorsel_tek_faz(conn, get_plane_truth, mod_stop)
+            else:
+                print("[CHASE] Güdüm modu: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
+                _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
+                            get_plane_truth, mod_stop,
+                            get_temas=sim_truth.temas,
+                            get_menzil=sim_truth.menzil)
+                vuruldu = (_supervisor_mod.status.get("faz") == "VURULDU")
+            mod_stop.set()                 # izci thread'i sonlandır
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
