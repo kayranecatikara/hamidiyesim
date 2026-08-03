@@ -5,7 +5,8 @@
 # MissionPlanner-latest.zip'i indirir ve tools/mission_planner altına açar.
 # (mono runtime ayrıca kurulmalıdır — bkz. start_mission_planner.sh)
 
-MP_DIR="$HOME/projects/avci_sim/tools/mission_planner"
+PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MP_DIR="$PROJ/tools/mission_planner"
 URL="https://firmware.ardupilot.org/Tools/MissionPlanner/MissionPlanner-latest.zip"
 mkdir -p "$MP_DIR"
 cd "$MP_DIR" || exit 1

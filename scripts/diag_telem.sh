@@ -2,7 +2,7 @@
 # Telemetri hızı tanısı — restart SONRASI çalıştır.
 # 1) Canlı süreçleri gösterir (mavproxy gerçekten streamrate=25 ile açık mı?)
 # 2) 14551'den ham MAVLink hızını ölçer.
-PROJ="$HOME/projects/avci_sim"
+PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "======================================================================"
 echo " CANLI SÜREÇLER (mavproxy --streamrate ne? gz/SITL ayakta mı?)"
 echo "======================================================================"

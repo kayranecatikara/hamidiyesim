@@ -19,7 +19,7 @@
 # Durdurma: bash scripts/start_ardupilot_sitl.sh stop
 
 ARDUPILOT_DIR="$HOME/ardupilot"
-PROJ_DIR="$HOME/projects/avci_sim"
+PROJ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$PROJ_DIR/logs"
 COPTER_PARAMS="$PROJ_DIR/sim/ardupilot_params/avci_copter.parm"
 PLANE_PARAMS="$PROJ_DIR/sim/ardupilot_params/avci_plane.parm"

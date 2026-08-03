@@ -16,10 +16,17 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+try:
+    import rclpy
+    from rclpy.node import Node as RosNode
+    from sensor_msgs.msg import Image as RosImage
+    from cv_bridge import CvBridge
+    _ROS2_VAR = True
+except ImportError:
+    _ROS2_VAR = False
+    RosNode = object
+    RosImage = None
+    CvBridge = None
 from pymavlink import mavutil
 import uvicorn
 
@@ -1322,12 +1329,14 @@ def gz_talon_camera_thread():
         time.sleep(1)
 
 
-class CameraSubscriber(Node):
+class CameraSubscriber(RosNode):
     def __init__(self):
+        if not _ROS2_VAR:
+            raise RuntimeError("ROS 2 (rclpy/cv_bridge) bulunamadı.")
         super().__init__('gcs_camera_listener')
         self.bridge = CvBridge()
-        self.create_subscription(Image, '/iris_cam/front_camera/image_raw', self.cb_iris, 1)
-        self.create_subscription(Image, '/plane_cam/front_camera/image_raw', self.cb_plane, 1)
+        self.create_subscription(RosImage, '/iris_cam/front_camera/image_raw', self.cb_iris, 1)
+        self.create_subscription(RosImage, '/plane_cam/front_camera/image_raw', self.cb_plane, 1)
         print("[GCS] ROS 2 Kameraları dinleniyor (/iris_cam & /plane_cam)...")
 
     def cb_iris(self, data):
@@ -1350,6 +1359,9 @@ class CameraSubscriber(Node):
             print(f"[GCS CAM] Plane hata: {e}")
 
 def ros2_spin_thread():
+    if not _ROS2_VAR:
+        print("[GCS] ROS 2 bulunamadı (source /opt/ros/humble/setup.bash gerekli) — ROS kamera dinlenemiyor.")
+        return
     rclpy.init(args=None)
     node = CameraSubscriber()
     rclpy.spin(node)

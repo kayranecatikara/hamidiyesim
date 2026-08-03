@@ -8,7 +8,8 @@
 #
 # Kullanım:  bash scripts/start_mission_planner.sh
 
-MP_DIR="$HOME/projects/avci_sim/tools/mission_planner"
+PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MP_DIR="$PROJ/tools/mission_planner"
 
 if ! command -v mono >/dev/null 2>&1; then
     echo "=================================================================="
