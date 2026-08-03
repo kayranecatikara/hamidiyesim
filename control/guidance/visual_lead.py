@@ -236,7 +236,7 @@ def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
 
 
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
-                    kayip_kare_esik=None):
+                    kayip_kare_esik=None, get_temas=None, get_menzil=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
     Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'
@@ -246,6 +246,28 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
     core = LeadPursuitCore(cfg)
     adapter = CopterAdapter(cfg)          # yalnız copter platformu
+
+    def _menzil_olc():
+        """Önce sim-truth (zaman hizalı gerçek poz), yoksa telemetri hesabı."""
+        if get_menzil is not None:
+            m = get_menzil()
+            if m is not None:
+                return m
+        return _menzil_hesapla(get_plane_truth, aras.pos)
+
+    def _temas_vurus():
+        """(vuruldu_mu, akış_canlı_mı). Temas akışı canlıyken vuruş kararının
+        tek sahibi fiziksel temastır (sahte menzil-vuruşlarına karşı)."""
+        if get_temas is None:
+            return False, False
+        t = get_temas()
+        if t is True:
+            print("[LEAD] ✓ VURULDU (FİZİKSEL TEMAS — Gazebo contact)")
+            return True, True
+        return False, t is not None
+
+    if get_temas is not None and get_temas() is not None:
+        print("[LEAD] Vuruş kararı: FİZİKSEL TEMAS sensörü (menzil eşiği devre dışı)")
 
     aras = _ArasState()
     son_seq = 0            # _pose_seq 0'dan başlar; ilk GERÇEK kareyi bekle
@@ -355,6 +377,13 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                      "mod": aras.mode}
             hedef_ned = None      # her karede tazelenir; gelmezse sütun BOŞ kalır
                                   # (bayat ground-truth sessizce loglanmasın)
+
+            # Fiziksel temas kontrolü (akış canlıysa vuruş kararının tek sahibi)
+            vurus, temas_canli = _temas_vurus()
+            if vurus:
+                satir["durum"] = "vuruldu"
+                _satir(satir)
+                return "vuruldu"
 
             # menzil_gercek + kapanma hızı + terminal durum takibi
             if aras.pos is not None and get_plane_truth is not None:

@@ -98,6 +98,7 @@ class Cfg:
     # 2026-08-01: 28 → 18. 28 m/s'den MAX_ACCEL=12 m/s² ile durma mesafesi
     # v²/2a = 32.7 m, oysa istasyon standoff'u yalnız 10 m yatay — araç
     # geometrik olarak zamanında yavaşlayamıyor, hedefin etrafında savruluyor.
+    # ⚠ TODO: main branch 20.0 kullanıyor — merge sonrası 18 vs 20 karşılaştırma testi yapılacak.
     V_MAX = _env_f("AVCI_GPS_V_MAX", 18.0)   # m/s; yatay hız tavanı
     MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
@@ -362,25 +363,6 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     finally:
         f.close()
         print(f"[GPS] log kapatıldı: {csv_yol}")
-        _panel_tazele()
-
-
-def _panel_tazele():
-    """Uçuş biter bitmez log panelini yeniden üret ve linkini yazdır.
-
-    Panel HER GPS fazının sonunda tazelenir; en yeni uçuşlar otomatik girer,
-    ayrıca elle `python3 tools/gps_log_viz.py` çalıştırmaya gerek kalmaz.
-    Panel üretimi uçuşu asla düşürmemeli → tüm hatalar yutulur.
-    """
-    try:
-        from tools.gps_log_viz import panel_uret, _VARSAYILAN_CIKTI
-        yol = panel_uret(last=12, out=_VARSAYILAN_CIKTI, sessiz=True)
-        if yol:
-            print(f"[GPS] Log paneli güncellendi → http://localhost:8000/loglar/"
-                  f"{os.path.basename(yol)}")
-            print(f"[GPS]   (GCS kapalıysa: file://{os.path.abspath(yol)})")
-    except Exception as e:
-        print(f"[GPS] Log paneli üretilemedi ({e}) — uçuş etkilenmedi.")
 
 
 def _sleep(t_start, period):

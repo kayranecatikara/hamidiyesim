@@ -25,10 +25,15 @@ import uvicorn
 
 # Cessna renk tabanlı tespit
 from vision.detection_state import (set_detection, set_pose_detection,
-                                    wait_new_pose, get_detection,
+                                    set_tracks, wait_new_pose, get_detection,
                                     get_pose_detection)
 from control import carpisma_state       # A5 — gerçek temas, güdümle ortak durum
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
+
+# Sim gerçek-poz köprüsü (gz-transport; AVCI_TRUTH=off kapatır). Güdüm eski
+# haline döndüğü için karar mekanizmalarına BAĞLI DEĞİL — yalnız gözlem:
+# [TRUTH] menzil logu + FİZİKSEL TEMAS kanıt satırı terminale düşer.
+from control import sim_truth
 
 # Kare scriptinin de kullandığı, kanıtlanmış çalışan modüller (ArduPilot)
 from control.mav_common import (
@@ -748,6 +753,7 @@ def pnp_telemetry():
     }
 
 
+
 from control.guidance import gps_guidance as _gps_guidance_mod
 from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
@@ -942,7 +948,10 @@ def _visual_thread():
             return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
         _visual_stop_event.clear()
-        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event)
+        sim_truth.temas_sifirla()
+        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event,
+                         get_temas=sim_truth.temas,
+                         get_menzil=sim_truth.menzil)
 
     except Exception as e:
         import traceback
@@ -1062,8 +1071,11 @@ def _chase_thread():
                 t = telemetry_state["plane"]
                 return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
+            sim_truth.temas_sifirla()      # temas latch'i görev başına taze
             _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
-                        get_plane_truth, chase_stop)
+                        get_plane_truth, chase_stop,
+                        get_temas=sim_truth.temas,
+                        get_menzil=sim_truth.menzil)
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
@@ -1088,6 +1100,49 @@ latest_frames = {
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
 _pose_detector = None   # startup'ta yüklenir (AVCI_POSE=on, varsayılan açık)
+_talon_tracker = None   # startup'ta yüklenir (AVCI_TRACKER=on, varsayılan açık; HybridSORT)
+_target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=on, varsayılan açık)
+_tracker_mod   = None   # vision.tracker modülü (draw_tracks için)
+_tracker_err   = False  # tekrarlayan tracker hatasında log seli önlenir
+_lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
+# Parazit modellere de uygulansın mı? 1 = tespit/pose/tracker PARAZİTLİ kareyi
+# görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
+# yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
+_NOISE_PRE_DETECT = os.environ.get("AVCI_NOISE_PRE_DETECT", "0") == "1"
+# (GT rotasyon modu 2026-08-02 akşamı SÖKÜLDÜ — kullanıcı güdümü eski "en iyi
+# hal"e döndürdü; pose modeli yeniden devrede. geometry.rot_gt_goruntu ve
+# sim_truth.pozlar yardımcıları repoda uykuda duruyor.)
+
+
+def _apply_video_noise(img, lvl):
+    """Video parazit simülasyonunun piksel kısmı (gauss + satır + blok + karartma;
+    lvl>=0.999 tam karartma). JPEG kalite düşürme yayın kodlamasında kalır."""
+    if lvl >= 0.999:
+        return np.zeros_like(img)
+    noise_std = lvl * 90.0
+    noise = np.random.randn(*img.shape) * noise_std
+    img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+    if lvl > 0.3:
+        num_lines = int(lvl * 25)
+        for _ in range(num_lines):
+            y = np.random.randint(0, img.shape[0])
+            h = np.random.randint(1, max(2, int(lvl * 4)))
+            color = np.random.randint(0, 256, 3).tolist()
+            img[y:y+h, :] = color
+    if lvl > 0.55:
+        num_blocks = int(lvl * 8)
+        h_, w_ = img.shape[:2]
+        for _ in range(num_blocks):
+            bx = np.random.randint(0, max(1, w_ - 60))
+            by = np.random.randint(0, max(1, h_ - 30))
+            bw = np.random.randint(20, 80)
+            bh = np.random.randint(5, 25)
+            color = np.random.randint(0, 256, 3).tolist()
+            img[by:by+bh, bx:bx+bw] = color
+    if lvl > 0.7:
+        darken = 1.0 - (lvl - 0.7) * 2.5
+        img = np.clip(img.astype(np.float32) * darken, 0, 255).astype(np.uint8)
+    return img
 
 def process_iris_frame(img, stamp=None, wall_recv=None):
     """Iris kamera karesini işle: Cessna/hedef tespiti + overlay + video parazit
@@ -1095,67 +1150,109 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     (Gazebo Harmonic) kamera kaynakları bu fonksiyonu çağırır.
     stamp: kare header.stamp (s, sim saati) — IBVS dt hesabı bunu kullanır;
     wall_recv: karenin geliş duvar anı (time.time) — bayat kare ölçümü."""
+    # ---- PARAZİT (opsiyonel: TESPİTTEN ÖNCE) ----
+    # AVCI_NOISE_PRE_DETECT=1 → modeller de parazitli kareyi görür (dayanıklılık
+    # testi). Varsayılanda parazit yalnız yayın kodlamasında uygulanır (aşağıda).
+    lvl = _video_noise_level
+    if _NOISE_PRE_DETECT and lvl > 0.001:
+        img = _apply_video_noise(img, lvl)
     # ---- HEDEF TESPİT (YOLO) + OVERLAY ----
-    # İki model de TEMİZ kare üzerinde çıkarım yapar; overlay'ler sonra çizilir
-    # (detection kutusu çizilmiş kare pose'a girerse çıkarımı bozar).
-    det = pose = None
+    # İki model de overlay'siz kare üzerinde çıkarım yapar; overlay'ler sonra
+    # çizilir (detection kutusu çizilmiş kare pose'a girerse çıkarımı bozar).
+    det = pose = tracks = dets_all = det_raw = lock = None
     if _yolo_detector is not None:
         try:
-            det = _yolo_detector.detect_talon(img)
-            set_detection(det)
+            if _talon_tracker is not None:
+                # Tek YOLO çıkarımı: düşük eşikli TÜM tespitler tracker'a, en
+                # güvenlisi (conf>=eşik) det_raw. NMS'te düşük skorlu kutu
+                # yükseği asla bastıramaz → det_raw, detect_talon ile birebir
+                # aynı; AVCI_TRACKER=off'ta eski yol aynen korunur.
+                dets_all = _yolo_detector.detect_all(img)
+                det_raw = _yolo_detector.best_det(dets_all)
+            else:
+                det = _yolo_detector.detect_talon(img)
         except Exception as e:
             print(f"[GCS] YOLO tespit hatası: {e}")
-    # Pose YALNIZ detection kutu bulduğunda, kutunun çevresindeki kropta çalışır
-    # (boşuna yük binmez, sahnenin kalanına yanlış nokta atamaz).
+    # HybridSORT: kareler arası kimlik (ID) takibi. Tespitsiz karede de çağrılır
+    # ki track'ler yaşlansın/Kalman köprü kursun (max_age).
+    global _tracker_err
+    if _talon_tracker is not None and dets_all is not None:
+        try:
+            tracks = _talon_tracker.update(dets_all, img)
+            if _target_lock is not None:
+                lock = _target_lock.step(tracks, det_raw)
+                # Kilit olay logu: yalnız kilit KURULUNCA/DÜŞÜNCE tek satır
+                global _lock_prev_id
+                lid = None if lock is None else lock["id"]
+                if lid != _lock_prev_id:
+                    if lid is None:
+                        print("[LOCK] kilit düştü (coast aşıldı / sıçrama / çelişki)")
+                    else:
+                        print(f"[LOCK] ID:{lid} kilitlendi "
+                              f"(conf {lock['conf']:.2f}, "
+                              f"{_target_lock.relock_sayisi}. kilitlenme)")
+                    _lock_prev_id = lid
+            _tracker_err = False
+        except Exception as e:
+            if not _tracker_err:
+                print(f"[GCS] HybridSORT hatası (takip atlanıyor): {e}")
+                _tracker_err = True
+            tracks = lock = None
+        set_tracks(tracks)
+    # set_detection'a giden kutu (kilit politikası — GT'li deneyle doğrulandı):
+    #  - kilit bu karede EŞLEŞMİŞSE (taze/BYTE) onun kutusu → anlık FP hedefi çalamaz
+    #  - kilit COAST'taysa det=None → Kalman tahmini NİŞAN olarak kullanılmaz
+    #    (deneyde uzun coast yalnız yanlış kutu ekledi); kutu yalnız pose kropuna gider
+    #  - kilit yoksa det_raw → hedef ediniminde eski davranış (gecikmesiz)
+    if _yolo_detector is not None:
+        if _talon_tracker is not None:
+            if _target_lock is None:
+                det = det_raw                          # AVCI_LOCK=off: eski seçim
+            elif lock is not None and lock["kaynak"] == "eslesme":
+                x1, y1, x2, y2 = (int(v) for v in lock["bbox"])
+                det = {"cx": (x1 + x2) // 2, "cy": (y1 + y2) // 2,
+                       "w": x2 - x1, "h": y2 - y1, "conf": lock["conf"],
+                       "bbox": (x1, y1, x2, y2), "track_id": lock["id"]}
+            elif lock is None:
+                det = det_raw
+            else:
+                det = None                             # coast: nişan komutu yok
+        set_detection(det)
+    # Pose, detection kutusunun kropunda çalışır; det yoksa ama kilit COAST'taysa
+    # Kalman tahmin kutusu krop olarak denenir (kısa kopmada pose akışı sürsün —
+    # pose kendi güven süzgeciyle korumalı, kropta hedef yoksa çıktı vermez).
     if _pose_detector is not None:
         try:
-            pose = (_pose_detector.detect_pose_in_bbox(img, det["bbox"])
-                    if det is not None else None)
-            set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv)
+            if det is not None:
+                pose = _pose_detector.detect_pose_in_bbox(img, det["bbox"])
+            elif lock is not None and lock["kaynak"] == "tahmin":
+                kb = tuple(int(v) for v in lock["bbox"])
+                pose = _pose_detector.detect_pose_in_bbox(img, kb)
+            set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv, lock=lock)
         except Exception as e:
             print(f"[GCS] YOLO poz hatası: {e}")
     if _yolo_detector is not None:
         img = _yolo_detector.draw_overlay(img, det)
     if _pose_detector is not None:
         img = _pose_detector.draw_overlay(img, pose)
+    if tracks is not None and len(tracks) and _tracker_mod is not None:
+        img = _tracker_mod.draw_tracks(img, tracks, line=1)
+    if lock is not None and lock["kaynak"] == "tahmin":
+        # Coast köprüsü görünür olsun: gri kesikli his — tahmin, nişan değil
+        x1, y1, x2, y2 = (int(v) for v in lock["bbox"])
+        cv2.rectangle(img, (x1, y1), (x2, y2), (160, 160, 160), 1)
+        cv2.putText(img, f"ID:{lock['id']} tahmin({lock['coast']})",
+                    (x1, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (160, 160, 160), 1, cv2.LINE_AA)
 
-    # ---- VIDEO PARAZİT SİMÜLASYONU ----
-    lvl = _video_noise_level
-    if lvl >= 0.999:
-        img = np.zeros_like(img)
-    elif lvl > 0.001:
-        noise_std = lvl * 90.0
-        noise = np.random.randn(*img.shape) * noise_std
-        img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
-        if lvl > 0.3:
-            num_lines = int(lvl * 25)
-            for _ in range(num_lines):
-                y = np.random.randint(0, img.shape[0])
-                h = np.random.randint(1, max(2, int(lvl * 4)))
-                color = np.random.randint(0, 256, 3).tolist()
-                img[y:y+h, :] = color
-        if lvl > 0.55:
-            num_blocks = int(lvl * 8)
-            h_, w_ = img.shape[:2]
-            for _ in range(num_blocks):
-                bx = np.random.randint(0, max(1, w_ - 60))
-                by = np.random.randint(0, max(1, h_ - 30))
-                bw = np.random.randint(20, 80)
-                bh = np.random.randint(5, 25)
-                color = np.random.randint(0, 256, 3).tolist()
-                img[by:by+bh, bx:bx+bw] = color
-        if lvl > 0.7:
-            darken = 1.0 - (lvl - 0.7) * 2.5
-            img = np.clip(img.astype(np.float32) * darken, 0, 255).astype(np.uint8)
+    # ---- VIDEO PARAZİT (yayın) + MJPEG KODLAMA ----
+    if not _NOISE_PRE_DETECT and lvl > 0.001:
+        img = _apply_video_noise(img, lvl)         # eski davranış: yalnız yayına
+    if 0.001 < lvl < 0.999:
         jpeg_q = max(5, int(90 - lvl * 85))
         _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_q])
-        if latest_frames["iris"]["data"] is None:
-            print("[GCS] ✓ Iris kamerasından ilk görüntü!")
-        latest_frames["iris"]["data"] = buf.tobytes()
-        latest_frames["iris"]["id"] += 1
-        return
-    # ---- PARAZİTSİZ ----
-    _, buf = cv2.imencode('.jpg', img)
+    else:
+        _, buf = cv2.imencode('.jpg', img)
     if latest_frames["iris"]["data"] is None:
         print("[GCS] ✓ Iris kamerasından ilk görüntü!")
     latest_frames["iris"]["data"] = buf.tobytes()
@@ -1470,6 +1567,32 @@ async def startup_event():
             print("[GCS] YOLO pose hazır (avci_pose.pt)")
         except Exception as e:
             print(f"[GCS] YOLO pose yüklenemedi ({e}) — pose kapalı")
+    # HybridSORT takipçi — detection üstüne kareler arası ID sürdürür
+    # (AVCI_TRACKER=off kapatır; detector kapalıysa anlamsız, atlanır)
+    if os.environ.get("AVCI_TRACKER", "on").lower() not in ("off", "0"):
+        global _talon_tracker, _tracker_mod, _target_lock
+        if _yolo_detector is None:
+            print("[GCS] HybridSORT atlandı (YOLO detector kapalı)")
+        else:
+            try:
+                from vision import tracker as _trk
+                _talon_tracker = _trk.TalonTracker()
+                _tracker_mod = _trk
+                print("[GCS] HybridSORT tracker hazır (boxmot HybridSort)")
+                # Kilitli-ID politikası: set_detection'ı kilitli kimliğin kutusu
+                # besler (GT'li deney: +%25 doğru kare, FP hedefi tek karede
+                # çalamaz). AVCI_LOCK=off → eski "en yüksek conf" seçimi.
+                if os.environ.get("AVCI_LOCK", "on").lower() not in ("off", "0"):
+                    _target_lock = _trk.TargetLock(_talon_tracker)
+                    print("[GCS] Kilitli-ID hedef politikası aktif (AVCI_LOCK=off kapatır)")
+            except Exception as e:
+                print(f"[GCS] HybridSORT yüklenemedi ({e}) — takip kapalı")
+
+    # Vuruş menzili için sim gerçek-poz aboneliği (başarısızsa telemetri fallback)
+    try:
+        sim_truth.start()
+    except Exception as e:
+        print(f"[TRUTH] başlatılamadı ({e}) — menzil telemetriden hesaplanacak")
 
     # Kamera kaynağı: Harmonic (gz-transport) veya Classic (ROS2 cv_bridge)
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":

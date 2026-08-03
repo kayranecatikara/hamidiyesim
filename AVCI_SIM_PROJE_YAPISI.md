@@ -15,6 +15,9 @@
 avci_sim/
 ├── control/                      # Uçuş kontrolü + güdüm + yer kontrol istasyonu
 │   ├── mav_common.py                 # Ortak MAVLink altyapısı (ArduPilot)
+│   ├── sim_truth.py                  # Gazebo gerçek poz + temas (vuruş doğrusu)
+├── tools/gudum_karne.py              # Uçuş karnesi: güdüm metrik raporu/kıyası
+├── tools/parm_denetle.py             # .parm dosyaları SITL'e gerçekten uygulandı mı
 │   ├── drone_functions.py            # iris (ArduCopter) kontrolü
 │   ├── plane_functions.py            # Talon (ArduPlane) kontrolü
 │   ├── plane_patterns.py             # Talon manevra desenleri
@@ -43,6 +46,9 @@ avci_sim/
 │   ├── geometry.py                   # Kamera projeksiyonu + Talon 3D geometrisi
 │   ├── detector.py                   # YOLO tespiti (bbox)
 │   ├── pose_detector.py              # YOLO-pose (6 keypoint)
+│   ├── tracker.py                    # HybridSORT takip (boxmot, kareler arası ID)
+│   ├── hybridsort_video.py           # Takibi video dosyasında offline çalıştırma
+│   ├── compare_tracker.py            # GT'li "detection vs detection+tracker" deneyi
 │   ├── detection_state.py            # Thread-safe tespit köprüsü
 │   ├── capture_dataset.py            # Detection verisi (otomatik etiketli)
 │   ├── capture_pose_dataset.py       # Pose verisi (otomatik etiketli)
@@ -118,6 +124,7 @@ avci_sim/
 | `gcs_server.py` | 1170 | Web GCS: FastAPI + kamera + telemetri + görev API |
 | `drone_functions.py` | 414 | iris (ArduCopter) kontrolü |
 | `mav_common.py` | 377 | Ortak MAVLink altyapısı |
+| `sim_truth.py` | 165 | Gazebo gerçek poz + temas olayı (vuruş doğrusu) |
 | `plane_functions.py` | 375 | Talon (ArduPlane) kontrolü |
 | `arm_diag.py` | 329 | ARM reddi teşhisi |
 | `plane_patterns.py` | 317 | Talon manevra desenleri |
@@ -159,10 +166,13 @@ avci_sim/
 | `capture_dataset.py` | 247 | Detection verisi toplama |
 | `capture_runway_negatives.py` | 224 | Pist/zemin hard-negative |
 | `capture_pose_dataset.py` | 193 | Pose verisi toplama |
+| `compare_tracker.py` | 298 | GT'li detection vs detection+tracker deneyi |
+| `tracker.py` | 285 | HybridSORT sarmalayıcı + kilitli-ID politikası (TargetLock) |
+| `hybridsort_video.py` | 205 | HybridSORT'u videoda offline çalıştırma |
 | `pose_detector.py` | 120 | YOLO-pose çıkarımı |
+| `detector.py` | 114 | YOLO detection çıkarımı (+detect_all/best_det) |
 | `capture_negatives.py` | 110 | Pervane hard-negative |
-| `detector.py` | 67 | YOLO detection çıkarımı |
-| `detection_state.py` | 57 | Thread-safe tespit köprüsü |
+| `detection_state.py` | 74 | Thread-safe tespit köprüsü |
 | `train_yolo.py` | 55 | Detection eğitimi |
 | `train_yolo_pose.py` | 53 | Pose eğitimi |
 

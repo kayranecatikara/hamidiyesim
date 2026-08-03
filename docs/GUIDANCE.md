@@ -45,6 +45,20 @@ terminal vuruş tespiti için; güdüm hesabına GİRMEZ (gerçek donanımda yak
 sensörü yerini alır). Güdüm, hedefin GPS-gürültülü telemetrisini (`get_plane`)
 ve kameranın pose çıktısını kullanır.
 
+### Tespit → kilit → pose zinciri (gcs `process_iris_frame`, 2026-08-02)
+
+Her karede tek YOLO çıkarımı: `detect_all(conf=0.1)` ham tespitleri hem
+**HybridSORT** takipçisine (`vision/tracker.py`, `AVCI_TRACKER=off` kapatır)
+hem `best_det`'e verir. `set_detection`'a giden kutu **kilitli-ID politikası**
+(`TargetLock`, `AVCI_LOCK=off` → eski "en yüksek conf" seçimi): kilitli track
+eşleşmişse onun kutusu (`det["track_id"]` eklenir; anlık FP hedefi tek karede
+çalamaz), kilit coast'taysa `det=None` (Kalman tahmini yalnız pose KROPUNA
+gider), kilit yoksa ham `best_det`. Korumalar: kilit yalnız conf≥0.5 onaylı
+track'e; sıçrama koruması (kutu tek karede >3× köşegen atlarsa kilit düşer);
+çelişki koruması (güçlü tespit 10 kare başka yerdeyse tazelenir). Ayrıca
+`control/sim_truth.py` gz'den gerçek menzil + fiziksel TEMAS olayını dinler —
+yalnız GÖZLEM (terminal `[TRUTH]` satırları); güdüm kararlarına bağlı değildir.
+
 ---
 
 ## 2. Modüller (`control/guidance/`)

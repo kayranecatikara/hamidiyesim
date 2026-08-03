@@ -3,7 +3,7 @@
   dataset_capture.sdf — YOLO veri toplama için STATİK world.
   Fizik/ArduPilot YOK: sabit kamera (iris gövdesi+kamerası, static) + statik hedef.
   ARKA PLAN asıl chase world'üne (avci_harmonic.sdf) eşlendi: aynı gökyüzü tonu
-  (0.8 gri), aynı güneş ışığı, aynı runway — domain gap'i kapatmak için.
+  (0.8 gri), aynı güneş ışığı, aynı ÇİM zemin — domain gap'i kapatmak için.
 
   capture_dataset.py hedefi /world/dataset/set_pose ile FOV'da dolaştırır,
   /iris_cam/image'den kare alır. Uçuş gerekmez.
@@ -56,12 +56,51 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Asıl world öğesi: runway (kamera altına alındı ki hedef bazen pist önünde
-         görünsün → gökyüzü+pist arka plan çeşitliliği) -->
-    <include>
-      <uri>model://runway</uri>
-      <pose degrees="true">0 0 0 0 0 0</pose>
-    </include>
+    <!-- ★ PİST KALDIRILDI (2026-07-29) — UÇUŞ DÜNYASIYLA EŞİTLENDİ.
+         Eskiden burada model://runway (asfalt şeritli tam pist) vardı ve
+         "arka plan çeşitliliği" diye bilerek konulmuştu. Ama avci_harmonic.sdf
+         (gerçek uçuş dünyası) 2026-07-24'te pisti ATMIŞTI; sebebi oradaki
+         notta yazıyor: "detection modeli pist rakamını/çizgilerini yüksek
+         güvenle HEDEF sanıyordu (canlı FP)".
+         Dataset dünyası güncellenmediği için model, gerçekte HİÇ görmeyeceği
+         asfalt fonunda eğitiliyordu — klasik domain gap. Artık uçuş
+         dünyasındaki grass_field bloğunun aynısı: aynı mesh, aynı çim
+         dokusu, asfalt şerit yok. -->
+    <model name="grass_field">
+      <static>1</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>4000 4000</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="grass">
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://runway/meshes/airfield.dae</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://runway/materials/textures/Grass004_2K_Color.jpg</albedo_map>
+                <normal_map>model://runway/materials/textures/Grass004_2K_NormalGL.jpg</normal_map>
+                <roughness_map>model://runway/materials/textures/Grass004_2K_Roughness.jpg</roughness_map>
+                <roughness>0.6</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
 
     <!-- SABİT KAMERA (drone): iris gövdesi+kamerası (ArduPilot YOK), static, HAVADA (20m).
          base_link = (0 0 20); kamera offset (0.10 0 0.05) pitch −25°(yukarı).

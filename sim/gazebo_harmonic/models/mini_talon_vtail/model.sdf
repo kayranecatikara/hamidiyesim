@@ -90,6 +90,21 @@
         </geometry>
       </collision>
 
+      <!-- Vuruş tespiti: gövde+kanat+kuyruk temaslarını yayınlar. Yer temasını
+           control/sim_truth.py filtreler (yalnız iris'le temas vuruş sayılır).
+           Dünyada gz-sim-contact-system eklentisi gerekir (avci_harmonic.sdf). -->
+      <sensor name="temas_sensoru" type="contact">
+        <always_on>1</always_on>
+        <update_rate>100</update_rate>
+        <contact>
+          <collision>fuselage_collision</collision>
+          <collision>left_wing_collision</collision>
+          <collision>right_wing_collision</collision>
+          <collision>left_tail_collision</collision>
+          <collision>right_tail_collision</collision>
+        </contact>
+      </sensor>
+
       <visual name="fuselage_visual">
         <pose degrees="true">0 0 0 0 0 0</pose>
         <geometry>

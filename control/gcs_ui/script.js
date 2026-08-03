@@ -348,6 +348,18 @@ function updateMissionStatus() {
     fetch('/api/chase_status')
         .then(r => r.json())
         .then(d => {
+            // ── Güdüm fazı ışıkları (GPS / GÖRSEL) — supervisor.faz'dan ──
+            const fazGps = document.getElementById('faz-gps');
+            const fazGorsel = document.getElementById('faz-gorsel');
+            if (fazGps && fazGorsel) {
+                const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
+                fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
+                fazGorsel.className = 'faz-isik' +
+                    (faz === 'VISUAL' ? ' aktif' :
+                     (faz === 'VURULDU' ? ' vuruldu' : ''));
+                fazGorsel.textContent = (faz === 'VURULDU') ? '● VURULDU' : '● GÖRSEL';
+            }
+
             const lockEl = document.getElementById('tele-lock-status');
             const termEl = document.getElementById('tele-terminal-status');
             if (!lockEl || !termEl) return;
