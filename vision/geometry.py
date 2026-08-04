@@ -205,13 +205,51 @@ def target_keypoints(target_pos, target_rpy, iris_pos, iris_rpy):
 def camera_world_pose(iris_pos, iris_rpy):
     """iris (drone) world poz + rpy'den kamera world (konum, rotasyon matrisi).
     iris_rpy = (roll, pitch, yaw) radyan — drone gövde oryantasyonu.
-    Kamera 25° yukarı tilt'i drone gövde çerçevesinde uygulanır."""
+
+    ⚠ 2026-08-04: KAMERA ARTIK GÖVDEYE ÇAKILI DEĞİL. 2 eksenli gimbal onu
+    DÜNYA çerçevesinde sabit tutuyor (roll 0, pitch +25° yukarı; yalnız yaw
+    gövdeyi izler). Eski satır `R_cam = R_iris @ Ry(tilt)` idi ve gövde
+    yatışını kameraya taşıyordu.
+
+    NEDEN ÖNEMLİ: bu fonksiyon DOĞRULUK REFERANSIDIR (vision/dogruluk.py onu
+    kullanarak hedefin kadrajda NEREDE olması gerektiğini hesaplar). Gimbal
+    geldikten sonra eski hali, doğru çalışan bir kestirimi bile "yanlış"
+    gösteriyordu: ölçülen eksen açısı hatası medyanı 28-69°'ye, burun/kuyruk
+    takas oranı %44-100'e fırladı — oysa 2026-08-01'de eksen hatası medyanı
+    −1.26° idi. Yani BOZULAN ölçüm aracının kendisiydi, IBVS değil.
+    Bu tuzağa dikkat: yanlış cetvel, sağlam bir sistemi arızalı gösterir.
+
+    GIMBAL_AKTIF=False iken eski sabit-montaj davranışı döner (eski logların
+    yeniden çözümlenmesi için).
+    """
     iris_pos = np.asarray(iris_pos, dtype=float)
     roll, pitch, yaw = iris_rpy
     R_iris = rot_rpy(roll, pitch, yaw)
     cam_pos = iris_pos + R_iris @ CAM_OFFSET_POS
-    R_cam = R_iris @ _rot_y(CAM_TILT_RAD)     # kamera tilt drone frame'de
+    if _gimbal_aktif():
+        # Kamera dünyada sabit: yalnız YAW gövdeyi izler, roll/pitch gimbal'da.
+        # Gimbal sınırları guidance_core.Cfg ile AYNI kaynaktan kırpılır.
+        from control.guidance.guidance_core import Cfg, gimbal_govde_acilari
+        tilt, roll_rel = gimbal_govde_acilari(roll, pitch, Cfg)
+        # gövde → kamera: önce roll_rel (X), sonra tilt (Y) — SDF eklem zinciri
+        R_cam = R_iris @ _rot_x(roll_rel) @ _rot_y(-tilt)
+    else:
+        R_cam = R_iris @ _rot_y(CAM_TILT_RAD)     # eski: kamera tilt gövde frame'de
     return cam_pos, R_cam
+
+
+def _gimbal_aktif():
+    """guidance_core ile TEK kaynak — ayrı bir env okuması ikisini ayrıştırır."""
+    try:
+        from control.guidance.guidance_core import Cfg
+        return bool(getattr(Cfg, "GIMBAL_AKTIF", False))
+    except Exception:
+        return False
+
+
+def _rot_x(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
 
 
 def project_points(P_world, cam_pos, R_cam):
