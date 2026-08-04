@@ -410,3 +410,68 @@ görsel faz      6 devir, en uzunu 6.3 s
 **Hâlâ açık:** vuruş yok. `|kadraj_yaw|` p90 43.5° — kadraj devir anında hâlâ
 bozulabiliyor, ve menzil ara sıra 70 m'ye geri açılıyor. Sıradaki iş kalemi
 budur; artık ölçülebilir durumda çünkü uçuş 240 saniye ayakta kalıyor.
+
+---
+
+# DÜZELTME: V-kuyruk kanıtı uçuşta ÇÜRÜDÜ
+
+`5c9e37b` commit'inin mesajı V-kuyruk kanıtını "burun/kuyruk takasının asıl
+çözümü" diye sunuyor. **Uçuş bunu doğrulamadı.** Kayıt burada dursun ki
+mesaj yanıltıcı kalmasın.
+
+## Hipotez
+
+Pose modeli 6 keypoint üretiyor; V-kuyruk noktaları (4, 5) fiziksel olarak
+kuyruktadır, dolayısıyla `|vtail − kuyruk| < |vtail − burun|` olmalı. Bu,
+harekete ihtiyaç duymayan, kare başına geçerli bir ayrım sağlar — ve akış
+kapısının çalışmadığı kuyruk-takibi geometrisinde tam da gereken şeydi.
+
+## Ölçüm (doğrulama uçuşu, 96 'ok' kare, 2 görsel faz)
+
+| ölçüm | değer |
+|---|---|
+| `burun_kuyruk_takas` | **%42** (öncesi %33 — düzelmedi) |
+| `vt_skor` medyan | **+0.92** |
+| `eksen_aci_hata_deg` medyan | 37.8° |
+| `kpt_hata_px_ort` medyan | 9.2 (cetvel sağlam) |
+
+İki sayı **birbiriyle çelişiyor**: `vt_skor` +0.92, kapının neredeyse her
+karede "etiketler doğru" dediği anlamına gelir; gerçek referans ise karelerin
+%42'sinde takas olduğunu söylüyor.
+
+## Sonuç
+
+**Varsaydığım geometrik ayrım gerçek veride yok.** Modelin V-kuyruk
+keypoint'leri fiziksel kuyrukta değil — büyük olasılıkla bbox merkezine yakın
+tahmin ediliyorlar, o yüzden "hangi uç V-kuyruğa daha yakın" sorusu bilgi
+taşımıyor.
+
+Sentetik test (T47-T49) geçti çünkü **V-kuyruğu doğru yere ben koydum**.
+Gerçek modelin nereye koyduğunu ölçmeden çözüm kurmak hataydı. Bu, bu
+belgedeki "bozuk cetvel" vakasıyla aynı sınıf hata: doğrulanmamış bir
+varsayımın üstüne inşa etmek.
+
+Kod ZARARSIZ, geri alınmadı: kanıt karar veremediğinde (skor eşiğin altında)
+davranış eski hâline düşüyor, ve aynı commit'teki yatış payı düzeltmesi
+(`YON_ACCEL` 12→10) uçuşta DOĞRULANDI.
+
+## Doğrulanan kısım — yatış payı
+
+| | YON_ACCEL 12 | **YON_ACCEL 10** |
+|---|---|---|
+| yatış p99 | 71° | **64.3°** |
+| yatış max | 133.6° | **75.4°** |
+| 80° üstü kare | vardı | **0 / 4039** |
+| uçuş | t+152'de düştü | **240 s tamam** |
+
+En yakın menzil 4.5 m, iki görsel devir, takla yok.
+
+## Sıradaki iş — ÖLÇÜMLE başla
+
+1. Gerçek uçuş logundan V-kuyruk keypoint'lerinin gövde eksenine göre nerede
+   düştüğünü çıkar (`kpt_hata_px_sol_vtail` / `_sag_vtail` kolonları + ham
+   keypoint konumları). Ayrım varsa eşiği düzelt; yoksa bu yolu KAPAT.
+2. Ayrım yoksa takas için başka kanıt gerekir. Aday: hedefin GPS'ten bilinen
+   hız yönü ile görüntüdeki eksenin izdüşümü — GPS fazı bunu zaten hesaplıyor
+   (`kuyruk_aci_deg`), görsel faza taşınabilir.
+3. `eksen_aci_hata_deg` medyanı 37.8° — vuruşun önündeki asıl engel bu.
