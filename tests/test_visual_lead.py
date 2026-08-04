@@ -15,7 +15,7 @@ import numpy as np
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.guidance_core import (
     GOVDE_BOYU_M, KANAT_ACIKLIGI_M, LeadPursuitCore, cfg_copy,
-    govde_to_dunya, hedef_kadraj_hatasi, yukselti_duzeltme)
+    gercek_geometri, govde_to_dunya, hedef_kadraj_hatasi, yukselti_duzeltme)
 from control.guidance.visual_lead import _cevap_anahtari, _vurus_oldu
 from control.guidance.common import normalize_angle as _norm
 from vision import geometry as geo
@@ -784,6 +784,72 @@ def main():
             v_ic and (not v_dis) and g_ic == "yedek_menzil",
             f"{c.VURUS_MENZIL-0.1:.2f} m → vuruldu ({g_ic}); "
             f"{c.VURUS_MENZIL+0.1:.2f} m → ıska")
+
+    # ══════════ GERÇEK-ROTASYON MODU (AVCI_POSE_KAYNAK=gercek) ══════════
+    # Pose modeli devre dışı; lead geometrisi Gazebo quat+menzilinden.
+
+    # ── T49: gercek_geometri çerçeve dönüşümü (gz FLU → iris FRD) ──
+    q_kimlik = (1.0, 0.0, 0.0, 0.0)
+    q_yaw90 = (math.cos(math.pi / 4), 0.0, 0.0, math.sin(math.pi / 4))
+    g1 = gercek_geometri({"iris": {"pos": (0, 0, 0), "quat": q_kimlik},
+                          "plane": {"pos": (10, 0, 0), "quat": q_kimlik}})
+    g2 = gercek_geometri({"iris": {"pos": (0, 0, 0), "quat": q_kimlik},
+                          "plane": {"pos": (10, 0, 0), "quat": q_yaw90}})
+    kontrol("T49 gercek_geometri: menzil + FLU→FRD ekseni",
+            abs(g1["menzil"] - 10.0) < 1e-6
+            and np.allclose(g1["eksen_frd"], [1, 0, 0], atol=1e-9)
+            and np.allclose(g2["eksen_frd"], [0, -1, 0], atol=1e-9),
+            f"düz: {np.round(g1['eksen_frd'],3)}, 90° sol: {np.round(g2['eksen_frd'],3)}")
+
+    # ── T50: truth lead formülü — tam yandan, tam kalite → atan(K_LEAD) ──
+    c = cfg_copy()
+    core = LeadPursuitCore(c)
+    pose_kutu = {"cx": CX, "cy": CY, "conf": 1.0, "bbox": (0, 0, 10, 10),
+                 "kpts": None}
+    res = core.process(pose_kutu, 1.0, ATT_KAMERA_YATAY,
+                       gercek={"eksen_frd": np.array([0.0, 1.0, 0.0]),
+                               "menzil": 9.0})
+    lead_beklenen = math.degrees(math.atan(c.K_LEAD))
+    kontrol("T50 truth modu: yandan hedefte lead = atan(K_LEAD)",
+            res["kaynak"] == "gercek" and abs(res["kalite"] - 1.0) < 1e-6
+            and abs(res["yandanlik_ham"] - 1.0) < 1e-6
+            and abs(res["lead_deg"] - lead_beklenen) < 0.1,
+            f"lead {res['lead_deg']:.2f}° (beklenen {lead_beklenen:.2f}°), "
+            f"kalite {res['kalite']:.2f}")
+
+    # ── T51: lead hedefin BURNU yönüne kayar (FRD sağ → kamerada sağ) ──
+    kontrol("T51 truth modu: nişan burun yönüne (sağa) kayar",
+            res["u_nisan"][0] > 0.02 and abs(res["u_nisan"][1]) < 1e-6,
+            f"u_nisan x={res['u_nisan'][0]:.3f} (sağ+)")
+
+    # ── T52: uzak menzil → kalite 0 → saf takip ──
+    core = LeadPursuitCore(c)
+    res = core.process(pose_kutu, 1.0, ATT_KAMERA_YATAY,
+                       gercek={"eksen_frd": np.array([0.0, 1.0, 0.0]),
+                               "menzil": 25.0})
+    kontrol("T52 truth modu: 25 m'de kalite=0, lead kapalı",
+            res["kalite"] == 0.0 and res["lead_deg"] == 0.0
+            and abs(res["u_nisan"][0]) < 1e-9,
+            f"kalite {res['kalite']}, lead {res['lead_deg']}°")
+
+    # ── T53: truth bayat (eksen None) → gercek_yok, saf takip ──
+    core = LeadPursuitCore(c)
+    res = core.process(pose_kutu, 1.0, ATT_KAMERA_YATAY,
+                       gercek={"eksen_frd": None, "menzil": None})
+    kontrol("T53 truth bayat → durum=gercek_yok, lead=0",
+            res["durum"] == "gercek_yok" and res["lead_deg"] == 0.0,
+            f"durum {res['durum']}")
+
+    # ── T54: tam kuyruktan görüş — eksen ∥ bakış → yandanlık≈0 (çerçeve
+    #        gidiş-dönüşünün de sağlaması: FRD→kamera tilt matematiği) ──
+    core = LeadPursuitCore(c)
+    tilt = math.radians(c.KAMERA_TILT_DEG)
+    eksen_paralel = np.array([math.cos(tilt), 0.0, -math.sin(tilt)])
+    res = core.process(pose_kutu, 1.0, ATT_KAMERA_YATAY,
+                       gercek={"eksen_frd": eksen_paralel, "menzil": 9.0})
+    kontrol("T54 truth modu: kuyruktan görüşte yandanlık≈0, lead=0",
+            res["yandanlik_ham"] < 1e-6 and res["lead_deg"] == 0.0,
+            f"yandanlık {res['yandanlik_ham']:.2e}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

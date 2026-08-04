@@ -296,6 +296,37 @@ def yukselti_duzeltme(eps_rad):
     return math.sqrt(1.0 + s * s)
 
 
+# ══ GERÇEK-ROTASYON MODU (AVCI_POSE_KAYNAK=gercek) yardımcıları ══
+
+def _quat_dcm(q):
+    """Birim quaternion (w,x,y,z) → gövde→dünya DCM (Gazebo pozları için)."""
+    w, x, y, z = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z),     2 * (x * z + w * y)],
+        [2 * (x * y + w * z),     1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y),     2 * (y * z + w * x),     1 - 2 * (x * x + y * y)],
+    ])
+
+
+def gercek_geometri(pozlar):
+    """sim_truth.pozlar() → hedefin GERÇEK burun yönü (iris gövde FRD'de) + menzil.
+
+    Her şey Gazebo'nun TEK pose mesajından ve GÖRELİ hesaplanır — NED/ENU
+    orijin hizalama derdi yok: iki quat da aynı dünya çerçevesinde, vektör
+    iris'in kendi gövdesine indirgeniyor. Gazebo gövde çerçevesi FLU
+    (x ileri, y sol, z yukarı) → FRD dönüşümü (x, −y, −z).
+    Dönüş: {"eksen_frd": np.array birim, "menzil": float m}."""
+    ip, pp = pozlar["iris"], pozlar["plane"]
+    eksen_dunya = _quat_dcm(pp["quat"]) @ np.array([1.0, 0.0, 0.0])  # hedef burnu
+    v = _quat_dcm(ip["quat"]).T @ eksen_dunya                        # iris FLU
+    eksen_frd = np.array([v[0], -v[1], -v[2]])
+    n = np.linalg.norm(eksen_frd)
+    if n > 1e-9:
+        eksen_frd = eksen_frd / n
+    fark = np.subtract(pp["pos"], ip["pos"])
+    return {"eksen_frd": eksen_frd, "menzil": float(np.linalg.norm(fark))}
+
+
 class LeadPursuitCore:
     """Adım 1-8 + sağlamlık. Saf hesap — IO/MAVLink yok, birim test edilir.
 
@@ -323,13 +354,18 @@ class LeadPursuitCore:
         und = cv2.undistortPoints(p, K, dist, P=K)
         return und.reshape(-1, 2)
 
-    def process(self, pose, stamp, attitude):
+    def process(self, pose, stamp, attitude, gercek=None):
         """
         pose     : pose_detector çıktısı {cx, cy, conf, kpts: 6×(u,v,conf)} (tam kare px)
         stamp    : karenin header.stamp'i (s) — dt BUNDAN hesaplanır
         attitude : (roll, pitch, yaw) radyan (kendi aracımız) veya None
+        gercek   : verilirse (AVCI_POSE_KAYNAK=gercek modu) keypoint zinciri
+                   ATLANIR; lead geometrisi gercek["eksen_frd"]/["menzil"]'den
+                   hesaplanır (bkz. _process_gercek). None = görsel pose yolu.
         Dönüş: tüm ara değerler + u_govde / yaw_hata / pitch_hata + durum + warn listesi.
         """
+        if gercek is not None:
+            return self._process_gercek(pose, stamp, gercek)
         cfg = self.cfg
         warn = []
         durum = "ok"
@@ -449,6 +485,7 @@ class LeadPursuitCore:
                                           # geometri — görünürlük azimut_kalite'de
 
         return {
+            "kaynak": "pose",
             "durum": durum, "warn": warn, "dt": dt,
             "a": a, "b": b, "olcek_ham": olcek_ham,
             "eps_deg": eps_deg, "duzeltme": duzeltme, "olcek": olcek,
@@ -464,5 +501,112 @@ class LeadPursuitCore:
                 math.acos(max(-1.0, min(1.0, float(u_nisan[2]))))),
             # SADECE LOG — güdüm hesabında KULLANILMAZ:
             "menzil_kestirim_m": (geo.FX * GOVDE_BOYU_M / olcek) if olcek > 1e-9 else 0.0,
+            "flip_sayaci": self.flip_sayaci,
+        }
+
+    def _process_gercek(self, pose, stamp, gercek):
+        """GERÇEK-ROTASYON modu (AVCI_POSE_KAYNAK=gercek): pose modeli DEVRE DIŞI.
+
+        Nişan yönü u yine TESPİT kutusundan (tracker kilidi) gelir — görsel hat
+        ölmez. Lead'in YÖNÜ ve MİKTARI ise keypoint yerine Gazebo'dan gelen
+        gerçek gövde ekseni + gerçek menzille hesaplanır:
+          yandanlık = |eksenin bakış hattına dik bileşeni| = sin(eksen↔LOS)
+          (görsel yoldaki a/olcek tam olarak bu niceliğin piksel kestirimidir)
+          kalite    = AYNI 6→14 px rampası, gerçek menzilin piksel eşdeğeriyle
+          guven     = tespit conf'u (pose conf artık yok)
+        Bu bir SİM koltuk değneğidir (pose modeli eğitilene dek); gerçek uçuşta
+        yoktur. CSV'de kaynak=gercek damgasıyla ayrılır; truth bayatsa lead
+        kapanır, saf takip sürer (durum=gercek_yok)."""
+        cfg = self.cfg
+        warn = []
+        durum = "ok"
+
+        dt = (stamp - self.t_onceki) if self.t_onceki is not None else None
+        self.t_onceki = stamp
+
+        guven = float(pose["conf"])
+        u = np.array([(pose["cx"] - geo.CX) / geo.FX,
+                      (pose["cy"] - geo.CY) / geo.FY, 1.0])
+        u = u / np.linalg.norm(u)
+        tilt = math.radians(cfg.KAMERA_TILT_DEG)
+        u_govde_hedef = kamera_to_govde(u, tilt)
+
+        eksen = gercek.get("eksen_frd")
+        menzil = gercek.get("menzil")
+
+        # kalite: pose ölçeği yerine GERÇEK menzil, aynı rampa (px eşdeğeri)
+        kalite = 0.0
+        if menzil is not None and menzil > 1e-6:
+            olcek_esdeger = geo.FX * GOVDE_BOYU_M / menzil
+            kalite = max(0.0, min(1.0, (olcek_esdeger - cfg.OLCEK_KAPALI_PX)
+                                  / (cfg.OLCEK_TAM_PX - cfg.OLCEK_KAPALI_PX)))
+
+        yandanlik = 0.0
+        e = None
+        if eksen is None:
+            durum = "gercek_yok"      # truth bayat/yok → lead kapalı, saf takip
+            warn.append("gercek_yok")
+        else:
+            # FRD → kamera: kamera_to_govde'nin tersi (hedef_kadraj_hatasi ile
+            # aynı yol) — Ry(−tilt) sonra [sağ, aşağı, ileri] sıralaması.
+            c, s = math.cos(tilt), math.sin(tilt)
+            ham = np.array([c * eksen[0] - s * eksen[2],
+                            eksen[1],
+                            s * eksen[0] + c * eksen[2]])
+            eksen_kam = np.array([ham[1], ham[2], ham[0]])
+            e3 = eksen_kam - float(np.dot(eksen_kam, u)) * u
+            yandanlik = float(np.linalg.norm(e3))
+            if yandanlik > 1e-9:
+                e = e3 / yandanlik
+
+        if self.yandanlik_f is None or dt is None:
+            self.yandanlik_f = yandanlik
+        else:
+            alpha = 1.0 - math.exp(-dt / cfg.FILTRE_TAU_S)
+            self.yandanlik_f = alpha * yandanlik + (1.0 - alpha) * self.yandanlik_f
+
+        carpim = cfg.K_LEAD * guven * kalite * self.yandanlik_f
+        if carpim > 0.95:
+            durum = "cozumsuz"
+            warn.append("cozumsuz")
+        lead = math.atan(carpim)
+        lead = min(lead, math.radians(cfg.MAX_LEAD_DEG))
+        if e is None:
+            lead = 0.0                # yön yok (truth bayat / tam kuyruktan)
+
+        if e is not None and lead > 0.0:
+            u_nisan = math.cos(lead) * u + math.sin(lead) * e
+            u_nisan = u_nisan / np.linalg.norm(u_nisan)
+        else:
+            u_nisan = u.copy()
+
+        u_govde = kamera_to_govde(u_nisan, tilt)
+        yatay = math.hypot(u_govde[0], u_govde[1])
+        yaw_hata = math.atan2(u_govde[1], u_govde[0])
+        pitch_hata = math.atan2(-u_govde[2], yatay)
+        _y_tam = math.cos(math.radians(cfg.AZIMUT_TAM_YUKSELIS_DEG))
+        _y_tekil = math.cos(math.radians(cfg.AZIMUT_TEKIL_YUKSELIS_DEG))
+        azimut_kalite = max(0.0, min(1.0, (yatay - _y_tekil) / (_y_tam - _y_tekil))) \
+            if _y_tam > _y_tekil else 1.0
+        if azimut_kalite <= 0.0:
+            warn.append("azimut_tekil")
+
+        return {
+            "kaynak": "gercek",
+            "durum": durum, "warn": warn, "dt": dt,
+            "a": 0.0, "b": 0.0, "olcek_ham": 0.0,
+            "eps_deg": 0.0, "duzeltme": 1.0, "olcek": 0.0,
+            "yandanlik_ham": yandanlik, "yandanlik_f": self.yandanlik_f,
+            "kalite": kalite, "guven": guven, "lead_deg": math.degrees(lead),
+            "d_birim": np.array([0.0, 0.0]), "u": u, "u_nisan": u_nisan,
+            "u_govde": u_govde, "u_govde_hedef": u_govde_hedef,
+            "yaw_hata": yaw_hata, "pitch_hata": pitch_hata,
+            "yatay_bilesen": yatay, "azimut_kalite": azimut_kalite,
+            "yaw_hata_deg": math.degrees(yaw_hata),
+            "pitch_hata_deg": math.degrees(pitch_hata),
+            "eksen_disi_deg": math.degrees(
+                math.acos(max(-1.0, min(1.0, float(u_nisan[2]))))),
+            # gerçek modda kestirim = gerçek menzil (kaynak sütunuyla ayrılır)
+            "menzil_kestirim_m": (menzil if menzil is not None else 0.0),
             "flip_sayaci": self.flip_sayaci,
         }

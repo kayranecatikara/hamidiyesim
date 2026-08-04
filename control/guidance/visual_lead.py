@@ -44,7 +44,7 @@ _CSV_ALANLAR = [
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "v_doygun", "yaw_doygun",
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "menzil_ham_m", "menzil_red",
-    "kapanma_hizi_ms", "mod",
+    "kapanma_hizi_ms", "mod", "kaynak",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
     "kadraj_hata_deg", "kadraj_duz_deg",
@@ -236,8 +236,12 @@ def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
 
 
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
-                    kayip_kare_esik=None, get_temas=None, get_menzil=None):
-    """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
+                    kayip_kare_esik=None, get_temas=None, get_menzil=None,
+                    get_gercek=None):
+    """get_gercek verilirse (AVCI_POSE_KAYNAK=gercek): pose modeli devre dışı,
+    lead geometrisi Gazebo'nun gerçek rotasyon+menzilinden (guidance_core.
+    _process_gercek); nişan yine tespit kutusundan. Truth bayatsa lead kapanır.
+    kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
     Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'
     (GERÇEK fiziksel temas — bkz. _vurus_oldu; yakınlık yalnız temas kaynağı
@@ -289,6 +293,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                                 # yukarı yanlılığı titretmesin)
     hedef_ned = None            # hedefin gerçek NED pozu — YALNIZ cevap anahtarı logu
 
+    kaynak_ad = "gercek" if get_gercek is not None else "pose"
+
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
                            time.strftime("visual_lead_%Y%m%d_%H%M%S.csv"))
@@ -296,7 +302,10 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     w = csv.DictWriter(f, fieldnames=_CSV_ALANLAR, extrasaction="ignore")
     w.writeheader()
     print(f"[LEAD] IBVS lead pursuit başladı (copter, "
-          f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}) — log: {csv_yol}")
+          f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}, "
+          f"kaynak={kaynak_ad.upper()}"
+          f"{' — GERÇEK ROTASYON: pose modeli devre dışı' if get_gercek else ''}"
+          f") — log: {csv_yol}")
 
     def _satir(row, res=None):
         # Cevap anahtarı HER satıra yazılır (tespit_yok/kör dalış dahil — asıl
@@ -332,7 +341,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         simdi = time.time()
         dt_t = (simdi - t_terminal_menzil) if t_terminal_menzil else None
         t_terminal_menzil = simdi
-        m, _kabul = menzil_kapi.ekle(_menzil_hesapla(get_plane_truth, aras.pos), dt_t)
+        m, _kabul = menzil_kapi.ekle(_menzil_olc(), dt_t)
         if m is not None:
             terminal_min = min(terminal_min, m) if terminal_min is not None else m
         vuruldu, gerekce = _vurus_oldu(m, cfg)
@@ -374,7 +383,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
 
             aras.drenaj(conn)
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
-                     "mod": aras.mode}
+                     "mod": aras.mode, "kaynak": kaynak_ad}
             hedef_ned = None      # her karede tazelenir; gelmezse sütun BOŞ kalır
                                   # (bayat ground-truth sessizce loglanmasın)
 
@@ -385,40 +394,45 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 return "vuruldu"
 
-            # menzil_gercek + kapanma hızı + terminal durum takibi
+            # cevap anahtarı kaynağı (telemetri pozu — yalnız ölçüm sütunları)
             if aras.pos is not None and get_plane_truth is not None:
                 p = get_plane_truth()
                 if p is not None:
-                    hedef_ned = (p["x"], p["y"], p["z"])   # cevap anahtarı kaynağı
-                    d_ham = math.sqrt((p["x"] - aras.pos[0]) ** 2
-                                      + (p["y"] - aras.pos[1]) ** 2
-                                      + (p["z"] - aras.pos[2]) ** 2)
-                    # MAKULLÜK KAPISI: imkânsız sıçrama sahte VURULDU üretiyordu.
-                    # dt sim saatinden (kare damgası) — duvar saatiyle karıştırma.
-                    dt_menzil = ((stamp - t_menzil_onceki)
-                                 if (stamp and t_menzil_onceki) else None)
-                    d, kabul = menzil_kapi.ekle(d_ham, dt_menzil)
-                    satir["menzil_ham_m"] = round(d_ham, 3)
-                    satir["menzil_red"] = menzil_kapi.red_sayaci
-                    if not kabul:
-                        print(f"[LEAD WARN] menzil örneği reddedildi "
-                              f"({menzil_onceki:.1f} → {d_ham:.1f} m, "
-                              f"toplam {menzil_kapi.red_sayaci})")
-                    satir["menzil_gercek_m"] = round(d, 3)
-                    kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
-                    if menzil_onceki is not None and stamp and t_menzil_onceki \
-                            and stamp > t_menzil_onceki:
-                        satir["kapanma_hizi_ms"] = round(
-                            -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
-                    menzil_onceki, t_menzil_onceki = d, stamp
-                    # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
-                    vuruldu, gerekce = _vurus_oldu(d, cfg)
-                    if vuruldu:
-                        satir["durum"] = "vuruldu"
-                        _satir(satir)
-                        print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
-                              f"(menzil {_m_yaz(d)} m)")
-                        return "vuruldu"
+                    hedef_ned = (p["x"], p["y"], p["z"])
+
+            # menzil_gercek + kapanma hızı + terminal durum takibi.
+            # Kaynak önceliği _menzil_olc'ta: sim-truth (zaman hizalı gerçek
+            # poz) → telemetri farkı (yedek). Eskiden doğrudan telemetri
+            # farkıydı; sim-truth kancası takılı ama ÇAĞRILMIYORDU (2026-08-04
+            # bulgusu) — d5608ab'nin çözdüğü zaman-hizasızlık geri gelmişti.
+            d_ham = _menzil_olc()
+            if d_ham is not None:
+                # MAKULLÜK KAPISI: imkânsız sıçrama sahte VURULDU üretiyordu.
+                # dt sim saatinden (kare damgası) — duvar saatiyle karıştırma.
+                dt_menzil = ((stamp - t_menzil_onceki)
+                             if (stamp and t_menzil_onceki) else None)
+                d, kabul = menzil_kapi.ekle(d_ham, dt_menzil)
+                satir["menzil_ham_m"] = round(d_ham, 3)
+                satir["menzil_red"] = menzil_kapi.red_sayaci
+                if not kabul:
+                    print(f"[LEAD WARN] menzil örneği reddedildi "
+                          f"({menzil_onceki:.1f} → {d_ham:.1f} m, "
+                          f"toplam {menzil_kapi.red_sayaci})")
+                satir["menzil_gercek_m"] = round(d, 3)
+                kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
+                if menzil_onceki is not None and stamp and t_menzil_onceki \
+                        and stamp > t_menzil_onceki:
+                    satir["kapanma_hizi_ms"] = round(
+                        -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
+                menzil_onceki, t_menzil_onceki = d, stamp
+                # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
+                vuruldu, gerekce = _vurus_oldu(d, cfg)
+                if vuruldu:
+                    satir["durum"] = "vuruldu"
+                    _satir(satir)
+                    print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
+                          f"(menzil {_m_yaz(d)} m)")
+                    return "vuruldu"
 
             if pose is None:                  # bu karede tespit yok
                 # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).
@@ -476,7 +490,13 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 continue
 
-            res = core.process(pose, stamp, aras.attitude)
+            # GERÇEK-ROTASYON modu: truth taze ise lead geometrisi ondan;
+            # bayat/yoksa eksen=None geçilir → çekirdek lead'i kapatır (saf
+            # takip sürer, durum=gercek_yok loglanır). Pose modunda gercek=None.
+            gercek = None
+            if get_gercek is not None:
+                gercek = get_gercek() or {"eksen_frd": None, "menzil": None}
+            res = core.process(pose, stamp, aras.attitude, gercek=gercek)
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
 
