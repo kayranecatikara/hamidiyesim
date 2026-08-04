@@ -111,7 +111,16 @@ class Ucus:
 
     def hedef_otursun(self, azami=150.0, pencere=20.0, tolerans=4.0):
         """Hedefin irtifası `pencere` saniye boyunca `tolerans` metre içinde
-        kalana kadar bekle. Düşerse False döner."""
+        kalana kadar bekle. Düşerse False döner.
+
+        AGRESİF SENARYO İSTİSNASI (2026-08-04): `aggressive` TANIMI GEREĞİ
+        irtifasını oturtmaz — rastgele tırmanış/dalış/spiral yapar. Sabit
+        bant kapısı orada hiç açılmaz ve uçuş, sistemde hiçbir arıza yokken
+        "hedef irtifası oturmadı" diye düşer (ilk denemede bu oldu). O
+        senaryoda kapı ölçüt DEĞİŞTİRİR: bant aranmaz, yalnız hedefin
+        HAVADA ve manevra irtifasında olması beklenir."""
+        if self.senaryo == "aggressive":
+            return self._hedef_havalansin(azami)
         self.olay("BEKLE", f"hedefin irtifası oturuyor (en fazla {azami:.0f} s)")
         t0 = time.time()
         gecmis = []
@@ -138,6 +147,34 @@ class Ucus:
                     return True
             time.sleep(1.0)
         self.olay("ARIZA", "hedef irtifası verilen sürede oturmadı")
+        return False
+
+    def _hedef_havalansin(self, azami=150.0, min_irtifa=35.0, kararlilik_s=10.0):
+        """Agresif senaryo kapısı: bant değil, YÜKSEKLİK + SÜREKLİLİK.
+
+        Hedef `kararlilik_s` boyunca kesintisiz `min_irtifa` üstünde kalırsa
+        manevraya başlamış ve düşmemiş demektir; chase o noktada anlamlıdır.
+        35 m: agresif senaryo 60 m'den dalışlarla ~40 m'ye iniyor (ölçüm
+        2026-08-01), taban bunun altında olmalı ki dalış kapıyı düşürmesin."""
+        self.olay("BEKLE", f"agresif: hedef {min_irtifa:.0f} m üstünde "
+                           f"{kararlilik_s:.0f} s kalsın (en fazla {azami:.0f} s)")
+        t0 = time.time()
+        yukselis_baslangic = None
+        while time.time() - t0 < azami:
+            _i, h = self._araclar()
+            if h is None:
+                time.sleep(1.0)
+                continue
+            if h["z"] >= min_irtifa:
+                if yukselis_baslangic is None:
+                    yukselis_baslangic = time.time()
+                elif time.time() - yukselis_baslangic >= kararlilik_s:
+                    self.olay("OK", f"agresif: hedef manevrada, irtifa {h['z']:.1f} m")
+                    return True
+            else:
+                yukselis_baslangic = None      # dalışta sayaç sıfırlanır
+            time.sleep(1.0)
+        self.olay("ARIZA", "agresif: hedef manevra irtifasına çıkamadı")
         return False
 
     def hedef_hizi(self, sure=12.0, ornek_araligi=1.0):

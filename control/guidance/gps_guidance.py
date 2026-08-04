@@ -119,6 +119,10 @@ class Cfg:
     # avci_copter.parm WP_ACC ile AYNI olmalı: komut, aracın uygulayabildiğinden
     # hızlı değişirse fark doygunluk olarak birikir ve yatış tavana dayanır.
     MAX_ACCEL = 8.0          # m/s²; komut hızı değişim sınırı
+    # Yön dönme sınırının altında devre dışı kalacağı hız. Düşük hızda
+    # omega_max = MAX_ACCEL/|v| patlar (|v|→0'da sonsuz) ve sınır anlamsızlaşır;
+    # ayrıca duran araç yönünü serbestçe seçebilmeli (kalkış, hover, ilk yönelme).
+    YON_LIMIT_MIN_HIZ = 3.0  # m/s
     DERIV_EMA = 0.2
 
     # --- YAW ---
@@ -495,6 +499,36 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if abs(yaw_err) > cfg.YAW_DEADBAND:
                 step = clamp(yaw_err, -yaw_tavan * dt, yaw_tavan * dt)
                 cmd_yaw = normalize_angle(cmd_yaw + step)
+
+            # ── 7b) KOMUT YÖNÜ DÖNME SINIRI (2026-08-04, agresif senaryo çöküşü) ──
+            # limit_acceleration komutun BÜYÜKLÜK değişimini sınırlar ama yön
+            # değişimini değil: |v| sabitken komut bir karede 90° dönebilir ve
+            # ivme sınırı bunu "değişim yok" sanır. Oysa v hızında yönü omega
+            # hızıyla döndürmek |v|·omega kadar YANAL ivme ister.
+            #
+            # Agresif senaryoda hedef sert manevra yapınca istasyon noktası
+            # sıçrıyor, komut yönü bir anda dönüyor, gereken yanal ivme aracın
+            # yapabileceğinin üstüne çıkıyor ve attitude kontrolcüsü tavana
+            # yapışıp yetkiyi kaybediyor. Ölçüm (gps_guidance_20260804_155333):
+            # yatış medyanı 14.1° (sakin) ama p99 66.1° — ATC_ANGLE_MAX 65'e
+            # DAYALI — ve orada roll +102° → −156°, pitch +81° → −72° savruldu,
+            # avcı düştü (t+143 s). Yatış > 80° olan 16 kare, hepsi o anda.
+            #
+            # Çare: yönü, ancak MAX_ACCEL'in izin verdiği kadar döndür:
+            #     omega_max = MAX_ACCEL / |v|
+            # Büyüklük dokunulmaz — yalnız yön yavaşlatılır, yani araç hedefe
+            # gitmeye devam eder, sadece dönüşü fiziğe uydurulur.
+            vmag_yeni = math.hypot(vx, vy)
+            vmag_onceki = math.hypot(vx_prev, vy_prev)
+            if vmag_yeni > 1e-6 and vmag_onceki > cfg.YON_LIMIT_MIN_HIZ:
+                aci_ham = normalize_angle(math.atan2(vy, vx)
+                                          - math.atan2(vy_prev, vx_prev))
+                aci_tavan = (cfg.MAX_ACCEL / vmag_onceki) * dt      # rad
+                if abs(aci_ham) > aci_tavan:
+                    yeni_aci = (math.atan2(vy_prev, vx_prev)
+                                + math.copysign(aci_tavan, aci_ham))
+                    vx = vmag_yeni * math.cos(yeni_aci)
+                    vy = vmag_yeni * math.sin(yeni_aci)
 
             # ── 8) İVME SINIRI + GÖNDER ──
             vx, vy, vz = limit_acceleration(
