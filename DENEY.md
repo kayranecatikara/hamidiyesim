@@ -43,9 +43,50 @@ Başlangıçta `gcs.sh` hangi bayrakların açık olduğunu tek satırda basar �
 | **A2** | açık | açık | **açık** | kapalı | kapalı |
 | **A3** | açık | açık | açık | **açık** | kapalı |
 | **A4** | açık | açık | açık | açık | **açık** |
+| **A5** | açık | açık | **atlanıyor** | açık | kapalı |
 | **pose** | **kapalı** | açık | açık | kapalı | kapalı |
 
 Kalın olan, bir önceki adıma göre değişen tek şey.
+**A5 istisna:** A3'ün değil **A1'in** eşi — tek farkı takip. Bkz. aşağıda.
+
+---
+
+## SONUÇLAR (2026-08-04, yapılandırma damgalı, gz menzil)
+
+| adım | faz | vuruş | <1.5 m | en yakın | min medyan | devir | yaw ort | tespit_yok |
+|---|---|---|---|---|---|---|---|---|
+| A0 | 8 | 0 | 3/8 | 0.24 m | 12.99 m | 21.9 m | 40.8° | %17 |
+| A1 | 15 | 2 | 4/15 | 0.29 m | 5.93 m | 20.1 m | 36.2° | %21 |
+| **A2** | 8 | **2** | **7/8** | 0.34 m | **0.67 m** | **6.1 m** | 33.7° | **%5** |
+| A3 | 3 | 1 | 1/3 | 0.64 m | 1.55 m | 6.5 m | **8.1°** | %0 |
+| A4 | 1 | 0 | 0/1 | 11.88 m | 11.88 m | 15.8 m | 47.5° | %11 |
+
+**A2 açık ara en iyi.** A1→A2 arasındaki tek fark pose kilidi kapısı: kapı
+açılınca devir 20.1 → 6.1 m'ye iniyor, yakın geçiş oranı 4/15 → 7/8 oluyor.
+Bu, kapının bağımsız üçüncü ölçümü (önceki ikisi 164352/172103 ve 18:55 turu).
+
+A3/A4 örneklem çok küçük (3 ve 1 faz) — takip hakkında **hâlâ karar yok**.
+
+---
+
+## A5 — takibin etkisini İZOLE EDER
+
+A3, A2'den hem takiple hem başka gürültüyle ayrılıyordu ve 3 fazlıktı. A5
+bunun yerine **A1 ile eşleştirilir**: ikisinde de kapı atlanıyor, ikisinde de
+pose açık, tek fark takip.
+
+| | A1 | A5 |
+|---|---|---|
+| kapı | atlanıyor | atlanıyor |
+| takip | **kapalı** | **açık** |
+
+A1'in 15 fazlık verisi zaten elde. A5'i 8-10 faz uçarsan takibin payı doğrudan
+okunur — kapı etkisi ikisinde de aynı olduğu için sadeleşir.
+
+```bash
+bash scripts/gcs.sh A5
+python3 tools/gudum_karne.py
+```
 
 ### A0 — taban: sadece GT
 
@@ -65,9 +106,18 @@ karede ek GPU işi demek; `gecikme_s` sütunu ve `bayat` durum sayısı buna bak
 
 ### A2 — pose kilidi kapısı geri gelsin
 
-GPS→görsel geçişi artık "son 15 karenin 10'unda güvenli pose" şartına da bağlı.
-**Bu kapı bir gecikme görevi görüyor:** kapalıyken devir `GATE_MENZIL`=20 m'ye
-yapışıyor, açıkken ~6 m'de oluyor.
+**Devir için İKİ kapı var, karıştırmayın:**
+
+1. **Pose kilidi kapısı** — "hedefi net görüyor musun?" Son `KILIT_PENCERE`=15
+   karenin en az `KILIT_N`=10'unda pose güveni ≥ `POSE_CONF_MIN`=0.5.
+   Pratikte ~6 m'de sağlanıyor. `AVCI_GT_KILIT_BYPASS=on` bunu atlar.
+2. **Menzil kapısı** — "yeterince yaklaştın mı?" Yatay mesafe <
+   `GATE_MENZIL`=20 m (`AVCI_HYBRID_GATE_MENZIL`). Gerekçesi kinematik:
+   görsel faz sabit `V_KAPANMA` ile kapanıyor, uzaktan devralırsa yetişemiyor.
+
+İkisi birden sağlanmalı. Kilit kapısı kapatılınca devir **yalnız menzil
+kapısına** kalıyor ve tam 20 m'de tetikleniyor — yani kilit kapısı fiilen bir
+"daha yaklaş" gecikmesi işlevi görüyor. Ölçümde bu farkın bedeli büyük.
 
 Ölçülmüş (ama takiple karışık, bu yüzden tekrar ediliyor):
 
