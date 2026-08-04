@@ -117,6 +117,19 @@ class Cfg:
     # Eski ayarlı değerler: YAW_HIZ_MAX=90, IVME_TAVAN=4 (geri almak için bunlar).
     YAW_HIZ_MAX = 1080.0     # deg/s — pratikte slew kapalı (eski 90)
     IVME_TAVAN = 1000.0      # m/s² — pratikte rampa kapalı (eski 4)
+    # ── DİKEY HIZ TAVANI (2026-08-04 çöküşünün doğrudan sebebi) ──
+    # Görsel faz nişan YÖNÜNÜ V_KAPANMA ile çarpıp NED hız komutuna çeviriyor.
+    # Nişan yukarı eğimliyse (kamera 25° tilt + dikey PN + terminal co-altitude
+    # 10°) dikey bileşen devasa olabiliyor: ölçüm (visual_lead_20260804_130535,
+    # 180 kare) vz_cmd medyanı −15.3 m/s, tepe −24.3 m/s TIRMANIŞ.
+    # Araç bunu uygulayamaz (WP_SPD_UP 6 m/s) ama denerken hedefin 41 m ÜSTÜNE
+    # çıktı; hedef kadrajın altında kalınca temas koptu, GPS fazı 45 m irtifayı
+    # boşaltmak zorunda kaldı ve 6 m/s'lik sürekli inişte eğim 103.9°'ye
+    # (ters dönme) fırlayıp avcı düştü (t+78 s).
+    # Tavan, aracın GERÇEKTEN yapabildiğine eşitlenir: fazlası komut değil,
+    # yalnız doygunluk ve dikey aşımdır. Yatay bileşen KIRPILMAZ — nişan biraz
+    # düzleşir, ki istenen de budur.
+    VZ_TAVAN = _env_f("AVCI_IBVS_VZ_TAVAN", 6.0)   # m/s (WP_SPD_UP/DN ile aynı)
     # ── terminal (kör dalış + vuruş) ──
     # Son ~6 m'de hedef kadraj tepesinden çıkıp tespit kopuyor; GPS'e dönmek
     # yerine son nişan komutunu kısa süre SÜRDÜR (çarpışmayı tamamla).

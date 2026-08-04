@@ -62,7 +62,15 @@ class Cfg:
     KP_H = 0.8                # yatay konum hatası → hız (1/s)
     KD_H = 0.20               # yatay türev sönümleme
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
-    VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
+    # VZ_MAX 6.0 → 4.0 (2026-08-04 çöküşü). 6 m/s'lik SÜREKLİ iniş, avcıyı
+    # kendi pervane akımına düşürüyor (vortex ring state): itki çöker, araç
+    # kontrolü kaybeder. Ölçüm (gps_guidance_20260804_130550): vz_cmd 5+ saniye
+    # +6.0'da doygun, eğim 41° → 64.8° → 81° → 103.9° (90° geçince ters dönme),
+    # gerçek hız 0.8 m/s'ye düştü, avcı düştü.
+    # 4 m/s, aynı 45 m'yi 11 s'de indirir — chase için yeterince hızlı, VRS
+    # eşiğinin (tipik olarak iniş hızı / pervane indüklenmiş hız > ~0.5) altında.
+    # DİKKAT: bu değer avci_copter.parm'daki WP_SPD_DN ile TUTARLI olmalı.
+    VZ_MAX = 4.0              # m/s; dikey hız tavanı
     # V_MAX 28→15 (2026-08-01, iki uçuşun ölçümü: gps_guidance_20260801_151839
     # ve _152542; 3674 + 3875 kare, toplam 380 s).
     #
@@ -99,8 +107,18 @@ class Cfg:
     # 40 m/s² talebiyle attitude tavana yapışıp limit çevrimine giriyordu.)
     # Doğrulama: analiz_gps "GERÇEKLEŞEN/KOMUT" oranı 0.9'un altına düşerse
     # patoloji geri gelmiş demektir, V_MAX düşürülmeli.
-    V_MAX = 20.0             # m/s; yatay hız tavanı
-    MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
+    # 20 → 17 (2026-08-04). Kopter parametreleri düzeltilince (arıza 9) avcı
+    # gerçekten 20 m/s'ye gitmeye başladı — ve bunu SÜRDÜRMEK için gereken
+    # sürükleme yatışı, ivme yatışıyla toplanıp ATC_ANGLE_MAX'ı deldi; iki
+    # uçuşta da araç takla attı. Hedef artık 13.8 m/s uçuyor (avci_plane.parm
+    # AIRSPEED_MAX 16); 17, kapanma için 3.2 m/s marj bırakır ve bunun için
+    # gereken sürükleme yatışı ~46°, tavana (65°) pay kalır.
+    # DOĞRULAMA: menzil kapanmıyorsa marj yetmiyor demektir — önce HEDEFİ
+    # yavaşlat (slider), V_MAX'ı yükseltmek yatış payını yer.
+    V_MAX = 17.0             # m/s; yatay hız tavanı
+    # avci_copter.parm WP_ACC ile AYNI olmalı: komut, aracın uygulayabildiğinden
+    # hızlı değişirse fark doygunluk olarak birikir ve yatış tavana dayanır.
+    MAX_ACCEL = 8.0          # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
 
     # --- YAW ---
@@ -122,8 +140,48 @@ class Cfg:
     # süresi 2.8 s'ye (≈83 kare) çıkar — kapının istediği 10 karenin sekiz katı.
     # Daha düşürmek kerteriz takibini kaybettirir; DOĞRULAMA: analiz_gps'te
     # "kadraj yaw hatası" medyanı büyürse bu değer fazla düşük demektir.
+    #
+    # 2026-08-04: SABİT TAVAN KALDIRILDI, KERTERİZE BAĞLANDI.
+    # 45 °/s doğru ölçülmüştü ama YANLIŞ REJİM için: o gün avcı 8-14 m/s
+    # uçuyordu ve 82 m'de takılı kalmıştı; o menzilde gereken kerteriz hızı
+    # 4.5-18.7 °/s'dir, 45 bolca yetiyordu. Kopter parametreleri düzeltilip
+    # (avci_copter.parm arıza 9) avcı gerçekten yaklaşmaya başlayınca rejim
+    # değişti ve aynı tavan bu kez KISITLAYICI oldu.
+    #
+    # Ölçüm (2026-08-04 circle uçuşu, 3425 kare, dokuz GPS fazı):
+    #   komut yaw hızı: med 44.0, p75 46.0, p99 46.0  ← %99 TAVANDA SIKIŞIK
+    #   GEREKEN kerteriz hızı, menzil bandına göre:
+    #     60+ m   med  4.5  p90  18.7 °/s     |kadraj_yaw| med  7.2°
+    #     30-60 m med 10.1  p90  36.0 °/s     |kadraj_yaw| med 20.4°
+    #     15-30 m med 18.5  p90  50.1 °/s     |kadraj_yaw| med 20.3°
+    #     0-15 m  med 38.5  p90 134.0 °/s     |kadraj_yaw| med 18.2°  ← devir bandı
+    # Yani tam devrin olduğu yerde 134 °/s gerekiyor, 45 veriliyordu; kadraj
+    # hatası 2.8°'den 37.6°'ye çıktı ve görsel faz hedefi kenarda devraldı.
+    #
+    # Yeni yasa: tavan, GEREKEN kerteriz hızıyla ölçeklenir.
+    #     tavan = clamp(KERTERIZ_PAY·|kerteriz_hızı| + TABAN, TABAN, TAVAN)
+    # Bu, eski sabit tavanın çözdüğü patolojiyi DE yapısal olarak önler:
+    # 2026-08-01'de burun, kerteriz sakinken 368 °/s savruluyor ve hedefi kendi
+    # hareketiyle kadrajdan süpürüyordu. Yeni yasada kerteriz sakinse tavan
+    # TABAN'da (20 °/s) kalır — savrulma zaten mümkün değil. Kerteriz gerçekten
+    # hızlıysa izin verilir, çünkü izin verilmezse hedef kadrajdan zaten çıkar.
     YAW_DEADBAND = math.radians(3.0)
-    YAW_RATE_MAX = math.radians(45.0)
+    # PAY > 1 olmalı: yalnız kerterizi TAKİP etmek birikmiş hatayı kapatmaz,
+    # üstüne yetişme payı gerekir. 1.5, 0-15 m bandında 134 → 221 °/s verir.
+    KERTERIZ_PAY = _env_f("AVCI_GPS_KERTERIZ_PAY", 1.5)
+    # Taban: kerteriz sıfırken bile artık hatayı kapatacak kadar. 60+ m bandının
+    # p90'ı 18.7 °/s — 20 o bandı kerteriz terimi olmadan da karşılar.
+    YAW_RATE_TABAN = math.radians(20.0)
+    # Tavan: ölçülen gerçek yaw hızı p90 104 °/s. 200, 0-15 m bandının p90
+    # ihtiyacını (134) karşılar ama 2026-08-01'de görülen 368 °/s savrulmayı
+    # keser. DOĞRULAMA: |kadraj_yaw| medyanı yakın menzilde hâlâ büyükse
+    # PAY veya TAVAN yükseltilmeli; komut yaw hızı yine %99 tavandaysa aynısı.
+    # 200 → 120 (2026-08-04, çöküşlerden sonra). Yaw yetkisi motorların
+    # DİFERANSİYEL torkundan gelir ve aynı motorlar yatışı da taşır; 40-55°
+    # yatışta 200 °/s yaw talebi attitude payını yiyor. 120, 0-15 m bandının
+    # medyan ihtiyacını (38.5 °/s) ve p90'ının (134) neredeyse tamamını
+    # karşılar — eski sabit 45'in üç katı — ama motor payını tüketmez.
+    YAW_RATE_TAVAN = math.radians(120.0)
 
     # --- KESME (öngörülü istasyon) ---
     # Neden gerekli: bkz. modül başlığı KADEME 1b. Saf takip, hedeften yavaş
@@ -189,6 +247,12 @@ _CSV_ALANLAR = [
     # hatayı GÖRMÜYOR (aksi halde ANGLE_MAX=70°'e dayanırdı).
     "iris_vx", "iris_vy", "iris_vz", "iris_hiz", "iris_egim_deg",
     "v_cmd_mag", "tgt_hiz", "tgt_omega_deg", "t_go_s",
+    # Devir kapısının geometri koşulu (supervisor okur) — 0° = tam kuyrukta.
+    "kuyruk_aci_deg",
+    # Yaw tavanının kerterize bağlanması (2026-08-04): gereken kerteriz hızı ve
+    # o karede İZİN VERİLEN tavan. İkisi sürekli eşitse tavan hâlâ kısıtlıyor
+    # demektir — KERTERIZ_PAY/YAW_RATE_TAVAN yükseltilmeli.
+    "kerteriz_hizi_deg", "yaw_tavan_deg",
 ]
 
 
@@ -255,6 +319,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
     omega = 0.0                    # hedefin kestirilen dönüş hızı (rad/s)
     psi_prev = None                # önceki hedef hız-yönü (rad)
+    bearing_onceki = None          # önceki kerteriz (yaw tavanını ölçeklemek için)
+    kerteriz_hizi = 0.0            # |d(kerteriz)/dt| (rad/s)
+    yaw_tavan = cfg.YAW_RATE_TABAN # o karede uygulanan yaw hız tavanı (log)
 
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
@@ -411,13 +478,22 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 vy *= s
             vz = clamp(vel_z + cfg.KP_Z * ez_cmd, -cfg.VZ_MAX, cfg.VZ_MAX)
 
-            # ── 7) YAW: burun GERÇEK hedefe ──
+            # ── 7) YAW: burun GERÇEK hedefe, tavan KERTERİZ HIZIYLA ölçekli ──
             bearing = math.atan2(ey, ex)
             if cmd_yaw is None:
                 cmd_yaw = bearing
+            # kerteriz hızı = bakış açısının değişim hızı (rad/s). Bu, burnun
+            # hedefte kalabilmesi için EN AZ yapması gereken dönme hızıdır.
+            if bearing_onceki is not None and dt > 1e-6:
+                kerteriz_hizi = abs(normalize_angle(bearing - bearing_onceki)) / dt
+            else:
+                kerteriz_hizi = 0.0
+            bearing_onceki = bearing
+            yaw_tavan = clamp(cfg.KERTERIZ_PAY * kerteriz_hizi + cfg.YAW_RATE_TABAN,
+                              cfg.YAW_RATE_TABAN, cfg.YAW_RATE_TAVAN)
             yaw_err = normalize_angle(bearing - cmd_yaw)
             if abs(yaw_err) > cfg.YAW_DEADBAND:
-                step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
+                step = clamp(yaw_err, -yaw_tavan * dt, yaw_tavan * dt)
                 cmd_yaw = normalize_angle(cmd_yaw + step)
 
             # ── 8) İVME SINIRI + GÖNDER ──
@@ -472,6 +548,10 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "tgt_hiz": round(tgt_spd_h, 2),
                 "tgt_omega_deg": round(math.degrees(omega), 1),
                 "t_go_s": round(t_go, 2),
+                "kuyruk_aci_deg": (round(kuyruk_aci, 1)
+                                   if kuyruk_aci is not None else ""),
+                "kerteriz_hizi_deg": round(math.degrees(kerteriz_hizi), 1),
+                "yaw_tavan_deg": round(math.degrees(yaw_tavan), 1),
             })
             f.flush()
 

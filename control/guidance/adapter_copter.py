@@ -129,6 +129,12 @@ class CopterAdapter:
                                        *self.v_onceki, cfg.IVME_TAVAN, dt)
             v_doygun = (abs(v_cmd[0] - v_hedef[0]) + abs(v_cmd[1] - v_hedef[1])
                         + abs(v_cmd[2] - v_hedef[2])) > 1e-9
+        # DİKEY TAVAN: aracın yapabildiğinin üstünü komutlamak dikey aşıma ve
+        # (ölçüldü) çöküşe yol açıyor. Yatay bileşen korunur — nişan düzleşir.
+        vz_tavan = getattr(cfg, "VZ_TAVAN", None)
+        if vz_tavan is not None and abs(v_cmd[2]) > vz_tavan:
+            v_cmd = (v_cmd[0], v_cmd[1], clamp(v_cmd[2], -vz_tavan, vz_tavan))
+            v_doygun = True
         self.v_onceki = v_cmd
 
         # Yaw: mevcut heading üstüne KP'li adım, YAW_HIZ_MAX ile slew-limitli

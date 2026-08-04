@@ -54,23 +54,40 @@
 # — hedefin yeni bandının (13-17 m/s, avci_plane.parm) rahatça üstünde.
 # (Eski dosya 70° istiyordu; o 67° sınırının ÜSTÜNDE olduğu için araç yatışı
 # koruyamaz, irtifa sızdırır. İstenmiş ama zaten hiç uygulanmamıştı.)
-ATC_ANGLE_MAX 55
+# 55 → 65 (2026-08-04, iki çöküşten sonra). 55 YANLIŞ SEÇİMDİ: bu bir GÜVENLİK
+# tavanı olmalı, ÇALIŞMA NOKTASI değil. Ölçüm (uçuş 4, 3378 kare): yatış medyanı
+# 40.6°, p90 54.6° — yani araç ömrünü tavana DAYALI geçirdi. Tavandayken attitude
+# kontrolcüsünün düzeltme payı sıfırdır; ilk bozulmada takla attı (roll −114°…+74°,
+# pitch −71°…+84°, yatış p99 90.4° max 115.5°, 52 kare 80°'nin üstünde).
+# 65, çalışma bandının (~40-50°) üstünde pay bırakır. Üst sınırı firmware zaten
+# KENDİ dayatıyor: althold_lean_angle_max = acos(MOT_THST_HOVER) = acos(0.39)
+# = 67°; ArduCopter bunu her karede uygular, yani 65 yazmak aracı irtifa
+# koruyamayacağı bir yatışa ZORLAMAZ. Asıl talep sınırlayıcı WP_ACC'dir.
+ATC_ANGLE_MAX 65
 
 # =============================================================
 #  GUIDED hız/ivme tavanları — güdümün asıl darboğazı
 # =============================================================
 # WP_ACC 12 m/s²: 55° yatışta ulaşılabilir ivme g·tan(55°) = 14.0 m/s².
-# 12, o zarfın İÇİNDE kalır (yatış 50.7°) — kontrolcü ATC_ANGLE_MAX'a
-# dayanıp limit çevrimine girmez. Ayrıca gps_guidance.Cfg.MAX_ACCEL de
-# 12 m/s²; ikisinin aynı olması komut ile aracın aynı zarfta çalışmasını sağlar.
-WP_ACC 12
+# 12 → 8 (2026-08-04, iki çöküşten sonra). 12 m/s² ivme talebi TEK BAŞINA
+# atan(12/9.81) = 50.7° yatış ister; üstüne hızı SÜRDÜRMEK için gereken
+# sürükleme yatışı binince toplam 65°'yi de aşıyor ve araç limitte yaşıyor.
+# 8 m/s² → 39.2°; sürükleme payıyla toplam ~55°'de kalır, tavana 10° pay kalır.
+# gps_guidance.Cfg.MAX_ACCEL ile AYNI tutulacak (komut ve araç aynı zarfta).
+# DOĞRULAMA: analiz_gps'te "avcı toplam eğim" p90'ı 60°'yi geçiyorsa bu değer
+# hâlâ yüksek. 2.5'e (varsayılan) dönmeyin — o, arıza 9'un ta kendisiydi.
+WP_ACC 8
 # WP_SPD 25 m/s: gps_guidance V_MAX 20, görsel faz V_KAPANMA 25. Tavan
 # güdümün isteyebileceği en yüksek değere eşit — kısıtlama güdümde kalsın.
 WP_SPD 25
 # Dikey: gps_guidance VZ_MAX 6 m/s (drone hedefin 4.65 m altına inip çıkıyor).
 # Varsayılanlar 2.5/1.5 m/s idi, yani dikey kanal komutun yarısını uyguluyordu.
 WP_SPD_UP 6
-WP_SPD_DN 6
+# WP_SPD_DN 6 → 4 (2026-08-04 çöküşü): 6 m/s'lik sürekli iniş avcıyı kendi
+# pervane akımına düşürdü (vortex ring state), eğim 103.9°'ye fırladı ve araç
+# düştü. İniş tavanı tırmanıştan DÜŞÜK olmalı — inişte pervane kendi akımıyla
+# yarışır. gps_guidance.Cfg.VZ_MAX ile aynı tutulacak.
+WP_SPD_DN 4
 WP_ACC_Z 5
 
 # Jerk (ivmenin değişim hızı, m/s³). Varsayılan 5 ile 12 m/s²'ye ulaşmak

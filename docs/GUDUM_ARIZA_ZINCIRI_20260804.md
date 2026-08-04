@@ -305,3 +305,108 @@ bloklandığını söyler — eşikler `AVCI_HYBRID_GATE_KADRAJ` /
 
 G15, kapalı formu kendisiyle değil **bağımsız sayısal integrasyonla**
 karşılaştırır — totoloji değil.
+
+---
+
+# UÇUŞ DOĞRULAMASI (aynı gün, beş uçuş)
+
+Yukarıdaki düzeltmeler uçuşta sınandı. Senaryo hep aynı: `circle`, gaz 500,
+240 s (`python3 -m tools.analiz.otonom_test circle 500 240`).
+
+| | başlangıç (08-01) | uçuş 1 | uçuş 3 | uçuş 4 | **uçuş 5** |
+|---|---|---|---|---|---|
+| hedef hızı | 18.0 m/s | 13.8 | 13.8 | 13.8 | **13.8** |
+| en yakın menzil | 82 m (plato) | 5.0 m | 11.9 | 4.9 | **7.0 m** |
+| menzil < 20 m olan kare | %0.04 | %42 | — | — | **%55** |
+| pose kilidi (en uzun) | 18 | 65 | 10 | 30 | **26** |
+| görsel devir | 0 | 8 | 1 | 3 | **6** |
+| en uzun görsel faz | 1.0 s | 6.4 s | — | — | **6.3 s** |
+| avcı yatışı (medyan) | 14.6° | 43.2° | — | 40.6° | **35.8°** |
+| yatış > 80° (takla) | 0 | 0 | var | 52 kare | **0** |
+| gerçekleşen/komut | 0.47 | 0.88 | — | — | **0.94** |
+| **sonuç** | 19 dk plato | ıska | **düştü** | **düştü** | **240 s temiz** |
+
+(Uçuş 2 geçersiz: GCS yeniden başlatılırken hedef önceki uçuştan kalma şekilde
+2.7 km uzağa sürüklenmişti, GPS fazı hiç WARMUP'tan çıkmadı. Ortam durumu,
+kod değil. **Ders: yalnız gcs_server'ı yeniden başlatmak yetmez — hedef havada
+kalır. Kod değişiminden sonra `start_harmonic.sh stop` ile TAM temizlik yap.**)
+
+## Uçuş 1 — arıza 9-12 düzeltmeleri işe yaradı
+
+Menzil 287 → 18.2 m'ye **30 saniyede** indi (öncesi: 89 → 82 ve 19 dakika
+sabit). Ama kadraj bozuldu: `|kadraj_yaw|` medyanı fazlar ilerledikçe
+3.3° → 12.5 → 25.2 → 37.6° büyüdü.
+
+Ölçüm (3425 kare, dokuz GPS fazı) sebebi tek satırda verdi:
+
+```
+komut yaw hızı: med 44.0, p75 46.0, p99 46.0   ← %99 TAVANDA (45 °/s)
+GEREKEN kerteriz hızı, menzil bandına göre:
+  60+ m   med  4.5  p90  18.7 °/s
+  30-60 m med 10.1  p90  36.0 °/s
+  15-30 m med 18.5  p90  50.1 °/s
+  0-15 m  med 38.5  p90 134.0 °/s   ← DEVİR BANDI
+```
+
+45 °/s doğru ölçülmüştü ama **yanlış rejim için**: o gün avcı 8-14 m/s uçuyor
+ve 82 m'de takılıyordu, orada gereken 4.5-18.7 °/s'dir. Kopter parametreleri
+düzelip avcı gerçekten yaklaşınca rejim değişti ve aynı tavan kısıtlayıcı oldu.
+
+**Arıza 13 — yaw tavanı sabit olamaz.** Yeni yasa:
+`tavan = clamp(1.5·|kerteriz_hızı| + 20°/s, 20, 120)`. Bu, eski sabit tavanın
+çözdüğü patolojiyi (burun sakin kerterizde 368 °/s savrulup hedefi kendi
+hareketiyle süpürüyordu) **yapısal olarak** da önler: kerteriz sakinse tavan
+zaten 20 °/s'dir.
+
+## Uçuş 3 ve 4 — düzeltmenin getirdiği iki çöküş
+
+Avcı hızlanınca iki yeni arıza ortaya çıktı. İkisi de ancak araç gerçekten
+hızlıyken görülebilirdi.
+
+**Arıza 14 — görsel faz avcıyı hedefin 41 m ÜSTÜNE çıkardı.**
+Ölçüm (`visual_lead_20260804_130535`, 180 kare): `vz_cmd` medyanı **−15.3 m/s**,
+tepe **−24.3 m/s** tırmanış. Sebep: nişan yönü V_KAPANMA (25 m/s) ile
+çarpılıyor; nişan yukarı eğimliyse (kamera 25° tilt + dikey PN 15° + terminal
+co-altitude 10°) dikey bileşen devasa oluyor. Araç bunu uygulayamaz
+(`WP_SPD_UP` 6 m/s) ama denerken hedefin üstüne çıkıyor, hedef kadrajın altında
+kalıyor, temas kopuyor.
+→ `Cfg.VZ_TAVAN = 6.0 m/s`, `adapter_copter`'da kırpılıyor. Yatay bileşen
+KIRPILMAZ — nişan düzleşir, kapanma yavaşlamaz (test T42/T43).
+Doğrulama: uçuş 5'te irtifa 53-69 m bandında kaldı (uçuş 3'te 98.8 m).
+
+**Arıza 15 — sürekli 6 m/s iniş girdap halkasına sokuyor.**
+GPS fazı 45 m'lik irtifa fazlasını `VZ_MAX = 6` ile boşaltırken avcı kendi
+pervane akımına düştü: `vz_cmd` 5+ saniye tavanda doygun, yatış
+41° → 64.8° → 81° → **103.9°** (90° geçince ters dönme), gerçek hız 0.8 m/s.
+→ `VZ_MAX` 6 → 4, `WP_SPD_DN` 6 → 4. İniş tavanı tırmanıştan DÜŞÜK olmalı.
+
+**Arıza 16 — `ATC_ANGLE_MAX` bir çalışma noktası değil, güvenlik tavanıdır.**
+Uçuş 4 (3378 kare): yatış medyanı 40.6°, **p90 54.6°** — yani araç ömrünü
+55°'lik tavana DAYALI geçirdi. Tavandayken attitude kontrolcüsünün düzeltme
+payı sıfırdır; ilk bozulmada takla attı (roll −114°…+74°, pitch −71°…+84°,
+yatış p99 90.4°, 52 kare 80° üstünde).
+→ Üç değer birlikte ayarlandı ki TALEP tavanın altında kalsın:
+`ATC_ANGLE_MAX` 55 → **65** (üst sınırı firmware zaten
+`acos(MOT_THST_HOVER) = 67°` ile dayatıyor), `WP_ACC` 12 → **8** (ivme yatışı
+50.7° → 39.2°), `V_MAX` 20 → **17**, `MAX_ACCEL` 12 → **8** (`WP_ACC` ile aynı),
+`YAW_RATE_TAVAN` 200 → **120** (yaw yetkisi motorların diferansiyel torkundan
+gelir ve aynı motorlar yatışı taşır).
+
+Uçuş 5 sonucu: yatış medyanı **35.8°**, p90 46.7°, **80° üstü 0 kare**.
+
+## Uçuş 5 — kalan durum
+
+240 saniye kesintisiz, çöküş yok:
+
+```
+menzil          med  16.6 m   |  karelerin %55'i 20 m altında
+yatış           med  35.8°    p90 46.7°   80° üstü: 0/3591
+gerçek hız      med  15.2 m/s (komut 16.1 → oran 0.94)
+irtifa          med  53.2 m   p99 68.0    (hedef 57.7)
+yaw tavanı      med  43.4 °/s p90 100.6   (sabit 45 olsaydı hepsi 45)
+görsel faz      6 devir, en uzunu 6.3 s
+```
+
+**Hâlâ açık:** vuruş yok. `|kadraj_yaw|` p90 43.5° — kadraj devir anında hâlâ
+bozulabiliyor, ve menzil ara sıra 70 m'ye geri açılıyor. Sıradaki iş kalemi
+budur; artık ölçülebilir durumda çünkü uçuş 240 saniye ayakta kalıyor.

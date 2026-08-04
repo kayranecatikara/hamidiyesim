@@ -215,8 +215,15 @@ def main():
             f"alanlar={sorted(out.keys())}")
 
     # ── T18: |v_cmd| = V_KAPANMA (±%1), yönü u_dunya ile aynı ──
+    # 2026-08-04: nişanın dikey bileşeni KÜÇÜLTÜLDÜ (−0.42 → −0.20). Sebep,
+    # testin zayıflatılması değil: artık dikey hız VZ_TAVAN ile kırpılıyor
+    # (Cfg.VZ_TAVAN, çöküş gerekçesi orada). −0.42 ile vz = 25·0.42 = 10.5 m/s
+    # olur, yani 6 m/s tavanın üstünde — o durumda |v| = V_KAPANMA olmaması
+    # DOĞRU davranıştır ve ayrıca T42/T43'te sınanır. Bu test, kırpmanın
+    # DEVREDE OLMADIĞI zarf içinde adaptörün tam kapanma hızını verdiğini
+    # doğrular: 25·0.20 = 5.0 m/s < 6.
     ad = CopterAdapter(cfg)
-    u_g = np.array([0.9, 0.1, -0.42]); u_g = u_g / np.linalg.norm(u_g)
+    u_g = np.array([0.9, 0.1, -0.20]); u_g = u_g / np.linalg.norm(u_g)
     out = None
     for i in range(200):                      # rampa otursun
         out = ad.compute(u_g, 0.0, (0, 0, 0), 1.0 / 30.0, 0.0)
@@ -432,10 +439,17 @@ def main():
     out = ad.compute(np.array([math.cos(e), 0.0, -math.sin(e)]), 0.0, (0, 0, 0), dt, 0.0)
     cikis_elev = math.degrees(math.asin(max(-1.0, min(1.0, -float(out["u_dunya"][2])))))
     vn = np.linalg.norm(np.array(out["v_cmd"]))
+    # |v| = V_KAPANMA koşulu YATAY bileşene taşındı: bu testin konusu dikey aim
+    # yumuşatma, ve 39.5°'lik yükselişte dikey bileşen (25·sin39.5 = 15.9 m/s)
+    # artık VZ_TAVAN ile kırpılıyor — bu kasıtlı (bkz. Cfg.VZ_TAVAN). Kırpmanın
+    # YATAY kapanmayı bozmadığını doğrulamak, testin asıl güvencesidir.
+    v_yatay = math.hypot(out["v_cmd"][0], out["v_cmd"][1])
+    yatay_bekl = cfg.V_KAPANMA * math.cos(math.radians(cikis_elev))
     kontrol("T29 dikey aim yumuşatma sıçramayı kırpar",
             cikis_elev < 45.0 and abs(out["pn_dikey_deg"]) <= cfg.PN_DIKEY_MAX_DEG + 1e-6
-            and abs(vn - cfg.V_KAPANMA) / cfg.V_KAPANMA < 0.01,
-            f"ham=70° komut_yükseliş={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}° |v|={vn:.2f}")
+            and abs(v_yatay - yatay_bekl) / yatay_bekl < 0.01,
+            f"ham=70° komut_yükseliş={cikis_elev:.2f}° pn={out['pn_dikey_deg']:.2f}° "
+            f"|v_yatay|={v_yatay:.2f} (beklenen {yatay_bekl:.2f})")
 
     # ══ T30-T33: DOĞRULUK REFERANSI (vision/dogruluk.py) ══
     # Bu testler ANALİZ ZEMİNİNİ doğrular: MÜKEMMEL bir pose modeli taklit edilip
@@ -592,6 +606,33 @@ def main():
             r_y["yandanlik_ham"] <= 1.0 + 1e-12,
             f"yandanlik_ham={r_y['yandanlik_ham']:.4f} "
             f"(a/olcek ham={r_y['a']/r_y['olcek']:.4f})")
+
+    # ══════════════════════════════════════════════════════════
+    #  T42-T43  DİKEY HIZ TAVANI (2026-08-04 çöküşü)
+    # ══════════════════════════════════════════════════════════
+    # T42 Dikliğine yukarı nişanda vz komutu VZ_TAVAN'ı aşmamalı. Kırpma
+    # OLMADAN 25 m/s'lik kapanma hızı doğrudan 25 m/s tırmanış komutu olur;
+    # ölçülen çöküşte vz_cmd −24.3 m/s'ye çıkmıştı.
+    cfgV = cfg_copy()
+    adV = CopterAdapter(cfgV)
+    # gövde-FRD'de dik yukarı: (0, 0, -1). Attitude seviyeli → dünya NED'de de yukarı.
+    outV = adV.compute([0.0, 0.0, -1.0], 0.0, (0.0, 0.0, 0.0), 1.0 / 30.0, 0.0)
+    kontrol("T42 dikey hız komutu VZ_TAVAN ile kırpılır",
+            abs(outV["v_cmd"][2]) <= cfgV.VZ_TAVAN + 1e-9,
+            f"vz_cmd={outV['v_cmd'][2]:+.2f} m/s, tavan ±{cfgV.VZ_TAVAN} "
+            f"(kırpmasız {-cfgV.V_KAPANMA:+.1f} olurdu)")
+
+    # T43 Kırpma YATAY bileşeni bozmamalı — nişan düzleşir, yavaşlamaz.
+    # 45° yukarı nişan: yatay ve dikey bileşen eşit (25/√2 = 17.7 m/s).
+    adV2 = CopterAdapter(cfg_copy())
+    s2 = math.sqrt(0.5)
+    outH = adV2.compute([s2, 0.0, -s2], 0.0, (0.0, 0.0, 0.0), 1.0 / 30.0, 0.0)
+    yatay_bekl = cfgV.V_KAPANMA * s2
+    kontrol("T43 dikey kırpma yatay kapanmayı azaltmaz",
+            abs(outH["v_cmd"][0] - yatay_bekl) < 0.1
+            and abs(outH["v_cmd"][2]) <= cfgV.VZ_TAVAN + 1e-9,
+            f"vx={outH['v_cmd'][0]:.2f} (beklenen {yatay_bekl:.2f}), "
+            f"vz={outH['v_cmd'][2]:+.2f}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
