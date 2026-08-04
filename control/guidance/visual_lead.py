@@ -52,6 +52,8 @@ _CSV_ALANLAR = [
     "gercek_yaw_deg", "gercek_elev_deg", "gercek_menzil_ham_m",
     "gercek_u_px", "gercek_v_px", "gercek_onde", "gercek_kadraj_ici",
     "pose_yaw_sapma_deg", "pose_elev_sapma_deg", "pose_menzil_sapma_m",
+    # Hangi bayraklarla uçuldu — yalnız İLK satırda dolu (bkz. _yapilandirma).
+    "yapilandirma",
 ]
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
@@ -310,13 +312,33 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
     f = open(csv_yol, "w", newline="")
     w = csv.DictWriter(f, fieldnames=_CSV_ALANLAR, extrasaction="ignore")
     w.writeheader()
+    # YAPILANDIRMA DAMGASI (2026-08-04): hangi bayraklarla uçulduğu logdan
+    # okunabilsin. Olmadığı için A2/A3/A4 koşuları birbirinden ayırt edilemedi
+    # ve deney tekrarlanmak zorunda kaldı — takip açık/kapalı CSV'de hiçbir ize
+    # bırakmıyordu. İlk satıra yazılır (sonraki satırlarda boş).
+    _yapilandirma = ",".join([
+        f"GT={'on' if getattr(cfg, 'GT_ROT', False) else 'off'}",
+        f"POSE={os.environ.get('AVCI_POSE', 'on')}",
+        f"KILIT_BYPASS={os.environ.get('AVCI_GT_KILIT_BYPASS', 'off')}",
+        f"TRACKER={os.environ.get('AVCI_TRACKER', 'off')}",
+        f"LOCK={os.environ.get('AVCI_LOCK', 'on')}",
+        f"V_KAPANMA={cfg.V_KAPANMA}",
+        f"K_LEAD={cfg.K_LEAD}",
+        f"IVME={cfg.IVME_TAVAN}/{cfg.IVME_TAVAN_DIKEY}",
+    ])
+    _yapilandirma_yazildi = False
     print(f"[LEAD] IBVS lead pursuit başladı (copter, "
           f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}) — log: {csv_yol}")
+    print(f"[LEAD] YAPILANDIRMA: {_yapilandirma}")
 
     def _satir(row, res=None):
         # Cevap anahtarı HER satıra yazılır (tespit_yok/kör dalış dahil — asıl
         # sorulacak soru zaten "kaçırdığımız karede hedef neredeydi"). Ölçüm
         # amaçlı; güdüm bu değerleri okumaz, bkz. _cevap_anahtari.
+        nonlocal _yapilandirma_yazildi
+        if not _yapilandirma_yazildi:
+            row["yapilandirma"] = _yapilandirma
+            _yapilandirma_yazildi = True
         _cevap_anahtari(row, hedef_ned, aras, res)
         w.writerow(row)
         f.flush()
