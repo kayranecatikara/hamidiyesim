@@ -1,1060 +1,900 @@
-// DOM Elements
-const connDot = document.getElementById('conn-dot');
-const connText = document.getElementById('conn-text');
-const netLatency = document.getElementById('net-latency');
-const netLoss = document.getElementById('net-loss');
-const netHb = document.getElementById('net-hb');
-const eventLog = document.getElementById('event-log');
+/* ══════════════════════════════════════════════════════════════════════
+   AVCI GCS — Taktik Saha Ekranı (canlı)
 
-// Panels
-const modeTarget = document.getElementById('mode-target');
-const modeHunter = document.getElementById('mode-hunter');
-const targetControls = document.getElementById('target-controls');
-const hunterControls = document.getElementById('hunter-controls');
+   Bu dosyada SİMÜLE VERİ YOKTUR. Ekrandaki her sayı gcs_server'dan gelir:
+     ws://.../ws              → iris + plane telemetrisi (10 Hz)
+     /api/video_feed/{iris|plane} → MJPEG (YOLO/pose overlay'i sunucuda çizili)
+     /api/chase_status        → görev + supervisor fazı + gps_guidance durumu
+     /api/telemetry/pnp       → görüş hattı (tespit/pose/menzil) + faz kapıları
+     /api/scenario_status     → senaryo süreci yaşıyor mu (buton senkronu)
+     /api/hasar               → gerçek Gazebo teması (imha)
+   Komutlar klasik arayüzle AYNI uçlara gider; PWM eşlemesi de birebir aynıdır.
+   ══════════════════════════════════════════════════════════════════════ */
+(() => {
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const monoFont = 'ui-monospace,Menlo,Consolas,monospace';
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// Kamera stream'ini değiştiren fonksiyon
-// MJPEG multipart stream tarayıcıda süresiz bağlantı açar,
-// src değiştirmek her zaman eski bağlantıyı kapatmaz.
-// Bu yüzden eski img'yi DOM'dan silip yenisini oluşturuyoruz.
-function switchCamera(vehicle) {
-    const container = document.querySelector('.fpv-container');
-    const oldImg = document.getElementById('fpv-stream');
-    if (oldImg) {
-        oldImg.src = '';  // eski stream bağlantısını kes
-        oldImg.remove();  // DOM'dan kaldır
-    }
-    const newImg = document.createElement('img');
-    newImg.id = 'fpv-stream';
-    newImg.alt = 'Video Yükleniyor...';
-    newImg.style.cssText = 'object-fit: cover; width: 100%; height: 100%;';
-    // cache-buster ile tarayıcıyı yeni bağlantı açmaya zorla
-    newImg.src = `/api/video_feed/${vehicle}?t=${Date.now()}`;
-    // HUD overlay'in önüne (arkasına) ekle
-    const hudOverlay = container.querySelector('.hud-overlay');
-    container.insertBefore(newImg, hudOverlay);
+// ══ OLAY KAYDI ═════════════════════════════════════════════════════════
+const logBody = $('logBody');
+function tstamp(){
+  const d = new Date();
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map(n => String(n).padStart(2, '0')).join(':');
+}
+function addLog(cls, tag, msg){
+  const atBottom = logBody.scrollHeight - logBody.scrollTop - logBody.clientHeight < 40;
+  const row = document.createElement('div');
+  row.className = 'logrow ' + cls;
+  row.innerHTML = '<span class="tm"></span><span class="tag"></span><span class="msg"></span>';
+  row.children[0].textContent = tstamp();
+  row.children[1].textContent = tag;
+  row.children[2].textContent = msg;          // textContent: sunucu metni HTML olarak yorumlanmasın
+  logBody.appendChild(row);
+  while (logBody.children.length > 200) logBody.removeChild(logBody.firstElementChild);
+  if (atBottom) logBody.scrollTop = logBody.scrollHeight;
+}
+addLog('sys', 'SYS', 'Y.K.İ taktik ekranı başlatıldı — sunucu dinleniyor.');
+
+// ══ DURUM ══════════════════════════════════════════════════════════════
+const st = {
+  tab: 'hedef',              // hangi aracın kamerası/kontrolü açık
+  scenario: null,            // square | circle | aggressive | null
+  manual: false,
+  mission: false,            // chase (hibrit güdüm) aktif mi
+  telem: { iris: null, plane: null },
+  range: null,               // iris ↔ plane 3B menzil (m)
+  rangeRate: null,           // m/s (negatif = yaklaşıyor)
+  pnp: null,
+  faz: null,                 // GPS | VISUAL | VURULDU | DURDU
+  imha: false,
+};
+const SCN_LBL = { square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
+
+// ══ KAMERA ─ MJPEG akışı ═══════════════════════════════════════════════
+// MJPEG multipart bağlantısı süresiz açık kalır; src değiştirmek eski
+// bağlantıyı her tarayıcıda kapatmaz. Bu yüzden <img> DOM'dan silinip
+// yeniden kurulur (klasik arayüzdeki switchCamera ile aynı gerekçe).
+function switchCamera(vehicle){
+  const wrap = $('fpvwrap');
+  const old = $('fpvImg');
+  if (old){ old.src = ''; old.remove(); }
+  const img = document.createElement('img');
+  img.id = 'fpvImg';
+  img.alt = '';
+  // MJPEG akışında 'load' ancak akış BİTİNCE tetiklenir; ilk karenin gelip
+  // gelmediği naturalWidth'ten anlaşılır (frame döngüsü yokluyor).
+  img.src = `/api/video_feed/${vehicle}?t=${Date.now()}`;
+  wrap.insertBefore(img, wrap.firstChild);
+  $('noFeed').hidden = false;
 }
 
-// Radio Button UI Toggle
-modeTarget.addEventListener('change', () => {
-    if(modeTarget.checked) {
-        targetControls.classList.add('active-section');
-        hunterControls.classList.remove('active-section');
-        switchCamera('plane');
-        addLog('SYS', 'UI Modu Değiştirildi: HEDEF İHA Seçili');
-    }
-});
+function setTab(t){
+  st.tab = t;
+  $('segT').setAttribute('aria-pressed', String(t === 'hedef'));
+  $('segA').setAttribute('aria-pressed', String(t === 'avci'));
+  $('viewHedef').hidden = t !== 'hedef';
+  $('viewAvci').hidden  = t !== 'avci';
+  $('camTag').textContent = t === 'hedef' ? 'CAM · HEDEF İHA' : 'CAM · AVCI';
+  $('oVeh').textContent = t === 'hedef' ? 'HEDEF' : 'AVCI';
+  $('manBadge').hidden = !(t === 'hedef' && st.manual);
+  switchCamera(t === 'hedef' ? 'plane' : 'iris');
+  addLog('sys', 'SYS', t === 'hedef' ? 'Kamera: HEDEF İHA (Talon burun)' : 'Kamera: AVCI DRONE (iris)');
+}
+$('segT').addEventListener('click', () => { if (st.tab !== 'hedef') setTab('hedef'); });
+$('segA').addEventListener('click', () => { if (st.tab !== 'avci')  setTab('avci'); });
 
-modeHunter.addEventListener('change', () => {
-    if(modeHunter.checked) {
-        hunterControls.classList.add('active-section');
-        targetControls.classList.remove('active-section');
-        switchCamera('iris');
-        addLog('SYS', 'UI Modu Değiştirildi: AVCI DRONE Seçili');
-    }
-});
-
-// Helper: Add Event Log
-function addLog(source, message, level='info') {
-    const el = document.createElement('div');
-    el.className = `log-entry ${level}`;
-
-    const d  = new Date();
-    const hh = d.getHours().toString().padStart(2,'0');
-    const mm = d.getMinutes().toString().padStart(2,'0');
-    const ss = d.getSeconds().toString().padStart(2,'0');
-    const ms = d.getMilliseconds().toString().padStart(3,'0');
-    const t  = `${hh}:${mm}:${ss}.${ms}`;
-
-    el.innerHTML = `
-        <span class="log-time">[${t}]</span>
-        <span class="log-src">[${source}]</span>
-        <span class="log-msg">${message}</span>
-    `;
-
-    // Kullanıcı manuel scroll yaptıysa onu bozma
-    // Eğer zaten en alttaysa (veya kullanıcı hiç scroll yapmadıysa) → auto-scroll
-    const isAtBottom = eventLog.scrollHeight - eventLog.scrollTop - eventLog.clientHeight < 40;
-
-    eventLog.appendChild(el); // en yeni ALTA
-
-    if (isAtBottom) {
-        eventLog.scrollTop = eventLog.scrollHeight;
-    }
-
-    // Max 100 satır tut
-    while (eventLog.children.length > 100) {
-        eventLog.removeChild(eventLog.firstChild);
-    }
+// ══ WEBSOCKET TELEMETRİ ════════════════════════════════════════════════
+let lastMsg = 0, msgCount = 0, wsOpen = false;
+function connectWS(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    wsOpen = true;
+    $('connBadge').classList.add('on');
+    $('connTxt').textContent = 'ONLINE';
+    addLog('sys', 'NET', 'Telemetri bağlantısı kuruldu.');
+  };
+  ws.onclose = () => {
+    wsOpen = false;
+    $('connBadge').classList.remove('on');
+    $('connTxt').textContent = 'BAĞLANTI YOK';
+    addLog('err', 'NET', 'Bağlantı koptu — yeniden bağlanılıyor.');
+    setTimeout(connectWS, 1000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  ws.onmessage = ev => {
+    lastMsg = performance.now(); msgCount++;
+    let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
+    onTelemetry(d);
+  };
 }
 
-// Initial Log
-addLog('SYS', 'Y.K.İ. Başlatıldı. Sistem dinleniyor...', 'info');
+function alive(v){ return v && !(v.x === 0 && v.y === 0 && v.z === 0); }
 
-// === WebSocket ====
-let lastHbTime = Date.now();
+let lastRangeT = 0, lastRange = null;
+function onTelemetry(d){
+  if (d.iris)  st.telem.iris  = d.iris;
+  if (d.plane) st.telem.plane = d.plane;
+  const ir = st.telem.iris, pl = st.telem.plane;
 
-function connectWebSocket() {
-    const wsUrl = `ws://${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-        connDot.className = 'dot green';
-        connText.textContent = 'LINK ACTIVE';
-        connText.style.color = 'var(--success-green)';
-        addLog('NET', 'Local Gazebo Sim Bağlantısı Kuruldu', 'info');
-        netLatency.textContent = '12';
-        netLoss.textContent = '0.0';
-    };
-
-    ws.onclose = () => {
-        connDot.className = 'dot red';
-        connText.textContent = 'LINK LOST';
-        connText.style.color = 'var(--danger-red)';
-        addLog('NET', 'Bağlantı Koptu! Yeniden bağlanılıyor...', 'crit');
-        setTimeout(connectWebSocket, 1000);
-    };
-
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        lastHbTime = Date.now();
-        updateTelemetry(data);
-    };
+  if (alive(ir) && alive(pl)){
+    const r = Math.hypot(pl.x - ir.x, pl.y - ir.y, pl.z - ir.z);
+    const now = performance.now();
+    if (lastRange !== null && now > lastRangeT){
+      const rate = (r - lastRange) / ((now - lastRangeT) / 1000);
+      st.rangeRate = st.rangeRate === null ? rate : st.rangeRate * 0.8 + rate * 0.2;
+    }
+    lastRange = r; lastRangeT = now;
+    st.range = r;
+  }
+  if (alive(ir)) pushTrail(world.aTrail, ir);
+  if (alive(pl)) pushTrail(world.tTrail, pl);
+  renderTelemetryPanels();
 }
 
-// Heartbeat updater
+// NED (x=Kuzey, y=Doğu, z=Aşağı) → sahne dünyası (e=Doğu, n=Kuzey, u=Yukarı)
+const toWorld = v => ({ e: v.y, n: v.x, u: -v.z });
+
+function renderTelemetryPanels(){
+  const ir = st.telem.iris, pl = st.telem.plane;
+  const fmt = (v, s) => (v === undefined || v === null) ? '--' : v.toFixed(1) + (s || '');
+  if (pl){
+    $('tHiz').textContent  = fmt(pl.speed, ' m/s');
+    $('tIrt').textContent  = fmt(-pl.z, ' m');
+    $('tPos').textContent  = `${pl.x.toFixed(1)}, ${pl.y.toFixed(1)}`;
+    $('tHead').textContent = `${Math.round(pl.yaw)}°`;
+  }
+  if (ir){
+    $('aHiz').textContent  = fmt(ir.speed, ' m/s');
+    $('aIrt').textContent  = fmt(-ir.z, ' m');
+    $('aPos').textContent  = `${ir.x.toFixed(1)}, ${ir.y.toFixed(1)}`;
+    $('aHead').textContent = `${Math.round(ir.yaw)}°`;
+  }
+  // FPV üstü telemetri — seçili kameranın aracı
+  const v = st.tab === 'hedef' ? pl : ir;
+  if (v){
+    $('oAlt').textContent = (-v.z).toFixed(0);
+    $('oSpd').textContent = (v.speed ?? 0).toFixed(1);
+    $('oHdg').textContent = String(Math.round((v.yaw + 360) % 360)).padStart(3, '0');
+  }
+  if (st.range !== null){
+    $('oRng').textContent = st.range.toFixed(0);
+    $('sRng').textContent = st.range.toFixed(0);
+    $('posRng').textContent = 'MENZİL ' + st.range.toFixed(0) + ' m';
+    if (st.rangeRate !== null){
+      const r = st.rangeRate;
+      $('sRngCap').textContent = (r < -0.3 ? 'yaklaşıyor · ' : r > 0.3 ? 'uzaklaşıyor · ' : 'sabit · ')
+        + r.toFixed(1) + ' m/s';
+    }
+  }
+}
+
+// Bağlantı sağlığı: HB = son mesajdan bu yana geçen süre, loss = beklenen
+// 10 Hz'in kaçını aldık, latency = hafif bir GET'in gidiş-dönüş süresi.
 setInterval(() => {
-    const diff_sec = ((Date.now() - lastHbTime) / 1000).toFixed(1);
-    netHb.textContent = diff_sec;
-    if(diff_sec > 2.0 && connDot.classList.contains('green')) {
-        addLog('NET', 'Veri akışı gecikmesi: ' + diff_sec + 's', 'warn');
-    }
-}, 500);
+  const hb = lastMsg ? (performance.now() - lastMsg) / 1000 : null;
+  $('hHb').textContent = hb === null ? '--' : hb.toFixed(1) + 's';
+  const beklenen = 10;                       // sunucu 0.1 s'de bir yolluyor
+  const loss = wsOpen ? clamp(100 * (1 - msgCount / beklenen), 0, 100) : 100;
+  $('hLoss').textContent = loss.toFixed(1) + '%';
+  msgCount = 0;
+}, 1000);
 
-// Update Telemetry Panel
-function updateTelemetry(data) {
-    if(data.iris) updateAvci(data.iris);
-    if(data.plane) updateHedef(data.plane);
-    // 3B konum grafiği izleri
-    if(data.iris) recordTrail('iris', data.iris);
-    if(data.plane) recordTrail('plane', data.plane);
-    // Chase modunda konum bilgilerini güncelle
-    if(data.iris && data.plane) updateChasePositions(data.plane, data.iris);
+setInterval(async () => {
+  const t0 = performance.now();
+  try {
+    await fetch('/api/scenario_status', { cache: 'no-store' });
+    $('hLat').textContent = Math.round(performance.now() - t0) + 'ms';
+  } catch (e) { $('hLat').textContent = '--'; }
+}, 3000);
+
+// ══ 3B KONUM İZLEME ════════════════════════════════════════════════════
+// Maketin gezinme mantığı (yörünge / kaydırma / yakınlaştırma) korunmuştur;
+// çizilen noktalar GERÇEK NED telemetrisidir, ölçek veriye göre oturur.
+function mkCanvas(id){
+  const c = $(id), cx = c.getContext('2d');
+  function size(){
+    const r = c.getBoundingClientRect();
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    c.width = Math.max(1, r.width * dpr); c.height = Math.max(1, r.height * dpr);
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c._w = r.width; c._h = r.height;
+  }
+  size(); addEventListener('resize', size);
+  return { c, cx, size };
+}
+const SC = mkCanvas('scene');
+const HALF = Math.PI / 2;
+const TRAIL_MAX = 400;                       // ~40 s iz @ 10 Hz
+let camAz = -0.7, camEl = 0.6, camAzT = -0.7, camElT = 0.6;
+let scZoom = 1, scPanX = 0, scPanY = 0, panMode = false;
+let dragS = false, lx = 0, ly = 0;
+
+const world = {
+  tTrail: [], aTrail: [],
+  view: { cx: 0, cy: 0, span: 60, zMax: 60, init: false },
+};
+function pushTrail(arr, v){
+  const p = toWorld(v);
+  const last = arr[arr.length - 1];
+  if (last && last.e === p.e && last.n === p.n && last.u === p.u) return;
+  arr.push(p);
+  if (arr.length > TRAIL_MAX) arr.shift();
 }
 
-// =====================================================
-// 3B KONUM İZLEME — sağ panel alt grafik
-// NED telemetri (x=Kuzey, y=Doğu, z=Aşağı) → dünya (E, N, YUKARI=-z).
-// Harici kütüphane yok: ortografik projeksiyon + azimut/yükseliş döndürme.
-// =====================================================
-const p3dCanvas = document.getElementById('pos3d-canvas');
-const P3D_TRAIL_MAX = 350;            // ~35 sn iz @ 10 Hz
-const p3dTrails = { iris: [], plane: [] };
-let p3dAzim = -0.8;                   // radyan — sürükleyerek değişir
-let p3dElev = 1.0;                    // 0.15 (yandan) .. 1.5 (tepeden)
-let p3dDrag = null;
-// Otomatik çerçeveleme yumuşatması (grafik zıplamasın)
-const p3dView = { cx: 0, cy: 0, cz: 0, span: 40, init: false };
-
-function recordTrail(name, v) {
-    if (v.x === 0 && v.y === 0 && v.z === 0) return;  // telemetri henüz yok
-    const arr = p3dTrails[name];
-    const last = arr[arr.length - 1];
-    if (last && last.x === v.x && last.y === v.y && last.z === v.z) return;
-    arr.push({ x: v.x, y: v.y, z: v.z });
-    if (arr.length > P3D_TRAIL_MAX) arr.shift();
+function clearActiveView(){
+  document.querySelectorAll('.viewbtns button[data-view]').forEach(x => x.classList.remove('on'));
 }
-
-function p3dNiceStep(raw) {
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    const n = raw / mag;
-    return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
+SC.c.addEventListener('contextmenu', e => e.preventDefault());
+SC.c.addEventListener('pointerdown', e => {
+  dragS = true; lx = e.clientX; ly = e.clientY;
+  try { SC.c.setPointerCapture(e.pointerId); } catch (_) {}
+  e.preventDefault();
+});
+SC.c.addEventListener('pointermove', e => {
+  if (!dragS) return;
+  const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
+  if (panMode || e.shiftKey || e.buttons === 2){ scPanX += dx; scPanY += dy; }
+  else {
+    camAzT = camAz += dx * 0.01;
+    camElT = camEl = clamp(camEl - dy * 0.008, 0, HALF);
+    clearActiveView();
+  }
+});
+SC.c.addEventListener('pointerup', () => { dragS = false; });
+SC.c.addEventListener('pointercancel', () => { dragS = false; });
+SC.c.addEventListener('wheel', e => {
+  e.preventDefault();
+  scZoom = clamp(scZoom * (e.deltaY < 0 ? 1.12 : 0.89), 0.3, 4);
+}, { passive: false });
+SC.c.addEventListener('dblclick', () => {
+  scPanX = 0; scPanY = 0; scZoom = 1; camAzT = -0.7; camElT = 0.6; clearActiveView();
+  const ib = document.querySelector('.viewbtns button[data-view="iso"]');
+  if (ib) ib.classList.add('on');
+});
+function setView(v){
+  if (v === 'iso'){ camAzT = -0.7; camElT = 0.6; }
+  else if (v === 'top')  { camAzT = 0;    camElT = HALF; }   // Kuzey-Doğu düzlemi
+  else if (v === 'front'){ camAzT = 0;    camElT = 0; }      // Doğu-İrtifa
+  else if (v === 'side') { camAzT = HALF; camElT = 0; }      // Kuzey-İrtifa
+  scPanX = 0; scPanY = 0; scZoom = 1;
 }
-
-function p3dRender() {
-    requestAnimationFrame(p3dRender);
-    if (!p3dCanvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = p3dCanvas.clientWidth, h = p3dCanvas.clientHeight;
-    if (w === 0 || h === 0) return;
-    if (p3dCanvas.width !== Math.round(w * dpr)) {
-        p3dCanvas.width = Math.round(w * dpr);
-        p3dCanvas.height = Math.round(h * dpr);
-    }
-    const ctx = p3dCanvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    const all = p3dTrails.iris.concat(p3dTrails.plane);
-    if (all.length === 0) {
-        ctx.fillStyle = '#475569';
-        ctx.font = '11px Roboto Mono, monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('TELEMETRİ BEKLENİYOR...', w / 2, h / 2);
-        return;
-    }
-
-    // ---- Hedef çerçeve: tüm noktaları kapsa (dünya: E=y, N=x, U=-z) ----
-    let mnE = 1e9, mxE = -1e9, mnN = 1e9, mxN = -1e9, mnU = 1e9, mxU = -1e9;
-    for (const p of all) {
-        const E = p.y, N = p.x, U = -p.z;
-        if (E < mnE) mnE = E; if (E > mxE) mxE = E;
-        if (N < mnN) mnN = N; if (N > mxN) mxN = N;
-        if (U < mnU) mnU = U; if (U > mxU) mxU = U;
-    }
-    mnU = Math.min(mnU, 0);                       // zemin hep görünsün
-    const tgtCx = (mnE + mxE) / 2, tgtCy = (mnN + mxN) / 2, tgtCz = (mnU + mxU) / 2;
-    const tgtSpan = Math.max(30, mxE - mnE, mxN - mnN, mxU - mnU) * 1.15;
-    if (!p3dView.init) {
-        p3dView.cx = tgtCx; p3dView.cy = tgtCy; p3dView.cz = tgtCz;
-        p3dView.span = tgtSpan; p3dView.init = true;
-    } else {
-        const a = 0.06;                           // yumuşak takip
-        p3dView.cx += (tgtCx - p3dView.cx) * a;
-        p3dView.cy += (tgtCy - p3dView.cy) * a;
-        p3dView.cz += (tgtCz - p3dView.cz) * a;
-        p3dView.span += (tgtSpan - p3dView.span) * a;
-    }
-
-    const scale = Math.min(w, h) * 0.72 / p3dView.span;
-    const cosA = Math.cos(p3dAzim), sinA = Math.sin(p3dAzim);
-    const cosE = Math.cos(p3dElev), sinE = Math.sin(p3dElev);
-    const scx = w / 2, scy = h / 2 + h * 0.06;
-
-    // NED nokta → ekran. Dünya eksenleri: X=E(doğu) Y=N(kuzey) Z=U(yukarı)
-    function proj(ned) {
-        const X = ned.y - p3dView.cx;
-        const Y = ned.x - p3dView.cy;
-        const Z = -ned.z - p3dView.cz;
-        const x1 = X * cosA - Y * sinA;
-        const y1 = X * sinA + Y * cosA;
-        return {
-            x: scx + x1 * scale,
-            y: scy - (y1 * sinE + Z * cosE) * scale,
-        };
-    }
-    const projW = (E, N, U) => proj({ x: N, y: E, z: -U });
-
-    // ---- Zemin ızgarası (U=0) ----
-    const step = p3dNiceStep(p3dView.span / 4);
-    const gE0 = Math.floor((p3dView.cx - p3dView.span / 2) / step) * step;
-    const gE1 = Math.ceil((p3dView.cx + p3dView.span / 2) / step) * step;
-    const gN0 = Math.floor((p3dView.cy - p3dView.span / 2) / step) * step;
-    const gN1 = Math.ceil((p3dView.cy + p3dView.span / 2) / step) * step;
-    ctx.strokeStyle = 'rgba(42, 49, 61, 0.9)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let E = gE0; E <= gE1 + 0.001; E += step) {
-        const a1 = projW(E, gN0, 0), a2 = projW(E, gN1, 0);
-        ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y);
-    }
-    for (let N = gN0; N <= gN1 + 0.001; N += step) {
-        const a1 = projW(gE0, N, 0), a2 = projW(gE1, N, 0);
-        ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y);
-    }
-    ctx.stroke();
-
-    // Eksen okları + etiketler (ızgara köşesinden)
-    const axLen = step;
-    const o = projW(gE0, gN0, 0);
-    ctx.font = '9px Roboto Mono, monospace';
-    ctx.textAlign = 'center';
-    const axes = [
-        { p: projW(gE0 + axLen, gN0, 0), label: 'D', color: '#798696' },  // doğu
-        { p: projW(gE0, gN0 + axLen, 0), label: 'K', color: '#798696' },  // kuzey
-        { p: projW(gE0, gN0, axLen),     label: 'İRT', color: '#3b82f6' },
-    ];
-    for (const ax of axes) {
-        ctx.strokeStyle = ax.color; ctx.fillStyle = ax.color;
-        ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(ax.p.x, ax.p.y); ctx.stroke();
-        ctx.fillText(ax.label, ax.p.x, ax.p.y - 3);
-    }
-    // Izgara adım bilgisi
-    ctx.fillStyle = '#475569';
-    ctx.textAlign = 'left';
-    ctx.fillText(`ızgara: ${step}m`, 6, h - 6);
-
-    // ---- İzler + araçlar ----
-    const vehicles = [
-        { key: 'iris',  color: '16, 185, 129', label: 'AVCI' },
-        { key: 'plane', color: '239, 68, 68',  label: 'HEDEF' },
-    ];
-    for (const v of vehicles) {
-        const tr = p3dTrails[v.key];
-        if (tr.length === 0) continue;
-        // İz: eskiden yeniye solarak
-        for (let i = 1; i < tr.length; i++) {
-            const alpha = Math.pow(i / tr.length, 1.4) * 0.85;
-            const p1 = proj(tr[i - 1]), p2 = proj(tr[i]);
-            ctx.strokeStyle = `rgba(${v.color}, ${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1.4;
-            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-        }
-        // Güncel nokta: zemine dikme (derinlik algısı) + dot + etiket
-        const cur = tr[tr.length - 1];
-        const pc = proj(cur);
-        const pg = projW(cur.y, cur.x, 0);
-        ctx.strokeStyle = `rgba(${v.color}, 0.35)`;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(pc.x, pc.y); ctx.lineTo(pg.x, pg.y); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = `rgba(${v.color}, 0.5)`;
-        ctx.beginPath(); ctx.arc(pg.x, pg.y, 2, 0, 2 * Math.PI); ctx.fill();
-        ctx.fillStyle = `rgb(${v.color})`;
-        ctx.beginPath(); ctx.arc(pc.x, pc.y, 4, 0, 2 * Math.PI); ctx.fill();
-        ctx.textAlign = 'left';
-        ctx.font = '9px Roboto Mono, monospace';
-        ctx.fillText(`${v.label} ${(-cur.z).toFixed(0)}m`, pc.x + 7, pc.y - 4);
-    }
-}
-
-// Sürükleyerek döndürme
-if (p3dCanvas) {
-    p3dCanvas.addEventListener('mousedown', (e) => {
-        p3dDrag = { x: e.clientX, y: e.clientY };
-        e.preventDefault();
-    });
-    window.addEventListener('mousemove', (e) => {
-        if (!p3dDrag) return;
-        p3dAzim += (e.clientX - p3dDrag.x) * 0.01;
-        p3dElev = Math.max(0.15, Math.min(1.5, p3dElev + (e.clientY - p3dDrag.y) * 0.008));
-        p3dDrag = { x: e.clientX, y: e.clientY };
-    });
-    window.addEventListener('mouseup', () => { p3dDrag = null; });
-    p3dRender();   // çizim döngüsünü başlat
-}
-
-function updateAvci(drone) {
-    const spd = (drone.speed !== undefined) ? drone.speed.toFixed(1) + ' m/s' : '--';
-    document.getElementById('tele-hunter-speed').textContent = spd;
-    document.getElementById('tele-hunter-alt').textContent  = (-drone.z).toFixed(1) + ' m';
-    document.getElementById('tele-hunter-pos').textContent  = `${drone.x.toFixed(1)}, ${drone.y.toFixed(1)}`;
-    document.getElementById('tele-hunter-hdg').textContent  = `${drone.yaw.toFixed(0)}°`;
-}
-
-function updateHedef(plane) {
-    // Sağ panel — HEDEF İHA METRİKLERİ
-    const spd = document.getElementById('tele-plane-speed');
-    const alt = document.getElementById('tele-plane-alt');
-    const pos = document.getElementById('tele-plane-pos');
-    const hdg = document.getElementById('tele-plane-hdg');
-    if (spd) spd.textContent = (plane.speed !== undefined ? plane.speed.toFixed(1) : '0.0') + ' m/s';
-    if (alt) alt.textContent = (-plane.z).toFixed(1) + ' m';
-    if (pos) pos.textContent = `${plane.x.toFixed(1)}, ${plane.y.toFixed(1)}`;
-    if (hdg) hdg.textContent = `${plane.yaw.toFixed(0)}°`;
-}
-
-// === GÖREV DURUMU — KİLİT & TERMİNAL MOD ===
-function updateMissionStatus() {
-    fetch('/api/chase_status')
-        .then(r => r.json())
-        .then(d => {
-            // ── Güdüm fazı ışıkları (GPS / GÖRSEL) — supervisor.faz'dan ──
-            const fazGps = document.getElementById('faz-gps');
-            const fazGorsel = document.getElementById('faz-gorsel');
-            if (fazGps && fazGorsel) {
-                const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
-                fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
-                fazGorsel.className = 'faz-isik' +
-                    (faz === 'VISUAL' ? ' aktif' :
-                     (faz === 'VURULDU' ? ' vuruldu' : ''));
-                fazGorsel.textContent = (faz === 'VURULDU') ? '● VURULDU' : '● GÖRSEL';
-            }
-
-            // ── Güdüm modu butonları — sunucudaki gerçek mod vurgulanır ──
-            if (d.mode) {
-                document.querySelectorAll('.mod-btn').forEach(b =>
-                    b.classList.toggle('aktif', b.dataset.mode === d.mode));
-            }
-
-            const lockEl = document.getElementById('tele-lock-status');
-            const termEl = document.getElementById('tele-terminal-status');
-            if (!lockEl || !termEl) return;
-
-            if (!d.active) {
-                lockEl.textContent = 'YOK';
-                lockEl.className = 'val red';
-                termEl.textContent = 'BEKLEMEDE';
-                termEl.className = 'val warning';
-                return;
-            }
-
-            const dist = d.distance;
-
-            // Lock: <15m ise KİLİTLENDİ
-            if (dist < 15) {
-                lockEl.textContent = 'KİLİTLENDİ';
-                lockEl.className = 'val green';
-            } else if (dist < 30) {
-                lockEl.textContent = 'YAKLAŞIYOR';
-                lockEl.className = 'val warning';
-            } else {
-                lockEl.textContent = 'ARAMA';
-                lockEl.className = 'val red';
-            }
-
-            // Terminal: <5m ise TERMİNAL AKTİF
-            if (dist < 5) {
-                termEl.textContent = '⚡ TERMİNAL AKTİF';
-                termEl.className = 'val red';
-            } else if (dist < 10) {
-                termEl.textContent = 'VURUŞ HAZIRLIĞI';
-                termEl.className = 'val warning';
-            } else {
-                termEl.textContent = 'TAKİP';
-                termEl.className = 'val';
-            }
-        })
-        .catch(() => {});
-}
-setInterval(updateMissionStatus, 500);
-
-// === GÜDÜM MODU SEÇİMİ (GPS / GÖRSEL / HİBRİT) ===
-// Basınca sunucuya yazılır; vurgu sunucudan dönen gerçek modla güncellenir
-// (görev sırasında da geçerli — chase thread aktif fazı kırıp yeni modu kurar).
-document.querySelectorAll('.mod-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        fetch('/api/guidance_mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: btn.dataset.mode })
-        }).then(r => r.json()).then(d => {
-            if (d.mode) {
-                document.querySelectorAll('.mod-btn').forEach(b =>
-                    b.classList.toggle('aktif', b.dataset.mode === d.mode));
-                const ad = { gps: 'GPS', visual: 'GÖRSEL', hybrid: 'HİBRİT' }[d.mode];
-                addLog('CMD', `Güdüm modu: ${ad}`, 'warn');
-            }
-        }).catch(() => {});
-    });
+document.querySelectorAll('.viewbtns button[data-view]').forEach(b =>
+  b.addEventListener('click', () => { clearActiveView(); b.classList.add('on'); setView(b.dataset.view); }));
+$('panBtn').addEventListener('click', () => {
+  panMode = !panMode;
+  $('panBtn').classList.toggle('on', panMode);
 });
 
-
-// === FPV HUD Mockup Drawing (DOM Manipulation over REAL VIDEO) ===
-let timeSec = 0;
-
-function animateHUD() {
-    // Sahte tracking animasyonu devre dışı - gerçek algoritma entegrasyonu bekleniyor
-    const tBox = document.getElementById('target-box');
-    if (tBox) tBox.classList.add('hidden');
-    // Status bar temiz kalsın
-    const hudStatus = document.getElementById('hud-status');
-    if (hudStatus) { hudStatus.textContent = ''; hudStatus.className = 'lock-status'; }
+function niceStep(raw){
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-6))));
+  const n = raw / mag;
+  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
 }
 
+function drawScene(){
+  const c = SC.cx, w = SC.c._w, h = SC.c._h;
+  if (!w || !h) return;
+  c.clearRect(0, 0, w, h);
 
-// === Command Buttons ===
-function sendCommand(endpoint, logMsg) {
-    addLog('CMD', `Sunucuya iletiliyor: ${logMsg}`, 'info');
-    fetch(`/api/command/${endpoint}`, { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            if(data.status === 'success') addLog('SYS', `Görev Kabul Edildi: ${logMsg}`, 'success');
-            else addLog('ERR', `Hata: ${data.message}`, 'crit');
-        })
-        .catch(err => addLog('ERR', `Bağlantı Hatası: ${err}`, 'crit'));
-}
+  const cur = {
+    tgt:  alive(st.telem.plane) ? toWorld(st.telem.plane) : null,
+    avci: alive(st.telem.iris)  ? toWorld(st.telem.iris)  : null,
+  };
+  const pts = world.tTrail.concat(world.aTrail);
+  if (!pts.length){
+    c.fillStyle = '#475569'; c.font = '11px ' + monoFont; c.textAlign = 'center';
+    c.fillText('TELEMETRİ BEKLENİYOR...', w / 2, h / 2); c.textAlign = 'left';
+    return;
+  }
 
-// === UÇUŞ SENARYOLARI (kare / daire / agresif) ===
-// Her buton: takeoff + desen. Aktif senaryonun butonuna tekrar basmak durdurur.
-// Manuel mod butonu ise uçuşu klavye kontrolüne devralır.
-const SCN_LABELS = {
-    square:     '▢ KARE ÇİZ',
-    circle:     '◯ DAİRE ÇİZ',
-    aggressive: '⚡ AGRESİF UÇUŞ',
-};
-const scnButtons = {
-    square:     document.getElementById('btn-scn-square'),
-    circle:     document.getElementById('btn-scn-circle'),
-    aggressive: document.getElementById('btn-scn-aggressive'),
-};
-let activeScenario = null;
+  // ── Otomatik çerçeveleme: tüm izler ekrana sığsın, yumuşak takip ──
+  let mnE = 1e9, mxE = -1e9, mnN = 1e9, mxN = -1e9, mxU = 0;
+  for (const p of pts){
+    if (p.e < mnE) mnE = p.e; if (p.e > mxE) mxE = p.e;
+    if (p.n < mnN) mnN = p.n; if (p.n > mxN) mxN = p.n;
+    if (p.u > mxU) mxU = p.u;
+  }
+  const tCx = (mnE + mxE) / 2, tCy = (mnN + mxN) / 2;
+  const tSpan = Math.max(40, mxE - mnE, mxN - mnN, mxU * 1.3) * 1.2;
+  const V = world.view;
+  if (!V.init){ V.cx = tCx; V.cy = tCy; V.span = tSpan; V.zMax = Math.max(40, mxU * 1.2); V.init = true; }
+  else {
+    const a = 0.06;
+    V.cx += (tCx - V.cx) * a; V.cy += (tCy - V.cy) * a; V.span += (tSpan - V.span) * a;
+    V.zMax += (Math.max(40, mxU * 1.2) - V.zMax) * a;
+  }
 
-function markScenarioButtons() {
-    for (const [name, btn] of Object.entries(scnButtons)) {
-        if (!btn) continue;
-        if (name === activeScenario) {
-            btn.classList.add('scn-active');
-            btn.textContent = '⛔ DURDUR — ' + SCN_LABELS[name].slice(2);
-        } else {
-            btn.classList.remove('scn-active');
-            btn.textContent = SCN_LABELS[name];
-        }
+  const s = (Math.min(w, h) * 0.62 / V.span) * scZoom;
+  const ox = w * 0.5 + scPanX, oy = h * 0.62 + scPanY;
+  const ca = Math.cos(camAz), sa = Math.sin(camAz), cp = Math.cos(camEl), sp = Math.sin(camEl);
+  // Ortografik izdüşüm — yatay ve dikey AYNI ölçekte (geometri bozulmasın)
+  const P3 = (e, n, u) => {
+    const rx = e - V.cx, ry = n - V.cy;
+    const x1 = rx * ca - ry * sa, y1 = rx * sa + ry * ca;
+    const y2 = y1 * cp - u * sp, z2 = y1 * sp + u * cp;
+    return { x: ox + x1 * s, y: oy - z2 * s, d: y2 };
+  };
+  const showZ = camEl < 1.30;
+
+  // ── Zemin ızgarası (u = 0) ──
+  const cell = niceStep(V.span / 5);
+  const ext = Math.min(4000, V.span * 1.6);
+  const e0 = Math.floor((V.cx - ext / 2) / cell) * cell, e1 = V.cx + ext / 2;
+  const n0 = Math.floor((V.cy - ext / 2) / cell) * cell, n1 = V.cy + ext / 2;
+  c.strokeStyle = 'rgba(63,216,192,0.10)'; c.lineWidth = 1;
+  for (let g = e0; g <= e1; g += cell){
+    const a = P3(g, n0, 0), b = P3(g, n1, 0);
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  }
+  for (let g = n0; g <= n1; g += cell){
+    const a = P3(e0, g, 0), b = P3(e1, g, 0);
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  }
+  c.fillStyle = '#54646f'; c.font = '9px ' + monoFont;
+  c.textAlign = 'right'; c.fillText('kare = ' + cell + ' m', w - 12, h - 22); c.textAlign = 'left';
+
+  // ── Eksenler + irtifa kulesi (EKF orijini = iris kalkış noktası) ──
+  const zMax = V.zMax, zStep = niceStep(zMax / 4);
+  const O = P3(0, 0, 0), AE = P3(cell, 0, 0), AN = P3(0, cell, 0), ZT = P3(0, 0, zMax);
+  c.strokeStyle = 'rgba(120,150,170,.5)'; c.lineWidth = 1.4;
+  c.beginPath(); c.moveTo(O.x, O.y); c.lineTo(AE.x, AE.y); c.stroke();
+  c.beginPath(); c.moveTo(O.x, O.y); c.lineTo(AN.x, AN.y); c.stroke();
+  if (showZ){
+    c.strokeStyle = 'rgba(150,170,185,.4)'; c.setLineDash([4, 4]);
+    c.beginPath(); c.moveTo(O.x, O.y); c.lineTo(ZT.x, ZT.y); c.stroke(); c.setLineDash([]);
+  }
+  c.fillStyle = '#7f93a2'; c.font = '10px ' + monoFont;
+  c.fillText('D', AE.x + 4, AE.y + 4); c.fillText('K', AN.x - 12, AN.y + 8);
+  if (showZ){
+    c.fillText('İRT', ZT.x + 4, ZT.y);
+    c.fillStyle = '#54646f'; c.font = '9px ' + monoFont;
+    for (let a = zStep; a <= zMax + 1; a += zStep){
+      const p = P3(0, 0, a);
+      c.fillRect(p.x - 2, p.y - 1, 4, 2);
+      c.fillText(Math.round(a) + 'm', p.x + 6, p.y + 3);
     }
-}
+  }
+  c.fillStyle = '#F4B740'; c.shadowColor = '#F4B740'; c.shadowBlur = 8;
+  c.beginPath(); c.arc(O.x, O.y, 4, 0, 7); c.fill(); c.shadowBlur = 0;
+  c.font = '9px ' + monoFont; c.fillText('BAŞLANGIÇ', O.x + 7, O.y + 13);
 
-async function startScenario(name) {
-    if (manualActive) await exitManualMode();
-    addLog('CMD', 'Senaryo başlatılıyor: ' + SCN_LABELS[name] + ' (takeoff + desen)', 'info');
-    try {
-        const res = await fetch('/api/command/plane/scenario/' + name, { method: 'POST' });
-        const data = await res.json();
-        if (data.status === 'success') {
-            activeScenario = name;
-            addLog('SYS', '✓ ' + SCN_LABELS[name] + ' aktif — araç kalkış yapıp desene başlayacak.', 'success');
-        } else {
-            addLog('ERR', 'Senaryo hatası: ' + data.message, 'crit');
-        }
-    } catch (e) {
-        addLog('ERR', 'Bağlantı hatası: ' + e, 'crit');
+  // ── İzler ──
+  const trail = (arr, rgb) => {
+    for (let i = 1; i < arr.length; i++){
+      const a = P3(arr[i - 1].e, arr[i - 1].n, arr[i - 1].u), b = P3(arr[i].e, arr[i].n, arr[i].u);
+      c.strokeStyle = rgb + (i / arr.length * 0.55).toFixed(3) + ')';
+      c.lineWidth = 1.6;
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
     }
-    markScenarioButtons();
+  };
+  trail(world.tTrail, 'rgba(255,77,77,');
+  trail(world.aTrail, 'rgba(55,224,107,');
+
+  // ── Kilit çizgisi (avcı → hedef) ──
+  if (cur.tgt && cur.avci){
+    const at = P3(cur.tgt.e, cur.tgt.n, cur.tgt.u), aa = P3(cur.avci.e, cur.avci.n, cur.avci.u);
+    c.strokeStyle = st.imha ? 'rgba(255,77,77,.9)' : 'rgba(255,77,77,.5)';
+    c.setLineDash([4, 4]); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(aa.x, aa.y); c.lineTo(at.x, at.y); c.stroke(); c.setLineDash([]);
+    if (st.range !== null){
+      const mx = (at.x + aa.x) / 2, my = (at.y + aa.y) / 2;
+      c.fillStyle = '#ff8a8a'; c.font = '9px ' + monoFont;
+      c.fillText(st.range.toFixed(1) + ' m', mx + 6, my - 4);
+    }
+  }
+
+  // ── Araçlar (uzaktakini önce çiz) ──
+  const drones = [];
+  if (cur.tgt)  drones.push({ ...cur.tgt,  col: '#FF4D4D', ad: 'HEDEF' });
+  if (cur.avci) drones.push({ ...cur.avci, col: '#37E06B', ad: 'AVCI' });
+  drones.sort((A, B) => P3(A.e, A.n, 0).d - P3(B.e, B.n, 0).d);
+  for (const d of drones){
+    const g = P3(d.e, d.n, 0), a = P3(d.e, d.n, d.u);
+    c.globalAlpha = .45; c.strokeStyle = d.col; c.setLineDash([3, 3]); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(g.x, g.y); c.lineTo(a.x, a.y); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.ellipse(g.x, g.y, 8, 4, 0, 0, 7); c.stroke(); c.globalAlpha = 1;
+    c.fillStyle = d.col; c.shadowColor = d.col; c.shadowBlur = 11;
+    c.beginPath(); c.arc(a.x, a.y, 5.5, 0, 7); c.fill(); c.shadowBlur = 0;
+    c.font = '9px ' + monoFont;
+    c.fillText(`${d.ad} ${d.u.toFixed(0)}m`, a.x + 8, a.y - 4);
+  }
 }
 
-async function stopScenario() {
-    if (activeScenario) addLog('SYS', 'Senaryo durduruluyor: ' + SCN_LABELS[activeScenario], 'warn');
-    activeScenario = null;
-    markScenarioButtons();
-    try { await fetch('/api/command/plane/stop_scenario', { method: 'POST' }); } catch (e) {}
+// ══ SENARYOLAR (kare / daire / agresif) ════════════════════════════════
+const scnBtns = [...document.querySelectorAll('#scn [data-scn]')];
+function markScenario(){
+  scnBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scn === st.scenario)));
+  const lbl = st.scenario ? SCN_LBL[st.scenario] : null;
+  scnBtns.forEach(b => {
+    const span = b.querySelector('span');
+    const base = { square: 'Kare Çiz', circle: 'Daire Çiz', aggressive: 'Agresif Uçuş' }[b.dataset.scn];
+    span.textContent = (b.dataset.scn === st.scenario) ? 'Durdur — ' + base : base;
+  });
+  $('oMode').textContent = st.manual ? 'MANUEL' : (lbl || 'BEKLEME');
 }
-
-for (const [name, btn] of Object.entries(scnButtons)) {
-    if (!btn) continue;
-    btn.addEventListener('click', () => {
-        if (activeScenario === name) stopScenario();
-        else startScenario(name);
-    });
+async function startScenario(name){
+  if (st.manual) await exitManual();
+  addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (kalkış + desen)...');
+  scnBtns.forEach(b => b.disabled = true);
+  try {
+    const r = await (await fetch('/api/command/plane/scenario/' + name, { method: 'POST' })).json();
+    if (r.status === 'success'){
+      st.scenario = name;
+      addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — hedef kalkıp deseni uçacak.');
+    } else addLog('err', 'HATA', 'Senaryo reddedildi: ' + r.message);
+  } catch (e){ addLog('err', 'HATA', 'Bağlantı hatası: ' + e); }
+  scnBtns.forEach(b => b.disabled = false);
+  markScenario();
 }
-
-// Senaryo süreci arka planda kendi kendine sonlanırsa butonları senkronize et
+async function stopScenario(){
+  if (st.scenario) addLog('sys', 'SYS', SCN_LBL[st.scenario] + ' senaryosu durduruluyor.');
+  st.scenario = null; markScenario();
+  try { await fetch('/api/command/plane/stop_scenario', { method: 'POST' }); } catch (e) {}
+}
+scnBtns.forEach(b => b.addEventListener('click', () => {
+  if (st.scenario === b.dataset.scn) stopScenario(); else startScenario(b.dataset.scn);
+}));
+// Senaryo süreci kendi kendine biterse butonlar sunucuyla senkron kalsın
 setInterval(async () => {
-    try {
-        const res = await fetch('/api/scenario_status');
-        const d = await res.json();
-        const backend = d.active ? d.name : null;
-        if (backend !== activeScenario) {
-            activeScenario = backend;
-            markScenarioButtons();
-        }
-    } catch (e) { /* sessiz */ }
+  try {
+    const d = await (await fetch('/api/scenario_status')).json();
+    const backend = d.active ? d.name : null;
+    if (backend !== st.scenario){ st.scenario = backend; markScenario(); }
+  } catch (e) {}
 }, 2000);
 
-// === UÇAK (HEDEF) THROTTLE SLIDER ===
-// Her modda görünür: senaryo modunda hedefin gazını, manuel modda doğrudan gazı sürer.
-const planeThrSlider = document.getElementById('plane-thr-slider');
-const planeThrValue  = document.getElementById('plane-thr-value');
-let planeThrTimeout  = null;
+// ══ MANUEL MOD ═════════════════════════════════════════════════════════
+// Yüzey/gaz → PWM eşlemesi klasik arayüzle BİREBİR aynı:
+//   aileron/elevator = 1500 ± 450   (FBWA: tam sapma = maks açı hedefi)
+//   throttle         = 1000 + %gaz × 10
+const manBtn = $('manBtn'), stick = $('stick'), knob = $('knob');
+const MAX_R = 57;
+let mAil = 0, mElv = 0, mThr = 60;            // yumuşatılmış komutlar (-1..1, %)
+let jsAil = 0, jsElv = 0, dragging = false;
+let manualLoop = null, sendTick = 0;
+const keys = { w: false, a: false, s: false, d: false, l: false, i: false };
 
-// Açılışta sunucudaki GERÇEK değeri göster — yoksa slider "60%" derken sunucu
-// başka bir değerde olabilir (sayfa yenilendiğinde kafa karıştırıyordu).
-if (planeThrSlider) {
-    fetch('/api/plane_throttle')
-        .then(r => r.json())
-        .then(d => {
-            const pct = Math.round((d.throttle ?? 600) / 10);   // 0-1000 → 0-100
-            planeThrSlider.value = pct;
-            planeThrValue.textContent = pct + '%';
-        })
-        .catch(() => {});
+function drawKnob(){
+  knob.style.transform = `translate(calc(-50% + ${mAil * MAX_R}px), calc(-50% + ${-mElv * MAX_R}px))`;
+  $('rRoll').textContent  = mAil.toFixed(2);
+  $('rPitch').textContent = mElv.toFixed(2);
+  $('rThr').textContent   = Math.round(mThr) + '%';
+  stick.setAttribute('aria-valuetext', `roll ${mAil.toFixed(2)}, pitch ${mElv.toFixed(2)}`);
+}
+function fromPointer(cx, cy){
+  const r = stick.getBoundingClientRect();
+  let dx = cx - (r.left + r.width / 2), dy = cy - (r.top + r.height / 2);
+  const dist = Math.hypot(dx, dy);
+  if (dist > MAX_R){ dx = dx / dist * MAX_R; dy = dy / dist * MAX_R; }
+  jsAil = dx / MAX_R; jsElv = -dy / MAX_R;
+}
+stick.addEventListener('pointerdown', e => {
+  if (!st.manual) return;
+  dragging = true;
+  try { stick.setPointerCapture(e.pointerId); } catch (_) {}
+  fromPointer(e.clientX, e.clientY); e.preventDefault();
+});
+stick.addEventListener('pointermove', e => { if (dragging) fromPointer(e.clientX, e.clientY); });
+const release = () => { if (!dragging) return; dragging = false; jsAil = 0; jsElv = 0; };
+stick.addEventListener('pointerup', release);
+stick.addEventListener('pointercancel', release);
+
+addEventListener('keydown', e => {
+  if (!st.manual) return;
+  const k = e.key.toLowerCase();
+  if (k in keys){ keys[k] = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => { const k = e.key.toLowerCase(); if (k in keys) keys[k] = false; });
+
+function manualTick(){
+  if (!st.manual) return;
+  let tAil, tElv;
+  if (dragging){ tAil = jsAil; tElv = jsElv; }
+  else {
+    tAil = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+    tElv = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+  }
+  mAil += (tAil - mAil) * 0.25;               // ~0.3 s'de hedefe: PWM sıçraması olmasın
+  mElv += (tElv - mElv) * 0.25;
+  if (tAil === 0 && Math.abs(mAil) < 0.02) mAil = 0;
+  if (tElv === 0 && Math.abs(mElv) < 0.02) mElv = 0;
+  if (keys.l) mThr = Math.min(100, mThr + 1); // L/I: kalıcı gaz seviyesi
+  if (keys.i) mThr = Math.max(0, mThr - 1);
+  drawKnob();
+  syncThrSlider(Math.round(mThr));
+
+  sendTick++;
+  if (sendTick % 2) return;                   // iç döngü 20 Hz → sunucuya 10 Hz
+  fetch('/api/command/plane/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      aileron:  Math.round(1500 + mAil * 450),
+      elevator: Math.round(1500 + mElv * 450),
+      throttle: Math.round(1000 + mThr * 10),
+    }),
+  }).catch(() => {});
 }
 
-if (planeThrSlider) {
-    planeThrSlider.addEventListener('input', () => {
-        const pct = parseInt(planeThrSlider.value, 10);
-        planeThrValue.textContent = pct + '%';
-
-        // Manuel modda slider doğrudan gazı sürer (L/I ile aynı değer)
-        if (manualActive) mThr = pct;
-
-        // Debounce: 100ms bekle, sonra POST et
-        clearTimeout(planeThrTimeout);
-        planeThrTimeout = setTimeout(() => {
-            const throttleVal = Math.round(pct * 10); // 0-100 → 0-1000
-            fetch('/api/plane_throttle', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({throttle: throttleVal})
-            }).catch(() => {});
-        }, 100);
-    });
+async function enterManual(){
+  manBtn.disabled = true;
+  $('manLbl').textContent = 'Bağlanıyor...';
+  addLog('sys', 'SYS', 'Aktif senaryo durduruluyor, uçuş devralınıyor (yerde FBWA → havada FBWB)...');
+  st.scenario = null; markScenario();
+  try {
+    const r = await (await fetch('/api/command/plane/start_manual', { method: 'POST' })).json();
+    if (r.status === 'success'){
+      st.manual = true;
+      for (const k in keys) keys[k] = false;
+      mAil = 0; mElv = 0; jsAil = 0; jsElv = 0; dragging = false;
+      mThr = parseInt($('thrSl').value, 10) || 60;   // kullanıcının ayarladığı gazla devam
+      drawKnob();
+      $('manwrap').hidden = false;
+      manBtn.classList.add('open'); manBtn.setAttribute('aria-pressed', 'true');
+      $('manLbl').textContent = 'Manuel Kapat';
+      $('manBadge').hidden = st.tab !== 'hedef';
+      addLog('sys', 'SYS', 'Manuel mod AKTİF — W/S pitch, A/D roll, L hızlan, I yavaşla.');
+      manualLoop = setInterval(manualTick, 50);
+    } else {
+      $('manLbl').textContent = 'Manuel Mod';
+      addLog('err', 'HATA', 'Manuel mod başlatılamadı: ' + r.message);
+    }
+  } catch (e){
+    $('manLbl').textContent = 'Manuel Mod';
+    addLog('err', 'HATA', 'Bağlantı hatası: ' + e);
+  }
+  manBtn.disabled = false;
+  markScenario();
 }
+async function exitManual(){
+  if (!st.manual) return;
+  st.manual = false;
+  clearInterval(manualLoop); manualLoop = null;
+  dragging = false; jsAil = 0; jsElv = 0; mAil = 0; mElv = 0;
+  drawKnob();
+  $('manwrap').hidden = true;
+  manBtn.classList.remove('open'); manBtn.setAttribute('aria-pressed', 'false');
+  $('manLbl').textContent = 'Manuel Mod';
+  $('manBadge').hidden = true;
+  addLog('sys', 'SYS', 'Manuel mod kapatıldı.');
+  markScenario();
+  try { await fetch('/api/command/plane/stop_manual', { method: 'POST' }); } catch (e) {}
+}
+manBtn.addEventListener('click', () => { st.manual ? exitManual() : enterManual(); });
 
-// === MANUEL MOD — JOYSTICK (mouse) + KLAVYE (W/S: pitch, A/D: roll, L/I: gaz) ===
-// Basıldığında aktif senaryo durur, uçuş FBWA'da devralınır.
-const btnManual = document.getElementById('btn-plane-manual');
-const manualBlock = document.getElementById('manual-control-block');
-const joystickBase = document.getElementById('joystick-base');
-const joystickKnob = document.getElementById('joystick-knob');
-
-let manualActive = false;
-let keysDown = {};
-let mAil = 0;      // -1..1 yumuşatılmış roll komutu
-let mElv = 0;      // -1..1 yumuşatılmış pitch komutu
-let mThr = 60;     // % gaz — cruise'dan başlar (havada devralınca stall olmasın)
-let manualLoop = null;
-let manualSendTick = 0;
-let isDragging = false;
-let jsAil = 0;     // -1..1 joystick hedefi (sürükleme sırasında)
-let jsElv = 0;
-
-btnManual.addEventListener('click', async () => {
-    if (!manualActive) await enterManualMode();
-    else await exitManualMode();
+// ══ GAZ AYARI ══════════════════════════════════════════════════════════
+// Her modda geçerli: senaryo modunda hedefin gazını, manuel modda doğrudan
+// gazı sürer. Açılışta sunucudaki GERÇEK değer okunur.
+const thrSl = $('thrSl');
+let thrTimer = null;
+function syncThrSlider(pct){
+  if (parseInt(thrSl.value, 10) === pct) return;
+  thrSl.value = pct; $('thrV').textContent = pct + '%';
+}
+fetch('/api/plane_throttle').then(r => r.json()).then(d => {
+  const pct = Math.round((d.throttle ?? 600) / 10);
+  thrSl.value = pct; $('thrV').textContent = pct + '%'; mThr = pct; drawKnob();
+}).catch(() => {});
+thrSl.addEventListener('input', () => {
+  const pct = parseInt(thrSl.value, 10);
+  $('thrV').textContent = pct + '%';
+  if (st.manual) mThr = pct;
+  clearTimeout(thrTimer);
+  thrTimer = setTimeout(() => {
+    fetch('/api/plane_throttle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ throttle: Math.round(pct * 10) }),   // 0-100 → 0-1000
+    }).catch(() => {});
+  }, 100);
 });
 
-async function enterManualMode() {
-    btnManual.textContent = '⏳ BAĞLANIYOR...';
-    btnManual.disabled = true;
-    addLog('SYS', 'Aktif senaryo durduruluyor, uçuş devralınıyor (FBWA)...', 'warn');
-    activeScenario = null;
-    markScenarioButtons();
+// ══ GPS KARIŞTIRMA ═════════════════════════════════════════════════════
+const GPS_WORDS = ['GPS Sinyali Normal', 'Hafif Parazit', 'Orta Düzey Karışım',
+                   'Şiddetli Karışım', 'GPS KAYBI — Görsel Seyir'];
+const gpsSl = $('gpsSl');
+let gpsTimer = null;
+gpsSl.addEventListener('input', () => {
+  const val = parseInt(gpsSl.value, 10);
+  $('gpsV').textContent = val + '%';
+  const i = Math.min(4, Math.floor(val / 20));
+  const col = i >= 4 ? 'var(--red)' : i >= 2 ? 'var(--amber)' : 'var(--green)';
+  const dot = $('gpsSig').querySelector('.d');
+  dot.style.background = col; dot.style.boxShadow = '0 0 7px ' + col;
+  $('gpsSigTxt').textContent = GPS_WORDS[i];
+  $('gpsV').style.color = col;
+  clearTimeout(gpsTimer);
+  gpsTimer = setTimeout(() => {
+    fetch('/api/gps_noise', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: val / 100 }),
+    }).then(() => addLog('gps', 'GPS', 'Karıştırma seviyesi: %' + val)).catch(() => {});
+  }, 120);
+});
+fetch('/api/gps_noise').then(r => r.json()).then(d => {
+  gpsSl.value = Math.round((d.level || 0) * 100);
+  gpsSl.dispatchEvent(new Event('input'));
+  clearTimeout(gpsTimer);                       // açılışta okuduğumuzu geri yazma
+}).catch(() => {});
 
+// ══ VİDEO PARAZİT ══════════════════════════════════════════════════════
+// Sunucu paraziti JPEG'e uyguluyor; buradaki tuval yalnız tarama-çizgisi
+// (analog CRT) efektini üstüne bindirir.
+const VID_WORDS = ['Temiz Analog Sinyal', 'Hafif Parazit', 'Orta Parazit',
+                   'Şiddetli Parazit', 'SİNYAL YOK'];
+const vidSl = $('vidSl');
+let vidTimer = null, vidLevel = 0;
+vidSl.addEventListener('input', () => {
+  const val = parseInt(vidSl.value, 10);
+  vidLevel = val / 100;
+  $('vidV').textContent = val + '%';
+  const i = Math.min(4, Math.floor(val / 20));
+  const col = i >= 4 ? 'var(--red)' : i >= 2 ? 'var(--amber)' : 'var(--green)';
+  const dot = $('vidSig').querySelector('.d');
+  dot.style.background = col; dot.style.boxShadow = '0 0 7px ' + col;
+  $('vidSigTxt').textContent = VID_WORDS[i];
+  $('vidV').style.color = col;
+  clearTimeout(vidTimer);
+  vidTimer = setTimeout(() => {
+    fetch('/api/video_noise', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: vidLevel }),
+    }).then(() => addLog('sys', 'VID', 'Video parazit: %' + val)).catch(() => {});
+  }, 120);
+});
+fetch('/api/video_noise').then(r => r.json()).then(d => {
+  vidSl.value = Math.round((d.level || 0) * 100);
+  vidSl.dispatchEvent(new Event('input'));
+  clearTimeout(vidTimer);
+}).catch(() => {});
+
+const noiseCv = $('noiseCv');
+function drawNoise(){
+  const parent = noiseCv.parentElement;
+  const W = parent.clientWidth, H = parent.clientHeight;
+  if (!W || !H) return;
+  if (noiseCv.width !== W || noiseCv.height !== H){ noiseCv.width = W; noiseCv.height = H; }
+  const ctx = noiseCv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const lvl = vidLevel;
+  if (lvl <= 0) return;
+  if (lvl >= 1){ ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); return; }
+  if (lvl > 0.25){                                   // yatay tarama çizgileri
+    const n = Math.floor(lvl * 20);
+    for (let i = 0; i < n; i++){
+      const y = Math.random() * H, lh = Math.random() * lvl * 4 + 1;
+      const r = Math.random() * 255 | 0, g = Math.random() * 255 | 0, b = Math.random() * 255 | 0;
+      ctx.fillStyle = `rgba(${r},${g},${b},${lvl * 0.85})`;
+      ctx.fillRect(0, y, W, lh);
+    }
+  }
+  if (lvl > 0.65){                                   // yüksek parazitte karartma
+    ctx.fillStyle = `rgba(0,0,0,${Math.min((lvl - 0.65) * 2.2, 0.92)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ══ GÖREV (hibrit güdüm / chase) ═══════════════════════════════════════
+const startBtn = $('startBtn');
+startBtn.addEventListener('click', async () => {
+  if (!st.mission){
+    startBtn.disabled = true;
+    $('startLbl').textContent = 'Kalkış yapılıyor...';
+    addLog('sys', 'CMD', 'Takip görevi başlatılıyor — avcı kalkacak, hibrit güdüm devreye girecek.');
     try {
-        const res = await fetch('/api/command/plane/start_manual', { method: 'POST' });
-        const data = await res.json();
-        if (data.status === 'success') {
-            manualActive = true;
-            keysDown = {}; mAil = 0; mElv = 0;
-            // Gaz slider'ı senaryo modunda da görünür olduğu için değerini SIFIRLAMA —
-            // kullanıcının ayarladığı gazla devam et (manuel/senaryo geçişi tutarlı kalsın).
-            mThr = planeThrSlider ? (parseInt(planeThrSlider.value, 10) || 60) : 60;
-            isDragging = false; jsAil = 0; jsElv = 0;
-            setKnob(0, 0);
-            manualBlock.classList.remove('hidden');
-            btnManual.textContent = '✖ MANUEL KAPAT';
-            btnManual.style.borderLeftColor = 'var(--danger-red)';
-            addLog('SYS', 'Manuel Mod AKTİF — W/S: pitch, A/D: roll, L: hızlan, I: yavaşla', 'warn');
-            manualLoop = setInterval(manualTick, 50); // 20 Hz iç döngü
-        } else {
-            btnManual.textContent = '🕹 MANUEL MOD';
-            addLog('ERR', 'Manuel mod başlatılamadı: ' + data.message, 'crit');
-        }
-    } catch(e) {
-        btnManual.textContent = '🕹 MANUEL MOD';
-        addLog('ERR', 'Bağlantı hatası: ' + e, 'crit');
+      const r = await (await fetch('/api/command/iris/start_chase', { method: 'POST' })).json();
+      if (r.status === 'success'){
+        setMission(true);
+        addLog('sys', 'SYS', '✓ Görev aktif — avcı hedefi takip ediyor.');
+      } else {
+        $('startLbl').textContent = 'Görevi Başlat';
+        addLog('err', 'HATA', 'Görev başlatılamadı: ' + r.message);
+      }
+    } catch (e){
+      $('startLbl').textContent = 'Görevi Başlat';
+      addLog('err', 'HATA', 'Bağlantı hatası: ' + e);
     }
-    btnManual.disabled = false;
-}
-
-async function exitManualMode() {
-    manualActive = false;
-    clearInterval(manualLoop);
-    manualLoop = null;
-    isDragging = false; jsAil = 0; jsElv = 0;
-    joystickKnob.classList.remove('active');
-    setKnob(0, 0);
-    manualBlock.classList.add('hidden');
-    // Gaz slider'ı GİZLENMEZ — senaryo modunda hedefin gazını sürmeye devam eder.
-    btnManual.textContent = '🕹 MANUEL MOD';
-    btnManual.style.borderLeftColor = '';
-    addLog('SYS', 'Manuel Mod KAPALI.', 'info');
-    try { await fetch('/api/command/plane/stop_manual', { method: 'POST' }); } catch(e) {}
-}
-
-// --- Joystick (mouse/touch) ---
-function joystickEventPos(e) {
-    const rect = joystickBase.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const r = rect.width / 2;
-    const px = (e.clientX !== undefined) ? e.clientX : e.touches[0].clientX;
-    const py = (e.clientY !== undefined) ? e.clientY : e.touches[0].clientY;
-    let dx = px - cx, dy = py - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > r) { dx = dx / dist * r; dy = dy / dist * r; }
-    jsAil = +(dx / r).toFixed(3);   // -1..1
-    jsElv = -(dy / r).toFixed(3);   // -1..1 (ekran y'si ters: yukarı = burun yukarı)
-}
-
-function setKnob(ail, elv) {
-    const r = joystickBase.getBoundingClientRect().width / 2;
-    joystickKnob.style.left = `calc(50% + ${ail * r}px)`;
-    joystickKnob.style.top  = `calc(50% + ${-elv * r}px)`;
-}
-
-joystickBase.addEventListener('mousedown', (e) => {
-    if (!manualActive) return;
-    isDragging = true;
-    joystickKnob.classList.add('active');
-    joystickEventPos(e);
+    startBtn.disabled = false;
+  } else {
+    setMission(false);
+    addLog('sys', 'SYS', 'Görev durduruldu — avcı hover\'a geçiyor.');
+    fetch('/api/command/iris/stop_chase', { method: 'POST' }).catch(() => {});
+  }
 });
-window.addEventListener('mousemove', (e) => {
-    if (!isDragging || !manualActive) return;
-    joystickEventPos(e);
-});
-window.addEventListener('mouseup', () => {
-    if (!isDragging) return;
-    isDragging = false;
-    jsAil = 0; jsElv = 0;           // bırakınca merkeze dön
-    joystickKnob.classList.remove('active');
-});
-joystickBase.addEventListener('touchstart', (e) => {
-    if (!manualActive) return;
-    isDragging = true;
-    joystickKnob.classList.add('active');
-    joystickEventPos(e);
-}, { passive: true });
-window.addEventListener('touchmove', (e) => {
-    if (!isDragging || !manualActive) return;
-    joystickEventPos(e);
-}, { passive: true });
-window.addEventListener('touchend', () => {
-    if (!isDragging) return;
-    isDragging = false;
-    jsAil = 0; jsElv = 0;
-    joystickKnob.classList.remove('active');
-});
-
-// --- Klavye ---
-const MANUAL_KEYS = ['w', 'a', 's', 'd', 'l', 'i'];
-
-window.addEventListener('keydown', (e) => {
-    if (!manualActive) return;
-    const k = e.key.toLowerCase();
-    if (MANUAL_KEYS.includes(k)) {
-        keysDown[k] = true;
-        e.preventDefault();
-    }
-});
-
-window.addEventListener('keyup', (e) => {
-    keysDown[e.key.toLowerCase()] = false;
-});
-
-function manualTick() {
-    if (!manualActive) return;
-    // Hedef yüzey komutu: joystick sürükleniyorsa joystick, değilse klavye
-    let tAil, tElv;
-    if (isDragging) {
-        tAil = jsAil;
-        tElv = jsElv;
-    } else {
-        tAil = (keysDown['d'] ? 1 : 0) - (keysDown['a'] ? 1 : 0);
-        tElv = (keysDown['w'] ? 1 : 0) - (keysDown['s'] ? 1 : 0);
-    }
-    // Yumuşatma: ani PWM sıçraması yerine ~0.3s'de hedefe ulaşır
-    mAil += (tAil - mAil) * 0.25;
-    mElv += (tElv - mElv) * 0.25;
-    if (tAil === 0 && Math.abs(mAil) < 0.02) mAil = 0;
-    if (tElv === 0 && Math.abs(mElv) < 0.02) mElv = 0;
-    // L/I: kalıcı gaz seviyesi — basılı tutuldukça artar/azalır
-    if (keysDown['l']) mThr = Math.min(100, mThr + 1);
-    if (keysDown['i']) mThr = Math.max(0, mThr - 1);
-
-    setKnob(mAil, mElv);   // topuz hem joystick hem klavye girişini yansıtır
-    document.getElementById('js-x').textContent = mAil.toFixed(2);
-    document.getElementById('js-y').textContent = mElv.toFixed(2);
-    document.getElementById('js-thr').textContent = Math.round(mThr);
-    // Slider'ı L/I ile senkron tut (sürüklerken değer zaten aynı — çakışmaz)
-    if (planeThrSlider && parseInt(planeThrSlider.value, 10) !== Math.round(mThr)) {
-        planeThrSlider.value = Math.round(mThr);
-        planeThrValue.textContent = Math.round(mThr) + '%';
-    }
-
-    // PWM'e çevir — FBWA: tam sapma = maks yatış/pitch açı hedefi
-    const aileron  = Math.round(1500 + mAil * 450);
-    const elevator = Math.round(1500 + mElv * 450);   // yüksek PWM = burun yukarı (SITL'de doğrulandı)
-    const thr      = Math.round(1000 + mThr * 10);
-
-    // Sunucuya 10 Hz gönder (iç döngü 20 Hz — bir atlayarak)
-    manualSendTick++;
-    if (manualSendTick % 2) return;
-    fetch('/api/command/plane/manual', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ aileron, elevator, throttle: thr })
-    }).catch(() => {}); // Sessiz hata
+function setMission(on){
+  st.mission = on;
+  startBtn.classList.toggle('on', on);
+  $('startLbl').textContent = on ? 'Görevi Durdur' : 'Görevi Başlat';
 }
 
-// =====================================================
-// CHASE MODE (TAKİP MODU)
-// =====================================================
-let chaseActive = false;
-const btnChase = document.getElementById('btn-chase');
-
-btnChase.addEventListener('click', async () => {
-    if (!chaseActive) {
-        // START CHASE
-        btnChase.textContent = '⏳ KALKIŞ YAPILIYOR...';
-        btnChase.disabled = true;
-        addLog('CMD', 'Takip modu başlatılıyor — Iris kalkış yapacak...', 'warn');
-
-        try {
-            const res = await fetch('/api/command/iris/start_chase', { method: 'POST' });
-            const data = await res.json();
-            if (data.status === 'success') {
-                chaseActive = true;
-                btnChase.textContent = '⛔ GÖREVİ DURDUR';
-                btnChase.className = 't-btn btn-danger block-btn';
-                document.getElementById('chase-status').textContent = 'AKTİF';
-                document.getElementById('chase-status').className = 'val green';
-                addLog('SYS', '✓ Takip modu aktif! Drone hedef İHA\'yı takip ediyor.', 'success');
-                // Mesafe güncelleme döngüsünü başlat
-                startChaseStatusPolling();
-            } else {
-                addLog('ERR', 'Takip başlatılamadı: ' + data.message, 'crit');
-            }
-        } catch(e) {
-            addLog('ERR', 'Chase bağlantı hatası: ' + e, 'crit');
-        }
-        btnChase.disabled = false;
-    } else {
-        // STOP CHASE
-        chaseActive = false;
-        btnChase.textContent = '🚀 GÖREVİ BAŞLAT';
-        btnChase.className = 't-btn btn-success block-btn';
-        document.getElementById('chase-status').textContent = 'DURDURULDU';
-        document.getElementById('chase-status').className = 'val warning';
-        addLog('SYS', 'Takip modu durduruldu. Drone hover\'a geçiyor.', 'info');
-        fetch('/api/command/iris/stop_chase', { method: 'POST' }).catch(() => {});
-        stopChaseStatusPolling();
-    }
-});
-
-// Chase mesafe takibi (1 Hz polling)
-let chaseStatusInterval = null;
-
-function startChaseStatusPolling() {
-    stopChaseStatusPolling(); // Öncekini temizle
-    chaseStatusInterval = setInterval(async () => {
-        try {
-            const res = await fetch('/api/chase_status');
-            const data = await res.json();
-            if (data.active) {
-                document.getElementById('chase-dist').textContent = (data.distance + 8).toFixed(1) + ' m';
-            } else {
-                // Backend chase bitti
-                if (chaseActive) {
-                    chaseActive = false;
-                    btnChase.textContent = '🚀 GÖREVİ BAŞLAT';
-                    btnChase.className = 't-btn btn-success block-btn';
-                    document.getElementById('chase-status').textContent = 'BİTTİ';
-                    document.getElementById('chase-status').className = 'val warning';
-                    stopChaseStatusPolling();
-                }
-            }
-        } catch(e) { /* sessiz */ }
-    }, 1000);
-}
-
-function stopChaseStatusPolling() {
-    if (chaseStatusInterval) {
-        clearInterval(chaseStatusInterval);
-        chaseStatusInterval = null;
-    }
-}
-
-// Chase pozisyon bilgisi — artık sağ paneldeki veriler updateAvci/updateHedef
-// ile beslendiğinden bu gereksiz, ama çağrı referansı bozulmasın diye bırakıyoruz
-function updateChasePositions(plane, iris) {
-    // artık sol panelde konum satırı yok — noop
-}
-
-// Init
-window.onload = () => {
-    connectWebSocket();
-    animateHUD();
-
-    // === GPS KARIŞTIRMA SLIDER (DOM hazır olduğunda bağlan) ===
-    const slider = document.getElementById('gps-jam-slider');
-    const valEl  = document.getElementById('gps-jam-value');
-    const statEl = document.getElementById('gps-jam-status');
-    let debounce = null;
-
-    if (slider) {
-        slider.addEventListener('input', () => {
-            const val = parseInt(slider.value);
-            valEl.textContent = val + '%';
-
-            // Slider track dolurma
-            slider.style.setProperty('--fill', val + '%');
-
-            if (val === 0) {
-                valEl.className = 'gps-jam-value green';
-                statEl.innerHTML = '<span class="dot green"></span> GPS Sinyali Normal';
-            } else if (val < 30) {
-                valEl.className = 'gps-jam-value yellow';
-                statEl.innerHTML = '<span class="dot yellow"></span> Hafif Parazit &mdash; &plusmn;' + Math.round(val * 0.2) + 'm gürültü';
-            } else if (val < 70) {
-                valEl.className = 'gps-jam-value orange';
-                statEl.innerHTML = '<span class="dot orange"></span> Orta Kariştirma &mdash; veri dalgalanıyor';
-            } else if (val < 100) {
-                valEl.className = 'gps-jam-value red';
-                statEl.innerHTML = '<span class="dot red"></span> Şiddetli Kariştirma &mdash; spoofing aktif';
-            } else {
-                valEl.className = 'gps-jam-value red blink';
-                statEl.innerHTML = '<span class="dot red blink"></span> GPS KAYBI &mdash; veri donmuş!';
-            }
-
-            clearTimeout(debounce);
-            debounce = setTimeout(() => {
-                fetch('/api/gps_noise', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ level: val / 100.0 })
-                }).then(r => r.json()).then(() => {
-                    addLog('GPS', 'Kariştirma: %' + val, val > 50 ? 'crit' : val > 0 ? 'warn' : 'info');
-                }).catch(() => {});
-            }, 120);
-        });
-    }
-
-    // === VIDEO PARAZİT SLIDER ===
-    const vSlider = document.getElementById('video-noise-slider');
-    const vValEl  = document.getElementById('video-noise-value');
-    const vStatEl = document.getElementById('video-noise-status');
-    let vDebounce = null;
-    let videoNoiseLevel = 0;
-
-    if (vSlider) {
-        vSlider.addEventListener('input', () => {
-            const val = parseInt(vSlider.value);
-            videoNoiseLevel = val / 100.0;
-            vValEl.textContent = val + '%';
-
-            if (val === 0) {
-                vValEl.className = 'gps-jam-value green';
-                vStatEl.innerHTML = '<span class="dot green"></span>&nbsp;Temiz Analog Sinyal';
-            } else if (val < 25) {
-                vValEl.className = 'gps-jam-value yellow';
-                vStatEl.innerHTML = '<span class="dot yellow"></span>&nbsp;Hafif Parazit — gürültü başlıyor';
-            } else if (val < 60) {
-                vValEl.className = 'gps-jam-value orange';
-                vStatEl.innerHTML = '<span class="dot orange"></span>&nbsp;Orta Parazit — görüntü bozuluyor';
-            } else if (val < 100) {
-                vValEl.className = 'gps-jam-value red';
-                vStatEl.innerHTML = '<span class="dot red"></span>&nbsp;Şiddetli Parazit — sinyal zayıf!';
-            } else {
-                vValEl.className = 'gps-jam-value red blink';
-                vStatEl.innerHTML = '<span class="dot red blink"></span>&nbsp;SINYAL YOK — ekran siyah!';
-            }
-
-            clearTimeout(vDebounce);
-            vDebounce = setTimeout(() => {
-                fetch('/api/video_noise', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ level: videoNoiseLevel })
-                }).then(r => r.json()).then(() => {
-                    addLog('VID', 'Video parazit: %' + val, val > 50 ? 'crit' : val > 0 ? 'warn' : 'info');
-                }).catch(() => {});
-            }, 120);
-        });
-    }
-
-    // === VIDEO NOISE CANVAS ANİMASYONU (tarama çizgileri efekti) ===
-    const noiseCanvas = document.getElementById('video-noise-canvas');
-    function resizeNoiseCanvas() {
-        if (!noiseCanvas) return;
-        const parent = noiseCanvas.parentElement;
-        noiseCanvas.width  = parent.offsetWidth  || 640;
-        noiseCanvas.height = parent.offsetHeight || 360;
-    }
-    resizeNoiseCanvas();
-    window.addEventListener('resize', resizeNoiseCanvas);
-
-    function drawNoise() {
-        if (!noiseCanvas) return requestAnimationFrame(drawNoise);
-        const ctx = noiseCanvas.getContext('2d');
-        const W = noiseCanvas.width, H = noiseCanvas.height;
-        const lvl = videoNoiseLevel;
-
-        ctx.clearRect(0, 0, W, H);
-
-        if (lvl >= 1.0) {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, W, H);
-            requestAnimationFrame(drawNoise);
-            return;
-        }
-        if (lvl <= 0) {
-            requestAnimationFrame(drawNoise);
-            return;
-        }
-
-        // Rastgele piksel gürültüsü
-        if (lvl > 0.05) {
-            const imgData = ctx.createImageData(W, H);
-            const d = imgData.data;
-            const prob = lvl * 0.35;
-            for (let i = 0; i < d.length; i += 4) {
-                if (Math.random() < prob) {
-                    const v = Math.random() * 255 | 0;
-                    d[i] = v; d[i+1] = v; d[i+2] = v;
-                    d[i+3] = Math.min(255, lvl * 230 | 0);
-                }
-            }
-            ctx.putImageData(imgData, 0, 0);
-        }
-
-        // Yatay tarama çizgileri (analog CRT efekti)
-        if (lvl > 0.25) {
-            const nLines = Math.floor(lvl * 20);
-            for (let i = 0; i < nLines; i++) {
-                const y = Math.random() * H;
-                const lh = Math.random() * lvl * 4 + 1;
-                const r = Math.random()*255|0, g = Math.random()*255|0, b = Math.random()*255|0;
-                ctx.fillStyle = `rgba(${r},${g},${b},${lvl * 0.85})`;
-                ctx.fillRect(0, y, W, lh);
-            }
-        }
-
-        // Üst karartma (yüksek parazitte solar)
-        if (lvl > 0.65) {
-            const alpha = (lvl - 0.65) * 2.2;
-            ctx.fillStyle = `rgba(0,0,0,${Math.min(alpha, 0.92)})`;
-            ctx.fillRect(0, 0, W, H);
-        }
-
-        requestAnimationFrame(drawNoise);
-    }
-    drawNoise();
-
-    // === GÖRÜŞ HATTI & FAZ KAPILARI ===
-    // Eski hali ground-truth'a yapay gürültü ekleyip "PnP tahmini" diye
-    // gösteriyordu (rapor fotoğrafı için yazılmış maket). Artık kameranın
-    // GERÇEK kestirimi ile ground-truth ayrı ayrı, faz kapıları da canlı.
-    const pnpFaz   = document.getElementById('pnp-faz');
-    const pnpDet   = document.getElementById('pnp-det');
-    const pnpPose  = document.getElementById('pnp-pose');
-    const pnpDist  = document.getElementById('pnp-dist');
-    const pnpTruth = document.getElementById('pnp-truth');
-    const pnpErr   = document.getElementById('pnp-err');
-    const pnpLock  = document.getElementById('pnp-lock');
-    const pnpDh    = document.getElementById('pnp-dh');
-    const pnpBlock = document.getElementById('pnp-block');
-
-    const _yaz = (el, txt, cls) => { el.textContent = txt; el.className = 'val ' + (cls || ''); };
-
-    function updatePnPTelemetry() {
-        fetch('/api/telemetry/pnp')
-            .then(r => r.json())
-            .then(d => {
-                if (!d) return;
-                // gecis_sayisi = GPS→görsel faza kaçıncı GEÇİŞ. Yüksek sayı,
-                // görsel temasın kopup kopup yeniden kurulduğunu gösterir
-                // (faz gidip gelmesi) — 1 ideal, 5+ sorunlu.
-                _yaz(pnpFaz, d.faz + (d.gecis_sayisi ? `  ${d.gecis_sayisi}. geçiş` : ''),
-                     d.faz === 'VISUAL' ? 'green' : d.faz === 'VURULDU' ? 'green' : 'warning');
-
-                _yaz(pnpDet, d.tespit_var ? `VAR  ${d.tespit_conf}` : 'YOK',
-                     d.tespit_var ? 'green' : 'red');
-
-                // Kanat uçları görünmüyorsa ölçek (dolayısıyla menzil) güvenilmez
-                _yaz(pnpPose, d.pose_var ? `VAR  ${d.pose_conf}${d.kanat_gorunur ? '' : '  (kanat yok)'}` : 'YOK',
-                     d.pose_var ? (d.kanat_gorunur ? 'green' : 'warning') : 'red');
-
-                _yaz(pnpDist, d.gorus_menzil != null ? d.gorus_menzil.toFixed(1) + ' m' : '--',
-                     d.gorus_menzil == null ? '' :
-                     d.gorus_menzil < 10 ? 'red' : d.gorus_menzil < 30 ? 'warning' : 'green');
-
-                _yaz(pnpTruth, d.gercek_menzil != null ? d.gercek_menzil.toFixed(1) + ' m' : '--', '');
-
-                if (d.menzil_hata != null) {
-                    const h = d.menzil_hata;
-                    _yaz(pnpErr, (h >= 0 ? '+' : '') + h.toFixed(1) + ' m',
-                         Math.abs(h) < 3 ? 'green' : Math.abs(h) < 8 ? 'warning' : 'red');
-                } else _yaz(pnpErr, '--', '');
-
-                _yaz(pnpLock, `${d.kilit_sayac}/${d.kilit_n}  (son ${d.kilit_pencere} kare)`,
-                     d.poz_kapi_ok ? 'green' : 'warning');
-
-                _yaz(pnpDh, d.d_h != null ? `${d.d_h.toFixed(1)} / ${d.gate_menzil} m` : '--',
-                     d.menzil_kapi_ok ? 'green' : 'warning');
-
-                _yaz(pnpBlock, d.engel, d.engel === '—' ? 'green' : 'red');
-            })
-            .catch(() => { _yaz(pnpBlock, 'API YOK', 'red'); });
-    }
-    setInterval(updatePnPTelemetry, 1000);
-
+// ══ DURUM YOKLAMA (chase / pnp / hasar) ════════════════════════════════
+const G_ICONS = {
+  gps:    '<path d="M12 21s-6-5.7-6-10a6 6 0 0 1 12 0c0 4.3-6 10-6 10z"/><circle cx="12" cy="11" r="2.3"/>',
+  vision: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  hit:    '<path d="M12 3v6m0 6v6m-9-9h6m6 0h6"/><circle cx="12" cy="12" r="3"/>',
+  idle:   '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
 };
+let lastFaz = null, lastImha = false, lastLockTxt = null;
+
+async function pollChase(){
+  try {
+    const d = await (await fetch('/api/chase_status')).json();
+    if (d.active !== st.mission) setMission(d.active);
+    st.faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
+  } catch (e){ st.faz = null; }
+}
+async function pollPnp(){
+  try { st.pnp = await (await fetch('/api/telemetry/pnp')).json(); }
+  catch (e){ st.pnp = null; }
+}
+async function pollHasar(){
+  try {
+    const d = await (await fetch('/api/hasar')).json();
+    st.imha = !!d.imha;
+    if (st.imha && !lastImha){
+      lastImha = true;
+      addLog('guide', 'VURUŞ', `✷ HEDEF İMHA — temas menzili ${d.menzil ?? '?'} m (${d.temas ?? 'gazebo teması'})`);
+    } else if (!st.imha) lastImha = false;
+  } catch (e){}
+}
+
+function renderStatus(){
+  const p = st.pnp;
+  const faz = st.faz;
+
+  // ── Güdüm tipi: supervisor fazı ne diyorsa o ──
+  //   GPS fazı    → detection modeli, hedefin GPS pozuna göre kadraj merkezleme
+  //   Görsel faz  → pose modeli, kameradan lead pursuit
+  let key, main, model, tel, mdl, col, cap;
+  if (st.imha || faz === 'VURULDU'){
+    key = 'hit'; main = 'HEDEF VURULDU'; model = 'GÖREV TAMAM';
+    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--red)'; cap = 'fiziksel temas doğrulandı';
+  } else if (faz === 'VISUAL'){
+    key = 'vision'; main = 'GÖRSEL GÜDÜM'; model = 'POSE MODELİ';
+    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--green)'; cap = 'pose modeli · lead pursuit';
+  } else if (faz === 'GPS'){
+    key = 'gps'; main = 'GPS GÜDÜM'; model = 'DETECTION MODELİ';
+    tel = 'GPS'; mdl = 'DETECTION'; col = 'var(--amber)'; cap = 'detection modeli · kadraj merkezleme';
+  } else {
+    key = 'idle'; main = 'GÜDÜM BEKLEMEDE'; model = 'MODEL PASİF';
+    tel = '—'; mdl = 'PASİF'; col = 'var(--muted)'; cap = 'güdüm bekliyor';
+  }
+  $('guideBadge').className = 'guidebadge ' + key;
+  $('guideIcon').innerHTML = G_ICONS[key];
+  $('guideTxt').innerHTML = '';
+  $('guideTxt').append(main + ' ');
+  const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = model;
+  $('guideTxt').append(sub);
+  const ag = $('aGuide'); ag.textContent = tel; ag.style.color = col;
+  const am = $('aModel'); am.textContent = mdl; am.style.color = col;
+  $('sTermCap').textContent = cap;
+  if (faz && faz !== lastFaz){
+    lastFaz = faz;
+    if (faz === 'GPS') addLog('gps', 'GÜDÜM', 'GPS fazı — detection modeliyle kadraj merkezleme.');
+    else if (faz === 'VISUAL') addLog('vision', 'GÜDÜM', 'Görsel temas oturdu → POSE modeli, lead pursuit devrede.');
+    else if (faz === 'VURULDU') addLog('guide', 'GÜDÜM', 'Terminal vuruş — hedefe temas.');
+    else if (faz === 'DURDU') addLog('sys', 'GÜDÜM', 'Güdüm durdu.');
+  }
+
+  // ── Terminal mod kartı ──
+  const termTxt = st.imha ? 'VURULDU'
+    : faz === 'VISUAL' ? 'GÖRSEL FAZ'
+    : faz === 'GPS' ? 'GPS FAZI'
+    : faz === 'DURDU' ? 'DURDU'
+    : st.mission ? 'TAKİP' : 'HAZIR';
+  $('sTerm').textContent = termTxt;
+  $('tTerm').textContent = termTxt;
+  $('aTerm').textContent = termTxt;
+  $('aTerm').className = 'tv' + (st.mission ? ' green' : ' muted');
+
+  // ── Kilit durumu: görüş hattının GERÇEK çıktısından ──
+  let lockTxt, lockCls, lockCap;
+  if (st.imha){ lockTxt = 'VURULDU'; lockCls = 'hit'; lockCap = 'hedef imha edildi'; }
+  else if (!st.mission){ lockTxt = 'BEKLEMEDE'; lockCls = 'idle'; lockCap = 'görev başlatılmadı'; }
+  else if (p && p.pose_var){
+    lockTxt = 'KİLİT'; lockCls = '';
+    lockCap = `pose ${p.pose_conf ?? '--'}${p.kanat_gorunur ? '' : ' · kanat yok'}`;
+  } else if (p && p.tespit_var){
+    lockTxt = 'TESPİT'; lockCls = 'searching'; lockCap = `detection ${p.tespit_conf ?? '--'}`;
+  } else { lockTxt = 'ARANIYOR'; lockCls = 'searching'; lockCap = 'hedef kadrajda yok'; }
+  $('lockBadge').className = 'lockbadge ' + lockCls;
+  $('lockBadge').textContent = lockTxt;
+  $('sLock').textContent = lockTxt;
+  $('sLockCap').textContent = lockCap;
+  $('tLock').textContent = lockTxt;
+  $('aLock').textContent = lockTxt;
+  $('aLock').className = 'tv' + (lockTxt === 'KİLİT' ? ' green' : lockTxt === 'BEKLEMEDE' ? ' muted' : ' amber');
+  if (st.mission && lockTxt !== lastLockTxt){
+    lastLockTxt = lockTxt;
+    if (lockTxt === 'KİLİT') addLog('vision', 'GÖRÜŞ', 'Pose kilidi kuruldu — hedef 6 keypoint ile görülüyor.');
+    else if (lockTxt === 'ARANIYOR') addLog('gps', 'GÖRÜŞ', 'Görsel temas yok — hedef kadrajda değil.');
+  }
+  if (!st.mission) lastLockTxt = null;
+
+  // ── FPV köşe verileri + görüş hattı paneli ──
+  const yaz = (id, txt, cls) => { const e = $(id); e.textContent = txt; e.className = 'tv ' + (cls || ''); };
+  if (p){
+    $('oConf').textContent = p.tespit_var ? p.tespit_conf : '--';
+    $('oPose').textContent = p.pose_var ? p.pose_conf : '--';
+    $('aPct').textContent = p.kilit_n ? Math.round(100 * p.kilit_sayac / p.kilit_n) : 0;
+    yaz('pDet', p.tespit_var
+        ? `VAR ${p.tespit_conf}${p.det_px != null ? ` · ${p.det_px} px` : ''}`
+        : 'YOK', p.tespit_var ? 'green' : 'red');
+    // "Pose YOK" niye yok? Model kapalı mı, hedef çok mu küçük — ekran söylesin.
+    // Gövde 0.81 m / FX≈167 px: 10 px ≈ 13.5 m. Altında pose keypoint bulamaz.
+    let poseTxt, poseCls;
+    if (p.pose_var){
+      poseTxt = `VAR ${p.pose_conf}${p.kanat_gorunur ? '' : ' (kanat yok)'}`;
+      poseCls = p.kanat_gorunur ? 'green' : 'amber';
+    } else if (p.pose_model_var === false){
+      poseTxt = 'MODEL YÜKLÜ DEĞİL'; poseCls = 'red';
+    } else if (p.tespit_var && p.det_px != null && p.det_px < 10){
+      poseTxt = `hedef çok küçük (${p.det_px} px)`; poseCls = 'amber';
+    } else {
+      poseTxt = 'YOK'; poseCls = 'red';
+    }
+    yaz('pPose', poseTxt, poseCls);
+    yaz('pDist', p.gorus_menzil != null ? p.gorus_menzil.toFixed(1) + ' m' : '--',
+        p.gorus_menzil == null ? '' : p.gorus_menzil < 10 ? 'red' : p.gorus_menzil < 30 ? 'amber' : 'green');
+    yaz('pTruth', p.gercek_menzil != null ? p.gercek_menzil.toFixed(1) + ' m' : '--', '');
+    if (p.menzil_hata != null){
+      const h = p.menzil_hata;
+      yaz('pErr', (h >= 0 ? '+' : '') + h.toFixed(1) + ' m',
+          Math.abs(h) < 3 ? 'green' : Math.abs(h) < 8 ? 'amber' : 'red');
+    } else yaz('pErr', '--', '');
+    yaz('pLock', `${p.kilit_sayac}/${p.kilit_n} (son ${p.kilit_pencere} kare)`, p.poz_kapi_ok ? 'green' : 'amber');
+    yaz('pDh', p.d_h != null ? `${p.d_h.toFixed(1)} / ${p.gate_menzil} m` : '--', p.menzil_kapi_ok ? 'green' : 'amber');
+    yaz('pBlock', p.engel, p.engel === '—' ? 'green' : 'red');
+  } else {
+    yaz('pBlock', 'API YOK', 'red');
+  }
+}
+
+// ══ PANEL DÜZENİ (büyüt / daralt) ══════════════════════════════════════
+const appEl = document.querySelector('.app');
+let posBig = false;
+$('posExpand').addEventListener('click', () => {
+  posBig = !posBig;
+  if (posBig){ $('centerCol').appendChild($('posPanel')); appEl.classList.add('split');
+               $('posExpand').textContent = '⤡'; $('posExpand').title = 'Küçült'; }
+  else { $('rightCol').appendChild($('posPanel')); appEl.classList.remove('split');
+         $('posExpand').textContent = '⤢'; $('posExpand').title = 'Büyüt'; }
+  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+});
+let ctrlOpen = true;
+$('ctrlToggle').addEventListener('click', () => {
+  ctrlOpen = !ctrlOpen;
+  $('ctrlBody').hidden = !ctrlOpen;
+  appEl.classList.toggle('ctrl-collapsed', !ctrlOpen);
+  $('ctrlToggle').textContent = ctrlOpen ? '⯆' : '⯈';
+  $('ctrlToggle').title = ctrlOpen ? 'Paneli kapat' : 'Paneli aç';
+  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+});
+
+// ══ ÇİZİM DÖNGÜSÜ ══════════════════════════════════════════════════════
+function frame(now){
+  camAz += (camAzT - camAz) * 0.18;
+  camEl += (camElT - camEl) * 0.18;
+  drawScene();
+  drawNoise();
+  const img = $('fpvImg');
+  $('noFeed').hidden = !!(img && img.naturalWidth > 0);
+  if (!reduced) $('scan').style.top = (30 + Math.sin(now / 1400) * 22) + '%';
+  requestAnimationFrame(frame);
+}
+
+// ══ AÇILIŞ ═════════════════════════════════════════════════════════════
+markScenario();
+drawKnob();
+setTab('hedef');
+connectWS();
+pollChase(); pollPnp(); pollHasar();
+setInterval(pollChase, 500);
+setInterval(pollPnp, 700);
+setInterval(pollHasar, 1000);
+setInterval(renderStatus, 250);
+renderStatus();
+requestAnimationFrame(frame);
+})();
