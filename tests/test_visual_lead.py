@@ -696,6 +696,55 @@ def main():
             f"gövde pitch +30° → kamera dünya pitch {-pc:+.1f}° "
             f"(beklenen {T-30:+.0f}°)")
 
+    # ══════════════════════════════════════════════════════════
+    #  T47-T49  V-KUYRUK KANITI (burun/kuyruk takasının asıl çözümü)
+    # ══════════════════════════════════════════════════════════
+    # make_pose'un vt noktaları bbox MERKEZİNDE (vt=(cx,cy)), yani ayrım
+    # taşımıyor. Bu testler V-kuyruğu GERÇEK yerine — kuyruk ucuna — koyar.
+    def pose_vt(R, aspect, swap=False, cx=CX, cy=CY):
+        p = make_pose(R, aspect, cx=cx, cy=cy, swap=swap)
+        # V-kuyruk FİZİKSEL kuyrukta olmalı — etiketler takas olsa da uçağın
+        # kuyruğu yer değiştirmez. swap=True iken model kuyruğu 0 numaraya
+        # yazdığından fiziksel kuyruk oradadır. (İlk yazımda bunu atlayıp
+        # V-kuyruğu ETİKETE göre koymuştum; o hâlde takas doğal olarak
+        # görünmez oluyordu — testin kendisi kanıtı yok ediyordu.)
+        vx, vy = (p["kpts"][0][:2] if swap else p["kpts"][1][:2])
+        k = list(p["kpts"]); k[4] = (vx, vy - 2.0, 1.0); k[5] = (vx, vy + 2.0, 1.0)
+        return dict(p, kpts=k)
+
+    # T47: etiketler TERS ama V-kuyruk doğru yerde → çekirdek ekseni düzeltmeli.
+    # HAREKET YOK (bbox sabit) — akış kapısı burada oy veremez, yani düzeltme
+    # yalnız V-kuyruk kanıtından gelebilir. Kuyruk takibinin tam durumu budur.
+    core_vt = LeadPursuitCore(cfg_copy())
+    for i in range(8):
+        r_vt = core_vt.process(pose_vt(12.0, 60.0, swap=True), i / 30.0,
+                               ATT_KAMERA_YATAY)
+    dogru = LeadPursuitCore(cfg_copy()).process(pose_vt(12.0, 60.0), 0.0,
+                                                ATT_KAMERA_YATAY)["d_birim"]
+    hiza = float(np.dot(r_vt["d_birim"], dogru))
+    kontrol("T47 V-kuyruk kanıtı: HAREKETSİZ karede takası düzeltir",
+            hiza > 0.9 and core_vt.takas_sayaci > 0,
+            f"düzeltilmiş·doğru={hiza:+.2f} takas_sayaci={core_vt.takas_sayaci} "
+            f"vt_skor={core_vt.vt_skor:+.2f} akis_skor={core_vt.akis_skor:+.2f}")
+
+    # T48: etiketler DOĞRUYKEN kanıt sessiz kalmalı (yanlış pozitif yok)
+    core_ok2 = LeadPursuitCore(cfg_copy())
+    for i in range(8):
+        r_ok2 = core_ok2.process(pose_vt(12.0, 60.0), i / 30.0, ATT_KAMERA_YATAY)
+    kontrol("T48 doğru etiketlemede V-kuyruk kanıtı susar",
+            core_ok2.takas_sayaci == 0 and core_ok2.vt_skor > 0.5,
+            f"takas_sayaci={core_ok2.takas_sayaci} vt_skor={core_ok2.vt_skor:+.2f}")
+
+    # T49: V-kuyruk güveni DÜŞÜKSE kanıt kullanılmamalı — eski davranışa düşer
+    core_dus = LeadPursuitCore(cfg_copy())
+    for i in range(6):
+        p = pose_vt(12.0, 60.0, swap=True)
+        k = list(p["kpts"]); k[4] = (k[4][0], k[4][1], 0.1); k[5] = (k[5][0], k[5][1], 0.1)
+        core_dus.process(dict(p, kpts=k), i / 30.0, ATT_KAMERA_YATAY)
+    kontrol("T49 V-kuyruk güveni düşükse kanıt oy vermez",
+            abs(core_dus.vt_skor) < 1e-9,
+            f"vt_skor={core_dus.vt_skor:+.3f} (güven 0.1 < KPT_CONF_MIN)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

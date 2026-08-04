@@ -332,9 +332,13 @@ class LeadPursuitCore:
         self.akis_skor = 0.0          # eksen-yön işaret skoru, EMA'lı (+1 doğru)
         self.takas_sayaci = 0         # akış kontrolünün ekseni kaç kez çevirdiği
         self.takas_aktif_onceki = False   # kapı durum değişimini yakalamak için
+        self.vt_skor = 0.0            # V-kuyruk kanıtı skoru, EMA'lı (+1 doğru)
 
     # keypoint indeksleri (vision/geometry.KEYPOINT_NAMES sırası)
+    # V-kuyruk indeksleri (4,5) 2026-08-04'e kadar KULLANILMIYORDU — burun/kuyruk
+    # takasını tek karede çözen kanıt orada duruyordu.
     _I_BURUN, _I_KUYRUK, _I_SOLK, _I_SAGK = 0, 1, 2, 3
+    _I_VT_SOL, _I_VT_SAG = 4, 5
 
     def _undistort(self, pts):
         """UNDISTORT kancası: gerçek donanımda cv2.undistortPoints; simde işlemsiz."""
@@ -384,6 +388,32 @@ class LeadPursuitCore:
             d_birim = self.d_birim_onceki if self.d_birim_onceki is not None \
                 else np.array([1.0, 0.0])
 
+        # ── V-KUYRUK KANITI: hangi uç kuyruk, GEOMETRİK olarak belli ──
+        # (2026-08-04) Pose modeli 6 keypoint üretiyor ama çekirdek şimdiye
+        # kadar yalnız 4'ünü okuyordu; V-kuyruk noktaları (4,5) FİZİKSEL OLARAK
+        # KUYRUKTADIR ve hangi ucun kuyruk olduğunu tek karede söyler:
+        #     |vtail − kuyruk| < |vtail − burun|  olmalı.
+        # Değilse etiketler takas olmuştur.
+        #
+        # Neden akış kapısı yetmedi: onu YANDAN geçiş verisiyle ayarlamıştım
+        # (hedef kadrajda 700 px/s kayıyordu). Devir kapısına kuyruk açısı
+        # koşulu eklendikten sonra artık KUYRUKTAN devralıyoruz (yandanlık
+        # medyanı 0.89→0.40) ve kuyruk takibinde hedef kadrajda neredeyse
+        # DURGUN — akış eşiği (60 px/s) çoğu karede hiç aşılmıyor, kapı oy
+        # veremiyor. Ölçüm: düzeltilmiş cetvelle takas oranı hâlâ %33
+        # (2026-08-01'deki değerin aynısı, yani kapı hiç işlememiş).
+        # V-kuyruk kanıtı harekete İHTİYAÇ DUYMAZ — tam da bu geometride çalışır.
+        vt1, vt2 = kpts[self._I_VT_SOL], kpts[self._I_VT_SAG]
+        if (min(vt1[2], vt2[2]) >= cfg.KPT_CONF_MIN and a > 1e-9):
+            vt = np.array([(vt1[0] + vt2[0]) * 0.5, (vt1[1] + vt2[1]) * 0.5])
+            d_burun = float(np.linalg.norm(vt - burun))
+            d_kuyruk = float(np.linalg.norm(vt - kuyruk))
+            # Ayrım anlamlı olmalı: iki uç V-kuyruğa neredeyse eşit uzaklıktaysa
+            # (tam karşıdan/arkadan bakış, gövde noktaya çöküyor) karar verme.
+            if abs(d_burun - d_kuyruk) > 0.25 * a:
+                self.vt_skor = (cfg.AKIS_EMA * (1.0 if d_kuyruk < d_burun else -1.0)
+                                + (1.0 - cfg.AKIS_EMA) * self.vt_skor)
+
         # ── HAREKET TUTARLILIĞI: eksen yönünü kadraj akışıyla doğrula ──
         # Skor DAİMA HAM eksen üzerinden güncellenir (çıktıyı çevirsek bile),
         # böylece kendi düzeltmemizi geri beslemeyiz. Bkz. Cfg.AKIS_* notu.
@@ -398,7 +428,13 @@ class LeadPursuitCore:
                     self.akis_skor = (cfg.AKIS_EMA * (1.0 if cos_ > 0 else -1.0)
                                       + (1.0 - cfg.AKIS_EMA) * self.akis_skor)
         self.merkez_onceki = merkez
-        takas_aktif = self.akis_skor < -cfg.AKIS_TAKAS_ESIK
+        # V-kuyruk kanıtı BİRİNCİL: her karede geçerli ve geometriktir.
+        # Akış skoru YEDEK: yalnız V-kuyruk karar veremediğinde (skor ~0,
+        # yani noktalar güvensiz ya da ayrım anlamsız) devreye girer.
+        if abs(self.vt_skor) > cfg.AKIS_TAKAS_ESIK:
+            takas_aktif = self.vt_skor < 0
+        else:
+            takas_aktif = self.akis_skor < -cfg.AKIS_TAKAS_ESIK
         if takas_aktif:
             d_birim = -d_birim            # etiketler takas olmuş — ekseni çevir
             self.takas_sayaci += 1
@@ -521,4 +557,5 @@ class LeadPursuitCore:
             "menzil_kestirim_m": (geo.FX * GOVDE_BOYU_M / olcek) if olcek > 1e-9 else 0.0,
             "flip_sayaci": self.flip_sayaci,
             "takas_sayaci": self.takas_sayaci, "akis_skor": self.akis_skor,
+            "vt_skor": self.vt_skor,
         }

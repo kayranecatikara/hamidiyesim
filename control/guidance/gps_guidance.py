@@ -135,7 +135,14 @@ class Cfg:
     # sıçramaları keser. Yatış karşılığı atan(12/9.81) = 50.7°, ATC_ANGLE_MAX
     # 65'in altında. DOĞRULAMA: menzil kapanmıyorsa sınır hâlâ sıkı,
     # takla dönüyorsa gevşek.
-    YON_ACCEL = 12.0         # m/s²
+    # 12 → 10 (2026-08-04, üçüncü tur): 12 m/s² ile menzil kapandı (310→13.4 m,
+    # 45 s) AMA avcı yine takla attı — yatış p99 71°, max 133.6°, ATC_ANGLE_MAX
+    # 65'in üstünde. 12 m/s²'lik yön ivmesi tek başına 50.7° yatış ister;
+    # üstüne hızı sürdüren sürükleme yatışı (~46°) binince tavan deliniyor.
+    # 10 → 45.6° yön yatışı; 17 m/s'de omega_max 33.7 °/s, dairenin p90'ı
+    # (34.6) sınırda ama medyanının (15) iki katı — takip sürüyor.
+    # BANT: 8 çok sıkı (görsel faz %77→%8), 12 çok gevşek (takla). Ara değer.
+    YON_ACCEL = 10.0         # m/s²
     DERIV_EMA = 0.2
 
     # --- YAW ---

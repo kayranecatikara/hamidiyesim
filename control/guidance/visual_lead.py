@@ -51,7 +51,7 @@ _CSV_ALANLAR = [
     "v_kapanma_izin",
     # Hareket tutarlılığı kapısı: akis_skor eksen yönünün akışla uyumu (+1 uyumlu,
     # −1 ters), takas_sayaci kapının ekseni kaç kez çevirdiği (bkz. Cfg.AKIS_*).
-    "takas_sayaci", "akis_skor",
+    "takas_sayaci", "akis_skor", "vt_skor",
 ] + dogruluk.KOLONLAR      # Gazebo gerçeğiyle karşılaştırma — SADECE log/analiz
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
@@ -306,6 +306,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 "menzil_kestirim_m": round(res["menzil_kestirim_m"], 2),
                 "takas_sayaci": res["takas_sayaci"],
                 "akis_skor": round(res["akis_skor"], 3),
+                "vt_skor": round(res["vt_skor"], 3),
             })
 
             if aras.attitude is not None:
