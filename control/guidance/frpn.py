@@ -66,12 +66,24 @@ class Cfg:
     # (tavana dayanır), 20 m'de 5 m/s, 4 m'de 1 m/s → kendiliğinden yumuşak duruş.
     # Katsayılar F3'te (tools/frpn_replay.py) grid-search ile sabitlenecek;
     # buradakiler MAKUL BAŞLANGIÇ, ayarlanmış değer DEĞİL.
-    K_C = 0.25
+    # ── AYARLANDI (F3 grid-search, tools/frpn_replay.py --tara) ──
+    # Amaç fonksiyonu: 4 yörünge × {20 Hz, 1 Hz telemetri} koşullarında
+    # 15 m altında geçirilen TOPLAM süre (görsel fazın devralabileceği pencere).
+    # 144 kombinasyon tarandı; kazanan K_C=0.40, V_C_MAX=20.0, K_ZEM=0.60
+    # (265.3 s), başlangıç değerlerine (0.25/22/1.0) göre belirgin üstün.
+    K_C = 0.40
     V_C_MIN = 1.0            # m/s; istasyona oturunca bile hafif baskı kalsın
-    V_C_MAX = 22.0           # m/s; araç zarfı F0'da ölçülüp buraya yazılacak
+    V_C_MAX = 20.0           # m/s; ölçülen araç zarfı: düz 18, dairede 14.4 m/s
 
-    # ── MANEVRA DÜZELTMESİ (terim 3) ──
-    K_ZEM = 1.0              # 1.0 = tam düzeltme, <1 sönümlü
+    # ── MANEVRA DÜZELTMESİ (terim 3) — "lead" terimi ──
+    # ⚠ 1.0 (tam düzeltme) EN İYİ DEĞİL, ölçüldü. Denge analizi bunu öngörüyordu:
+    # v_cmd = v_hedef + c·û + K·Δv yasasında, komut tam izlenirse
+    #     Δv_yeni⊥ = −K·Δv_eski⊥
+    # yani K=1 dik bileşeni SÖNDÜRMEZ, işaretini çevirip salındırır; K<1 söndürür.
+    # Gerçek araçta gecikme ve ivme sınırı bunu yumuşatıyor ama eğilim aynı.
+    # Mevcut gps_guidance'ın KD_H=0.20'si ise fazla sönümlü — kesme rotasına
+    # geç oturuyor. Ayarlanan 0.60 ikisinin arasında.
+    K_ZEM = 0.60
     V_ZEM_MAX = 12.0         # m/s; düzeltmenin kendi tavanı (ani ZEM sıçraması
                              # tüm komutu ele geçirmesin)
 
