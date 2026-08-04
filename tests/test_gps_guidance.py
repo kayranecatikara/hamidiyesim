@@ -66,11 +66,30 @@ def main():
             math.degrees(r4["yaw_hata"]) > 1 and r4["u"] > 320,
             f"yaw={math.degrees(r4['yaw_hata']):.2f}° u={r4['u']:.1f}")
 
-    # ── G5: ATTITUDE COUPLING — drone pitch nose-down → merkezdeki hedef yukarı kayar ──
+    # ── G5: GIMBAL AYRIŞTIRMASI (2026-08-04'te ANLAMI TERSİNE DÖNDÜ) ──
+    # Eskiden bu test attitude COUPLING'ini ölçüyordu: kamera gövdeye çakılıyken
+    # drone −10° pitch yapınca merkezdeki hedef kadrajda +10° kayıyordu ve bu
+    # "KADEME 2'nin kapatacağı sapma" olarak işaretlenmişti. Gimbal geldi ve
+    # sapmayı KAYNAĞINDA kapattı — artık gövde pitch'i kadraja SIZMAMALI.
+    # Test bu yüzden ters çevrildi: eski beklentiyi korumak, gimbal'ın işini
+    # regresyon sayardı. Sabit-montaj davranışı hemen altında ayrıca sınanıyor.
+    from control.guidance.guidance_core import Cfg as _GC
     r5 = hedef_kadraj_hatasi(tgt, [0, 0, 0], 0, math.radians(-10), 0)
-    kontrol("G5  pitch −10° → kadraj hatası ~+10° (K2'nin kapatacağı sapma)",
-            abs(math.degrees(r5["pitch_hata"]) - 10) < 1.0,
-            f"pitch_hata={math.degrees(r5['pitch_hata']):.2f}°")
+    kontrol("G5  gimbal: gövde pitch'i kadraja sızmaz (|hata| < 1°)",
+            abs(math.degrees(r5["pitch_hata"])) < 1.0,
+            f"pitch_hata={math.degrees(r5['pitch_hata']):.2f}° "
+            f"(sabit montajda +10° olurdu)")
+
+    # G5b: gimbal kapalıyken ESKİ davranış aynen geri gelmeli (geri uyumluluk)
+    _eski = _GC.GIMBAL_AKTIF
+    _GC.GIMBAL_AKTIF = False
+    try:
+        r5b = hedef_kadraj_hatasi(tgt, [0, 0, 0], 0, math.radians(-10), 0)
+    finally:
+        _GC.GIMBAL_AKTIF = _eski
+    kontrol("G5b sabit montaj (GIMBAL_AKTIF=False) → eski coupling geri gelir",
+            abs(math.degrees(r5b["pitch_hata"]) - 10) < 1.0,
+            f"pitch_hata={math.degrees(r5b['pitch_hata']):.2f}°")
 
     # ── G6: hedef ARKADA (kameranın önünde değil) → onde=False, u/v None ──
     r6 = hedef_kadraj_hatasi([-10, 0, 0], [0, 0, 0], 0, 0, 0)

@@ -1180,6 +1180,49 @@ async def mavlink_listener():
         await asyncio.sleep(0.005)
 
 
+        # ══ GIMBAL AÇI HEDEFİ ══
+# Kamera 2 eksenli servo mount'a bağlı (sim/gazebo_harmonic/models/
+# iris_with_standoffs/model.sdf). ArduPilot mount'u YALNIZ hedef tipi ANGLE
+# iken stabilize eder (AP_Mount_Servo.cpp:106-113 — NEUTRAL/RETRACTED erken
+# döner). MNT1_DEFLT_MODE 2 modu MAVLink targeting'e alır ama açı hedefini
+# BİZ vermeliyiz; bu komut onu verir ve gimbal o andan itibaren aracın
+# roll/pitch'ini kendi üstünden düşer.
+GIMBAL_PITCH_DEG = 25.0    # dünya çerçevesinde YUKARI bakış; guidance_core.
+                           # Cfg.KAMERA_TILT_DEG ile AYNI olmak ZORUNDA
+GIMBAL_ROLL_DEG = 0.0      # ufuk düz — modelin eğitim zarfı ±25° roll
+
+
+def _gimbal_kur(deneme=30, aralik=2.0):
+    """Gimbal'a sabit dünya-çerçevesi açı hedefi ver (stabilizasyonu açar).
+
+    Tekrarlı gönderilir: açılışta iris SITL henüz heartbeat vermemiş olabilir
+    ve komut sessizce düşer. Gimbal kurulamazsa uçuş DURMAZ — yalnız kamera
+    gövdeye çakılı gibi davranır (eski hal) ve uyarı basılır.
+    """
+    for i in range(deneme):
+        time.sleep(aralik)
+        conn = _iris_telem_conn
+        if conn is None or getattr(conn, "target_system", 0) == 0:
+            continue
+        try:
+            # MAV_CMD_DO_MOUNT_CONTROL: param1=pitch, param2=roll, param3=yaw,
+            # param7=MAV_MOUNT_MODE_MAVLINK_TARGETING(2)
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_DO_MOUNT_CONTROL, 0,
+                GIMBAL_PITCH_DEG, GIMBAL_ROLL_DEG, 0.0, 0.0, 0.0, 0.0,
+                mavutil.mavlink.MAV_MOUNT_MODE_MAVLINK_TARGETING)
+            print(f"[GIMBAL] açı hedefi gönderildi "
+                  f"(pitch {GIMBAL_PITCH_DEG:+.0f}° roll {GIMBAL_ROLL_DEG:+.0f}°, "
+                  f"dünya çerçevesi — stabilizasyon aktif)")
+            return True
+        except Exception as e:
+            print(f"[GIMBAL] komut gönderilemedi ({e}) — {i+1}/{deneme}")
+    print("[GIMBAL] UYARI: açı hedefi verilemedi. Gimbal stabilize ETMİYOR "
+          "olabilir; kamera gövdeye çakılı gibi davranır.")
+    return False
+
+
 # İris telemetri okuyucu — ayrı thread (chase/strike pasifken)
 _iris_telem_thread = None
 _iris_telem_stop = threading.Event()
@@ -1268,6 +1311,13 @@ async def startup_event():
     # AVCI_TRUTH=off ile kapatılır; kapalıyken CSV'nin *_gercek kolonları boş kalır.
     if os.environ.get("AVCI_TRUTH", "on").lower() not in ("off", "0"):
         gz_truth.baslat()
+
+    # Gimbal'ı stabilize açıya oturt (bkz. avci_copter.parm MNT1_* notu).
+    # MNT1_DEFLT_MODE 2 (MAVLink targeting) tek başına yetmez: ArduPilot bir
+    # AÇI hedefi almadan hedef tipi ANGLE olmaz ve AP_Mount_Servo stabilizasyonu
+    # atlar. Bu komut o hedefi verir. Tekrarlı gönderilir çünkü açılışta
+    # iris bağlantısı henüz hazır olmayabilir.
+    threading.Thread(target=_gimbal_kur, daemon=True).start()
 
     if os.environ.get("AVCI_NO_BROWSER", "0") != "1":
         threading.Timer(2.0, lambda: webbrowser.open("http://localhost:8000")).start()

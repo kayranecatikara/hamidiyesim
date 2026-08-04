@@ -73,7 +73,26 @@ class Cfg:
     AKIS_TAKAS_ESIK = 0.5      # skor bunun altına inerse ekseni ÇEVİR
     GECIKME_TAVAN_S = 0.12   # bundan bayat kare atlanır (döngü kullanır)
     YUKSELTI_DUZELT = True   # Adım 3: LOS yükselti düzeltmesi (alttan yaklaşma)
-    KAMERA_TILT_DEG = 25.0   # sabit montaj; gimbal gelirse dinamik okunacak
+    # Kameranın DÜNYA çerçevesindeki bakış yükselişi (yukarı +). Gimbal bunu
+    # sabit tutar; gcs_server açılışta aynı değeri MAV_CMD_DO_MOUNT_CONTROL
+    # ile ArduPilot'a gönderir — İKİSİ AYNI OLMAK ZORUNDA
+    # (gcs_server.GIMBAL_PITCH_DEG). Ayrışırsa güdüm, kameranın bakmadığı bir
+    # yöne baktığını sanar ve tüm nişan hesabı o fark kadar kayar.
+    KAMERA_TILT_DEG = 25.0
+    # ── GIMBAL (2026-08-04) ──
+    # Kamera artık gövdeye çakılı DEĞİL, 2 eksenli servo mount'ta
+    # (sim/gazebo_harmonic/models/iris_with_standoffs/model.sdf).
+    # GIMBAL_AKTIF=False sabit-montaj davranışına döndürür (A/B ve eski
+    # logların yeniden çözümlenmesi için).
+    GIMBAL_AKTIF = os.environ.get("AVCI_GIMBAL", "on").lower() \
+        not in ("0", "off", "false")
+    # Bu dört sınır avci_copter.parm'daki MNT1_*_MIN/MAX ile AYNI OLMALI.
+    # Firmware servo çıkışını orada kırpıyor; burada aynı kırpmayı
+    # uygulamazsak güdüm, gimbal doyduğunda gerçeği kaybeder.
+    GIMBAL_PITCH_MIN_DEG = _env_f("AVCI_GIMBAL_PITCH_MIN", -90.0)
+    GIMBAL_PITCH_MAX_DEG = _env_f("AVCI_GIMBAL_PITCH_MAX", 90.0)
+    GIMBAL_ROLL_MIN_DEG = _env_f("AVCI_GIMBAL_ROLL_MIN", -60.0)
+    GIMBAL_ROLL_MAX_DEG = _env_f("AVCI_GIMBAL_ROLL_MAX", 60.0)
     UNDISTORT_AKTIF = False  # simde distorsiyon yok; gerçek donanımda True + katsayılar
     DIST_KATSAYILARI = None  # cv2.undistortPoints için (k1,k2,p1,p2,k3), simde None
     KPT_CONF_MIN = _env_f("AVCI_POSE_KPT_CONF", 0.5)
@@ -173,15 +192,55 @@ def cfg_copy():
 
 # ══ Çerçeve dönüşümleri ══
 
-def kamera_to_govde(u_kamera, tilt_rad):
+def kamera_to_govde(u_kamera, tilt_rad, roll_rel_rad=0.0):
     """OpenCV kamera çerçevesi (X sağ, Y aşağı, Z ileri) → gövde FRD
-    (X ileri, Y sağ, Z aşağı). Montaj tilt'i (yukarı pozitif) Ry ile uygulanır.
-    TEK dönüşüm noktası — gimbal gelirse yalnız burası dinamikleşir.
+    (X ileri, Y sağ, Z aşağı).
+
+    TEK dönüşüm noktası — gimbal geldiğinde yalnız burası dinamikleşti
+    (2026-08-04). Artık iki GÖVDE-GÖRELİ açı alır:
+      tilt_rad     : gimbal pitch'i, gövdeye göre (yukarı pozitif)
+      roll_rel_rad : gimbal roll'ü, gövdeye göre (sağ kanat aşağı pozitif)
+    Eklem zinciri gövde → roll_link → pitch_link olduğundan sıra
+    R_govde_kamera = Rx(roll_rel) · Ry(tilt).
+
+    Sabit montajda roll_rel = 0 ve davranış ESKİSİYLE ÖZDEŞTİR (geri uyumlu).
     Doğrulama: merkez [0,0,1], tilt 25° → [0.906, 0, -0.423] (+25° pitch hatası)."""
     ham = np.array([u_kamera[2], u_kamera[0], u_kamera[1]], dtype=float)
     c, s = math.cos(tilt_rad), math.sin(tilt_rad)
     Ry = np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
-    return Ry @ ham
+    if roll_rel_rad == 0.0:
+        return Ry @ ham
+    cr, sr = math.cos(roll_rel_rad), math.sin(roll_rel_rad)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    return Rx @ (Ry @ ham)
+
+
+def gimbal_govde_acilari(roll_govde, pitch_govde, cfg=Cfg):
+    """Stabilize gimbal'ın GÖVDEYE GÖRE açıları (tilt_rad, roll_rel_rad).
+
+    SAF HESAP — birim test edilir.
+
+    Gimbal, kamerayı DÜNYA çerçevesinde sabit tutar: roll 0, pitch
+    +KAMERA_TILT_DEG (yukarı). ArduPilot bunu AHRS açısını hedeften çıkararak
+    yapar (AP_Mount_Servo.cpp:125-137). Gövdeye göre gereken açı dolayısıyla:
+        tilt_rel = KAMERA_TILT − pitch_govde
+        roll_rel = −roll_govde
+    Servo çıkışı MNT1_*_MIN/MAX ile KIRPILIR (aynı dosya, satır 45-46), yani
+    araç sınırın ötesine yatarsa gimbal yetişemez ve kamera kısmen gövdeyi
+    izlemeye başlar. Burada AYNI kırpma uygulanır — yoksa güdüm, kameranın
+    gerçekte bakmadığı bir yöne baktığını sanır.
+
+    GIMBAL_AKTIF=False iken sabit montaj davranışı döner (tilt sabit, roll 0).
+    """
+    if not getattr(cfg, "GIMBAL_AKTIF", True):
+        return math.radians(cfg.KAMERA_TILT_DEG), 0.0
+    tilt = math.radians(cfg.KAMERA_TILT_DEG) - pitch_govde
+    roll_rel = -roll_govde
+    tilt = max(math.radians(cfg.GIMBAL_PITCH_MIN_DEG),
+               min(math.radians(cfg.GIMBAL_PITCH_MAX_DEG), tilt))
+    roll_rel = max(math.radians(cfg.GIMBAL_ROLL_MIN_DEG),
+                   min(math.radians(cfg.GIMBAL_ROLL_MAX_DEG), roll_rel))
+    return tilt, roll_rel
 
 
 def _dcm_govde_dunya(roll, pitch, yaw):
@@ -227,8 +286,17 @@ def hedef_kadraj_hatasi(hedef_ned, drone_ned, roll, pitch, yaw):
     u_govde = R.T @ u_dunya                                  # dünya → gövde (Rᵀ)
     yaw_hata = math.atan2(u_govde[1], u_govde[0])            # sağ +
     elev = math.atan2(-u_govde[2], math.hypot(u_govde[0], u_govde[1]))  # yukarı +
-    tilt = math.radians(Cfg.KAMERA_TILT_DEG)
+    # Kamera GÖVDEYE GÖRE açısı: gimbal varsa dinamik (kamera dünyada sabit
+    # kalır, gövdeye göre açısı aracın attitude'uyla değişir), yoksa sabit tilt.
+    # Bu satır atlanırsa kadraj ölçüsü — ve ona bakan DEVİR KAPISI — gimbal'ın
+    # düzelttiği yatışı hâlâ hata sanar.
+    tilt, gimbal_roll = gimbal_govde_acilari(roll, pitch, Cfg)
     # gövde → kamera (kamera_to_govde tersi) → piksel (yalnız log/UI)
+    if gimbal_roll != 0.0:                       # önce Rx(-roll_rel)
+        cr, sr = math.cos(gimbal_roll), math.sin(gimbal_roll)
+        u_govde = np.array([u_govde[0],
+                            cr * u_govde[1] + sr * u_govde[2],
+                            -sr * u_govde[1] + cr * u_govde[2]])
     c, s = math.cos(tilt), math.sin(tilt)
     ham = np.array([c * u_govde[0] - s * u_govde[2],         # Ry(-tilt) @ u_govde
                     u_govde[1],
@@ -358,8 +426,15 @@ class LeadPursuitCore:
         u = u / np.linalg.norm(u)
 
         # ── Adım 3: yükselti düzeltmesi (alttan yaklaşma; hedef ~seviyeli varsayımı) ──
-        tilt = math.radians(cfg.KAMERA_TILT_DEG)
-        u_govde_hedef = kamera_to_govde(u, tilt)     # lead'siz yön, gövde FRD
+        # Kamera→gövde dönüşümü artık DİNAMİK: gimbal kamerayı dünya
+        # çerçevesinde sabit tuttuğu için gövdeye göre açısı her karede
+        # aracın attitude'una göre değişir. attitude yoksa (sağlamlık #6)
+        # sabit montaj varsayımına düşülür — o karede lead zaten sönük.
+        if attitude is not None:
+            tilt, gimbal_roll = gimbal_govde_acilari(attitude[0], attitude[1], cfg)
+        else:
+            tilt, gimbal_roll = math.radians(cfg.KAMERA_TILT_DEG), 0.0
+        u_govde_hedef = kamera_to_govde(u, tilt, gimbal_roll)   # lead'siz yön, FRD
         eps_deg, duzeltme = 0.0, 1.0
         if cfg.YUKSELTI_DUZELT:
             if attitude is not None:
@@ -423,7 +498,7 @@ class LeadPursuitCore:
             u_nisan = u.copy()       # gövde ekseni bakış yönüyle çakışık — kaydırma tanımsız
 
         # ── Adım 7: kamera → gövde (aynı fonksiyon, ikinci çağrı) ──
-        u_govde = kamera_to_govde(u_nisan, tilt)
+        u_govde = kamera_to_govde(u_nisan, tilt, gimbal_roll)
 
         # ── Adım 8: hata açıları (gövde FRD) ──
         yaw_hata = math.atan2(u_govde[1], u_govde[0])                          # sağ +

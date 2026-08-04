@@ -877,6 +877,60 @@
         <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
       </control>
 
+      <!-- ══ GIMBAL (2026-08-04) ══
+           ArduPilot servo çıkışı 9 ve 10 → gimbal eklemleri.
+           Plugin kanal numarası 0-tabanlı: channel="8" = SERVO9.
+           avci_copter.parm'da SERVO9_FUNCTION 8 (mount roll),
+           SERVO10_FUNCTION 7 (mount pitch) ile eşlenir.
+
+           PWM → eklem açısı eşlemesi (plugin: aci = (n + offset)·multiplier,
+           n = PWM'in [servo_min, servo_max] içinde [0,1]'e normalize hali):
+
+           ROLL  — MNT1_ROLL_MIN/MAX = ∓60°, eklem = +mount_roll
+             n=0 → −60° (−1.0472) ; n=1 → +60° (+1.0472)
+             ⇒ multiplier = 2.0944 (120°), offset = −0.5
+           PITCH — MNT1_PITCH_MIN/MAX = ∓90°, eklem = −mount_pitch
+             (SDF'de negatif Y dönüşü kamerayı YUKARI bakırır)
+             n=0 → mount −90° ⇒ eklem +90° (+1.5708)
+             n=1 → mount +90° ⇒ eklem −90° (−1.5708)
+             ⇒ multiplier = −3.14159 (−180°), offset = −0.5
+
+           DOĞRULAMA: bu dört sayı MNT1_*_MIN/MAX ile TUTARLI olmalı.
+           Değiştirirsen ikisini birden değiştir, yoksa firmware'in
+           komutladığı açı ile eklemin gittiği açı sessizce ayrışır ve
+           guidance'ın kamera→gövde dönüşümü yanlış olur. -->
+      <control channel="8">
+        <jointName>iris_with_standoffs::gimbal_roll_joint</jointName>
+        <multiplier>2.0944</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1100</servo_min>
+        <servo_max>1900</servo_max>
+        <type>POSITION</type>
+        <p_gain>3.0</p_gain>
+        <i_gain>0</i_gain>
+        <d_gain>0.02</d_gain>
+        <i_max>0</i_max>
+        <i_min>0</i_min>
+        <cmd_max>10</cmd_max>
+        <cmd_min>-10</cmd_min>
+      </control>
+
+      <control channel="9">
+        <jointName>iris_with_standoffs::gimbal_pitch_joint</jointName>
+        <multiplier>-3.14159</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1100</servo_min>
+        <servo_max>1900</servo_max>
+        <type>POSITION</type>
+        <p_gain>3.0</p_gain>
+        <i_gain>0</i_gain>
+        <d_gain>0.02</d_gain>
+        <i_max>0</i_max>
+        <i_min>0</i_min>
+        <cmd_max>10</cmd_max>
+        <cmd_min>-10</cmd_min>
+      </control>
+
     </plugin>
 
   </model>

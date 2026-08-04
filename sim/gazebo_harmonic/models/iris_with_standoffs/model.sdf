@@ -233,12 +233,73 @@
         </material>
       </visual>
 
-      <!-- Avcı drone ön kamerası (chase_algorithm ile eşleşir):
-           FOV 125° (2.18166 rad), 25° yukarı tilt (-0.4363 rad).
+    </link>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         2 EKSENLİ GIMBAL (2026-08-04) — kamera artık gövdeye ÇAKILI DEĞİL
+         ════════════════════════════════════════════════════════════════
+         NEDEN: kamera base_link'e sabit bağlıyken aracın tüm roll/pitch'ini
+         alıyordu. Ölçüm (uçuş 5, 3591 kare): avcı yatışı medyan 35.8°,
+         p90 46.7°. Kameranın 25° yukarı tilt'i, 40°'lik öne yatışta net
+         15° AŞAĞI oluyor → kadrajın yarısı zemin. Dönüşte ufuk 40° yamuk.
+         ASIL SORUN KOZMETİK DEĞİL: modeller ±25° roll ile eğitildi
+         (vision/capture_dataset.py, CAM_ROLL_MAX = radians(25)). Araç bu
+         zarfın DIŞINDA uçuyor ve model hiç görmediği bir görüntüyle
+         besleniyor. Model yeniden eğitilemeyeceğine göre kamerayı zarfa
+         geri sokmanın tek yolu gimbal.
+
+         ArduPilot servo mount'u (MNT1_TYPE 1) sürer; stabilizasyon
+         firmware'de: AP_Mount_Servo.cpp:125-137 AHRS roll/pitch'i hedef
+         açıdan ÇIKARIR. DİKKAT: bu yalnız hedef tipi ANGLE iken olur —
+         NEUTRAL/RETRACTED modlarında fonksiyon erken döner (satır 106-113)
+         ve stabilizasyon YAPILMAZ. Bu yüzden MNT1_DEFLT_MODE 2 (MAVLink
+         targeting) kullanılıyor ve gcs_server açılışta açı komutu gönderiyor.
+
+         Eklem ekseni yönleri: model X-ileri / Y-sol / Z-yukarı (plugin'in
+         modelXYZToAirplaneXForwardZDown 180 0 0 dönüşümü bunu NED'e çevirir).
+         Yani roll = X ekseni, pitch = Y ekseni ve NEGATİF Y dönüşü kamerayı
+         YUKARI bakırır (eski sabit poz da -0.4363 = 25° yukarıydı).
+    -->
+    <link name="gimbal_roll_link">
+      <pose relative_to="base_link">0.10 0 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia>
+          <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>1e-6</iyy><iyz>0</iyz><izz>1e-6</izz>
+        </inertia>
+      </inertial>
+    </link>
+    <joint name="gimbal_roll_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>gimbal_roll_link</child>
+      <axis>
+        <xyz>1 0 0</xyz>
+        <!-- ±60°: MNT1_ROLL_MIN/MAX ile AYNI olmalı, yoksa firmware
+             ulaşamayacağı bir açı komutlar ve eklem sessizce doyar.
+             Ölçülen araç yatışı p90 46.7° — ±30 yetmezdi. -->
+        <limit><lower>-1.0472</lower><upper>1.0472</upper>
+               <effort>10</effort><velocity>10</velocity></limit>
+        <dynamics><damping>0.05</damping></dynamics>
+      </axis>
+    </joint>
+
+    <link name="gimbal_pitch_link">
+      <pose relative_to="gimbal_roll_link">0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia>
+          <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>1e-6</iyy><iyz>0</iyz><izz>1e-6</izz>
+        </inertia>
+      </inertial>
+
+      <!-- Avcı drone kamerası: FOV 125° (2.18166 rad).
+           TİLT ARTIK BURADA DEĞİL — eklem açısından gelir (gimbal).
            gz-transport topic: iris_cam/image -->
       <sensor name="camera" type="camera">
-        <gz_frame_id>base_link</gz_frame_id>
-        <pose>0.10 0 0.05 0 -0.4363 0</pose>
+        <gz_frame_id>gimbal_pitch_link</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
         <always_on>1</always_on>
         <update_rate>30</update_rate>
         <visualize>1</visualize>
@@ -257,6 +318,19 @@
         </camera>
       </sensor>
     </link>
+    <joint name="gimbal_pitch_joint" type="revolute">
+      <parent>gimbal_roll_link</parent>
+      <child>gimbal_pitch_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <!-- Eklem açısı = −(mount pitch, gövde çerçevesi). MNT1_PITCH ∓90
+             → eklem ∓1.5708. Araç 50° öne yatarken kamerayı ufkun 25°
+             üstünde tutmak 75° gövde-göreli açı ister; +30 yetmezdi. -->
+        <limit><lower>-1.5708</lower><upper>1.5708</upper>
+               <effort>10</effort><velocity>10</velocity></limit>
+        <dynamics><damping>0.05</damping></dynamics>
+      </axis>
+    </joint>
     <link name='imu_link'>
       <inertial>
         <pose>0 0 0 0 0 0</pose>

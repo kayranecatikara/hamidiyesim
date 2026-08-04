@@ -110,3 +110,44 @@ LOIT_ACC_MAX_M 10
 # göründüler, yani bunlar uygulanan tek satırlardı.
 FS_GCS_ENABLE 0
 FS_THR_ENABLE 0
+
+# =============================================================
+#  KAMERA GIMBAL'I (2026-08-04) — 2 eksenli servo mount
+# =============================================================
+# NEDEN: kamera gövdeye çakılıydı ve aracın tüm roll/pitch'ini alıyordu.
+# Ölçüm (uçuş 5): yatış medyanı 35.8°, p90 46.7°. Kameranın 25° yukarı
+# tilt'i 40° öne yatışta net 15° AŞAĞI oluyor → kadrajın yarısı zemin.
+# ASIL SORUN: modeller ±25° roll ile eğitildi (vision/capture_dataset.py
+# CAM_ROLL_MAX). Araç bu zarfın DIŞINDA uçuyor, model hiç görmediği
+# görüntüyle besleniyor. Model yeniden eğitilemiyor → kamerayı zarfa
+# gimbal ile geri sokuyoruz.
+MNT1_TYPE 1
+
+# DEFLT_MODE 2 = MAVLink targeting. NEUTRAL (1) SEÇİLEMEZ:
+# AP_Mount_Servo.cpp:106-113'te NEUTRAL/RETRACTED hedef tipleri
+# stabilizasyondan ÖNCE return eder — yani nötr modda gimbal hiç
+# stabilize etmez ve sorun aynen kalır. ANGLE hedefi gerekiyor; onu da
+# gcs_server açılışta MAV_CMD_DO_MOUNT_CONTROL ile gönderiyor.
+# Bonus: MAVLink targeting ileride gimbal'ı doğrudan hedefe kilitlemeye
+# de izin verir (şu an sabit 25° yukarı).
+MNT1_DEFLT_MODE 2
+
+# Açı sınırları — sim/gazebo_harmonic/models/iris_cam/model.sdf'deki
+# control channel 8/9 multiplier/offset değerleriyle TUTARLI OLMALI.
+# Değiştirirsen ikisini birden değiştir (oradaki nota bak).
+# Sınırlar GÖVDE ÇERÇEVESİ çıkışına uygulanır (AP_Mount_Servo.cpp:45-46,
+# _angle_bf_output_rad — AHRS açısı çıkarıldıktan SONRA). Yani araç 46°
+# yatarken kamerayı ufka göre sabit tutmak 46°'lik gövde-göreli açı ister.
+# Ölçülen yatış p90 46.7° ve pitch için 25° hedef + 50° yatış = 75° gerekiyor.
+# İlk denemedeki ±30 / +30 bunları SESSİZCE doyururdu (servo tavana yapışır,
+# kamera stabilize olmaz, kimse haber vermez).
+MNT1_ROLL_MIN -60
+MNT1_ROLL_MAX 60
+MNT1_PITCH_MIN -90
+MNT1_PITCH_MAX 90
+
+# Servo çıkışları. Fonksiyon numaraları SRV_Channel.h:56-58'den doğrulandı:
+#   7 = k_mount_tilt (mount pitch), 8 = k_mount_roll
+# SERVO9 → plugin control channel="8" (kanal numarası 0-tabanlı).
+SERVO9_FUNCTION 8
+SERVO10_FUNCTION 7

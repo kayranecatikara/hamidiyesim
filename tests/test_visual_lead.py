@@ -33,6 +33,18 @@ ATT_KAMERA_YATAY = (0.0, math.radians(-25.0), 0.0)
 _sonuclar = []
 
 
+def cfg_sabit_montaj():
+    """Gimbal'sız (kamera gövdeye çakılı) Cfg kopyası.
+
+    Sentetik sahne üreten testler gövde attitude'unu kamera attitude'u kabul
+    eder — bu, sabit montajın geometrisidir. Gimbal ikisini ayırdığı için o
+    testler bu kopyayı kullanır; gimbal'ın KENDİ davranışı ayrıca sınanır
+    (T44-T46, ve test_gps_guidance G5/G5b)."""
+    c = cfg_copy()
+    c.GIMBAL_AKTIF = False
+    return c
+
+
 def kontrol(ad, kosul, detay=""):
     _sonuclar.append((ad, bool(kosul), detay))
     print(f"  {'PASS' if kosul else 'FAIL'}  {ad}  {detay}")
@@ -125,9 +137,12 @@ def main():
             f"açısal kaydırmalar={[round(x,4) for x in acilar]}")
 
     # ── T9: menzil kestirimi, eps=0 merkez → hata < %2 ──
+    # cfg_sabit: sentetik sahne gövde attitude'unu KAMERA attitude'u sayar,
+    # yani sabit montaj geometrisidir. Gimbal ikisini ayırdığından bu testte
+    # kapatılır (ölçülen şey montajdan bağımsız: ölçek → menzil dönüşümü).
     hatalar = []
     for R in (5, 8, 12, 15):
-        r = tek_kare(cfg_copy(), make_pose(R, 60))
+        r = tek_kare(cfg_sabit_montaj(), make_pose(R, 60))
         hatalar.append(abs(r["menzil_kestirim_m"] - R) / R * 100)
     kontrol("T9  menzil kestirimi <%2 (SADECE LOG)", max(hatalar) < 2.0,
             f"max hata=%{max(hatalar):.3f}")
@@ -192,7 +207,7 @@ def main():
     R = 8.0
     pose_alttan = make_pose(R, 0, a_ovr=FX * GOVDE_BOYU_M / R,
                             b_ovr=FX * KANAT_ACIKLIGI_M / R)
-    r = tek_kare(cfg_copy(), pose_alttan, att=att_dik)
+    r = tek_kare(cfg_sabit_montaj(), pose_alttan, att=att_dik)   # bkz. T9 notu
     kontrol("T15 eps=90 → yandanlık 1.00 (düzeltmeli)",
             abs(r["yandanlik_ham"] - 1.0) < 0.01 and abs(r["eps_deg"] - 90.0) < 0.1,
             f"yandanlik={r['yandanlik_ham']:.4f} eps={r['eps_deg']:.1f}° "
