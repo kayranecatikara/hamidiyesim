@@ -758,7 +758,25 @@ def pnp_telemetry():
 
 
 from control.guidance import gps_guidance as _gps_guidance_mod
-from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
+from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance_eski
+
+# ── GPS GÜDÜM YASASI SEÇİMİ (2026-08-04) ──
+# İki yasa YAN YANA durur; eskisi silinmez ki tek değişkenle A/B yapılabilsin.
+#   AVCI_GPS_GUDUM=istasyon  (VARSAYILAN) → uçuşta denenmiş mevcut yasa
+#   AVCI_GPS_GUDUM=frpn                   → FRPN + IMM (F3 tezgâhında üstün,
+#                                            UÇUŞTA HENÜZ DOĞRULANMADI)
+# Varsayılanın "istasyon" olması bilinçli: FRPN'in masa üstü üstünlüğü
+# (tutunma 113→126 s, yarışma koşulu) uçuşta teyit edilmeden varsayılan
+# yapılmaz. Teyitten sonra buradaki varsayılan çevrilir.
+_GPS_GUDUM = os.environ.get("AVCI_GPS_GUDUM", "istasyon").lower()
+if _GPS_GUDUM == "frpn":
+    from control.guidance import frpn_guidance as _frpn_mod
+    from control.guidance.frpn_guidance import run_frpn_guidance as _run_gps_guidance
+    _gps_guidance_mod = _frpn_mod          # status'u supervisor/panel buradan okur
+    print("[GCS] GPS GÜDÜMÜ: FRPN (IMM kestirici + menzile bağlı istasyon) "
+          "— uçuşta doğrulanmamış; eskisine dönmek için AVCI_GPS_GUDUM=istasyon")
+else:
+    _run_gps_guidance = _run_gps_guidance_eski
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
