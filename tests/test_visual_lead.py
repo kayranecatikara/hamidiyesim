@@ -919,6 +919,64 @@ def main():
             f"lead={r_a['lead_deg']:.3f}° yaw={math.degrees(r_a['yaw_hata']):.3f}° "
             f"olcek={r_a['olcek']:.2f}px")
 
+    # ── T55: MENZİL KAYNAĞI — zaman hizalı gz, telemetriye TERCİH edilir ──
+    # 2026-08-04'e kadar _menzil_olc() tanımlıydı ama hiç çağrılmıyordu; menzil
+    # sessizce telemetriden geliyordu ve loglarda karelerin %37'si donuktu.
+    # Bu test kaynağın gerçekten gz olduğunu ve DEĞERİN gz'den geldiğini
+    # doğrular (ikisi farklı olacak şekilde kurgulanır).
+    import csv as _csv
+    import glob as _glob
+    import os as _os
+
+    cfgM = cfg_copy()
+    cfgM.TERMINAL_MENZIL = 2.0      # terminal/vuruş yollarına hiç girme
+    cfgM.VURUS_MENZIL = 0.5
+    _conn = _FakeConn()
+    _menz_telem = [20.0, 19.0, 18.0, 17.0, 16.0]
+    _GZ_FARK = 2.0                  # gz telemetriden 2 m FARKLI okusun
+    _sim = {"i": 0}
+
+    def _wp_m(son_seq, timeout=0.5):
+        i = _sim["i"]
+        if i >= len(_menz_telem):
+            return None
+        _sim["i"] += 1
+        _conn.durum_yaz((_menz_telem[i], 0.0, 0.0))
+        return {"seq": i + 1, "pose": make_pose(8, 90), "stamp": (i + 1) / 30.0,
+                "wall_recv": _t.time()}
+
+    def _gz_menzil():
+        j = max(0, _sim["i"] - 1)
+        return _menz_telem[j] - _GZ_FARK
+
+    vlmod.run_visual_lead(_conn, _wp_m, lambda: {"x": 0.0, "y": 0.0, "z": 0.0},
+                          threading.Event(), cfg=cfgM, kayip_kare_esik=20,
+                          get_menzil=_gz_menzil)
+    _son_csv = max(_glob.glob(_os.path.join(vlmod._LOG_DIR, "visual_lead_*.csv")),
+                   key=_os.path.getmtime)
+    _R = [r for r in _csv.DictReader(open(_son_csv)) if r.get("menzil_ham_m")]
+    _kaynaklar = {r.get("menzil_kaynak") for r in _R}
+    _degerler_gz = all(
+        abs(float(r["menzil_ham_m"]) - (float(_menz_telem[i]) - _GZ_FARK)) < 1e-6
+        for i, r in enumerate(_R) if i < len(_menz_telem))
+    kontrol("T55 menzil kaynağı gz'yi tercih eder (telemetri yalnız yedek)",
+            len(_R) > 0 and _kaynaklar == {"gz"} and _degerler_gz,
+            f"{len(_R)} satır, kaynak={_kaynaklar}, "
+            f"değerler telemetriden {_GZ_FARK} m farklı: {_degerler_gz}")
+
+    # T55b: gz yoksa telemetriye düşer (kaynak sütunu bunu dürüstçe söyler)
+    _sim["i"] = 0
+    vlmod.run_visual_lead(_conn, _wp_m, lambda: {"x": 0.0, "y": 0.0, "z": 0.0},
+                          threading.Event(), cfg=cfgM, kayip_kare_esik=20,
+                          get_menzil=lambda: None)
+    _son_csv2 = max(_glob.glob(_os.path.join(vlmod._LOG_DIR, "visual_lead_*.csv")),
+                    key=_os.path.getmtime)
+    _R2 = [r for r in _csv.DictReader(open(_son_csv2)) if r.get("menzil_ham_m")]
+    kontrol("T55b gz yokken telemetri yedeği + kaynak dürüst etiketlenir",
+            len(_R2) > 0 and {r.get("menzil_kaynak") for r in _R2} == {"telem"}
+            and abs(float(_R2[0]["menzil_ham_m"]) - _menz_telem[0]) < 1e-6,
+            f"{len(_R2)} satır, kaynak=telem, ilk menzil={_R2[0]['menzil_ham_m']}")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

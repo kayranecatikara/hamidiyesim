@@ -44,6 +44,7 @@ _CSV_ALANLAR = [
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "v_doygun", "yaw_doygun",
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "menzil_ham_m", "menzil_red",
+    "menzil_kaynak",   # "gz" (zaman hizalı) | "telem" (yedek) — bkz. _menzil_olc
     "kapanma_hizi_ms", "mod",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
@@ -265,12 +266,24 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
               "(sim_truth kapalı/gz yok) — pose moduyla devam ediliyor.")
 
     def _menzil_olc():
-        """Önce sim-truth (zaman hizalı gerçek poz), yoksa telemetri hesabı."""
+        """Menzil ölçümü — (metre|None, kaynak_adı).
+
+        ⚠ 2026-08-04'e kadar bu fonksiyon TANIMLIYDI AMA HİÇ ÇAĞRILMIYORDU;
+        menzil doğrudan telemetriden (`_menzil_hesapla`) alınıyordu. Bedeli
+        ölçüldü: telemetri menzili iki ayrı akışın zaman hizasız farkı ve
+        loglarda karelerin %37'sinde bir önceki kareyle AYNI değeri taşıyor
+        (en uzun donma 12 kare = 0.4 s; 25 m/s'te 10 m yol). Yani "en yakın
+        menzil" istatistiği gerçek en yakın anı kaçırabiliyordu ve bir vuruş
+        anında sütun 25.6 m'de donmuş görünüyordu.
+
+        sim_truth.menzil() iki aracın pozunu Gazebo'nun TEK mesajından okur —
+        zaman hizalı, fizik doğruluğunda. Öncelik onda; yoksa telemetriye düşer.
+        """
         if get_menzil is not None:
             m = get_menzil()
             if m is not None:
-                return m
-        return _menzil_hesapla(get_plane_truth, aras.pos)
+                return m, "gz"
+        return _menzil_hesapla(get_plane_truth, aras.pos), "telem"
 
     def _temas_vurus():
         """(vuruldu_mu, akış_canlı_mı). Temas akışı canlıyken vuruş kararının
@@ -369,7 +382,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         simdi = time.time()
         dt_t = (simdi - t_terminal_menzil) if t_terminal_menzil else None
         t_terminal_menzil = simdi
-        m, _kabul = menzil_kapi.ekle(_menzil_hesapla(get_plane_truth, aras.pos), dt_t)
+        m, _kabul = menzil_kapi.ekle(_menzil_olc()[0], dt_t)
         if m is not None:
             terminal_min = min(terminal_min, m) if terminal_min is not None else m
         vuruldu, gerekce = _vurus_oldu(m, cfg)
@@ -420,44 +433,58 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             # Fiziksel temas kontrolü (akış canlıysa vuruş kararının tek sahibi)
             vurus, temas_canli = _temas_vurus()
             if vurus:
+                # Menzili BU satıra da yaz: temas kontrolü menzil bloğundan önce
+                # olduğu için vuruş satırı eskiden BOŞ menzille kaydediliyordu.
+                # 191258 uçuşunda vuruş anı sütunda 25.6 m (donmuş telemetri)
+                # görünüyordu ve gerçek geometri logdan okunamıyordu.
+                _m, _k = _menzil_olc()
+                if _m is not None:
+                    satir["menzil_ham_m"] = round(_m, 3)
+                    satir["menzil_gercek_m"] = round(_m, 3)
+                    satir["menzil_kaynak"] = _k
                 satir["durum"] = "vuruldu"
                 _satir(satir)
                 return "vuruldu"
 
-            # menzil_gercek + kapanma hızı + terminal durum takibi
-            if aras.pos is not None and get_plane_truth is not None:
+            # Cevap anahtarı sütunlarının kaynağı AYRI: hedefin NED pozu
+            # telemetriden gelir (açı kıyasları o çerçevede yapılıyor).
+            # MENZİL ise artık _menzil_olc() ile ölçülür — zaman hizalı gz
+            # önce, telemetri yalnız yedek (bkz. _menzil_olc dokümantasyonu).
+            if get_plane_truth is not None:
                 p = get_plane_truth()
                 if p is not None:
                     hedef_ned = (p["x"], p["y"], p["z"])   # cevap anahtarı kaynağı
-                    d_ham = math.sqrt((p["x"] - aras.pos[0]) ** 2
-                                      + (p["y"] - aras.pos[1]) ** 2
-                                      + (p["z"] - aras.pos[2]) ** 2)
-                    # MAKULLÜK KAPISI: imkânsız sıçrama sahte VURULDU üretiyordu.
-                    # dt sim saatinden (kare damgası) — duvar saatiyle karıştırma.
-                    dt_menzil = ((stamp - t_menzil_onceki)
-                                 if (stamp and t_menzil_onceki) else None)
-                    d, kabul = menzil_kapi.ekle(d_ham, dt_menzil)
-                    satir["menzil_ham_m"] = round(d_ham, 3)
-                    satir["menzil_red"] = menzil_kapi.red_sayaci
-                    if not kabul:
-                        print(f"[LEAD WARN] menzil örneği reddedildi "
-                              f"({menzil_onceki:.1f} → {d_ham:.1f} m, "
-                              f"toplam {menzil_kapi.red_sayaci})")
-                    satir["menzil_gercek_m"] = round(d, 3)
-                    kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
-                    if menzil_onceki is not None and stamp and t_menzil_onceki \
-                            and stamp > t_menzil_onceki:
-                        satir["kapanma_hizi_ms"] = round(
-                            -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
-                    menzil_onceki, t_menzil_onceki = d, stamp
-                    # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
-                    vuruldu, gerekce = _vurus_oldu(d, cfg)
-                    if vuruldu:
-                        satir["durum"] = "vuruldu"
-                        _satir(satir)
-                        print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
-                              f"(menzil {_m_yaz(d)} m)")
-                        return "vuruldu"
+
+            # menzil_gercek + kapanma hızı + terminal durum takibi
+            d_ham, _mkaynak = _menzil_olc()
+            if d_ham is not None:
+                satir["menzil_kaynak"] = _mkaynak
+                # MAKULLÜK KAPISI: imkânsız sıçrama sahte VURULDU üretiyordu.
+                # dt sim saatinden (kare damgası) — duvar saatiyle karıştırma.
+                dt_menzil = ((stamp - t_menzil_onceki)
+                             if (stamp and t_menzil_onceki) else None)
+                d, kabul = menzil_kapi.ekle(d_ham, dt_menzil)
+                satir["menzil_ham_m"] = round(d_ham, 3)
+                satir["menzil_red"] = menzil_kapi.red_sayaci
+                if not kabul:
+                    print(f"[LEAD WARN] menzil örneği reddedildi "
+                          f"({menzil_onceki:.1f} → {d_ham:.1f} m, "
+                          f"toplam {menzil_kapi.red_sayaci})")
+                satir["menzil_gercek_m"] = round(d, 3)
+                kapaniyor = (menzil_onceki is not None and d < menzil_onceki)
+                if menzil_onceki is not None and stamp and t_menzil_onceki \
+                        and stamp > t_menzil_onceki:
+                    satir["kapanma_hizi_ms"] = round(
+                        -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
+                menzil_onceki, t_menzil_onceki = d, stamp
+                # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
+                vuruldu, gerekce = _vurus_oldu(d, cfg)
+                if vuruldu:
+                    satir["durum"] = "vuruldu"
+                    _satir(satir)
+                    print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
+                          f"(menzil {_m_yaz(d)} m)")
+                    return "vuruldu"
 
             # "Algı girdisi var mı": pose modunda pose, GT modunda GT akışı.
             girdi_var = (gt is not None) if gt_modu else (pose is not None)

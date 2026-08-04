@@ -105,22 +105,23 @@ Temiz ölçüm için `AVCI_TRACKER=off` ile bir koşu al ve karneleri kıyasla.
 
 ---
 
-## 3. `_menzil_olc()` bağlanmamış (ölü kod)
+## 3. ~~`_menzil_olc()` bağlanmamış~~ — YAPILDI (2026-08-04)
 
-`control/guidance/visual_lead.py:251` — "önce sim-truth, yoksa telemetri"
-diye yazılmış ama **hiçbir yerden çağrılmıyor**. Fiilen kullanılan menzil
-`get_plane_truth()` → hedefin MAVLink telemetrisi.
+`visual_lead` menzili artık `_menzil_olc()` ile ölçüyor: önce zaman hizalı
+gz (`sim_truth.menzil`), yoksa telemetri. CSV'ye `menzil_kaynak` sütunu
+eklendi (`gz` / `telem`) — hangi kaynağın kullanıldığı artık logdan okunuyor.
 
-Sorun: `sim_truth.py` tam olarak bu yüzden yazılmıştı — telemetri menzili
-iki ayrı akışın zaman hizasız farkı, 250 ms'ye kadar bayat, kapanmada 5-6 m
-hata veriyor. Zaman hizalı gz menzili duruyor ama kullanılmıyor.
+**Neden gerekliydi:** telemetri menzili loglarda karelerin **%37'sinde** bir
+önceki kareyle aynı değeri taşıyordu (en uzun donma 12 kare = 0.4 s; 25 m/s'te
+**10 m yol**). Yani "en yakın menzil" istatistiği gerçek en yakın anı
+kaçırabiliyordu. 191258 uçuşunda vuruş anında sütun 25.6 m'de donmuş
+görünüyordu — vuruş temas sensöründen gelmişti, menzil sütunu yalan söylüyordu.
 
-**İş:** ana döngüde `_menzil_hesapla(...)` yerine `_menzil_olc()` çağır,
-`menzil_gercek_m` sütununu iki kaynakla kıyasla. Terminal faz kararları
-(kör dalış girişi, `coalt_latch`) bu menzile bakıyor — §1'i ölçmeden önce
-bu düzeltilmeli, yoksa §1'in sonucu bayat menzille kirlenir.
+Ek: vuruş satırına da menzil yazılıyor (temas kontrolü menzil bloğundan önce
+olduğu için o satır eskiden boş kalıyordu). Testler T55 / T55b.
 
----
+⚠ **Bu düzeltmeden ÖNCEKİ tüm "en yakın menzil" karşılaştırmaları şüpheli.**
+A0-A4 karşılaştırması bu ölçüm aletiyle yapıldı; tekrarlanmalı.
 
 ## 4. GT modunda menzil kapısı gevşetilsin mi
 
