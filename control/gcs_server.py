@@ -163,20 +163,6 @@ _manual_aileron  = 1500
 _manual_elevator = 1500
 _manual_throttle = 1000
 
-# Manuel mod: FBWA→FBWB geçiş irtifası ve otonom kalkış için beklenecek süre.
-# FBWB irtifa TUTAR, o yüzden yerdeyken kullanılamaz (kalkamaz); FBWA ise açı
-# tutar ama irtifa tutmaz (stick ortada uçak alçalır). Bu yüzden yerde FBWA,
-# eşiği geçince FBWB.
-_MANUAL_FBWB_ALT = float(os.environ.get("AVCI_MANUAL_FBWB_ALT", "15.0"))
-_MANUAL_TAKEOFF_SURE = float(os.environ.get("AVCI_MANUAL_TAKEOFF_SURE", "20.0"))
-
-
-def _havada_mi(esik=None):
-    """Uçak FBWB'ye geçebilecek kadar yüksekte mi? NED: -z = yükseklik.
-    Telemetri yoksa (z=0) YERDE sayılır — yanlış tarafa hata yapmayalım."""
-    return -telemetry_state["plane"].get("z", 0.0) >= (
-        _MANUAL_FBWB_ALT if esik is None else esik)
-
 def id_to_name(sysid):
     # ArduPilot SITL: iris/copter sysid=5, plane sysid=2
     if sysid in (1, 5):      # iris (ArduCopter)
@@ -259,9 +245,8 @@ class ManualCmd(BaseModel):
 @app.post("/api/command/plane/start_manual")
 def start_manual_mode():
     """Hangi senaryo uçuyorsa durdurur, uçağı klavye kontrolüne devralır.
-    Yerdeyken FBWA (tırmanabilsin), AVCI_MANUAL_FBWB_ALT eşiğini geçince
-    FBWB (irtifa tutsun, burun aşağı düşmesin). W/S = pitch/tırmanış,
-    A/D = yatış açı hedefi. Bkz. _manual_control_thread."""
+    FBWA modunda: W/S = pitch açı hedefi, A/D = yatış açı hedefi (stall'a
+    karşı açı limitli — ham MANUAL moddan çok daha kontrol edilebilir)."""
     global _manual_active
     global _manual_aileron, _manual_elevator, _manual_throttle
 
@@ -280,13 +265,12 @@ def start_manual_mode():
     t = threading.Thread(target=_manual_control_thread, daemon=True)
     t.start()
     print("[GCS] Manuel kontrol thread'i başlatıldı.")
-    return {"status": "success", "message": "Manuel mod aktif (yerde FBWA → havada FBWB)"}
+    return {"status": "success", "message": "Manuel mod aktif (FBWA)"}
 
 
 def _manual_control_thread():
     """
-    Uçağı klavye/joystick kontrolüne devralır (10 Hz RC override).
-    Mod irtifaya göre seçilir: yerde FBWA (kalkabilsin), havada FBWB (irtifa tutsun).
+    Uçağı FBWA'da klavye/joystick kontrolüne devralır (10 Hz RC override).
 
     ÖNEMLİ: Bu thread paylaşılan _mav_conn üzerinde ASLA blocking recv yapmaz.
     Eski kod set_mode ile ACK/heartbeat okuyordu; aynı bağlantıyı async
@@ -315,76 +299,26 @@ def _manual_control_thread():
         keepalive = GCSKeepalive(conn, interval=0.1)
         keepalive.start()
 
-        # ── YERDEN KALKIŞ: ARM + TAKEOFF ──
-        # 2026-08-01: manuel mod yerdeki uçağı HİÇ kaldıramıyordu. Sebep mod
-        # seçimi değil, mod DEĞİŞTİRMENİN TEK BAŞINA YETMEMESİ: uçak disarm
-        # halde ve motoru kapalı; RC override göndermek bir şey yapmıyor.
-        # run_plane_scenario bunu doğru yapıyor ("bağlan → force ARM → TAKEOFF
-        # modu ile otonom kalkış → FBWA + RC"); manuel modda o adımlar hiç yoktu.
-        # Manuel mod baştan "havadaki uçağı devral" için yazılmış; yerden
-        # başlatınca sessizce hiçbir şey olmuyordu.
-        # TAKEOFF sırasında RC override GÖNDERİLMEZ — senaryo da göndermiyor,
-        # otopilotun kalkış profilini bozar.
-        if not telemetry_state["plane"].get("armed", False) or not _havada_mi():
-            print("[MANUAL] Uçak yerde/disarm → ARM + TAKEOFF")
-            try:
-                mav_arm(conn, force=True)
-            except Exception as e:
-                print(f"[MANUAL] ARM hatası: {e}")
+        def _send_fbwa():
+            # ArduPlane FBWA (5): RC override açı hedefi olarak işlenir (açı
+            # limitli, stall korumalı). Ham MANUAL (0) havada elle uçulamıyordu.
             conn.mav.command_long_send(
                 conn.target_system, conn.target_component,
                 mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                PLANE_MODE_TAKEOFF, 0, 0, 0, 0, 0)
-            t0 = time.time()
-            while (_manual_active and time.time() - t0 < _MANUAL_TAKEOFF_SURE
-                   and not _havada_mi()):
-                time.sleep(0.2)
-            print(f"[MANUAL] Kalkış bitti (irtifa "
-                  f"~{-telemetry_state['plane'].get('z', 0.0):.0f} m)")
+                PLANE_MODE_FBWA, 0, 0, 0, 0, 0)
 
-        # ── İRTİFAYA GÖRE MOD: yerde FBWA, havada FBWB ──
-        # Ham MANUAL (0) havada elle uçulamıyordu. FBWA (5) açıyı tutar ama
-        # İRTİFAYI TUTMAZ: stick ortada 0° pitch demek ve 0° pitch'te uçak
-        # alçalır — burun-aşağı şikâyetinin sebebi buydu. FBWB (6) irtifa tutar,
-        # ama TAM DA BU YÜZDEN yerdeyken kalkamaz: "mevcut irtifayı koru" =
-        # yerde kal. (Önce koşulsuz FBWB yapılmıştı, Talon hiç kalkmadı.)
-        # Çözüm: yerdeyken FBWA ile tırman, eşiği geçince FBWB'ye geç.
-        def _istenen_mod():
-            return PLANE_MODE_FBWB if _havada_mi() else PLANE_MODE_FBWA
-
-        fbwb_alt = _MANUAL_FBWB_ALT
-
-        def _send_manual_mode(hedef):
-            conn.mav.command_long_send(
-                conn.target_system, conn.target_component,
-                mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
-                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                hedef, 0, 0, 0, 0, 0)
-
-        hedef_mod = _istenen_mod()
-        print(f"[MANUAL] {'FBWB' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'} "
-              f"komutu gönderildi (FBWB eşiği {fbwb_alt:.0f} m), "
-              f"RC override döngüsü başlıyor (10 Hz)...")
-        _send_manual_mode(hedef_mod)
+        print("[MANUAL] FBWA komutu gönderildi, RC override döngüsü başlıyor (10 Hz)...")
+        _send_fbwa()
         mode_ok = False
         tick = 0
         while _manual_active:
-            # İrtifa eşiği geçilince FBWA → FBWB (tırmanış bitti, irtifa tutulsun)
-            yeni_hedef = _istenen_mod()
-            if yeni_hedef != hedef_mod and yeni_hedef == PLANE_MODE_FBWB:
-                hedef_mod = yeni_hedef
-                mode_ok = False
-                print(f"[MANUAL] irtifa {-telemetry_state['plane'].get('z', 0.0):.0f} m "
-                      f"→ {'FBWB (irtifa tut)' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'}")
-                _send_manual_mode(hedef_mod)
             if not mode_ok:
-                if telemetry_state["plane"].get("mode") == hedef_mod:
+                if telemetry_state["plane"].get("mode") == PLANE_MODE_FBWA:
                     mode_ok = True
-                    print(f"[MANUAL] ✓ {'FBWB' if hedef_mod == PLANE_MODE_FBWB else 'FBWA'}"
-                          f" teyit edildi (heartbeat)")
+                    print("[MANUAL] ✓ FBWA teyit edildi (heartbeat)")
                 elif tick > 0 and tick % 5 == 0:      # 0.5s'de bir tekrar dene
-                    _send_manual_mode(hedef_mod)
+                    _send_fbwa()
             conn.mav.rc_channels_override_send(
                 conn.target_system,
                 conn.target_component,
