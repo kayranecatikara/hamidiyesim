@@ -1127,8 +1127,8 @@ latest_frames = {
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
 _pose_detector = None   # startup'ta yüklenir (AVCI_POSE=on, varsayılan açık)
-_talon_tracker = None   # startup'ta yüklenir (AVCI_TRACKER=on, varsayılan açık; HybridSORT)
-_target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=on, varsayılan açık)
+_talon_tracker = None   # AVCI_TRACKER=on ile yüklenir, varsayılan KAPALI (HybridSORT)
+_target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=off kapatır; tracker açıksa)
 _tracker_mod   = None   # vision.tracker modülü (draw_tracks için)
 _tracker_err   = False  # tekrarlayan tracker hatasında log seli önlenir
 _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
@@ -1256,9 +1256,14 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             elif lock is not None and lock["kaynak"] == "tahmin":
                 kb = tuple(int(v) for v in lock["bbox"])
                 pose = _pose_detector.detect_pose_in_bbox(img, kb)
-            set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv, lock=lock)
         except Exception as e:
             print(f"[GCS] YOLO poz hatası: {e}")
+    # KARE AKIŞI POSE MODELİNDEN BAĞIMSIZ (2026-08-04): bu çağrı eskiden
+    # `if _pose_detector is not None` bloğunun içindeydi, yani AVCI_POSE=off
+    # yapılınca kare akışı tamamen duruyordu — güdüm döngüsü (wait_new_pose)
+    # kare beklediği için GT modu da çalışmıyordu. Artık her karede çağrılır
+    # (pose None olabilir); GT modu pose modeli KAPALIYKEN de uçabilir.
+    set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv, lock=lock)
     if _yolo_detector is not None:
         img = _yolo_detector.draw_overlay(img, det)
     if _pose_detector is not None:
@@ -1601,8 +1606,11 @@ async def startup_event():
         except Exception as e:
             print(f"[GCS] YOLO pose yüklenemedi ({e}) — pose kapalı")
     # HybridSORT takipçi — detection üstüne kareler arası ID sürdürür
-    # (AVCI_TRACKER=off kapatır; detector kapalıysa anlamsız, atlanır)
-    if os.environ.get("AVCI_TRACKER", "on").lower() not in ("off", "0"):
+    # VARSAYILAN KAPALI (2026-08-04). Gerekçe: boxmot hiç kurulu olmadığı için
+    # takipçi bugüne dek HİÇ çalışmadı — projedeki BÜTÜN uçuş ölçümleri
+    # takipçisiz alındı. boxmot kurulunca sessizce devreye girmesi, ölçüm
+    # tabanını haber vermeden değiştirmek olurdu. Açmak: AVCI_TRACKER=on.
+    if os.environ.get("AVCI_TRACKER", "off").lower() in ("on", "1", "true"):
         global _talon_tracker, _tracker_mod, _target_lock
         if _yolo_detector is None:
             print("[GCS] HybridSORT atlandı (YOLO detector kapalı)")

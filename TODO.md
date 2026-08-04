@@ -4,6 +4,11 @@
 rotasyon modu ölçüldükten sonra ortaya çıkan işleri tutar. Bir madde
 bitince DURUM.md §6 "Bitenler"e taşı.
 
+> ⚠ **Önce [DENEY.md](DENEY.md).** 2026-08-04'te çok sayıda değişiklik üst üste
+> bindi ve hiçbir sonuç tek sebebe bağlanamadı. A0-A4 adımları tek tek uçulup
+> suçlu bulunmadan buradaki maddelere geçme — aksi hâlde yine karışık değişkenli
+> ölçüm yaparsın.
+
 ---
 
 ## Neden bu liste var: algı darboğaz değilmiş
