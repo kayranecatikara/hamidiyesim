@@ -300,7 +300,21 @@ Tam plan: `/home/melike/.claude/plans/gleaming-chasing-charm.md`
       senaryolar FBWA'da irtifa tutmuyordu · `avci_plane.parm`'daki hız
       parametreleri ölü isimdi · hedefin hız talebi airframe'in üstündeydi.
       Sonuç: avcı 18.0 m/s sabit (oran 1.00), hedef 58 m'de ±0.4 m.
-- [ ] **Adım 4b** — **2. tur test uçuşu (KULLANICI YAPAR)** ← ŞU AN BURADAYIZ
+- [x] **Adım 4b** — 2. tur test uçuşları yapıldı (2026-08-04, beş uçuş, `circle`)
+- [x] **Arıza 9-16** (2026-08-04) — tam kayıt: `docs/GUDUM_ARIZA_ZINCIRI_20260804.md`
+      Sekiz arıza daha, hepsi ölçümle: **ArduCopter parametrelerinin HİÇBİRİ
+      uygulanmıyordu** (adlar+birimler değişmişti; `WP_ACC` varsayılanı 2.5 m/s²
+      avcıyı 14.6° yatışa hapsediyordu) · saf takip kapalı desende yakınsamıyordu
+      (dönüş tuzağı) · hedefin gaz slider'ı yakalanamaz banda eşleniyordu ·
+      devir yandan yapılıyordu (LOS açısal hızı 155 °/s, araç 90) · yaw tavanı
+      sabit olamaz (kerterize bağlandı) · görsel faz avcıyı hedefin 41 m üstüne
+      çıkarıyordu · 6 m/s sürekli iniş girdap halkasına sokuyordu ·
+      `ATC_ANGLE_MAX` çalışma noktası olmuştu, güvenlik tavanı değil.
+      Sonuç: menzil 82 m platosundan medyan 16.6 m'ye, karelerin %55'i 20 m
+      altında; 6 görsel devir (en uzunu 6.3 s); 240 s çöküşsüz.
+- [ ] **Vuruş** ← ŞU AN BURADAYIZ. Uçuş ayakta kalıyor ama hedef vurulmuyor.
+      Ölçülen kalan arıza: `|kadraj_yaw|` p90 43.5° — devir anında kadraj hâlâ
+      bozulabiliyor, menzil ara sıra 70 m'ye geri açılıyor.
 - [ ] **Adım 6b** — GPS fazının kuyruğa yakınsaması (aspect 90° → ~180°);
       yeni `gps_guidance.py` bunu KADEME 1 geometrisiyle zaten hedefliyor —
       uçuş verisiyle doğrulanacak
@@ -314,11 +328,25 @@ python3 -m tools.analiz.analiz_gps        # GPS fazı: menzil neden kapanmıyor
 python3 -m tools.analiz.analiz_devir      # devir geometrisi — ANA SORU
 python3 -m tools.analiz.analiz_yonelim    # yönelim doğruluğu
 python3 -m tools.analiz.analiz_menzil     # menzil doğruluğu
+python3 -m tools.analiz.parm_dogrula      # ÖNCE BUNU: parametreler UYGULANDI MI
 ```
 `analiz_gps` `gps_guidance_*.csv` okur, diğerleri `visual_lead_*.csv`.
 Beş şeyi ayrıştırır: yasa doğru yeri mi gösteriyor / komut uygulanıyor mu /
-avcı hedeften hızlı mı / dikey kanal / kadraj. Doygunluk patolojisini
-otomatik teşhis eder.
+avcı hedeften hızlı mı / dikey kanal / kadraj. Doygunluk patolojisini,
+dönüş tuzağını ve EKF↔konum türevi uyuşmazlığını otomatik teşhis eder.
+
+> **`parm_dogrula` her uçuştan önce çalıştırılmalı.** ArduPilot bilinmeyen
+> parametre adını sessizce yok sayar; bu tuzağa İKİ KEZ düşüldü (2026-08-01
+> ArduPlane hız adları, 2026-08-04 ArduCopter hareket adlarının TAMAMI — avcı
+> `WP_ACC`'nin varsayılanı olan 2.5 m/s² ivme tavanıyla uçuyordu). Script her
+> `.parm` adını SITL'in kendi dökümüyle karşılaştırır, ölü adı ve uygulanmamış
+> değeri raporlar, olası yeni adı önerir.
+
+> **Kod değiştirdikten sonra YALNIZ `gcs_server`'ı yeniden başlatmak yetmez.**
+> Hedef uçak havada kalır, senaryo komutuyla uçmaya devam eder ve dakikalar
+> içinde kilometrelerce uzaklaşır; GPS fazı hiç WARMUP'tan çıkamaz ve uçuş
+> sessizce geçersiz olur (2026-08-04 uçuş 2). Tam temizlik:
+> `bash scripts/start_harmonic.sh stop` → hepsini yeniden başlat.
 
 ### Gözetimsiz uçuş koşucusu
 ```bash
