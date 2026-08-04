@@ -157,6 +157,14 @@ _plane_throttle = 600   # default = THROTTLE_CRUISE
 # Video parazit simülasyonu — iris kamera akışına uygulanır
 _video_noise_level = 0.0   # 0.0 = temiz, 1.0 = tamamen parazitli
 
+# Pose kaynağı (2026-08-04, kullanıcı kararı): "gercek" (VARSAYILAN, sim) =
+# pose modeli DEVRE DIŞI; lead geometrisi Gazebo'nun gerçek rotasyon+menzilinden
+# (sim_truth.pozlar → guidance_core.gercek_geometri). Nişan yine tespit/tracker
+# kutusundan; devir kilidi (KILIT_N) tespit conf'una bakar. Pose modeli yeniden
+# eğitilene dek geçerli SİM koltuk değneği — gerçek uçuşta yoktur, CSV'lerde
+# kaynak=gercek damgasıyla ayrılır. AVCI_POSE_KAYNAK=pose → eski görsel zincir.
+_POSE_KAYNAK = os.environ.get("AVCI_POSE_KAYNAK", "gercek").lower()
+
 # Manuel mod durumu
 _manual_active = False
 _manual_aileron  = 1500
@@ -571,9 +579,26 @@ def chase_status():
 # hybrid : mevcut supervisor davranışı (GPS ↔ görsel geçişli) — varsayılan.
 # Görev sırasında da değiştirilebilir: chase thread'i aktif fazı durdurup
 # seçilen modu kurar. AVCI_HYBRID=off eski bayrağı "gps" varsayılanına eşlenir.
-_GECERLI_MODLAR = ("gps", "visual", "hybrid")
-_guidance_mode = ("gps" if os.environ.get("AVCI_HYBRID", "on").lower()
-                  in ("off", "0") else "hybrid")
+# ═══════════════════════════════════════════════════════════════════════
+#  GÖRSEL FAZ DEVRE DIŞI (2026-08-04, kullanıcı kararı) — YALNIZ GPS
+# ═══════════════════════════════════════════════════════════════════════
+# Görsel faz ve mod seçimi kapatıldı; görev her zaman saf GPS güdümü koşar.
+#
+# GEREKÇE (20:52 uçuşunun ölçümü, iki görsel faz da menzili AÇTI):
+#   görsel-1: 20.2 → 31.2 m (3.4 s), karelerin %35'i tespit_yok
+#   görsel-2: 20.1 → 32.1 m (9.9 s), karelerin %15'i tespit_yok
+# Kök neden: devir menzilinde (~20 m) hedefin kutusu medyan 10.5-12 PİKSEL;
+# karelerin %87-94'ünde 20 px'in altında. Dedektörden 10 piksellik bir nesneye
+# kilit tutması isteniyor — üstelik aynı dedektör zemin karelerinin %55'inde
+# hayalet kutu üretiyor. Ayrıca tespit koptuğunda visual_lead HİÇ komut
+# göndermiyor; araç son hızıyla süzülüyor ("hedefi bırakıp düz uçma" belirtisi).
+#
+# Bu bir SİLME değil, kapatmadır: visual_lead/supervisor modülleri ve 59 testi
+# yerinde duruyor. Görsel faz, dedektör ve devir menzili düzeldikten sonra
+# AVCI_GORSEL=on ile geri açılır.
+_GORSEL_ACIK = os.environ.get("AVCI_GORSEL", "off").lower() in ("on", "1")
+_GECERLI_MODLAR = ("gps", "visual", "hybrid") if _GORSEL_ACIK else ("gps",)
+_guidance_mode = "gps"
 
 
 class GuidanceModeCmd(BaseModel):
@@ -584,6 +609,10 @@ class GuidanceModeCmd(BaseModel):
 def set_guidance_mode(cmd: GuidanceModeCmd):
     global _guidance_mode
     if cmd.mode not in _GECERLI_MODLAR:
+        if not _GORSEL_ACIK:
+            return {"status": "error", "mode": _guidance_mode,
+                    "message": "Görsel faz devre dışı — yalnız GPS "
+                               "(açmak için AVCI_GORSEL=on)"}
         return {"status": "error", "message": f"Geçersiz mod: {cmd.mode}"}
     if cmd.mode != _guidance_mode:
         _guidance_mode = cmd.mode
@@ -593,7 +622,7 @@ def set_guidance_mode(cmd: GuidanceModeCmd):
 
 @app.get("/api/guidance_mode")
 def get_guidance_mode():
-    return {"mode": _guidance_mode}
+    return {"mode": _guidance_mode, "gorsel_acik": _GORSEL_ACIK}
 
 
 # -----------------------------------------------------------------------
@@ -624,6 +653,8 @@ def _gorus_menzil_kestirimi(pose, iris_att):
     """
     try:
         kpts = pose["kpts"]
+        if kpts is None:            # gerçek-rotasyon modu: keypoint üretilmiyor
+            return None, False
         burun, kuyruk = kpts[0], kpts[1]
         solk, sagk = kpts[2], kpts[3]
         a = math.hypot(burun[0] - kuyruk[0], burun[1] - kuyruk[1])
@@ -731,6 +762,20 @@ from control.guidance.gps_guidance import run_gps_guidance as _run_gps_guidance
 from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
+from control.guidance.guidance_core import gercek_geometri as _gercek_geometri_fn
+
+
+def _gercek_rotasyon():
+    """GERÇEK-ROTASYON modu kaynağı: hedefin gerçek gövde ekseni (iris FRD'de)
+    + gerçek menzil, sim_truth'un TEK zaman-hizalı Gazebo mesajından. Taze veri
+    yoksa None döner → visual_lead lead'i kapatır (saf takip, durum=gercek_yok)."""
+    p = sim_truth.pozlar()
+    return None if p is None else _gercek_geometri_fn(p)
+
+
+def _gercek_kaynagi():
+    """run_visual_lead'e geçilecek get_gercek: truth modunda kanca, değilse None."""
+    return _gercek_rotasyon if _POSE_KAYNAK == "gercek" else None
 
 # Görüş paneli (/api/telemetry/pnp) menzil kestirimini guidance_core'un AYNI
 # formülüyle üretir — panelin gösterdiği sayı güdümün gördüğü sayı olsun diye
@@ -923,7 +968,8 @@ def _visual_thread():
         sim_truth.temas_sifirla()
         _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event,
                          get_temas=sim_truth.temas,
-                         get_menzil=sim_truth.menzil)
+                         get_menzil=sim_truth.menzil,
+                         get_gercek=_gercek_kaynagi())
 
     except Exception as e:
         import traceback
@@ -1018,7 +1064,8 @@ def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
         sebep = _run_visual_lead(conn, wait_new_pose, get_plane_truth, stop_event,
                                  kayip_kare_esik=SupCfg.KAYIP_M,
                                  get_temas=sim_truth.temas,
-                                 get_menzil=sim_truth.menzil)
+                                 get_menzil=sim_truth.menzil,
+                                 get_gercek=_gercek_kaynagi())
         _supervisor_mod.status["son_sebep"] = sebep
         if sebep == "vuruldu":
             _supervisor_mod.status["faz"] = "VURULDU"
@@ -1112,7 +1159,7 @@ def _chase_thread():
                     time.sleep(0.2)
             threading.Thread(target=mod_izci, daemon=True).start()
 
-            if mod == "gps":
+            if mod == "gps" or not _GORSEL_ACIK:
                 print("[CHASE] Güdüm modu: GPS — görsel temas sağlansa da devredilmez")
                 _supervisor_mod.status.update(faz="GPS", son_sebep=None)
                 _run_gps_guidance(conn, get_plane, get_iris, mod_stop)
@@ -1125,7 +1172,8 @@ def _chase_thread():
                 _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
                             get_plane_truth, mod_stop,
                             get_temas=sim_truth.temas,
-                            get_menzil=sim_truth.menzil)
+                            get_menzil=sim_truth.menzil,
+                            get_gercek=_gercek_kaynagi())
                 vuruldu = (_supervisor_mod.status.get("faz") == "VURULDU")
             mod_stop.set()                 # izci thread'i sonlandır
 
@@ -1273,7 +1321,19 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     # Pose, detection kutusunun kropunda çalışır; det yoksa ama kilit COAST'taysa
     # Kalman tahmin kutusu krop olarak denenir (kısa kopmada pose akışı sürsün —
     # pose kendi güven süzgeciyle korumalı, kropta hedef yoksa çıktı vermez).
-    if _pose_detector is not None:
+    if _POSE_KAYNAK == "gercek":
+        # GERÇEK-ROTASYON modu: pose modeli çalıştırılmaz. Kayıt, tespit/tracker
+        # kilidinin kutusunu taşır (nişan kaynağı); conf = TESPİT conf'u →
+        # supervisor KILIT_N kilidi kendiliğinden tespit-conf'a döner.
+        # kpts=None kaydın truth modunda üretildiğini işaretler. Coast (Kalman
+        # tahmini) kutusundan kayıt ÜRETİLMEZ: tahmin kutusu nişan olamaz
+        # (kilit politikasıyla tutarlı), kopmalar kayıp penceresine yansır.
+        pose = None
+        if det is not None:
+            pose = {"cx": det["cx"], "cy": det["cy"], "conf": det["conf"],
+                    "bbox": det["bbox"], "kpts": None}
+        set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv, lock=lock)
+    elif _pose_detector is not None:
         try:
             if det is not None:
                 pose = _pose_detector.detect_pose_in_bbox(img, det["bbox"])
@@ -1615,7 +1675,10 @@ async def startup_event():
         except Exception as e:
             print(f"[GCS] YOLO detector yüklenemedi ({e}) — tespit kapalı")
     # YOLO-pose modelini yükle (detection'ın YANINDA çalışır; AVCI_POSE=off kapatır)
-    if os.environ.get("AVCI_POSE", "on").lower() not in ("off", "0"):
+    if _POSE_KAYNAK == "gercek":
+        print("[GCS] POSE KAYNAĞI: GERÇEK ROTASYON (Gazebo) — pose modeli "
+              "yüklenmiyor; AVCI_POSE_KAYNAK=pose ile görsel zincire dönülür")
+    elif os.environ.get("AVCI_POSE", "on").lower() not in ("off", "0"):
         global _pose_detector
         try:
             from vision import pose_detector as _pdet

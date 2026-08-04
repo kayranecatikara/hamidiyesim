@@ -348,22 +348,11 @@ function updateMissionStatus() {
     fetch('/api/chase_status')
         .then(r => r.json())
         .then(d => {
-            // ── Güdüm fazı ışıkları (GPS / GÖRSEL) — supervisor.faz'dan ──
+            // ── Güdüm fazı ışığı — görsel faz devre dışı, yalnız GPS var ──
             const fazGps = document.getElementById('faz-gps');
-            const fazGorsel = document.getElementById('faz-gorsel');
-            if (fazGps && fazGorsel) {
+            if (fazGps) {
                 const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
                 fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
-                fazGorsel.className = 'faz-isik' +
-                    (faz === 'VISUAL' ? ' aktif' :
-                     (faz === 'VURULDU' ? ' vuruldu' : ''));
-                fazGorsel.textContent = (faz === 'VURULDU') ? '● VURULDU' : '● GÖRSEL';
-            }
-
-            // ── Güdüm modu butonları — sunucudaki gerçek mod vurgulanır ──
-            if (d.mode) {
-                document.querySelectorAll('.mod-btn').forEach(b =>
-                    b.classList.toggle('aktif', b.dataset.mode === d.mode));
             }
 
             const lockEl = document.getElementById('tele-lock-status');
@@ -408,25 +397,9 @@ function updateMissionStatus() {
 }
 setInterval(updateMissionStatus, 500);
 
-// === GÜDÜM MODU SEÇİMİ (GPS / GÖRSEL / HİBRİT) ===
-// Basınca sunucuya yazılır; vurgu sunucudan dönen gerçek modla güncellenir
-// (görev sırasında da geçerli — chase thread aktif fazı kırıp yeni modu kurar).
-document.querySelectorAll('.mod-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        fetch('/api/guidance_mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: btn.dataset.mode })
-        }).then(r => r.json()).then(d => {
-            if (d.mode) {
-                document.querySelectorAll('.mod-btn').forEach(b =>
-                    b.classList.toggle('aktif', b.dataset.mode === d.mode));
-                const ad = { gps: 'GPS', visual: 'GÖRSEL', hybrid: 'HİBRİT' }[d.mode];
-                addLog('CMD', `Güdüm modu: ${ad}`, 'warn');
-            }
-        }).catch(() => {});
-    });
-});
+// === GÜDÜM MODU SEÇİMİ — KALDIRILDI (2026-08-04) ===
+// Görsel faz devre dışı; görev her zaman saf GPS güdümü koşuyor, seçilecek
+// bir mod yok. Gerekçe ve geri açma yolu: gcs_server.py _GORSEL_ACIK.
 
 
 // === FPV HUD Mockup Drawing (DOM Manipulation over REAL VIDEO) ===

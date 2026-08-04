@@ -135,19 +135,12 @@
                         <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
                         <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
                         <!-- Güdüm fazı göstergesi: aktif faz yeşil yanar (supervisor.faz) -->
+                        <!-- Güdüm modu seçimi KALDIRILDI (2026-08-04): görsel faz
+                             devre dışı, görev yalnız GPS güdümü koşuyor. Gerekçe
+                             ve geri açma yolu: gcs_server.py _GORSEL_ACIK. -->
                         <div class="d-row"><span>GÜDÜM:</span>
                             <span class="faz-grup">
                                 <span id="faz-gps" class="faz-isik">● GPS</span>
-                                <span id="faz-gorsel" class="faz-isik">● GÖRSEL</span>
-                            </span>
-                        </div>
-                        <!-- Güdüm modu seçimi: gps=hep GPS, visual=yalnız görsel
-                             (kopunca durur), hybrid=supervisor geçişli -->
-                        <div class="d-row"><span>MOD:</span>
-                            <span class="mod-grup">
-                                <button id="mod-gps" class="mod-btn" data-mode="gps">GPS</button>
-                                <button id="mod-gorsel" class="mod-btn" data-mode="visual">GÖRSEL</button>
-                                <button id="mod-hibrit" class="mod-btn" data-mode="hybrid">HİBRİT</button>
                             </span>
                         </div>
                     </div>
