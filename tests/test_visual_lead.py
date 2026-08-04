@@ -649,6 +649,53 @@ def main():
             f"vx={outH['v_cmd'][0]:.2f} (beklenen {yatay_bekl:.2f}), "
             f"vz={outH['v_cmd'][2]:+.2f}")
 
+    # ══════════════════════════════════════════════════════════
+    #  T44-T46  GIMBAL: KAMERA DÜNYA POZU (bağımsız değişmez)
+    # ══════════════════════════════════════════════════════════
+    # NEDEN AYRI BİR TEST: T30 ("mükemmel model → kpt hatası ~0") sahneyi
+    # camera_world_pose ile KURUP yine onunla ÖLÇÜYOR. Dönüşüm yanlış olsa
+    # bile hata iki tarafta da aynı olduğu için sıfırlanır — nitekim
+    # camera_world_pose gimbal için hatalı yazıldığında T30 0.0 px verirken
+    # UÇUŞTA 164 px ölçüldü. Kendi kendine referanslı test bunu göremez.
+    # Bu üç test BAĞIMSIZ bir değişmezi sınar: gimbal varken kameranın DÜNYA
+    # çerçevesindeki roll'ü 0, pitch'i CAM_TILT olmalıdır — gövde ne yaparsa
+    # yapsın. Ölçüt dönüşümün kendisinden türetilmiyor.
+    from vision import geometry as _g
+
+    def _cam_dunya_rpy(roll, pitch, yaw):
+        _pos, R = _g.camera_world_pose([0, 0, 50], (roll, pitch, yaw))
+        # R'den (roll, pitch) çıkar — Gazebo X-ileri/Y-sol/Z-yukarı çerçevesi
+        p = math.asin(max(-1.0, min(1.0, -float(R[2, 0]))))
+        rr = math.atan2(float(R[2, 1]), float(R[2, 2]))
+        return math.degrees(rr), math.degrees(p)
+
+    T = math.degrees(-_g.CAM_TILT_RAD)          # +25° (yukarı, pozitif okunur)
+    sapmalar = []
+    for rb, pb in [(0, 0), (30, 0), (-45, 0), (0, 30), (0, -40), (40, 35), (-50, -30)]:
+        rc, pc = _cam_dunya_rpy(math.radians(rb), math.radians(pb), math.radians(20))
+        sapmalar.append((rb, pb, rc, -pc))
+    en_kotu_roll = max(abs(s[2]) for s in sapmalar)
+    en_kotu_pitch = max(abs(s[3] - T) for s in sapmalar)
+    kontrol("T44 gimbal: kamera dünya ROLL'ü gövdeden bağımsız ≈ 0",
+            en_kotu_roll < 0.5,
+            f"en kötü |roll_dünya|={en_kotu_roll:.2f}° "
+            f"(gövde roll ±50°, pitch ±40° tarandı)")
+    kontrol("T45 gimbal: kamera dünya PITCH'i gövdeden bağımsız ≈ CAM_TILT",
+            en_kotu_pitch < 0.5,
+            f"en kötü sapma={en_kotu_pitch:.2f}° (hedef {T:.0f}°)")
+
+    # T46 gimbal KAPALIYKEN kamera gövdeyi izlemeli — eski davranış korunuyor mu
+    _eski = _g._gimbal_aktif
+    _g._gimbal_aktif = lambda: False
+    try:
+        rc, pc = _cam_dunya_rpy(0.0, math.radians(30), 0.0)
+    finally:
+        _g._gimbal_aktif = _eski
+    kontrol("T46 gimbal kapalı → kamera gövde pitch'ini İZLER (eski davranış)",
+            abs(-pc - (T - 30)) < 0.5,
+            f"gövde pitch +30° → kamera dünya pitch {-pc:+.1f}° "
+            f"(beklenen {T-30:+.0f}°)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

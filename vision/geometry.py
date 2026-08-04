@@ -227,15 +227,35 @@ def camera_world_pose(iris_pos, iris_rpy):
     R_iris = rot_rpy(roll, pitch, yaw)
     cam_pos = iris_pos + R_iris @ CAM_OFFSET_POS
     if _gimbal_aktif():
-        # Kamera dünyada sabit: yalnız YAW gövdeyi izler, roll/pitch gimbal'da.
-        # Gimbal sınırları guidance_core.Cfg ile AYNI kaynaktan kırpılır.
-        from control.guidance.guidance_core import Cfg, gimbal_govde_acilari
-        tilt, roll_rel = gimbal_govde_acilari(roll, pitch, Cfg)
-        # gövde → kamera: önce roll_rel (X), sonra tilt (Y) — SDF eklem zinciri
-        R_cam = R_iris @ _rot_x(roll_rel) @ _rot_y(-tilt)
+        # ÇERÇEVE UYARISI (2026-08-04, ilk denemede tam buradan hata yapıldı):
+        # guidance_core NED/FRD kullanır (Y sağ, Z aşağı, pitch+ = burun yukarı);
+        # bu modül Gazebo'nun X-ileri / Y-SOL / Z-YUKARI çerçevesindedir ve
+        # CAM_TILT_RAD NEGATİFtir (−0.4363 = 25° yukarı). İkisi TERS ELLİ.
+        # gimbal_govde_acilari'yı doğrudan çağırmak iki eksende birden işaret
+        # hatası verdi: uçuşta kpt_hata_px_ort 164 px ölçüldü (640×480'lik
+        # kadrajda çeyrek ekran; sağlıklı değer 0.9-6 px).
+        # Çare: hesabı BU çerçevede yap, dönüştürme yapma.
+        #
+        # Gimbal kamerayı dünyada sabit tutar: roll 0, pitch CAM_TILT_RAD.
+        # Gövdeye göre gereken açılar dolayısıyla:
+        roll_rel = -roll
+        pitch_rel = CAM_TILT_RAD - pitch
+        # Servo sınırları (avci_copter.parm MNT1_*): firmware gövde-çerçevesi
+        # çıkışını orada kırpar, biz de AYNI kırpmayı uygularız — yoksa gimbal
+        # doyduğunda referans, kameranın gerçekte bakmadığı yönü gösterir.
+        roll_rel = float(np.clip(roll_rel, -_GIMBAL_ROLL_LIM, _GIMBAL_ROLL_LIM))
+        pitch_rel = float(np.clip(pitch_rel, -_GIMBAL_PITCH_LIM, _GIMBAL_PITCH_LIM))
+        # gövde → kamera: SDF eklem zinciri base → roll(X) → pitch(Y)
+        R_cam = R_iris @ _rot_x(roll_rel) @ _rot_y(pitch_rel)
     else:
         R_cam = R_iris @ _rot_y(CAM_TILT_RAD)     # eski: kamera tilt gövde frame'de
     return cam_pos, R_cam
+
+
+# Gimbal servo sınırları (rad) — avci_copter.parm MNT1_ROLL/PITCH_MIN/MAX ile
+# AYNI olmalı. Simetrik oldukları için tek değer yeter.
+_GIMBAL_ROLL_LIM = np.radians(60.0)
+_GIMBAL_PITCH_LIM = np.radians(90.0)
 
 
 def _gimbal_aktif():

@@ -120,9 +120,22 @@ class Cfg:
     # hızlı değişirse fark doygunluk olarak birikir ve yatış tavana dayanır.
     MAX_ACCEL = 8.0          # m/s²; komut hızı değişim sınırı
     # Yön dönme sınırının altında devre dışı kalacağı hız. Düşük hızda
-    # omega_max = MAX_ACCEL/|v| patlar (|v|→0'da sonsuz) ve sınır anlamsızlaşır;
+    # omega_max = YON_ACCEL/|v| patlar (|v|→0'da sonsuz) ve sınır anlamsızlaşır;
     # ayrıca duran araç yönünü serbestçe seçebilmeli (kalkış, hover, ilk yönelme).
     YON_LIMIT_MIN_HIZ = 3.0  # m/s
+    # Yön dönüşüne ayrılan yanal ivme bütçesi. MAX_ACCEL'den AYRI ve DAHA
+    # BÜYÜK — ölçümle: MAX_ACCEL=8 ile omega_max = 8/17 = 0.47 rad/s = 27 °/s
+    # oluyordu, oysa daire uçan hedefte komut yönünün dönme hızı p90 34.6 °/s
+    # (gps_guidance_20260801_173612). Yani sınır, NORMAL takibi kesiyordu:
+    # görsel faz oranı %77'den %8-18'e, faz süresi 5.4 s'den 0.8-2.4 s'ye düştü
+    # (2026-08-04 karşılaştırması). Agresif senaryodaki çöküşü tetikleyen
+    # sıçramalar ise bunun kat kat üstündeydi, dolayısıyla daha gevşek bir
+    # bütçe o korumayı kaybettirmez.
+    # 12 m/s² → 17 m/s'de 40 °/s: dairenin p90'ını (34.6) kapsar, agresif
+    # sıçramaları keser. Yatış karşılığı atan(12/9.81) = 50.7°, ATC_ANGLE_MAX
+    # 65'in altında. DOĞRULAMA: menzil kapanmıyorsa sınır hâlâ sıkı,
+    # takla dönüyorsa gevşek.
+    YON_ACCEL = 12.0         # m/s²
     DERIV_EMA = 0.2
 
     # --- YAW ---
@@ -514,8 +527,8 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # DAYALI — ve orada roll +102° → −156°, pitch +81° → −72° savruldu,
             # avcı düştü (t+143 s). Yatış > 80° olan 16 kare, hepsi o anda.
             #
-            # Çare: yönü, ancak MAX_ACCEL'in izin verdiği kadar döndür:
-            #     omega_max = MAX_ACCEL / |v|
+            # Çare: yönü, ancak ayrılan yanal ivme bütçesi kadar döndür:
+            #     omega_max = YON_ACCEL / |v|
             # Büyüklük dokunulmaz — yalnız yön yavaşlatılır, yani araç hedefe
             # gitmeye devam eder, sadece dönüşü fiziğe uydurulur.
             vmag_yeni = math.hypot(vx, vy)
@@ -523,7 +536,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if vmag_yeni > 1e-6 and vmag_onceki > cfg.YON_LIMIT_MIN_HIZ:
                 aci_ham = normalize_angle(math.atan2(vy, vx)
                                           - math.atan2(vy_prev, vx_prev))
-                aci_tavan = (cfg.MAX_ACCEL / vmag_onceki) * dt      # rad
+                aci_tavan = (cfg.YON_ACCEL / vmag_onceki) * dt        # rad
                 if abs(aci_ham) > aci_tavan:
                     yeni_aci = (math.atan2(vy_prev, vx_prev)
                                 + math.copysign(aci_tavan, aci_ham))
