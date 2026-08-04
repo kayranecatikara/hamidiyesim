@@ -135,6 +135,7 @@
       </collision>
 
       <visual name='base_visual'>
+        <visibility_flags>16</visibility_flags>
         <geometry>
           <mesh>
             <uri>model://iris_with_standoffs/meshes/iris.dae</uri>
@@ -153,6 +154,7 @@
         </material>
       </visual>
       <visual name='front_left_leg_visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0.123 0.22 -0.11 0 0 0</pose>
         <geometry>
           <cylinder>
@@ -173,6 +175,7 @@
         </material>
       </visual>
       <visual name='front_right_leg_visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0.123 -0.22 -0.11 0 0 0</pose>
         <geometry>
           <cylinder>
@@ -193,6 +196,7 @@
         </material>
       </visual>
       <visual name='rear_left_leg_visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>-0.140 0.21 -0.11 0 0 0</pose>
         <geometry>
           <cylinder>
@@ -213,6 +217,7 @@
         </material>
       </visual>
       <visual name='rear_right_leg_visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>-0.140 -0.21 -0.11 0 0 0</pose>
         <geometry>
           <cylinder>
@@ -305,6 +310,21 @@
         <visualize>1</visualize>
         <topic>iris_cam/image</topic>
         <camera>
+          <!-- KENDİ GÖVDESİNİ GÖRMESİN (2026-08-04): gimbal'dan sonra kamera
+               gövdeye göre 65-75°'ye kadar yukarı bakabiliyor ve kendi rotor
+               kollarını kadraja alıyordu. YOLO onları hedef sanıyordu —
+               ölçüm: hedef 135-186 m uzaktayken %3-8 "tespit", en uzun ardışık
+               yalnız 1 kare (gerçek kilidin imzası değil, gürültünün imzası).
+               Çare Gazebo'nun görünürlük maskesi: iris'in TÜM visual'lerine
+               visibility_flags=16 verildi, kamera maskesi o biti hariç tutuyor.
+               Bir visual görünür ⇔ (flags & mask) != 0.
+               Diğer modeller (Talon, zemin) varsayılan 0xFFFFFFFF taşıdığı
+               için etkilenmez. Üst iki bit (0xC0000000) Ogre2'ye ayrılmıştır,
+               kullanılmadı.
+               DİKKAT: iris'e YENİ bir <visual> eklersen ona da
+               <visibility_flags>16</visibility_flags> koy, yoksa o parça
+               kadraja geri girer. -->
+          <visibility_mask>4294967279</visibility_mask>
           <horizontal_fov>2.18166</horizontal_fov>
           <image>
             <width>640</width>
@@ -391,6 +411,7 @@
         </geometry>
       </collision>
       <visual name='visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
@@ -449,6 +470,7 @@
         </geometry>
       </collision>
       <visual name='visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
@@ -507,6 +529,7 @@
         </geometry>
       </collision>
       <visual name='visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
@@ -565,6 +588,7 @@
         </geometry>
       </collision>
       <visual name='visual'>
+        <visibility_flags>16</visibility_flags>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>

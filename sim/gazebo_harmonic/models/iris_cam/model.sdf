@@ -905,14 +905,9 @@
         <offset>-0.5</offset>
         <servo_min>1100</servo_min>
         <servo_max>1900</servo_max>
-        <type>POSITION</type>
-        <p_gain>3.0</p_gain>
-        <i_gain>0</i_gain>
-        <d_gain>0.02</d_gain>
-        <i_max>0</i_max>
-        <i_min>0</i_min>
-        <cmd_max>10</cmd_max>
-        <cmd_min>-10</cmd_min>
+        <type>COMMAND</type>
+        <cmd_topic>/gimbal/cmd_roll</cmd_topic>
+        <p_gain>2</p_gain>
       </control>
 
       <control channel="9">
@@ -921,16 +916,29 @@
         <offset>-0.5</offset>
         <servo_min>1100</servo_min>
         <servo_max>1900</servo_max>
-        <type>POSITION</type>
-        <p_gain>3.0</p_gain>
-        <i_gain>0</i_gain>
-        <d_gain>0.02</d_gain>
-        <i_max>0</i_max>
-        <i_min>0</i_min>
-        <cmd_max>10</cmd_max>
-        <cmd_min>-10</cmd_min>
+        <type>COMMAND</type>
+        <cmd_topic>/gimbal/cmd_pitch</cmd_topic>
+        <p_gain>2</p_gain>
       </control>
 
+    </plugin>
+
+    <!-- Gimbal eklemlerini fiilen süren kontrolcüler. ArduPilotPlugin
+         (control channel 8/9, type=COMMAND) yalnız hedef açıyı /gimbal/cmd_*
+         konusuna YAYINLAR; eklemi hareket ettiren bu iki eklentidir.
+         Bunlar olmadan gimbal SESSİZCE hiç kıpırdamaz — ne hata verir ne log.
+         Desen ardupilot_gazebo/models/iris_with_gimbal/model.sdf:322-342'den. -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>iris_with_standoffs::gimbal_roll_joint</joint_name>
+      <topic>/gimbal/cmd_roll</topic>
+      <p_gain>2</p_gain>
+    </plugin>
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>iris_with_standoffs::gimbal_pitch_joint</joint_name>
+      <topic>/gimbal/cmd_pitch</topic>
+      <p_gain>2</p_gain>
     </plugin>
 
   </model>
