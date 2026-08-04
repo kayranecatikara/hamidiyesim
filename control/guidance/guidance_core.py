@@ -17,6 +17,11 @@ Kritik tasarım kuralları (master spec):
     (25° yukarı montaj tilt'i — atlanırsa sürekli 25° sabit hata).
   - dt daima kare header.stamp farkından gelir, duvar saatinden DEĞİL.
   - PnP/menzil kestirimi güdüme bağlanmaz; menzil_kestirim_m SADECE log.
+
+GT ROTASYON MODU (AVCI_GT_ROT=on): process() bir `gt` sözlüğü alırsa Adım 1-2
+ölçümleri kameradan değil Gazebo'nun gerçek pozundan türetilir (bkz. Cfg.GT_ROT).
+Adım 3-8 geometrisi değişmez — böylece iki mod aynı yasayı, farklı algı ile
+çalıştırır ve CSV sütunları birebir kıyaslanabilir. Bu mod SİMÜLASYONA ÖZGÜDÜR.
 """
 
 import math
@@ -37,6 +42,11 @@ def _env_f(name, default):
     return float(os.environ.get(name, default))
 
 
+def _env_b(name, default=False):
+    v = os.environ.get(name)
+    return default if v is None else v.lower() in ("on", "1", "true", "yes")
+
+
 class Cfg:
     """IBVS lead pursuit ayarları. Kritikler AVCI_IBVS_* env ile override edilir."""
     # ── çekirdek ──
@@ -53,6 +63,14 @@ class Cfg:
     UNDISTORT_AKTIF = False  # simde distorsiyon yok; gerçek donanımda True + katsayılar
     DIST_KATSAYILARI = None  # cv2.undistortPoints için (k1,k2,p1,p2,k3), simde None
     KPT_CONF_MIN = _env_f("AVCI_POSE_KPT_CONF", 0.5)
+    # ── GT ROTASYON MODU (AVCI_GT_ROT=on, varsayılan KAPALI) ──
+    # Açıkken güdümün TÜM algı girdileri (nişan noktası, gövde ekseni yönü,
+    # yandanlık, ölçek) Gazebo'nun gerçek pozundan gelir; pose modeli komut
+    # yoluna hiç girmez (ekran/log için çalışmaya devam eder).
+    # ⚠ SİMÜLASYONA ÖZGÜ: gerçek donanımda hedefin pozu bilinmez, bu mod
+    # uçurulamaz. Amacı güdüm YASASINI algı hatasından yalıtarak test etmek:
+    # GT modunda ıska varsa suç yasada, pose modunda varsa suç algıdadır.
+    GT_ROT = _env_b("AVCI_GT_ROT", False)
     # ── copter adaptörü ──
     # Kapanma hızı hedefin (~15 m/s) ÇOK üstünde olmalı (kullanıcı kararı):
     # görsel faz vurucu fazdır, hedefle hız eşitlemek GPS fazının işidir.
@@ -323,11 +341,16 @@ class LeadPursuitCore:
         und = cv2.undistortPoints(p, K, dist, P=K)
         return und.reshape(-1, 2)
 
-    def process(self, pose, stamp, attitude):
+    def process(self, pose, stamp, attitude, gt=None):
         """
-        pose     : pose_detector çıktısı {cx, cy, conf, kpts: 6×(u,v,conf)} (tam kare px)
+        pose     : pose_detector çıktısı {cx, cy, conf, kpts: 6×(u,v,conf)} (tam kare px).
+                   GT modunda (gt verilirse) KULLANILMAZ, None olabilir.
         stamp    : karenin header.stamp'i (s) — dt BUNDAN hesaplanır
         attitude : (roll, pitch, yaw) radyan (kendi aracımız) veya None
+        gt       : GT ROTASYON MODU girdisi — geometry.rot_gt_goruntu() çıktısı
+                   {uv, d_birim, yandanlik, menzil} veya None (normal pose modu).
+                   Verilirse Adım 1-2 ölçümleri kameradan DEĞİL Gazebo gerçek
+                   pozundan gelir; Adım 3-8 geometrisi ikisinde de aynıdır.
         Dönüş: tüm ara değerler + u_govde / yaw_hata / pitch_hata + durum + warn listesi.
         """
         cfg = self.cfg
@@ -338,24 +361,54 @@ class LeadPursuitCore:
         dt = (stamp - self.t_onceki) if self.t_onceki is not None else None
         self.t_onceki = stamp
 
-        kpts = pose["kpts"]
-        pts = self._undistort([(k[0], k[1]) for k in kpts] + [(pose["cx"], pose["cy"])])
-        burun, kuyruk = np.array(pts[self._I_BURUN]), np.array(pts[self._I_KUYRUK])
-        solk, sagk = np.array(pts[self._I_SOLK]), np.array(pts[self._I_SAGK])
-        bbox_cx, bbox_cy = pts[-1]
-        guven = float(pose["conf"])
+        if gt is not None:
+            # ══ GT MODU — Adım 1-2 ölçüm yerine GERÇEK pozdan türetme ══
+            # Kamera hiç okunmaz: nişan noktası hedefin izdüşümü, gövde ekseni
+            # yönü ve yandanlık gerçek yönelimden gelir.
+            bbox_cx, bbox_cy = gt["uv"]
+            guven = 1.0                       # ölçüm değil gerçek → tam güven
+            kpt_govde_ok = kanat_ok = True    # keypoint güven kapıları anlamsız
+            menzil_gt = max(float(gt["menzil"]), 1e-6)
+            # Ölçek ÖLÇÜLMEZ, gerçek menzilden türetilir: olcek = fx·L/R. Pose
+            # modundaki ölçekle AYNI birimde çıkar (px), böylece kalite rampası
+            # (OLCEK_KAPALI_PX / OLCEK_TAM_PX) ve MIN_GOVDE_PX deadband'i iki
+            # modda da aynı eşiklerle çalışır — modlar kıyaslanabilir kalır.
+            olcek_ham = geo.FX * GOVDE_BOYU_M / menzil_gt
+            yandanlik_gt = float(gt["yandanlik"])
+            a = yandanlik_gt * olcek_ham
+            # b yalnız log tutarlılığı için geri çözülür (olcek_ham tanımından):
+            # olcek² = a² + (ORAN·b)² → b = olcek·√(1−yandanlik²)/ORAN
+            b = (olcek_ham * math.sqrt(max(0.0, 1.0 - yandanlik_gt ** 2))
+                 / GOVDE_KANAT_ORANI)
+            gt_d = gt.get("d_birim")
+            d_birim_ham = np.array(gt_d, float) if gt_d is not None else None
+        else:
+            kpts = pose["kpts"]
+            pts = self._undistort([(k[0], k[1]) for k in kpts]
+                                  + [(pose["cx"], pose["cy"])])
+            burun, kuyruk = np.array(pts[self._I_BURUN]), np.array(pts[self._I_KUYRUK])
+            solk, sagk = np.array(pts[self._I_SOLK]), np.array(pts[self._I_SAGK])
+            bbox_cx, bbox_cy = pts[-1]
+            guven = float(pose["conf"])
 
-        # ── Adım 1: ham ölçümler ──
-        d = burun - kuyruk                    # 2D gövde ekseni vektörü (px)
-        a = float(np.hypot(d[0], d[1]))       # gövde projeksiyonu
-        b = float(np.hypot(*(solk - sagk)))   # kanat projeksiyonu — SADECE uzunluk
+            # ── Adım 1: ham ölçümler ──
+            d = burun - kuyruk                    # 2D gövde ekseni vektörü (px)
+            a = float(np.hypot(d[0], d[1]))       # gövde projeksiyonu
+            b = float(np.hypot(*(solk - sagk)))   # kanat projeksiyonu — SADECE uzunluk
 
-        # ── Adım 2: ham ölçek ──
-        olcek_ham = math.sqrt(a * a + (GOVDE_KANAT_ORANI * b) ** 2)
+            # ── Adım 2: ham ölçek ──
+            olcek_ham = math.sqrt(a * a + (GOVDE_KANAT_ORANI * b) ** 2)
+
+            d_birim_ham = (d / a) if a > 1e-9 else None
+            # kanat ucu güveni düşükse b'ye güvenilmez; burun/kuyruk düşükse d yönü
+            kanat_ok = (kpts[self._I_SOLK][2] >= cfg.KPT_CONF_MIN
+                        and kpts[self._I_SAGK][2] >= cfg.KPT_CONF_MIN)
+            kpt_govde_ok = (kpts[self._I_BURUN][2] >= cfg.KPT_CONF_MIN
+                            and kpts[self._I_KUYRUK][2] >= cfg.KPT_CONF_MIN)
 
         # d_birim + flip koruması (burun/kuyruk takası lead'i TERS çevirir)
-        if a > 1e-9:
-            d_birim = d / a
+        if d_birim_ham is not None:
+            d_birim = d_birim_ham
         else:
             d_birim = self.d_birim_onceki if self.d_birim_onceki is not None \
                 else np.array([1.0, 0.0])
@@ -383,7 +436,11 @@ class LeadPursuitCore:
                 u_dunya_hedef = govde_to_dunya(u_govde_hedef, *attitude)
                 eps = math.asin(max(-1.0, min(1.0, -float(u_dunya_hedef[2]))))  # NED: -Z yukarı
                 eps_deg = math.degrees(eps)
-                duzeltme = yukselti_duzeltme(eps)
+                # GT modunda ölçek zaten GERÇEK menzilden geliyor; bu düzeltme
+                # ÖLÇÜLEN ölçeğin perspektif kısalmasını telafi etmek içindir,
+                # gerçeğe uygulanırsa hata EKLER. eps_deg yalnız log'da kalır.
+                if gt is None:
+                    duzeltme = yukselti_duzeltme(eps)
             else:
                 warn.append("attitude_yok")          # sağlamlık #6: düzeltmesiz devam
         olcek = olcek_ham / duzeltme
@@ -393,13 +450,10 @@ class LeadPursuitCore:
         kalite = max(0.0, min(1.0, (olcek - cfg.OLCEK_KAPALI_PX)
                               / (cfg.OLCEK_TAM_PX - cfg.OLCEK_KAPALI_PX)))
         # kanat ucu güveni düşükse b'yi bbox'tan UYDURMA — kaliteyi söndür
-        if (kpts[self._I_SOLK][2] < cfg.KPT_CONF_MIN
-                or kpts[self._I_SAGK][2] < cfg.KPT_CONF_MIN):
+        # (GT modunda kanat_ok/kpt_govde_ok daima True: ölçüm güveni diye bir şey yok)
+        if not kanat_ok:
             kalite = 0.0
             durum = "kanat_dusuk"
-        # burun/kuyruk güveni düşükse d yönü anlamsız — lead'i söndür
-        kpt_govde_ok = (kpts[self._I_BURUN][2] >= cfg.KPT_CONF_MIN
-                        and kpts[self._I_KUYRUK][2] >= cfg.KPT_CONF_MIN)
 
         if self.yandanlik_f is None or dt is None:
             self.yandanlik_f = yandanlik
@@ -463,6 +517,9 @@ class LeadPursuitCore:
             "eksen_disi_deg": math.degrees(
                 math.acos(max(-1.0, min(1.0, float(u_nisan[2]))))),
             # SADECE LOG — güdüm hesabında KULLANILMAZ:
+            # (GT modunda olcek gerçek menzilden türetildiği için bu sütun
+            #  menzil_gercek_m'i AYNEN yansıtır; algı sapması ölçülemez.)
             "menzil_kestirim_m": (geo.FX * GOVDE_BOYU_M / olcek) if olcek > 1e-9 else 0.0,
             "flip_sayaci": self.flip_sayaci,
+            "gt_modu": gt is not None,
         }

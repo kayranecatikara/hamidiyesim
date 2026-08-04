@@ -1,167 +1,156 @@
-# TODO — Avcı Sim
+# TODO — GT modu bulgusundan çıkan işler
 
-Tiklenebilir görev listesi. Çalıştırma ve sorun giderme için
-`docs/SIMULASYON_CALISTIRMA.md`.
-
-Güncelleme: 2026-08-02
-
-> ## ⚑ ÖNCE BUNU OKU — deponun şu anki hali
->
-> Depo **`b55953d` (son push) haline geri döndürüldü** (2026-08-02 10:55).
-> Push'tan sonra yapılan 8 grup değişiklik hep birlikte uçurulmuş, hangisinin
-> ne yaptığı ayırt edilememişti; bazıları işe yaradı, biri zarar verdi.
->
-> **Sıradaki iş `UYGULANACAK.md`'de** — 14 madde, teker teker uygulanıp
-> uçuşta ölçülecek. Yeni bir oturuma başlıyorsan ORADAN devam et.
->
-> Bu dosyadaki maddeler `UYGULANACAK.md` bittikten SONRA sıraya girer.
+**Ana belge [DURUM.md](DURUM.md)'dir.** Bu dosya sadece 2026-08-04'te GT
+rotasyon modu ölçüldükten sonra ortaya çıkan işleri tutar. Bir madde
+bitince DURUM.md §6 "Bitenler"e taşı.
 
 ---
 
-## Sözlük (bu belgelerde geçen terimler)
+## Neden bu liste var: algı darboğaz değilmiş
 
-| terim | anlamı |
-|---|---|
-| **kara kutu** | ArduPilot'un kendi uçuş kaydı (`~/ardupilot/logs/*.BIN`). Aracın gördüğü attitude, motor çıkışları, kontrolcü hedefleri. Bizim CSV'lerimizden bağımsız — "araç komutu uyguladı mı" sorusunun tek dürüst kaynağı. |
-| **istasyon** | GPS fazının drone'a "şurada dur" dediği hayali nokta. Sabit metre DEĞİL sabit açı: hedeften `RANGE_SET` (11 m) uzakta, LOS yükselişi `ISTASYON_ELEV_DEG` (15°) → hedefin **10.63 m gerisi + 2.85 m altı**. Drone hedefi değil bu noktayı takip eder. |
-| **`ok` oranı** | `visual_lead` her kamera karesine `durum` etiketi yazar. `ok` = pose modeli hedefi temiz gördü, keypoint'ler güvenilir. Diğerleri: `kpt_dusuk`, `tespit_yok`, `kor_dalis`. "%51 ok" = karelerin yarısında güdüm sağlam veriyle çalışıyor. |
-| **faz** | GPS fazı (uzaktan yaklaşma, `gps_guidance`) ↔ görsel faz (terminal hücum, `visual_lead`). Geçişi `supervisor` yönetir. |
-| **geçiş sayısı** | GPS→görsel kaç kez geçildi. 1 ideal; yüksek sayı görsel temasın kopup kopup kurulduğunu gösterir. |
+GT modu (`AVCI_GT_ROT=on`) güdümün algı girdisini tamamen Gazebo gerçek
+poza çevirdi — yani pose modeli mükemmel olsaydı ne olacağını ölçtük.
+
+| | pose modu | GT modu |
+|---|---|---|
+| görsel faz | 11 | 9 |
+| vuruş | 2 (%18) | 1 (%11) |
+| medyan en yakın mesafe | 0.92 m | 0.98 m |
+
+**Fark yok.** Algıyı kusursuz yapmak isabeti değiştirmedi. Darboğaz pose
+modeli değil; aşağıdaki maddeler asıl şüpheliyi kovalıyor.
 
 ---
 
-## Sıradaki
+## 1. Terminal fazda kontrol yetkisi — EN YÜKSEK ÖNCELİK
 
-- [ ] **AÇIK SORU: istasyon açısı kamera tilt'inden ayrılmalı mıydı?**
-      2026-08-02'de `ISTASYON_ELEV_DEG` `CENTER_ELEV_DEG`'ten ayrıldı ve
-      25° → 15° indirildi (terminal dikey ivme bütçesi). Ölçümler olumlu
-      ama **kanıt karışık**: algının iyileşmesi geometrinin sonucu olabilir,
-      merkez dışı kadrajlamanın kendi bedeli izole ölçülmedi. Ayrıca asıl
-      alternatif (`WP_ACC_Z` 1.0 → 2.5 yükseltip istasyonu 25°'de bırakmak)
-      hiç denenmedi. **Karar prosedürü, ölçütler ve rakamlar:
-      `UYGULANACAK.md` → B7.** B6'dan (terminal algı) ÖNCE karara bağlanmalı.
-      (`control/guidance/gps_guidance.py` → `ISTASYON_ELEV_DEG`)
-- [ ] **`LOOKUP_MIN_ALT` kararı** — şu an 8 m sabit taban. Hedef yere düşüp
-      sürünürken avcı 8 m'de asılı kalıyor, inemiyor. Hedefin irtifasına göre
-      uyarlanmalı mı, yoksa "hedef yerdeyse görev bitti" mi sayılmalı?
-      (`control/guidance/gps_guidance.py:50`)
-- [ ] **`ATC_ANGLE_MAX`'i kademeli geri artır** — 45'te kaldı. 50-55 denenebilir;
-      55'te yatay ivme 14 m/s². Her denemede kara kutudan motor doygunluğu ve
-      toplam yaw dönüşü kontrol edilmeli. (`sim/ardupilot_params/avci_copter.parm`)
-- [ ] **Video kayıt butonları** — başlat / durdur / kayıt dosyası.
-      Iris kamera akışı zaten MJPEG olarak `latest_frames["iris"]` üzerinden
-      servis ediliyor (`gcs_server.process_iris_frame`). Kayıt, o kareleri
-      `cv2.VideoWriter` ile dosyaya yazan bir thread olur; dosyalar `logs/`
-      altına zaman damgalı düşer ve `/loglar/` üzerinden zaten servis ediliyor.
+**Şüphe:** drone hedefe ~1 m'ye geliyor ve ıskalıyor. Bu bir nişan hatası
+değil, **fizik sınırı** olabilir.
 
-## Tekrar denenecekler
+Mevcut parametrelerle (`V_KAPANMA=25` m/s, `IVME_TAVAN=4` m/s² yatay):
 
-Bunlar daha önce denenip GERİ ALINDI — ama o ölçümler sistemin bugünkünden
-çok daha kötü olduğu dönemde alındı. O zamanki başarısızlıkların sebebi bu
-fikirlerin kendisi olmayabilir; altlarındaki bozuk zemin olabilir. Aradan
-düzelenler: yaw sürekli dönmesi (27 °/s → ~0), firmware parametrelerinin hiç
-uygulanmaması (araç 30° eğim tavanıyla uçuyordu), dikey ıska geometrisi, ve
-temiz tespit oranı (%12 → %65).
+| yanal hata | düzeltmek için gereken süre | bu menzilde çoktan bitmiş olmalı |
+|---|---|---|
+| 0.5 m | 0.50 s | 12.5 m |
+| 1.0 m | 0.71 s | **17.7 m** |
+| 2.0 m | 1.00 s | 25.0 m |
 
-Her denemede **tek değişken** değiştirin ve eski sayıyla karşılaştırın.
+Görsel faza giriş menzili medyanı **~10 m**. Yani 10 m'de elde kalan
+1 m'lik yanal hata **düzeltilemez** — 0.4 s'de 4 m/s² ile ancak 0.32 m
+yana kayabiliyoruz. Dönüş yarıçapı 25 m/s'te yatayda 156 m, dikeyde 62 m.
 
-- [ ] **Gerçek PN (`γ += N·Δλ`)** — klasik oransal seyrüsefer.
-      *Eski sonuç:* testleri geçti (γ, λ'dan tam 2.00 kat hızlı) ama kapalı
-      çevrimde ıska **0.66 m → 1.5-2.1 m'ye çıktı**. Sebep: drone hedefe
-      yakınsarken LOS açısı zaten doğal olarak azalıyor; PN bunu "sıfırlanacak
-      LOS hızı" sanıp yakınsamayla savaşıyor, hedef yukarıdayken γ eksiye
-      (dalışa) gidiyordu — γ −22°'ye inerken λ hâlâ +1.3°'deydi.
-      *Neden şimdi farklı olabilir:* o ölçümler dikey ıska geometrisi
-      düzeltilmeden önce alındı; PN'in "büyük başlangıç ofsetini kapatma"
-      yükü artık yok, sadece küçük sapmaları düzeltmesi gerekiyor — zaten
-      tasarlandığı iş. Gerekçe `adapter_copter._dikey_pn` docstring'inde.
-      *Ölçüt:* ıska 0.55 m'nin (mevcut en iyi) altına inmeli.
+**Ölçüm:** `V_KAPANMA`'yı 25 → 15 → 10 düşürüp karne al. Hipotez doğruysa
+en yakın mesafe medyanı belirgin düşer. Yavaşlamak hedefe yetişememe riski
+getirir — GPS fazı zaten yetiştiriyor, o yüzden denemeye değer.
 
-- [ ] **Dikey PN'i güçlendirme** (tavan 15°→30°, süre 0.4→0.6 s)
-      *Eski sonuç:* PN yeni tavana da %79 oranında çakıldı — doygunluk noktası
-      yukarı kaydı ama kalkmadı. `PN_LEAD_SURE`/`PN_DIKEY_MAX_DEG` şu an
-      0.6/30 değerlerinde ama etkisi sınırlı.
-      *Neden şimdi farklı olabilir:* doygunluğun sebebi büyük olasılıkla
-      aracın ivme tavanının 5.7 m/s²'de kilitli olmasıydı (ATC_ANGLE_MAX=30°
-      varsayılanı). Artık 45° → 9.8 m/s².
-      *Ölçüt:* PN'in tavana çakılma oranı %79'un belirgin altına inmeli.
+```bash
+AVCI_IBVS_V_KAPANMA=15 bash scripts/gcs.sh
+python3 tools/gudum_karne.py --kiyasla <eski> <yeni>
+```
 
-- [ ] **`KP_KADRAJ ≥ 1.0`** — kadraj tutma kazancını yükseltme.
-      *Eski sonuç:* yüksek kazanç yakınsamayla savaşıp salınım üretti;
-      1.0'da 20/24, **1.5'te 0/24 vuruş**. Tarama: 0.0 → ıska 0.59 m,
-      0.5 → 0.55 m (seçilen), 1.0 → 1.59 m, 1.5 → 4.90 m.
-      *Neden şimdi farklı olabilir:* o taramadaki salınımın bir kısmı yaw
-      kaçağından ve tespit kopukluğundan geliyor olabilir; ikisi de düzeldi.
-      *Ölçüt:* 24 denemede vuruş oranı ve ıska, yukarıdaki tabloyla kıyaslanır.
+**Uyarı:** `IVME_TAVAN=4` keyfi değil — quad ileri ivmelenmek için burnunu
+eğiyor, kamera gövdeye +25° bağlı, 5 m/s² üstünde kamera yere bakmaya
+başlıyor (bkz. `adapter_copter`). GT modunda bu kısıt yok sayılabilir
+(kamera zaten kullanılmıyor) — **GT modunda `IVME_TAVAN`'ı yükseltmek ayrı
+bir deney**, ve yasanın tavanını ölçmenin temiz yolu.
 
-- [ ] **Yaw'ı mutlak hedefe slew etme** — kalıcı `cmd_yaw` durumu tutup
-      GPS fazındaki desene benzetme (2026-08-01'de denendi).
-      *Eski sonuç:* kapalı çevrim ölçümünde arıza koşulunda mevcut biçim
-      1.0 tur dönerken bu biçim **7.4 tur** döndü. Mevcut biçim komutu her
-      karede aracın gerçek başlığına yeniden demirliyor — bu bir güvenlik
-      özelliği.
-      *Neden şimdi farklı olabilir:* artık yaw kaçak kapısı var; kaçağı o
-      sınırlıyorsa mutlak biçimin kararlılık avantajı kullanılabilir.
-      *Ölçüt:* T44/T45 testleri geçmeli, kaçak 45°'nin altında kalmalı.
+---
 
+## 1b. Pose kilidi kapısı — DENENDİ, ÇÜRÜTÜLDÜ, GERİ ALINDI
 
-## Güdüm — açık işler
+GT modunda pose kilidi kapısı kaldırılmıştı (mantık: güdüm pose'a bakmıyorsa
+geçişi pose tutmasın). **Ölçüm çürüttü**, varsayılan kapalıya alındı
+(`AVCI_GT_KILIT_BYPASS=on` ile açılabilir):
 
-- [ ] **Görsel faza geçiş kapısı** — şu an "son 15 karenin 10'unda pose
-      `conf≥0.5`" **VE** yatay mesafe < 20 m. Bağlayıcı olan pose kilidi; bbox
-      20 m'de görünüyor ama pose geç kilitleniyor. Girişi tespit (bbox)
-      güvenine bağlamak denenebilir — lead zaten keypoint zayıfken kendiliğinden
-      sıfırlanıyor (`guidance_core.py:409`). (`supervisor.py:87-93`)
-- [ ] **Lead'in yumuşak geçişi** — `kpt_dusuk`'ta sert 0'lanıyor, ~15° nişan
-      zıplaması (58 geçiş, ort 10.8°, max 24.9°). (`guidance_core.process`)
-- [ ] **Menzil verisi neden zıplıyor** — kapı semptomu kesti, kök neden duruyor.
-      Baş şüpheli `gcs_server._frame_off` dikey kalibrasyonu (`sd = 0.0`
-      varsayımı). Artık ölçülebilir: `menzil_ham_m` ile `gercek_menzil_ham_m`
-      yan yana loglanıyor.
-- [ ] **GPS fazında vuruş tespiti yok** — `visual_lead` dışında kimse vuruşu
-      raporlamıyor. Hasar modülü artık bağımsız izliyor ama faz durumu hâlâ
-      "VURULDU" demiyor. (`gps_guidance.py`)
+| | kilit VAR (164352) | kilit YOK (172103) |
+|---|---|---|
+| görsel faza giriş medyanı | 6.6 m | **19.6 m** |
+| en yakın menzil | 0.68 m | **2.41 m** |
+| GPS istasyonda oturma | %33.7 | **%0.4** |
+| GPS kadraj yaw RMS | 35.7° | **116.8°** |
+| faz sonucu | 3 ıska / 4 kayıp | **13/13 kayıp** |
 
-## Simülasyon altyapısı
+**Mekanizma:** pose kilidi farkında olmadan bir **gecikme** görevi
+görüyormuş — ~6 m'de oturuyor, devir orada oluyordu. Kilit kalkınca devir
+`GATE_MENZIL=20` kapısına yapıştı; görsel faz yetişemeyeceği menzilde
+devralıp hemen kaybediyor. GPS fazı da 8-12 m istasyon bandına hiç
+giremiyor.
 
-- [ ] **Hasar modülünü arayüze bağla** — `/api/hasar` endpoint'i var, panelde
-      gösterilmiyor.
-- [ ] **RTF'i tam sistemde tekrar ölç** — `gcs_server` + YOLO yükü altında
-      0.982 ölçüldü ama uçuş sırasında (görsel faz aktifken) ölçülmedi.
+Bu §1'i doğruluyor: **sorun kapanma hızı/ivme bütçesi.** 25 m/s ile 20 m'den
+devralmanın düzeltme payı zaten yok. Kapıyı ancak `V_KAPANMA` düşürüldükten
+sonra tekrar açmayı dene.
 
-## Tamamlananlar
+---
 
-- [x] **GCS telemetrisi donuyor** — `mavlink_listener`'a `else` dalı; 14550'den
-      gelen quadrotor paketleri `telemetry_state["iris"]`'e yazılıyor. Uçuşta
-      doğrulandı.
-- [x] **Parametre adları yanlıştı** — 9 parametrenin 7'si SITL'e hiç
-      uygulanmıyordu (firmware SI birimine geçip yeniden adlandırmış).
-      `tools/parm_denetle.py` tekrarını önlüyor.
-- [x] **Kendi etrafında dönme** — kök neden: `yaw_hata` kapanmıyorken komut her
-      karede bir tavan adımı daha ekliyordu (90 °/s sürekli dönme).
-      `adapter_copter`'a "hata kapanmıyorsa yaw'ı sustur" kapısı eklendi
-      (T44/T45). Ölçüm: seyir boyunca dönme 27 °/s → ~0 °/s, yaw takip hatası
-      30.5° → 4.5°.
-- [x] **`WP_YAW_BEHAVIOR` 2 → 0** — firmware, yaw komutu olmayan anlarda burnu
-      gidiş yönüne çeviriyordu.
-- [x] **Dikey ıska, 1. tur (GPS istasyon geometrisi)** — sabit 4.65 m ofset
-      yerine `r_eff = min(menzil, RANGE_SET)`; LOS yükselişi her menzilde sabit
-      (test G10, sapma 0.00°). ⚠ Bu YETMEDİ: açı sabitlendi ama istasyonun
-      KENDİSİ hâlâ 25°'deydi, yani terminal yine 4.65 m tırmanmak zorundaydı.
-- [x] **Dikey ıska, 2. tur (istasyon açısı ↓)** — `ISTASYON_ELEV_DEG` kamera
-      tilt'inden ayrıldı, 25° → 15°: kapatılacak dikey **4.65 → 2.85 m**.
-      Sebep ölçüldü: ArduPilot dikey rampası `WP_ACC_Z = 1.0 m/s²`, 4.65 m için
-      3.05 s gerekiyor, terminalde 2.4-2.8 s var. Test G11 bütçeyi koruyor.
-- [x] **Sahte vuruş** — `VURUS_MENZIL` 3.0 → 1.5 m. 3 m fiziksel temas değil,
-      yakın geçişti.
-- [x] **Sahte PnP paneli** — ground-truth'a yapay gürültü ekleyip "tahmin" diye
-      gösteriyordu. Yerine gerçek görüş kestirimi + ground-truth + faz kapıları.
-- [x] **Hedef telemetrisi = cevap anahtarı** — güdüme bağlanmadı, ölçüm için 10
-      sütun eklendi (§8).
-- [x] **Talon manuel modda kalkmıyor** — mod değiştirmek tek başına yetmiyordu;
-      ARM + TAKEOFF adımları hiç yoktu. Eklendi (yerde FBWA, 15 m üstünde FBWB).
-      **Uçuşta doğrulandı.**
-- [ ] **Çarpışmada hedef uçmaya devam ediyor** — ⚠ TAMAMLANMADI, revert edildi.
-      `gcs_server`'da hasar modülü KODU duruyor ama **varsayılan KAPALI**
-      (`AVCI_HASAR=1` gerek) ve dayandığı Gazebo temas sensörü SDF'den geri
-      alındı — yani şu an tetiklenemez. Tam sürümü `UYGULANACAK.md` **A5**.
+## 2. Ölçümler yeniden alınmalı — HybridSORT kapalıymış
+
+`boxmot` kurulu değildi, `[GCS] HybridSORT yüklenemedi` yazıyordu. Yani
+**bugüne kadarki tüm uçuşlar takipçisiz** yapıldı; kilitli-ID politikası
+(`TargetLock`) hiç devreye girmedi.
+
+2026-08-04'te kuruldu (`pip install boxmot==19.0.0`). Sonuç: mevcut karne
+sayıları takipçili sistemin performansı **değil**. §1'e geçmeden önce
+takipçili bir taban ölçümü al, yoksa neyi neyle kıyasladığın belirsiz olur.
+
+⚠ **Takipçi ile §1b aynı anda değişti — ayrıştırılmadı.** 172103 uçuşundaki
+kötüleşmenin baskın sebebi §1b (devir menzili 6.6→19.6 m; takipçi devir
+menzilini değiştiremez). Takipçinin kendi etkisi hâlâ ölçülmedi: pose oranı
+%60→%62 ile neredeyse aynı kaldı, yani algıyı bozmuyor gibi görünüyor.
+Temiz ölçüm için `AVCI_TRACKER=off` ile bir koşu al ve karneleri kıyasla.
+
+---
+
+## 3. `_menzil_olc()` bağlanmamış (ölü kod)
+
+`control/guidance/visual_lead.py:251` — "önce sim-truth, yoksa telemetri"
+diye yazılmış ama **hiçbir yerden çağrılmıyor**. Fiilen kullanılan menzil
+`get_plane_truth()` → hedefin MAVLink telemetrisi.
+
+Sorun: `sim_truth.py` tam olarak bu yüzden yazılmıştı — telemetri menzili
+iki ayrı akışın zaman hizasız farkı, 250 ms'ye kadar bayat, kapanmada 5-6 m
+hata veriyor. Zaman hizalı gz menzili duruyor ama kullanılmıyor.
+
+**İş:** ana döngüde `_menzil_hesapla(...)` yerine `_menzil_olc()` çağır,
+`menzil_gercek_m` sütununu iki kaynakla kıyasla. Terminal faz kararları
+(kör dalış girişi, `coalt_latch`) bu menzile bakıyor — §1'i ölçmeden önce
+bu düzeltilmeli, yoksa §1'in sonucu bayat menzille kirlenir.
+
+---
+
+## 4. GT modunda menzil kapısı gevşetilsin mi
+
+Pose kilidi GT modunda kaldırıldı; geçiş artık yalnız `GATE_MENZIL=20 m`
+kapısına bakıyor. GT'de "uzakta pose güvenilmez" gerekçesi yok — kapı
+tamamen açılırsa görsel faz çok daha erken başlar ve §1'deki düzeltme
+bütçesi büyür.
+
+```bash
+AVCI_HYBRID_GATE_MENZIL=40 bash scripts/gcs.sh
+```
+
+Kapının kinematik gerekçesi duruyor (sabit `V_KAPANMA` ile uzaktan
+yetişilemez), o yüzden bu §1 ile **birlikte** denenmeli: yavaş kapanma +
+erken devir aynı deneyin iki yarısı.
+
+---
+
+## 5. Pose modunun manevra körlüğü (gerçek algı bulgusu)
+
+`tests/test_visual_lead.py` T53b ile ölçüldü: hedef **bank yaparken** pose
+yandanlığı gerçeğin altında kalıyor — 45° yatıkta 1.00 yerine **0.73**.
+Sebep: `yandanlik = a/olcek` "hedef seviyeli uçuyor" varsayıyor.
+
+Sonuç: manevra yapan hedefte lead eksik hesaplanıyor, drone yeterince
+önüne kesmiyor. GT modunda bu körlük yok — ama GT teslim edilebilir değil.
+
+**İş:** pose'un 6. ve 5. keypoint'i (V-tail uçları) kullanılmıyor. Bank
+açısı bu ikisinin kanat ekseni etrafındaki asimetrisinden kestirilebilir.
+Bu, GT'ye başvurmadan yandanlık ölçümünü düzeltmenin yolu.
+
+---
+
+## 6. GT modunda karne alma — dikkat
+
+GT modunda `menzil_kestirim_m` sütunu gerçek menzili aynen yansıtıyor,
+`pose_*_sapma` sütunları sıfırlanıyor. **Algı sapması ölçülemez.**
+Model karnesi almak için `bash scripts/gcs.sh pose` kullan.

@@ -14,6 +14,9 @@ Menzil kapısının (GATE_KILIT) nedeni: görsel fazın kapanma hızı sabit
 (V_KAPANMA); uzaktan erken geçilirse hızlı hedefe yetişilemez. GPS handoff
 histerezisi (≤40 m) zaten "yetişilmiş" durumu işaretler. GPS jam/DROPOUT'ta
 menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
+
+GT modunda pose kilidini atlamak MÜMKÜNDÜR (`AVCI_GT_KILIT_BYPASS=on`) ama
+VARSAYILAN KAPALIDIR — ölçümle çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS.
 """
 
 import collections
@@ -60,7 +63,7 @@ class SupCfg:
     # "tespit o an gerçekten sağlam mı"ya bağlı. Kapıyı gevşetmek sağlamlığı
     # üretmiyor, sadece sağlam sanılan anları çoğaltıyor.
     # Asıl kaldıraç terminal algı sürekliliği (vuran 4 geçişin dördünde de
-    # kor_dalis ≤ %3) — bkz. UYGULANACAK.md B6.
+    # kor_dalis ≤ %3) — bkz. DURUM.md B6.
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
@@ -71,6 +74,32 @@ class SupCfg:
     # 20 m'de kutu ~7 px hâlâ küçük; pose asıl 10-12 m'de sağlam. GPS istasyonu
     # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
+
+    # ── GT MODUNDA POSE KİLİDİNİ ATLA — DENENDİ VE GERİ ALINDI (2026-08-04) ──
+    # Gerekçe mantıklıydı: GT modunda güdüm pose'a bakmıyor, o hâlde geçişi
+    # pose'un tutması anlamsız. Kilit sinyali "GT akışı canlı mı"ya çevrildi.
+    #
+    # ÖLÇÜM ÇÜRÜTTÜ (uçuş 164352 = kilit VAR, 172103 = kilit YOK, ikisi de GT):
+    #
+    #                              kilit VAR    kilit YOK
+    #   görsel faza giriş medyanı    6.6 m       19.6 m    ← kapıya yapıştı
+    #   en yakın menzil              0.68 m       2.41 m
+    #   GPS istasyonda oturma        33.7%         0.4%
+    #   GPS kadraj yaw RMS           35.7°       116.8°
+    #   biten faz                  3 ıska/4 kayıp  13/13 KAYIP
+    #
+    # MEKANİZMA: pose kilidi farkında olmadan bir GECİKME görevi görüyormuş.
+    # Kilit ~6 m'de oturuyor, devir orada oluyordu. Kilit kalkınca devir 20 m
+    # kapısına yapıştı; görsel faz hedefe yetişemeyeceği menzilde devralıp
+    # hemen kaybediyor. Dahası GPS fazı artık istasyonuna hiç oturamıyor
+    # (%33.7 → %0.4) — 20 m'de devir alındığı için 8-12 m bandına hiç girmiyor.
+    # SupCfg başındaki KILIT_N=7 deneyi de aynı sonucu vermişti: kapıyı
+    # gevşetmek sağlamlık üretmiyor, sağlam sanılan anları çoğaltıyor.
+    #
+    # Açmadan önce V_KAPANMA'yı düşürmek gerekir (bkz. TODO.md §1): 25 m/s'te
+    # 20 m'den devralmanın düzeltme bütçesi zaten yok.
+    GT_KILIT_BYPASS = os.environ.get(
+        "AVCI_GT_KILIT_BYPASS", "off").lower() in ("on", "1", "true")
 
 
 
@@ -91,8 +120,16 @@ def _kopru(parent_event, child_event):
 
 def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg, get_temas=None,
-               get_menzil=None):
+               get_menzil=None, get_gt=None):
     status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
+    # Kilit sinyali GT akışına devredilsin mi (varsayılan HAYIR — ölçümle
+    # çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS).
+    gt_modu = bool(getattr(lead_cfg, "GT_ROT", False) and get_gt is not None
+                   and sup_cfg.GT_KILIT_BYPASS)
+    if gt_modu:
+        print("[SUPERVISOR] ⚠ POSE KİLİDİ ATLANIYOR (AVCI_GT_KILIT_BYPASS=on) — "
+              "geçiş yalnız menzil/DROPOUT kapısına kalır. ÖLÇÜMDE KÖTÜLEŞTİRDİ: "
+              "devir 6.6→19.6 m, en yakın 0.68→2.41 m, 13/13 faz kayıp.")
 
     while not stop_event.is_set():
         # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
@@ -110,8 +147,12 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                     continue
                 son_seq = kayit["seq"]
                 pose = kayit["pose"]
-                pencere.append(pose is not None
-                               and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
+                # GT modunda kilit sinyali pose DEĞİL, GT akışının canlılığıdır.
+                if gt_modu:
+                    pencere.append(get_gt() is not None)
+                else:
+                    pencere.append(pose is not None
+                                   and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
                 sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
@@ -125,7 +166,9 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                         return
 
         threading.Thread(target=izci, daemon=True).start()
-        print(f"[SUPERVISOR] GPS fazı (görsel kilit: {sup_cfg.KILIT_N} ardışık kare"
+        print(f"[SUPERVISOR] GPS fazı "
+              f"({'GT akışı' if gt_modu else 'görsel kilit'}: "
+              f"{sup_cfg.KILIT_N} ardışık kare"
               f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
         run_gps_guidance(conn, get_plane, get_iris, faz_stop)
 
@@ -139,7 +182,8 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
               f"(geçiş #{status['gecis_sayisi']})")
         sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
                                 cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                get_temas=get_temas, get_menzil=get_menzil)
+                                get_temas=get_temas, get_menzil=get_menzil,
+                                get_gt=get_gt)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"

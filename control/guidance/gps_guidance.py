@@ -68,7 +68,7 @@ class Cfg:
     # BEDELİ: hedef kadraj merkezinde değil, ~10° altında görünür
     # (v_px ≈ 269/480 — hâlâ rahat içeride). G11 bütçeyi test olarak koruyor.
     #
-    # ⚠ BU AYRIM HENÜZ KESİNLEŞMEDİ — bkz. UYGULANACAK.md B7.
+    # ⚠ BU AYRIM HENÜZ KESİNLEŞMEDİ — bkz. DURUM.md B7.
     # 25° tesadüf değildi, kamera tilt'i o; istasyon 25°'de kurulunca hedef
     # kadrajın TAM MERKEZİNDE oluyordu. Ölçüm 15°'yi destekliyor (terminal
     # `ok` oranı %8.7 → %18.2, kadraj içi %59.8 → %67.0, en yakın menzil

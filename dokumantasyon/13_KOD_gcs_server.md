@@ -488,6 +488,7 @@ olduğunu ayırmak için: GPS fazı devre dışı, sadece IBVS koşar.
 | `AVCI_HYBRID` | `on` | `off`/`0` → hibrit yerine saf GPS fazı |
 | `AVCI_DETECTOR` | `yolo` | Detection modelini yükle |
 | `AVCI_POSE` | `on` | Pose modelini yükle |
+| `AVCI_GT_ROT` | `off` | `on` → **GT rotasyon modu**: güdüm girdileri pose yerine Gazebo gerçek pozundan (`_gt_rot_girdi`). Pose yine çalışır ama yalnız ekran/log. Simülasyona özgü — gerçek donanımda uçurulamaz |
 | `AVCI_YOLO_MODEL` / `AVCI_POSE_MODEL` | `vision/models/*.pt` | Alternatif ağırlık |
 | `AVCI_YOLO_CONF` | 0.45 | Detection güven eşiği |
 | `AVCI_IBVS_*` | bkz. `guidance_core.Cfg` | Güdüm ayarları |

@@ -785,6 +785,140 @@ def main():
             f"{c.VURUS_MENZIL-0.1:.2f} m → vuruldu ({g_ic}); "
             f"{c.VURUS_MENZIL+0.1:.2f} m → ıska")
 
+    # ══════════════════════════════════════════════════════════
+    # GT ROTASYON MODU (AVCI_GT_ROT=on) — T49-T54
+    # Güdümün algı girdisi pose yerine Gazebo gerçek pozu. Bu testlerin işi:
+    # GT yolunun pose yoluyla AYNI yasayı çalıştırdığını göstermek.
+    # ══════════════════════════════════════════════════════════
+    IRIS_POS = (0.0, 0.0, 5.0)
+    IRIS_RPY = (0.0, 0.0, 0.0)          # seviyeli drone → kamera 25° yukarı
+
+    def gt_sahne(R, hedef_rpy, sapma=(0.0, 0.0, 0.0)):
+        """Hedefi kameranın optik ekseninden R m ileriye koy (+ sapma m).
+        Dönüş: (gt_sozluk, hedef_pos)."""
+        cam_pos, R_cam = geo.camera_world_pose(IRIS_POS, IRIS_RPY)
+        eksen = R_cam @ np.array([1.0, 0.0, 0.0])
+        hedef_pos = cam_pos + R * eksen + np.asarray(sapma, float)
+        return (geo.rot_gt_goruntu(hedef_pos, hedef_rpy, IRIS_POS, IRIS_RPY),
+                hedef_pos)
+
+    # ── T49: GT modu optik eksendeki hedefi kadraj merkezine koyar ──
+    gt, _ = gt_sahne(20.0, (0.0, 0.0, math.radians(90)))
+    r = LeadPursuitCore(cfg_copy()).process(None, 0.0, ATT_KAMERA_YATAY, gt=gt)
+    merkez_sapma = math.hypot(gt["uv"][0] - CX, gt["uv"][1] - CY)
+    kontrol("T49 GT modu: optik eksendeki hedef kadraj merkezinde",
+            merkez_sapma < 0.5 and r["gt_modu"] is True,
+            f"uv=({gt['uv'][0]:.1f},{gt['uv'][1]:.1f}) beklenen=({CX:.0f},{CY:.0f}) "
+            f"sapma={merkez_sapma:.3f}px")
+
+    # ── T50: GT modu pose'suz çalışır (pose=None) ve keypoint kapıları susar ──
+    # Pose modunda düşük kpt güveni 'kanat_dusuk'/'kpt_dusuk' üretirdi; GT'de
+    # ölçüm güveni diye bir şey yok → durum temiz, lead sönmüyor.
+    gt, _ = gt_sahne(10.0, (0.0, 0.0, math.radians(90)))
+    r = LeadPursuitCore(cfg_copy()).process(None, 0.0, ATT_KAMERA_YATAY, gt=gt)
+    kontrol("T50 GT modu pose=None ile çalışır, kpt kapıları devre dışı",
+            r["durum"] == "ok" and r["guven"] == 1.0 and r["lead_deg"] > 0.0,
+            f"durum={r['durum']} guven={r['guven']} lead={r['lead_deg']:.2f}°")
+
+    # ── T51: GT ölçeği GERÇEK menzilden türer (olcek = fx·L/R) ──
+    # Sonuç: menzil_kestirim_m gerçek menzile eşit; yükselti düzeltmesi GT'de
+    # UYGULANMAZ (gerçeğe uygulanırsa hata ekler) → duzeltme = 1.0.
+    for R_ger in (8.0, 15.0, 25.0):
+        gt, _ = gt_sahne(R_ger, (0.0, 0.0, math.radians(90)))
+        r = LeadPursuitCore(cfg_copy()).process(None, 0.0, ATT_KAMERA_YATAY, gt=gt)
+        if abs(r["menzil_kestirim_m"] - R_ger) > 0.01 or r["duzeltme"] != 1.0:
+            break
+    kontrol("T51 GT ölçeği gerçek menzilden türer, düzeltme uygulanmaz",
+            abs(r["menzil_kestirim_m"] - R_ger) < 0.01 and r["duzeltme"] == 1.0,
+            f"R={R_ger:.0f}m → kestirim={r['menzil_kestirim_m']:.3f}m "
+            f"olcek={r['olcek']:.2f}px duzeltme={r['duzeltme']}")
+
+    # ── T52: yandanlık gerçek yönelimi izler (yandan >> karşıdan) ──
+    gt_yan, _ = gt_sahne(12.0, (0.0, 0.0, math.radians(90)))    # LOS'a dik
+    gt_kars, _ = gt_sahne(12.0, (0.0, 0.0, math.radians(180)))  # bize doğru
+    y_yan = LeadPursuitCore(cfg_copy()).process(
+        None, 0.0, ATT_KAMERA_YATAY, gt=gt_yan)["yandanlik_ham"]
+    y_kars = LeadPursuitCore(cfg_copy()).process(
+        None, 0.0, ATT_KAMERA_YATAY, gt=gt_kars)["yandanlik_ham"]
+    # Karşıdan gelen hedef YATAY uçuyor, biz 25° yukarı bakıyoruz → artık sıfır
+    # değil sin(25°)≈0.42 (geometrik olarak doğru, bakış açısı farkı).
+    kontrol("T52 GT yandanlık gerçek yönelimi izler",
+            y_yan > 0.99 and abs(y_kars - math.sin(math.radians(25))) < 0.02,
+            f"yandan={y_yan:.3f} (≈1) karşıdan={y_kars:.3f} "
+            f"(≈sin25°={math.sin(math.radians(25)):.3f})")
+
+    # ── T53: KRİTİK — GT yolu ile KUSURSUZ pose yolu aynı yere nişan alır ──
+    # Aynı 3B sahneden hem gt hem (geometry ile projekte edilmiş) MÜKEMMEL pose
+    # üretilir; iki yol aynı yasayı çalıştırdığı için sonuç yakın olmalı.
+    # Geometri seçimi: hedef SEVİYELİ (roll=0) ve 6 keypoint'in tamamı görünür.
+    # 25° alttan bakışta çoğu açıda bir kanat ucu gövde arkasında kalıyor —
+    # kusursuz-pose kıyası ancak örtülme yokken anlamlıdır (bkz. T53b).
+    def gt_pose_kiyas(R, hedef_rpy, sapma=(0.0, 0.0, 0.0)):
+        gt_, hp_ = gt_sahne(R, hedef_rpy, sapma)
+        kp_ = geo.target_keypoints(hp_, hedef_rpy, IRIS_POS, IRIS_RPY)
+        bb_ = geo.target_bbox(hp_, hedef_rpy, IRIS_POS, IRIS_RPY)
+        if not all(kp_[i][2] > 0 for i in range(4)) or bb_ is None:
+            return None
+        pz_ = {"cx": (bb_[0] + bb_[2]) / 2, "cy": (bb_[1] + bb_[3]) / 2,
+               "conf": 1.0, "bbox": bb_,
+               "kpts": [(float(k[0]), float(k[1]), 1.0) for k in kp_]}
+        return (LeadPursuitCore(cfg_copy()).process(None, 0.0, ATT_KAMERA_YATAY, gt=gt_),
+                LeadPursuitCore(cfg_copy()).process(pz_, 0.0, ATT_KAMERA_YATAY))
+
+    SEVIYELI = (0.0, 0.0, math.pi)     # seviyeli, burnu bize dönük (örtülme yok)
+    en_kotu = {"yaw": 0.0, "pit": 0.0, "yan": 0.0, "lead": 0.0}
+    kiyas_sayisi = 0
+    for _sap in ((0.0, 0.0, 0.0), (0.0, 1.5, 0.0), (0.0, -2.0, 1.0)):
+        _k = gt_pose_kiyas(12.0, SEVIYELI, _sap)
+        if _k is None:
+            continue
+        kiyas_sayisi += 1
+        _g, _p = _k
+        en_kotu["yaw"] = max(en_kotu["yaw"],
+                             abs(math.degrees(_norm(_g["yaw_hata"] - _p["yaw_hata"]))))
+        en_kotu["pit"] = max(en_kotu["pit"],
+                             abs(math.degrees(_g["pitch_hata"] - _p["pitch_hata"])))
+        en_kotu["yan"] = max(en_kotu["yan"],
+                             abs(_g["yandanlik_ham"] - _p["yandanlik_ham"]))
+        en_kotu["lead"] = max(en_kotu["lead"], abs(_g["lead_deg"] - _p["lead_deg"]))
+    kontrol("T53 GT yolu ≈ kusursuz pose yolu (aynı yasa, aynı nişan)",
+            kiyas_sayisi == 3 and en_kotu["yaw"] < 2.0 and en_kotu["pit"] < 2.5
+            and en_kotu["yan"] < 0.02 and en_kotu["lead"] < 3.0,
+            f"{kiyas_sayisi}/3 sahne — en kötü: Δyaw={en_kotu['yaw']:.2f}° "
+            f"Δpitch={en_kotu['pit']:.2f}° Δyandanlik={en_kotu['yan']:.4f} "
+            f"Δlead={en_kotu['lead']:.2f}°")
+
+    # ── T53b: hedef YATIRINCA iki yol BİLEREK ayrışır (GT daha doğru) ──
+    # pose yandanlığı a/olcek'tir ve 'hedef seviyeli uçuyor' varsayar; hedef
+    # bank yaparken kanat izdüşümü büyük kalır → yandanlık DÜŞÜK ölçülür.
+    # GT ise gövde ekseni ile LOS arasındaki gerçek |sin θ|'yı verir. Bu fark
+    # GT modunun ölçtüğü asıl şeydir: pose modundaki manevra körlüğü.
+    YATIK = (math.radians(45), 0.0, math.radians(90))   # 45° bank, tam yandan
+    _k = gt_pose_kiyas(12.0, YATIK)
+    if _k is None:
+        kontrol("T53b yatık hedefte GT ile pose ayrışır (manevra körlüğü)",
+                False, "kıyas geometrisi örtülü — sahne seçimi gözden geçirilmeli")
+    else:
+        _g, _p = _k
+        kontrol("T53b yatık hedefte GT ile pose ayrışır (manevra körlüğü)",
+                _g["yandanlik_ham"] > 0.95 and _p["yandanlik_ham"] < 0.85,
+                f"GT yandanlik={_g['yandanlik_ham']:.3f} (gerçek, tam yandan) "
+                f"pose={_p['yandanlik_ham']:.3f} (seviyeli varsayımı) → "
+                f"lead {_g['lead_deg']:.1f}° vs {_p['lead_deg']:.1f}°")
+
+    # ── T54: REGRESYON — gt=None verilince davranış birebir eski pose modu ──
+    # GT dalı eklenirken pose yolunun bozulmadığının kanıtı.
+    p = make_pose(9.0, 60.0, cx=380.0, cy=260.0, d_aci_deg=20.0)
+    r_a = LeadPursuitCore(cfg_copy()).process(p, 0.0, ATT_KAMERA_YATAY)
+    r_b = LeadPursuitCore(cfg_copy()).process(p, 0.0, ATT_KAMERA_YATAY, gt=None)
+    ayni = all(abs(r_a[k] - r_b[k]) < 1e-12 for k in
+               ("a", "b", "olcek", "yandanlik_ham", "lead_deg", "yaw_hata",
+                "pitch_hata", "kalite", "duzeltme"))
+    kontrol("T54 gt=None → pose modu birebir korunur (regresyon)",
+            ayni and r_a["gt_modu"] is False,
+            f"lead={r_a['lead_deg']:.3f}° yaw={math.degrees(r_a['yaw_hata']):.3f}° "
+            f"olcek={r_a['olcek']:.2f}px")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

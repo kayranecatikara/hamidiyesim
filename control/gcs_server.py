@@ -929,6 +929,24 @@ _visual_active = False
 _visual_stop_event = threading.Event()
 
 
+def _gt_rot_girdi():
+    """GT ROTASYON MODU (AVCI_GT_ROT=on) algı girdisi — pose modelinin YERİNE.
+
+    İki aracın Gazebo world (ENU) pozu TEK mesajdan (sim_truth.pozlar, zaman
+    hizalı) → geometry.rot_gt_goruntu ile nişan noktası + gövde ekseni yönü +
+    yandanlık. geometry.py ile aynı çerçeve/RPY sözleşmesini kullanır, dönüşüm
+    gerekmez. GT akışı bayat/kapalıysa None (güdüm 'tespit yok' gibi davranır).
+
+    ⚠ Simülasyona özgü: gerçek harekâtta hedefin pozu bilinmez.
+    """
+    p = sim_truth.pozlar()
+    if p is None:
+        return None
+    ir, hd = p["iris"], p["plane"]
+    return _geo.rot_gt_goruntu(hd["pos"], _geo.quat_to_rpy(*hd["quat"]),
+                               ir["pos"], _geo.quat_to_rpy(*ir["quat"]))
+
+
 def _visual_thread():
     """Görsel güdüm altyapısı: kalkış + IBVS lead pursuit döngüsü."""
     global _visual_active
@@ -958,7 +976,8 @@ def _visual_thread():
         sim_truth.temas_sifirla()
         _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event,
                          get_temas=sim_truth.temas,
-                         get_menzil=sim_truth.menzil)
+                         get_menzil=sim_truth.menzil,
+                         get_gt=_gt_rot_girdi)
 
     except Exception as e:
         import traceback
@@ -1082,7 +1101,8 @@ def _chase_thread():
             _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
                         get_plane_truth, chase_stop,
                         get_temas=sim_truth.temas,
-                        get_menzil=sim_truth.menzil)
+                        get_menzil=sim_truth.menzil,
+                        get_gt=_gt_rot_girdi)
 
         # ---- DURDURMA → HOVER ----
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
@@ -1116,9 +1136,10 @@ _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
 # görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
 # yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
 _NOISE_PRE_DETECT = os.environ.get("AVCI_NOISE_PRE_DETECT", "0") == "1"
-# (GT rotasyon modu 2026-08-02 akşamı SÖKÜLDÜ — kullanıcı güdümü eski "en iyi
-# hal"e döndürdü; pose modeli yeniden devrede. geometry.rot_gt_goruntu ve
-# sim_truth.pozlar yardımcıları repoda uykuda duruyor.)
+# (GT rotasyon modu 2026-08-02 akşamı sökülmüştü; 2026-08-04'te AVCI_GT_ROT
+# bayrağı ardında GERİ AÇILDI — bkz. _gt_rot_girdi ve guidance_core.Cfg.GT_ROT.
+# Varsayılan KAPALI: bayrak kapalıyken güdüm eskisi gibi pose modelinden gelir.
+# Bayrak açıkken pose çıkarımı yine çalışır ama YALNIZ ekran/log içindir.)
 
 
 def _apply_video_noise(img, lvl):

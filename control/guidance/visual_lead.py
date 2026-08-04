@@ -236,16 +236,31 @@ def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
 
 
 def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
-                    kayip_kare_esik=None, get_temas=None, get_menzil=None):
+                    kayip_kare_esik=None, get_temas=None, get_menzil=None,
+                    get_gt=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
     pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
     Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'
     (GERÇEK fiziksel temas — bkz. _vurus_oldu; yakınlık yalnız temas kaynağı
     yoksa yedek). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
     koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
-    dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için)."""
+    dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için).
+
+    get_gt: GT ROTASYON MODU kaynağı (geometry.rot_gt_goruntu çıktısını döndüren
+    çağrılabilir) — yalnız cfg.GT_ROT açıkken kullanılır. Açıkken güdümün algı
+    girdisi tamamen bu olur; pose komut yoluna girmez ve "görsel temas"ın anlamı
+    'pose var mı' yerine 'GT akışı canlı mı'ya döner (GT her karede vardır, yani
+    pose kaybı artık GPS'e döndürmez)."""
     core = LeadPursuitCore(cfg)
     adapter = CopterAdapter(cfg)          # yalnız copter platformu
+    gt_modu = bool(getattr(cfg, "GT_ROT", False) and get_gt is not None)
+    if gt_modu:
+        print("[LEAD] ⚠ GT ROTASYON MODU (AVCI_GT_ROT=on) — güdüm girdileri "
+              "Gazebo GERÇEK pozundan; pose modeli komut yolunda DEĞİL. "
+              "Bu mod simülasyona özgüdür, gerçek donanımda uçurulamaz.")
+    elif getattr(cfg, "GT_ROT", False) and get_gt is None:
+        print("[LEAD] ⚠ AVCI_GT_ROT=on ama GT kaynağı verilmedi "
+              "(sim_truth kapalı/gz yok) — pose moduyla devam ediliyor.")
 
     def _menzil_olc():
         """Önce sim-truth (zaman hizalı gerçek poz), yoksa telemetri hesabı."""
@@ -371,6 +386,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             son_kayit_wall = time.time()
             pose, stamp = kayit["pose"], kayit["stamp"]
             wall_recv = kayit["wall_recv"]
+            # GT modunda algı girdisi burada tazelenir; pose artık okunmaz.
+            gt = get_gt() if gt_modu else None
 
             aras.drenaj(conn)
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
@@ -420,7 +437,9 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                               f"(menzil {_m_yaz(d)} m)")
                         return "vuruldu"
 
-            if pose is None:                  # bu karede tespit yok
+            # "Algı girdisi var mı": pose modunda pose, GT modunda GT akışı.
+            girdi_var = (gt is not None) if gt_modu else (pose is not None)
+            if not girdi_var:                 # bu karede tespit yok
                 # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).
                 if terminal_latch or _terminal_giris_ok():
                     satir["durum"] = "kor_dalis"
@@ -448,7 +467,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                           f"< {cfg.KAYIP_MIN_ISABET})")
                     return "kayip"
                 continue
-            kayip_sayaci = 0                  # pose var → temas sürüyor
+            kayip_sayaci = 0                  # algı girdisi var → temas sürüyor
             temas_pencere.append(True)
             terminal_baslangic = None         # temas döndü → kör dalış sıfırla
             terminal_latch = False
@@ -457,7 +476,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             # bayat kare kapısı (duvar saati — aynı saat cinsinden ölçüm)
             gecikme = (time.time() - wall_recv) if wall_recv else 0.0
             satir["gecikme_s"] = round(gecikme, 4)
-            satir["bbox"] = "|".join(str(v) for v in pose["bbox"])
+            if pose is not None:              # GT modunda pose olmayabilir
+                satir["bbox"] = "|".join(str(v) for v in pose["bbox"])
             if gecikme > cfg.GECIKME_TAVAN_S:
                 bayat_sayaci += 1
                 satir["durum"] = "bayat"
@@ -476,7 +496,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 continue
 
-            res = core.process(pose, stamp, aras.attitude)
+            res = core.process(pose, stamp, aras.attitude, gt=gt)
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
 

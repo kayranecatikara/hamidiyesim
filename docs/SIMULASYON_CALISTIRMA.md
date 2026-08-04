@@ -1,106 +1,70 @@
 # SİMÜLASYON ÇALIŞTIRMA
 
-## Hızlı başlatma (headless)
+## Hızlı başlatma
 
-İki terminal yeter. Sırayla:
+İki terminal, iki komut. **Sıra önemli: önce A, A bitince B.**
 
-**Terminal A** — Gazebo + iki SITL (~50 sn sürer, bitince kendi kendine döner)
+**Terminal A** — Gazebo + iki SITL (~50 s, komut satırı geri gelince hazır)
 
     cd ~/projects/hamidiyesim
     GZ_HEADLESS=1 bash scripts/start_harmonic.sh
 
-Script zaten kendi başında eski süreçleri temizliyor; temizleyemezse **yenisini
-başlatmaz** ve neyin ayakta kaldığını PID'leriyle yazar.
-
-> **Beklemek zorunda mısınız? Hayır — script sizin yerinize bekliyor.**
-> Eskiden burada kör bir `sleep 25` vardı ve "SITL'lerin açılması bekleniyor
-> (25s)" yazıyordu. Ölçüldü (2026-08-02): araçların EKF+GPS kilidi ~50 s'de
-> geliyor, yani script 25 s'de "hazır" derken SITL **hâlâ açılıyordu**.
-> Artık aracın kendi çıktısındaki `EKF3 IMU0 is using GPS` satırı bekleniyor.
-> Script hazır olmadan dönmez, olamazsa **çıkış kodu 1** verir.
->
-**Bu kadar beklemek şart mı? Evet — ve kısaltılamaz.** Faz faz ölçüldü
-(2026-08-02, script bunu her koşuda kendi basıyor):
-
-| faz | süre |
-|---|---:|
-| Gazebo açılması + FDM portu | **~4 s** |
-| ArduPilot EKF + GPS kilidi | **~46 s** |
-| **Terminal A toplam** | **~50 s** |
-| Terminal B (`gcs_server`, iki kamera görüntüsü dahil) | **~5 s** |
-
-Sürenin %90'ı ArduPilot SITL'in kendi açılışı: 1421 parametrenin FTP ile
-inmesi, EKF ilklenmesi, tilt hizalaması, GPS origin. Bizim eklediğimiz bir
-gecikme değil ve **kalkış zaten bundan önce mümkün değil** — GPS kilidi
-olmadan arm edilmiyor. `SIM_GPS1_LCKTIME` ve `GPS1_DELAY_MS` zaten 0.
-
-> ⚠ **Terminaller AYNI ANDA başlatılamaz, sıra önemli.** Ölçüldü:
-> `gcs_server` Gazebo'dan **önce** başlatılırsa (1) `start_harmonic.sh`'ın
-> açılıştaki temizliği onu öldürür, (2) öldürmese bile Gazebo'dan önce açılan
-> gz kamera aboneliği geri gelmiyor — `✓ ... ilk görüntü` satırları hiç
-> çıkmıyor, arayüzde kamera kararıyor. Önce A, sonra B.
->
-> Zincirlemek (`A && B`) çalışır ama bir faydası yok: toplam süreyi ~5 s
-> uzatır ve `gcs_server` aynı terminalde ön planda çalıştığı için **komut
-> satırı geri gelmez, çıktı akmaya devam eder**. Ayrı terminaller daha iyi.
-
-**Terminal B** — GCS (Terminal A "Tam sistem hazır" yazdıktan sonra)
+**Terminal B** — GCS
 
     cd ~/projects/hamidiyesim
-    source /opt/ros/humble/setup.bash
-    export AVCI_GZ_CAMERA=1
-    export AVCI_NO_BROWSER=1
-    fuser -k 8000/tcp 2>/dev/null
-    python3 -m control.gcs_server
+    bash scripts/gcs.sh              # GT rotasyon modu AÇIK (varsayılan)
+    bash scripts/gcs.sh pose         # pose modeli güdümde (eski davranış)
 
-Sonra tarayıcıda: <http://localhost:8000>
+`gcs.sh` ROS ortamını, `AVCI_GZ_CAMERA`/`AVCI_NO_BROWSER` değişkenlerini ve
+8000 portu temizliğini kendi yapar — elle `export` etmeye gerek yok.
 
-**Durdurmak için:**
+Arayüz: <http://localhost:8000>
 
-    cd ~/projects/hamidiyesim
-    bash scripts/start_harmonic.sh stop        # Terminal A tarafı
-                                               # Terminal B: Ctrl+C yeterli
+**Durdurma:**
 
-Gerçekten durdu mu — **kontrol edin**, bu komut hiçbir şeyi öldürmez:
+    bash scripts/start_harmonic.sh stop     # Terminal A (Ctrl+C İŞE YARAMAZ)
+    bash scripts/start_harmonic.sh durum    # ne çalışıyor — hiçbir şeyi öldürmez
+                                            # Terminal B: Ctrl+C yeterli
 
-    bash scripts/start_harmonic.sh durum
+---
 
-`stop` artık **doğrulayarak** çalışıyor: öldürür, tekrar bakar, hâlâ ayakta
-kalan varsa `✓ Durduruldu` yerine PID listesi basar ve **çıkış kodu 1** döner.
+### Neden 50 s ve neden sıra önemli
 
-> ⚠ **Terminal A'da Ctrl+C İŞE YARAMAZ.** Script Gazebo'yu ve iki SITL'i
-> `setsid ... &` ile başlatıp kendisi çıkar; süreçler ayrı bir oturumda olduğu
-> için Ctrl+C onlara hiç ulaşmaz. Ölçüldü: Ctrl+C sonrası `gz sim`,
-> 2× `arduplane`, 2× `sim_vehicle`, 4× `mavproxy` hâlâ ayaktaydı.
-> **Terminal B (gcs_server) ön planda çalıştığı için orada Ctrl+C doğrudur.**
+- Sürenin ~46 s'i ArduPilot SITL'in kendi açılışı (parametre indirme, EKF, GPS
+  kilidi). Kısaltılamaz: GPS kilidi olmadan araç arm edilmiyor. Script kör
+  `sleep` yapmaz, `EKF3 IMU0 is using GPS` satırını bekler; hazır olamazsa
+  çıkış kodu 1 verir.
+- B'yi A'dan önce başlatırsanız `start_harmonic.sh` açılış temizliği onu
+  öldürür; öldürmese bile Gazebo'dan önce açılan gz kamera aboneliği geri
+  gelmez ve kamera hiç görüntü vermez.
+- `A && B` zincirlemesi çalışır ama komut satırını bloklar; ayrı terminal daha
+  kullanışlı.
+- Terminal A'da Ctrl+C işe yaramaz: süreçler `setsid` ile ayrı oturumda.
 
-> ⚠⚠ **`pkill -9 -f 'gz sim|sim_vehicle|mavproxy|...'` KULLANMAYIN.**
-> Bu belgede eskiden böyle bir satır vardı ve **kendi kabuğunuzu öldürüyordu**:
-> `pkill -f` deseni *çağıran kabuğun komut satırında* da arar, o satırda da
-> `sim_vehicle`, `gz sim`, `mavproxy` kelimeleri geçiyor. Sonuç ölçüldü
-> (2026-08-02): pkill kabuğu öldürüyor → `sleep 3 && ... start_harmonic.sh`
-> **hiç çalışmıyor**, ya da `stop` döngüsü ortasında kesiliyor ve geri kalan
-> desenler ('mavproxy', 'gz sim') uygulanmadan kalıyor. Ekranda hata yok,
-> süreçler ayakta. "Durdurdum ama hâlâ çalışıyor" şikâyetinin kaynağı buydu.
-> `stop`/`durum` kendi ata süreçlerini listeden düşer; güvenli olan onlardır.
+> ⚠ **`pkill -9 -f 'gz sim|sim_vehicle|mavproxy'` KULLANMAYIN** — desen çağıran
+> kabuğun kendi komut satırında da eşleşir ve kabuğunuzu öldürür. "Durdurdum ama
+> hâlâ çalışıyor" şikâyetinin kaynağı buydu. `stop`/`durum` güvenlidir.
 
 ---
 
 ## Hazır olma işaretleri
 
-Terminal B'de bu dört satırı görün:
+Terminal B'de bu satırları görün:
 
     [GCS] YOLO detector hazır (avci_yolo.pt)
     [GCS] YOLO pose hazır (avci_pose.pt)
+    [GCS] HybridSORT takip hazır
     [GCS] ✓ Iris kamerasından ilk görüntü!
     [GCS] ✓ Talon (hedef İHA) kamerasından ilk görüntü!
 
-Son iki satır gelmiyorsa kamera render edilmiyordur — Sorun giderme'ye bakın.
+GT modunda ayrıca (görev başlatınca):
 
-> **Headless ≠ render yok.** Kameralar bu projede güdümün kalbi: YOLO tespit ve
-> pose `/iris_cam/image`'dan besleniyor. `--headless-rendering` bayrağı pencereyi
-> kapatır ama kameraları ekransız render etmeye devam eder. Sadece `gz sim -s`
-> verilirse kamera topic'leri boş kalır ve görsel güdüm hiç çalışmaz.
+    [LEAD] ⚠ GT ROTASYON MODU (AVCI_GT_ROT=on) — güdüm girdileri Gazebo GERÇEK pozundan
+    [SUPERVISOR] GT modu — POSE KİLİDİ DEVRE DIŞI; geçiş kapısı yalnız menzil/DROPOUT
+
+Kamera satırları gelmiyorsa render edilmiyordur — Sorun giderme'ye bakın.
+(`--headless-rendering` pencereyi kapatır ama kameraları render etmeye devam
+eder; yalnız `gz sim -s` verilirse kamera topic'leri boş kalır.)
 
 ---
 
@@ -162,7 +126,8 @@ kalmalı. İlk ikisi olmadan `FRAME_CLASS`/`FRAME_TYPE` tanımsız kalır
 
 ### Terminal 4 — GCS
 
-Yukarıdaki "Terminal B" ile aynı.
+    cd ~/projects/hamidiyesim
+    bash scripts/gcs.sh
 
 ### Terminal 5 — Mission Planner (isteğe bağlı, ekran gerektirir)
 
@@ -261,7 +226,9 @@ Talon ≈ `(0, 12, -0.12)` (spawn konumları).
 | `AP: Frame: UNSUPPORTED` | Terminal 2'deki üç `--add-param-file` eksik veya sırası bozuk |
 | ArduCopter bağlanmıyor, araç düşüyor | Terminal 2, Gazebo hazır olmadan başlatılmış — 9002'yi bekleyin |
 | Uçak kendi kendine hareket ediyor / komutlar tutmuyor | Önceki oturumdan kalan `run_plane_scenario` süreci — temizlik komutunu çalıştırın |
-| `Address already in use` (8000) | `fuser -k 8000/tcp` |
+| `Address already in use` (8000) | `fuser -k 8000/tcp` (`gcs.sh` bunu zaten yapar) |
+| `HybridSORT yüklenemedi (No module named 'boxmot')` | `pip install boxmot==19.0.0` — sürüm sabit, 20+ numpy≥2 dayatıp torch/cv2 kurulumunu bozar |
+| GT modu açık ama loglarda `duzeltme` 1.0 değil | Bayrak geçmemiş. `gcs.sh` kullanın; elle çalıştırıyorsanız `AVCI_GT_ROT=on` **aynı satırda** olmalı |
 | GUI'de `Unable to open display ":1"` | `export DISPLAY=:1` satırını silin |
 
 ### GPU'suz makinede çalıştırma (`kms_swrast`)

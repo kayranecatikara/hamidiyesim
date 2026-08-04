@@ -213,13 +213,19 @@ def quat_to_rpy(qw, qx, qy, qz):
 def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
     """Hedefin GERÇEK yöneliminden görsel güdümün rotasyon girdileri
     (pose modeli DEVRE DIŞI modu, 2026-08-02 — keypoint işaretlemesiz):
+      uv        : hedef merkezinin piksel izdüşümü (u, v) — NİŞAN noktası, pose
+                  modundaki bbox merkezinin yerini alır.
       d_birim   : hedef gövde ekseninin görüntü düzlemindeki birim yönü (px
                   uzayı; burun yönü) — lead kaydırmasının yönü. Eksen bakış
                   doğrultusuyla çakışıksa None.
       yandanlik : gövde ekseninin LOS'a dik bileşeni |sin(θ)| (0=önden/arkadan,
                   1=tam yandan) — lead büyüklüğü.
       menzil    : kamera-hedef gerçek mesafe (m) — kalite kapısı için.
-    Hedef kamera arkasındaysa None döner."""
+    Hedef kamera arkasındaysa None döner.
+
+    uv KADRAJ DIŞINDA da döndürülür (kırpılmaz): güdüm piksel değil YÖN kullanır,
+    kadraj dışı hedef için de yön doğrudur. Pose modunda böyle bir kare zaten
+    "tespit yok" olurdu — GT modunun kamerayı aşan kısmı budur."""
     cam_pos, R_cam = camera_world_pose(iris_pos, iris_rpy)
     hedef = np.asarray(hedef_pos, dtype=float)
     f_w = rot_rpy(*hedef_rpy) @ np.array([1.0, 0.0, 0.0])   # hedef ileri (world)
@@ -236,7 +242,8 @@ def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
     d = np.array([u[1] - u[0], v[1] - v[0]])
     n = float(np.linalg.norm(d))
     d_birim = (float(d[0] / n), float(d[1] / n)) if n > 1e-9 else None
-    return {"d_birim": d_birim, "yandanlik": min(1.0, yandanlik), "menzil": menzil}
+    return {"uv": (float(u[0]), float(v[0])), "d_birim": d_birim,
+            "yandanlik": min(1.0, yandanlik), "menzil": menzil}
 
 
 def camera_world_pose(iris_pos, iris_rpy):

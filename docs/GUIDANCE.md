@@ -168,7 +168,7 @@ hızlı hedefe yetişilemez. Pose asıl 10-12 m'de sağlam; kapı 20 m bandı se
 **Ortam değişkenleri** (canlı ayar; `_env_f` = float okuyucu):
 `AVCI_IBVS_K_LEAD`, `AVCI_IBVS_V_KAPANMA`, `AVCI_IBVS_TERMINAL_MENZIL`,
 `AVCI_IBVS_TERMINAL_SURE`, `AVCI_IBVS_VURUS_MENZIL`, `AVCI_IBVS_PN_SURE`,
-`AVCI_IBVS_COALT_MENZIL`, `AVCI_POSE_KPT_CONF` (guidance_core);
+`AVCI_IBVS_COALT_MENZIL`, `AVCI_POSE_KPT_CONF`, `AVCI_GT_ROT` (guidance_core);
 `AVCI_GPS_RANGE` (gps_guidance: slant menzil setpoint);
 `AVCI_HYBRID_GATE_MENZIL` (supervisor); `AVCI_HYBRID` (gcs_server: hibrit/saf-GPS seçimi).
 
@@ -190,6 +190,50 @@ merkez = boresight +25° (kamera tilt'i).
 
 ---
 
+## 5b. GT rotasyon modu (`AVCI_GT_ROT=on`) — teşhis aracı
+
+Varsayılan **kapalı**. Açıkken görsel güdümün **tüm algı girdileri** pose
+modelinden değil Gazebo'nun gerçek pozundan gelir:
+
+| Girdi | Pose modu (varsayılan) | GT modu |
+|---|---|---|
+| Nişan noktası | detection bbox merkezi | hedefin izdüşümü (`rot_gt_goruntu.uv`) |
+| Gövde ekseni yönü (`d_birim`) | burun−kuyruk keypoint'leri | gerçek yönelimin izdüşümü |
+| Yandanlık | `a/olcek` (izdüşüm oranı) | gerçek \|sin θ\| (gövde ekseni ↔ LOS) |
+| Ölçek (`olcek`) | keypoint uzunlukları | `fx·L/R`, gerçek menzilden |
+| Güven/kalite kapıları | keypoint conf | devre dışı (güven = 1.0) |
+
+**Adım 3-8 geometrisi iki modda da aynıdır** — değişen yalnız Adım 1-2'nin
+nereden beslendiğidir. Bu kasıtlı: aynı yasa, farklı algı → CSV sütunları
+birebir kıyaslanabilir. Iska varsa suç GT modunda **yasada**, pose modunda
+**algıdadır**.
+
+Akış: `sim_truth.pozlar()` (iki araç TEK gz mesajından, zaman hizalı) →
+`geometry.rot_gt_goruntu()` → `gcs_server._gt_rot_girdi()` → `visual_lead` →
+`guidance_core.process(..., gt=...)`.
+
+**Davranış farkları** (bilinçli):
+- `pose is None` karesi artık güdümü durdurmaz — "görsel temas"ın anlamı
+  *pose var mı* yerine *GT akışı canlı mı*dır. Pose kaybı GPS'e döndürmez.
+- Yükselti düzeltmesi uygulanmaz (`duzeltme = 1.0`): o düzeltme **ölçülen**
+  ölçeğin perspektif kısalmasını telafi eder, gerçeğe uygulanırsa hata ekler.
+- `menzil_kestirim_m` sütunu artık gerçek menzili aynen yansıtır; GT modunda
+  **algı sapması ölçülemez** (cevap anahtarı sütunları anlamsızlaşır).
+- Supervisor'ın GPS→görsel geçiş kapısı **hâlâ pose kilidine bakar** (pose
+  modeli GT modunda da yüklü kalır). Saf GT koşusu için `/start_visual`
+  uç noktası supervisor'ı atlar.
+
+> ⚠ **Simülasyona özgüdür, gerçek donanıma taşınamaz.** Gerçek harekâtta hedefin
+> pozu bilinmez — görsel güdümün varlık sebebi budur. Bu mod bir teşhis aracıdır,
+> teslim edilecek güdüm değildir.
+
+**Bilinen ayrışma:** hedef bank yaparken pose yandanlığı gerçeğin altında kalır
+(`a/olcek` "hedef seviyeli uçuyor" varsayar; 45° bankta 1.00 yerine 0.73 ölçer —
+`tests/test_visual_lead.py` T53b). GT modu bu manevra körlüğünü ortadan kaldırır;
+iki modun ıska farkı buradan gelebilir.
+
+---
+
 ## 6. Test ve loglar
 
 - **Görsel hat testleri:** `python3 -m tests.test_visual_lead` — 30 senaryo (T1-T30);
@@ -198,6 +242,10 @@ merkez = boresight +25° (kamera tilt'i).
 - **GPS fazı testleri:** `python3 -m tests.test_gps_guidance` — 9 senaryo (G1-G9):
   kadraj hatası matematiği (G1-G6), istasyon geometrisinin merkezleme tutarlılığı
   (G7-G8) ve sahte bağlantıyla döngü duman testi (G9).
+- **GT rotasyon modu testleri:** aynı dosyada T49-T54 — kadraj merkezi (T49),
+  pose'suz çalışma (T50), gerçek menzilden ölçek (T51), yandanlık (T52),
+  **GT yolu ≈ kusursuz pose yolu** (T53: Δyaw < 2°, Δyandanlık < 0.02),
+  yatık hedefte bilinçli ayrışma (T53b) ve `gt=None` regresyonu (T54).
 - **Bilinen boşluk:** `supervisor`ın gerçek döngüsü ve `common` doğrudan testsiz.
 - **Uçuş logları:** her faz kendi CSV'sini yazar —
   `logs/visual_lead_<zaman>.csv` (pose ölçümleri, nişan yönü, komutlar,

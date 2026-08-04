@@ -15,3 +15,6 @@ pymavlink>=2.4
 ultralytics>=8.3   # YOLO detection (eğitim + çıkarım); torch ayrıca gerekli (CUDA'lı)
 boxmot==19.0.0     # HybridSORT takip (vision/tracker.py). SÜRÜM SABİT: 20+ numpy>=2.2
                    # dayatır, numpy 2 buradaki cv2 4.9 / torch 2.5.1 kurulumunu bozar.
+scipy>=1.10        # boxmot→filterpy bağımlılığı. apt'nin scipy 1.8'i numpy<1.25
+                   # istiyor ve her çalıştırmada UserWarning basıyor; pip'ten
+                   # 1.13.1 kurulunca uyarı biter (numpy 1.26 korunur).
