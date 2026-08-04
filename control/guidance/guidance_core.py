@@ -47,6 +47,30 @@ class Cfg:
     FILTRE_TAU_S = 0.12      # 30 Hz'te ~3.6 kare; pencere dar, uzun tutma
     MIN_GOVDE_PX = 2.0
     FLIP_DT_TAVAN_S = 0.20   # 30 Hz'te 6 kare
+    # ── HAREKET TUTARLILIĞI: burun/kuyruk yönünü akıştan doğrula (2026-08-04) ──
+    # Mevcut flip koruması yalnız 0.2 s içindeki ANİ takası yakalar; model bir
+    # süre boyunca tutarlı biçimde ters etiketlerse (ya da ilk kare zaten tersse)
+    # hiç devreye girmez ve lead İŞARETİ ters kalır — yani hedefin önüne değil
+    # ARKASINA nişan alırız.
+    #
+    # Bağımsız kanıt: uçak BURNU İLERİ uçar, dolayısıyla hedefin kadrajdaki
+    # kayma yönü gövde ekseniyle aynı işarette olmalıdır. bbox merkezinin kareler
+    # arası akışı ile ham eksen vektörünün iç çarpımı sürekli NEGATİFSE etiketler
+    # takas olmuş demektir. Karar tek kareye bırakılmaz: işaret EMA'lanır.
+    #
+    # Ölçüm (visual_lead_20260801_173610, 12 doğruluk karesi): takas oranı 2/12
+    # (%17) ve takas karelerinde kpt_hata_px_ort 27.0/27.7 — diğer karelerde
+    # 0.9-6.0. Yani takas, modelin GENEL olarak bozulduğu karelerde oluyor;
+    # akış kontrolü tam da o karelerde ham ekseni reddeder.
+    #
+    # Eşikler: hedefin kadrajda anlamlı kayması gerekir, yoksa oy verilmez.
+    # Aynı logda hedef 0.30 s'de x=232→18 px kaydı → ~700 px/s. Kuyruk
+    # takibinde kayma ~0'dır; 60 px/s tabanı o durumda oy verdirmez (kapı
+    # kendiliğinden susar), yandan geçişte ise fazlasıyla aşılır.
+    AKIS_MIN_PX_S = _env_f("AVCI_IBVS_AKIS_MIN", 60.0)   # px/s; altında oy yok
+    AKIS_EKSEN_MIN_COS = 0.5   # akış eksene ~60°'den dikse yön bilgisi taşımaz
+    AKIS_EMA = 0.3             # işaret skorunun EMA'sı (≈3 karede karar)
+    AKIS_TAKAS_ESIK = 0.5      # skor bunun altına inerse ekseni ÇEVİR
     GECIKME_TAVAN_S = 0.12   # bundan bayat kare atlanır (döngü kullanır)
     YUKSELTI_DUZELT = True   # Adım 3: LOS yükselti düzeltmesi (alttan yaklaşma)
     KAMERA_TILT_DEG = 25.0   # sabit montaj; gimbal gelirse dinamik okunacak
@@ -58,8 +82,35 @@ class Cfg:
     # görsel faz vurucu fazdır, hedefle hız eşitlemek GPS fazının işidir.
     # Gerçek tavanı ArduCopter param/gövde limiti belirler — canlıda CSV'deki
     # kapanma_hizi_ms ile doğrula. K_LEAD taramasında SABİT tut.
-    V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s
+    V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s — TAVAN (LOS kapısıyla kısılır)
     KP_YAW = 1.2
+    # ── LOS KAPISI: kapanma hızını menzil VE geometriyle ölçekle (2026-08-04) ──
+    # Arıza (2026-07-27 ve 2026-08-01 uçuşları, iki devir de aynı): görsel faz
+    # ~1 s sürüyor, hedef kadrajın kenarına yürüyüp çıkıyor. Ölçüm
+    # (visual_lead_20260801_173610): bbox x 249 → 0 px, yaw_hata −51° → −97°,
+    # yarım-HFOV 62.5°. Yani hedef kaçmıyor, KADRAJDAN ÇIKIYOR.
+    #
+    # Sebep geometrik: bakış hattının (LOS) dönme hızı
+    #     omega_LOS ≈ (V_hedef·yandanlik + v·sin(lead)) / menzil
+    # 10 m menzilde 25 m/s ile bu ≈ 143 °/s eder; araç ~90 °/s izleyebiliyor
+    # (ölçüm: gps_guidance_20260801_173612, gerçek yaw hızı p90 84, p99 136 °/s
+    # ve o bantta yaw takip hatası medyanı 2.8°). Fark kadar hedef kadrajda kayar.
+    #
+    # Kapı bunu tersine çevirir:  v ≤ omega_izlenebilir · menzil / (K_LEAD·yandanlik
+    # + sin(lead)).  Payda GEOMETRİYE bağlı olduğu için kapı KUYRUK takibinde
+    # (yandanlik→0, lead→0) kendiliğinden AÇILIR — tam gaz kapanırız — ve yalnız
+    # yandan geçişte bağlar. Stash'teki ilk sürüm paydayı 1 varsayıyordu, yani
+    # kuyrukta da gereksiz frenliyordu; bu sürüm o muhafazakârlığı kaldırır.
+    # V_hedef ölçülmez: K_LEAD zaten ≈ V_hedef/V_biz tanımlıdır, V_hedef ≈ K_LEAD·v.
+    LOS_KAPISI = os.environ.get("AVCI_IBVS_LOS_KAPISI", "on").lower() \
+        not in ("0", "off", "false")
+    LOS_YAW_IZLENEBILIR = _env_f("AVCI_IBVS_LOS_YAW", 90.0)   # °/s; ölçülen p90 84
+    LOS_PAY = _env_f("AVCI_IBVS_LOS_PAY", 0.8)                # izlenebilirin kullanılan payı
+    # Taban: bozuk bir menzil/yandanlık kestirimi yüzünden hedefin altına düşüp
+    # onu kaybetmeyelim. Hedef bandı 12-16 m/s (avci_plane.parm); 12 taban,
+    # en yavaş hedefe eşitlenmeyi garanti eder. 8 m altı zaten kör dalış
+    # bölgesi (TERMINAL_MENZIL) olduğundan taban pratikte dar bir bantta işler.
+    V_KAPANMA_MIN = _env_f("AVCI_IBVS_V_KAPANMA_MIN", 12.0)   # m/s
     # ── LİMİTSİZ TEST (2026-07-25): yazılım kısıtlamaları kaldırıldı ──
     # Kullanıcı isteği: ivme/hız/yaw yazılım tavanları güdümün gerçek
     # davranışını maskeliyordu. Tek sınır artık firmware (WPNAV/ANGLE_MAX).
@@ -196,6 +247,10 @@ class LeadPursuitCore:
         self.d_birim_onceki = None    # flip koruması
         self.t_onceki = None          # header.stamp (s)
         self.flip_sayaci = 0
+        self.merkez_onceki = None     # bbox merkezi (akış tutarlılığı için)
+        self.akis_skor = 0.0          # eksen-yön işaret skoru, EMA'lı (+1 doğru)
+        self.takas_sayaci = 0         # akış kontrolünün ekseni kaç kez çevirdiği
+        self.takas_aktif_onceki = False   # kapı durum değişimini yakalamak için
 
     # keypoint indeksleri (vision/geometry.KEYPOINT_NAMES sırası)
     _I_BURUN, _I_KUYRUK, _I_SOLK, _I_SAGK = 0, 1, 2, 3
@@ -247,6 +302,33 @@ class LeadPursuitCore:
         else:
             d_birim = self.d_birim_onceki if self.d_birim_onceki is not None \
                 else np.array([1.0, 0.0])
+
+        # ── HAREKET TUTARLILIĞI: eksen yönünü kadraj akışıyla doğrula ──
+        # Skor DAİMA HAM eksen üzerinden güncellenir (çıktıyı çevirsek bile),
+        # böylece kendi düzeltmemizi geri beslemeyiz. Bkz. Cfg.AKIS_* notu.
+        merkez = np.array([bbox_cx, bbox_cy], dtype=float)
+        if (self.merkez_onceki is not None and dt is not None and dt > 1e-6
+                and a > 1e-9):
+            akis = merkez - self.merkez_onceki
+            akis_n = float(np.linalg.norm(akis))
+            if akis_n / dt >= cfg.AKIS_MIN_PX_S:
+                cos_ = float(np.dot(akis / akis_n, d_birim))
+                if abs(cos_) >= cfg.AKIS_EKSEN_MIN_COS:   # akış eksene paralel mi
+                    self.akis_skor = (cfg.AKIS_EMA * (1.0 if cos_ > 0 else -1.0)
+                                      + (1.0 - cfg.AKIS_EMA) * self.akis_skor)
+        self.merkez_onceki = merkez
+        takas_aktif = self.akis_skor < -cfg.AKIS_TAKAS_ESIK
+        if takas_aktif:
+            d_birim = -d_birim            # etiketler takas olmuş — ekseni çevir
+            self.takas_sayaci += 1
+            warn.append("takas")          # sessiz düzeltme YOK — her kare loglanır
+        if takas_aktif != self.takas_aktif_onceki and self.d_birim_onceki is not None:
+            # Kapı durum DEĞİŞTİRDİ: önceki kare eski konvansiyonda yazılmıştı.
+            # Referansı da çevirmezsek aşağıdaki flip koruması bu bilinçli
+            # düzeltmeyi "ani takas" sanıp GERİ ALIR ve kapı hiç çalışmaz.
+            self.d_birim_onceki = -self.d_birim_onceki
+        self.takas_aktif_onceki = takas_aktif
+
         if (self.d_birim_onceki is not None and dt is not None
                 and dt < cfg.FLIP_DT_TAVAN_S
                 and float(np.dot(d_birim, self.d_birim_onceki)) < -0.5):
@@ -277,7 +359,16 @@ class LeadPursuitCore:
         olcek = olcek_ham / duzeltme
 
         # ── Adım 4: yandanlık, kalite, filtre ──
-        yandanlik = (a / olcek) if olcek > 1e-9 else 0.0
+        # yandanlik fiziksel olarak |sin(aspect)| ∈ [0,1]'dir. Ama olcek,
+        # yükselti düzeltmesine BÖLÜNDÜĞÜ için (duzeltme ≥ 1) düzeltme aşırı
+        # telafi ettiğinde olcek < a olabiliyor ve oran 1'i aşıyor — ölçüldü:
+        # 2026-07-27 uçuşunda 1.21, visual_lead_20260801_173610'un İLK
+        # karesinde 1.0269. (Düzeltme hedefin SEVİYELİ uçtuğunu varsayar;
+        # tırmanan/dalan hedefte varsayım bozulur.) Sınırsız bırakılırsa lead
+        # şişer, carpim > 0.95 ile sahte 'cozumsuz' bayrağı üretir ve LOS
+        # kapısının paydasını da fizik dışı büyütür. Fiziksel sınır dayatılır;
+        # aşımın kendisi CSV'de a/olcek'ten hâlâ görülebilir.
+        yandanlik = min(a / olcek, 1.0) if olcek > 1e-9 else 0.0
         kalite = max(0.0, min(1.0, (olcek - cfg.OLCEK_KAPALI_PX)
                               / (cfg.OLCEK_TAM_PX - cfg.OLCEK_KAPALI_PX)))
         # kanat ucu güveni düşükse b'yi bbox'tan UYDURMA — kaliteyi söndür
@@ -341,4 +432,5 @@ class LeadPursuitCore:
             # SADECE LOG — güdüm hesabında KULLANILMAZ:
             "menzil_kestirim_m": (geo.FX * GOVDE_BOYU_M / olcek) if olcek > 1e-9 else 0.0,
             "flip_sayaci": self.flip_sayaci,
+            "takas_sayaci": self.takas_sayaci, "akis_skor": self.akis_skor,
         }

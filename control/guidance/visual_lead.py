@@ -45,6 +45,13 @@ _CSV_ALANLAR = [
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "kapanma_hizi_ms", "mod",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
+    # LOS kapısının o karede izin verdiği kapanma hızı (m/s). V_KAPANMA'dan
+    # küçükse kapı BAĞLAMIŞ demektir; hangi geometride ne kadar frenlediğimizi
+    # uçuş sonrası buradan ölçeriz (bkz. guidance_core.Cfg.LOS_KAPISI).
+    "v_kapanma_izin",
+    # Hareket tutarlılığı kapısı: akis_skor eksen yönünün akışla uyumu (+1 uyumlu,
+    # −1 ters), takas_sayaci kapının ekseni kaç kez çevirdiği (bkz. Cfg.AKIS_*).
+    "takas_sayaci", "akis_skor",
 ] + dogruluk.KOLONLAR      # Gazebo gerçeğiyle karşılaştırma — SADECE log/analiz
 
 # durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
@@ -297,6 +304,8 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 "eksen_disi_deg": round(res["eksen_disi_deg"], 2),
                 "govde_yukselti_deg": round(res["pitch_hata_deg"], 2),
                 "menzil_kestirim_m": round(res["menzil_kestirim_m"], 2),
+                "takas_sayaci": res["takas_sayaci"],
+                "akis_skor": round(res["akis_skor"], 3),
             })
 
             if aras.attitude is not None:
@@ -307,9 +316,15 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 if (menzil_onceki is not None
                         and menzil_onceki < cfg.TERMINAL_COALT_MENZIL):
                     coalt_latch = True
+                # LOS kapısı girdileri: hepsi POSE'dan türer (menzil_kestirim_m
+                # ölçek pikselinden, yandanlık ve lead çekirdekten). menzil_gercek
+                # BİLE BİLE kullanılmaz — ground truth güdüme girmez (CLAUDE.md §8).
                 cmd = adapter.command(conn, res["u_govde"], res["yaw_hata"],
                                       aras.attitude, res["dt"], mevcut_yaw,
-                                      kalite=res["kalite"], terminal=coalt_latch)
+                                      kalite=res["kalite"], terminal=coalt_latch,
+                                      menzil_m=res["menzil_kestirim_m"],
+                                      yandanlik=res["yandanlik_f"],
+                                      lead_rad=math.radians(res["lead_deg"]))
                 # kör dalışta sürdürülecek son nişan komutu
                 son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
                              cmd["yaw_cmd"])
@@ -322,6 +337,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     "yaw_doygun": int(cmd["yaw_doygun"]),
                     "pn_dikey_deg": round(cmd["pn_dikey_deg"], 2),
                     "coalt_deg": round(cmd["coalt_deg"], 2),
+                    "v_kapanma_izin": round(cmd["v_kapanma"], 2),
                 })
                 # quad'a özgü izleme: burun eğimi + kameranın DÜNYAYA göre bakışı
                 # (ivme tavanı aşılırsa kamera yere bakmaya başlar — Cfg.IVME_TAVAN)

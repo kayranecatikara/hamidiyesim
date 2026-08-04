@@ -77,18 +77,49 @@ class CopterAdapter:
         u_yeni = np.array([ce * math.cos(az), ce * math.sin(az), -math.sin(elev_yeni)])
         return u_yeni, pn_lead, coalt
 
+    def kapanma_hizi(self, menzil_m, yandanlik, lead_rad):
+        """LOS kapısı: bu geometride hedefi kadrajda tutabileceğimiz en yüksek
+        kapanma hızı (m/s). SAF HESAP — birim test edilir.
+
+        Bakış hattının dönme hızı ≈ (V_hedef·yandanlik + v·sin(lead)) / menzil.
+        V_hedef ≈ K_LEAD·v olduğundan (K_LEAD tanımı gereği hız oranıdır):
+            omega_LOS ≈ v · (K_LEAD·yandanlik + sin(lead)) / menzil
+        Aracın izleyebildiği omega'ya eşitleyip v'yi çekeriz. Payda küçükse
+        (kuyruk takibi) kısıt yoktur — tam V_KAPANMA döner.
+
+        menzil_m None/≤0 ise (kestirim yok) kapı UYGULANMAZ: yanlış bir sıfır
+        yüzünden aracı durdurmak, hızlı gitmekten daha kötü.
+        Gerekçe ve ölçümler: guidance_core.Cfg.LOS_KAPISI notu."""
+        cfg = self.cfg
+        if not getattr(cfg, "LOS_KAPISI", True):
+            return cfg.V_KAPANMA
+        if menzil_m is None or menzil_m <= 0.0:
+            return cfg.V_KAPANMA
+        payda = (cfg.K_LEAD * max(0.0, min(1.0, yandanlik))
+                 + abs(math.sin(lead_rad)))
+        if payda < 1e-3:                       # tam kuyruk: LOS neredeyse dönmüyor
+            return cfg.V_KAPANMA
+        omega = math.radians(cfg.LOS_YAW_IZLENEBILIR) * cfg.LOS_PAY    # rad/s
+        v = omega * menzil_m / payda
+        return max(cfg.V_KAPANMA_MIN, min(cfg.V_KAPANMA, v))
+
     def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False):
+                kalite=1.0, terminal=False,
+                menzil_m=None, yandanlik=0.0, lead_rad=0.0):
         """Saf hesap (test edilir; göndermez).
         attitude: (roll, pitch, yaw) radyan. dt: kare aralığı (s).
         kalite: pose kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
-        (co-altitude yanlılığı aktif). Dönüş: dict(v_cmd, yaw_cmd, u_dunya,
-        v_doygun, yaw_doygun, pn_dikey_deg, coalt_deg)."""
+        (co-altitude yanlılığı aktif).
+        menzil_m/yandanlik/lead_rad: LOS kapısı girdileri — hepsi POSE'dan türer,
+        ground truth DEĞİL (CLAUDE.md §8). menzil_m None ise kapı kapalıdır.
+        Dönüş: dict(v_cmd, yaw_cmd, u_dunya, v_doygun, yaw_doygun,
+        pn_dikey_deg, coalt_deg, v_kapanma)."""
         cfg = self.cfg
         u_dunya = govde_to_dunya(u_govde, *attitude)
         u_dunya = u_dunya / np.linalg.norm(u_dunya)
         u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal)
-        v_hedef = cfg.V_KAPANMA * u_dunya
+        v_kapanma = self.kapanma_hizi(menzil_m, yandanlik, lead_rad)
+        v_hedef = v_kapanma * u_dunya
 
         if dt is None or dt <= 0:
             v_cmd = tuple(v_hedef)
@@ -111,13 +142,17 @@ class CopterAdapter:
         return {"v_cmd": v_cmd, "yaw_cmd": yaw_cmd, "u_dunya": u_dunya,
                 "v_doygun": v_doygun, "yaw_doygun": yaw_doygun,
                 "pn_dikey_deg": math.degrees(pn_lead),
-                "coalt_deg": math.degrees(coalt)}
+                "coalt_deg": math.degrees(coalt),
+                "v_kapanma": v_kapanma}
 
     def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False):
+                kalite=1.0, terminal=False,
+                menzil_m=None, yandanlik=0.0, lead_rad=0.0):
         """Hesapla + gönder. Dönen dict CSV loguna girer."""
         out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                            kalite=kalite, terminal=terminal)
+                            kalite=kalite, terminal=terminal,
+                            menzil_m=menzil_m, yandanlik=yandanlik,
+                            lead_rad=lead_rad)
         send_velocity(conn, out["v_cmd"][0], out["v_cmd"][1], out["v_cmd"][2],
                       out["yaw_cmd"])
         return out

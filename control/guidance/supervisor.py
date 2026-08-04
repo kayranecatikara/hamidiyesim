@@ -37,11 +37,69 @@ class SupCfg:
     # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
 
+    # ── GEOMETRİ KAPISI (2026-08-04): menzil TEK BAŞINA yetmiyor ──
+    # Ölçüm (visual_lead_20260801_173610, tek gerçek devir): devir 8-10 m'de
+    # OLDU — menzil kapısı sağlandı — ama geometri felaketti: yandanlik_f 0.89-1.03
+    # (tam YANDAN geçiş) ve nişan hatası daha ilk karede −51°. 0.30 s sonra bbox
+    # x=232'den 18'e yürüdü, sonraki 20 kare tespit_yok. Yani kapı "yakınız"
+    # diyordu ama devraldığımız an hedef zaten kadrajdan çıkmak üzereydi.
+    #
+    # İki ek koşul, ikisi de GPS fazının zaten ölçtüğü büyüklükler:
+    #  (a) KADRAJ: hedef kamera merkezine yakın olsun. GPS fazı bunu YAPABİLİYOR —
+    #      aynı gün 22784 karede |kadraj_yaw| medyanı 2.8°, p90 6.7°. Yani 25°
+    #      eşiği fazın normal çalışmasını engellemez, yalnız savrulma anında
+    #      devri geciktirir.
+    #  (b) KUYRUK AÇISI: hedefin arkasında olalım. Pose modeli kuyruktan bakışta
+    #      en güvenilir, LOS açısal hızı orada en düşük ve lead yasası orada
+    #      küçük düzeltmeyle çalışır. 60° eşiği yandanlık ≤ 0.87 demektir —
+    #      ölçülen 0.89-1.03'ü keser, ama kapıyı imkânsız kılacak kadar dar değil.
+    #
+    # İKİSİ DE GEVŞETİLEBİLİR: kapı hiç açılmıyorsa asıl sorun geometridir,
+    # eşik değil — [SUPERVISOR] teşhis satırı hangi koşulun bloklandığını yazar.
+    GATE_KADRAJ_YAW = float(os.environ.get("AVCI_HYBRID_GATE_KADRAJ", 25.0))   # °
+    GATE_KUYRUK_ACI = float(os.environ.get("AVCI_HYBRID_GATE_KUYRUK", 60.0))   # °
+
 
 # Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
 status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None,
           # Devir kapısı teşhisi (izci doldurur; /api/chase_status ile okunur)
-          "pose_toplam": 0, "pose_var": 0, "pose_guvenli": 0, "kilit_en_uzun": 0}
+          "pose_toplam": 0, "pose_var": 0, "pose_guvenli": 0, "kilit_en_uzun": 0,
+          # Devir kapısını o an HANGİ koşulun bloklandığı (arayüz + uçuş sonrası
+          # teşhis). _kapi_degerlendir doldurur.
+          "kapi_engel": None}
+
+
+def _kapi_degerlendir(sup_cfg):
+    """Devir kapısı: açık mı, değilse HANGİ koşul blokluyor.
+
+    Dönüş: (acik: bool, sebep: str). sebep her iki durumda da doldurulur —
+    kapı açılmadığında "neden açılmadı" sorusu uçuş sonrası logdan
+    cevaplanabilsin diye (2026-08-01 uçuşunda kilit 4'te kaldı ve sebebi
+    hiçbir yerden çıkarılamadı).
+
+    GPS DROPOUT (jamming) tüm geometri koşullarını ATLAR: menzil de kadraj da
+    hedef telemetrisine dayanır, telemetri yoksa ölçülemezler. O durumda görsel
+    temasın kendisi tek kapıdır — zaten jamming fallback'inin amacı budur.
+    """
+    if not sup_cfg.GATE_KILIT:
+        return True, "kapı kapalı (GATE_KILIT=False)"
+    if _ga.status.get("durum") == "DROPOUT":
+        return True, "GPS DROPOUT — jamming fallback"
+
+    d_h = _ga.status.get("d_h")
+    if d_h is None or d_h >= sup_cfg.GATE_MENZIL:
+        return False, f"menzil {d_h if d_h is not None else '?'} ≥ {sup_cfg.GATE_MENZIL:.0f} m"
+
+    kad = _ga.status.get("kadraj_yaw_deg")
+    if kad is not None and abs(kad) > sup_cfg.GATE_KADRAJ_YAW:
+        return False, f"kadraj yaw {kad:+.0f}° > {sup_cfg.GATE_KADRAJ_YAW:.0f}°"
+
+    kuy = _ga.status.get("kuyruk_aci_deg")
+    if kuy is not None and kuy > sup_cfg.GATE_KUYRUK_ACI:
+        return False, f"kuyruk açısı {kuy:.0f}° > {sup_cfg.GATE_KUYRUK_ACI:.0f}° (yandan)"
+
+    return True, (f"menzil {d_h:.1f} m, kadraj {kad if kad is not None else '?'}°, "
+                  f"kuyruk {kuy if kuy is not None else '?'}°")
 
 
 def _kopru(parent_event, child_event):
@@ -59,7 +117,8 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
     """gercek: Gazebo ground truth okuyucusu (gz_truth.get_ikisi) — görsel faza
     aktarılır, yalnız CSV doğruluk kolonları için. Güdüme girmez."""
     status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None,
-                  pose_toplam=0, pose_var=0, pose_guvenli=0, kilit_en_uzun=0)
+                  pose_toplam=0, pose_var=0, pose_guvenli=0, kilit_en_uzun=0,
+                  kapi_engel=None)
 
     while not stop_event.is_set():
         # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
@@ -98,17 +157,16 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                               pose_guvenli=guvenli, kilit_en_uzun=en_uzun)
                 if time.time() - son_rapor >= 10.0 and top:
                     son_rapor = time.time()
-                    d_h = _ga.status.get("d_h")
+                    _, engel = _kapi_degerlendir(sup_cfg)
+                    status["kapi_engel"] = engel
                     print(f"[SUPERVISOR] pose: {var}/{top} kare tespit "
                           f"(%{100.0*var/top:.0f}), {guvenli} güvenli, "
-                          f"en uzun ardışık {en_uzun}/{sup_cfg.KILIT_N}"
-                          + (f", d_h={d_h:.0f}m" if d_h is not None else ""))
+                          f"en uzun ardışık {en_uzun}/{sup_cfg.KILIT_N} | kapı: {engel}")
                 if sayac >= sup_cfg.KILIT_N:
-                    d_h = _ga.status.get("d_h")
-                    yakin = (d_h is not None and d_h < sup_cfg.GATE_MENZIL)
-                    dropout = _ga.status.get("durum") == "DROPOUT"  # jamming fallback
-                    kapi = (not sup_cfg.GATE_KILIT) or yakin or dropout
+                    kapi, sebep = _kapi_degerlendir(sup_cfg)
+                    status["kapi_engel"] = sebep
                     if kapi:
+                        print(f"[SUPERVISOR] devir kapısı açıldı ({sebep})")
                         tetik["gorsel"] = True
                         faz_stop.set()          # gps_guidance döngüsünü kır
                         return

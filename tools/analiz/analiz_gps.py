@@ -44,6 +44,14 @@ GATE_MENZIL = 20.0
 HIZ_PENCERE_S = 1.0
 
 
+def _sayilar(satirlar, ad):
+    """kolon() None'lu liste döndürür (eski loglarda yeni kolonlar boştur).
+    Üzerinde karşılaştırma yapacaksak None'ları ELEMEK zorundayız — yoksa
+    TypeError analizi ortasından keser."""
+    return [s[ad] for s in satirlar
+            if isinstance(s.get(ad), (int, float))]
+
+
 def _dosyalar(argv):
     yollar = [a for a in argv if a.endswith(".csv")]
     if yollar:
@@ -220,6 +228,91 @@ def analiz(yol, satirlar):
     ist_yaz("kadraj yaw hatası", ist(kolon(satirlar, "kadraj_yaw_deg")), "°")
     ist_yaz("kadraj yükseliş", ist(kolon(satirlar, "kadraj_elev_deg")), "°")
     print("  (yükseliş hedefi = kamera tilt'i 25°; yaw hedefi = 0°)")
+    ky = _sayilar(satirlar, "kuyruk_aci_deg")
+    if ky:
+        ist_yaz("kuyruk açısı", ist(ky), "°")
+        arkada = sum(1 for a in ky if a <= 60.0)
+        print(f"  kuyrukta (≤60°): %{100.0 * arkada / len(ky):.0f}   "
+              "(0° = tam arkasında; devir kapısı bunu ister)")
+
+    # ── 7) DÖNÜŞ TUZAĞI — saf takip mi kesme mi ──
+    # 2026-08-04'te bulundu. Menzil kapanmamasının sebebi "avcı yavaş" DEĞİL:
+    # avcı düz hatta 19 m/s yapabiliyor (gps_guidance_20260801_17{0837,3359}),
+    # ama daire uçan hedefi saf takip ederken 8.3 m/s'ye düşüyor.
+    # Sebep geometrik: istasyon noktası hedefle birlikte YÖRÜNGEDE dönüyor,
+    # komut vektörü sürekli döndüğü için avcı düz gidemiyor. Dönen bir hız
+    # vektörünü sürdürmenin bedeli yanal ivmedir:  v = a_yanal / omega_komut.
+    # Ölçüm (173612): eğim medyanı 14.6° → a_yanal = g·tan(14.6°) = 2.55 m/s²,
+    # omega_komut medyanı 15 °/s = 0.26 rad/s → v = 9.8 m/s. Gerçekleşen 9.4.
+    # Birebir tutuyor: avcı hız değil DÖNÜŞ sınırlı.
+    altbaslik("DÖNÜŞ TUZAĞI — komut yönü ne kadar hızlı dönüyor")
+    don = []
+    for a, b in zip(satirlar, satirlar[1:]):
+        dt = (b.get("t") or 0) - (a.get("t") or 0)
+        if not (0.02 < dt < 0.5):
+            continue
+        for s in (a, b):
+            if s.get("vx_cmd") is None or s.get("vy_cmd") is None:
+                break
+        else:
+            ca = math.degrees(math.atan2(a["vy_cmd"], a["vx_cmd"]))
+            cb = math.degrees(math.atan2(b["vy_cmd"], b["vx_cmd"]))
+            don.append(abs((cb - ca + 180.0) % 360.0 - 180.0) / dt)
+    ist_yaz("komut yönü dönme hızı", ist(don), "°/s")
+    egim = _sayilar(satirlar, "iris_egim_deg")
+    if not egim:
+        # Eski loglarda iris_egim_deg yok ama roll/pitch var — türetilebilir.
+        # cos(eğim) = cos(roll)·cos(pitch) (itki ekseninin düşeyle açısı).
+        egim = [math.degrees(math.acos(max(-1.0, min(1.0,
+                math.cos(math.radians(s["iris_roll_deg"]))
+                * math.cos(math.radians(s["iris_pitch_deg"]))))))
+                for s in satirlar
+                if isinstance(s.get("iris_roll_deg"), (int, float))
+                and isinstance(s.get("iris_pitch_deg"), (int, float))]
+    if egim:
+        ist_yaz("avcı toplam eğim", ist(egim), "°")
+    ist_yaz("t_go (kesme öngörüsü)", ist(kolon(satirlar, "t_go_s")), " s")
+    ist_yaz("hedef dönüş hızı (omega)", ist(kolon(satirlar, "tgt_omega_deg")), "°/s")
+    if don and egim:
+        w_med = sorted(don)[len(don) // 2]
+        e_med = sorted(egim)[len(egim) // 2]
+        a_yanal = 9.81 * math.tan(math.radians(e_med))
+        if w_med > 1.0:
+            v_tavan = a_yanal / math.radians(w_med)
+            print(f"  → dönüş sınırlı hız tavanı = a_yanal/omega = "
+                  f"{a_yanal:.2f}/{math.radians(w_med):.3f} = {v_tavan:.1f} m/s")
+            gv = _pencere_hizi(satirlar, "iris_x", "iris_y")
+            if gv:
+                ger = sorted(gv)[len(gv) // 2]
+                if abs(ger - v_tavan) < 0.35 * max(ger, 1.0):
+                    print(f"    GERÇEKLEŞEN medyan {ger:.1f} m/s bu tavanla "
+                          "uyuşuyor → DÖNÜŞ TUZAĞI ✗")
+                    print("    Çare hız değil GEOMETRİ: istasyonu hedefin ANLIK "
+                          "konumuna değil")
+                    print("    ÖNGÖRÜLEN konumuna kur (Cfg.KESME) — komut yönü "
+                          "yavaş döner, avcı düz gider.")
+                else:
+                    print(f"    GERÇEKLEŞEN medyan {ger:.1f} m/s tavandan uzak "
+                          "→ dönüş tuzağı BASKIN DEĞİL")
+
+    # ── 8) EKF ↔ konum türevi (hız ölçümü kimin doğru) ──
+    ekf = _sayilar(satirlar, "iris_hiz")
+    if ekf:
+        altbaslik("HIZ ÖLÇÜMÜ — ArduPilot ne diyor, konum türevi ne diyor")
+        ist_yaz("avcı hızı (ArduPilot/EKF)", ist(ekf), " m/s")
+        gv = _pencere_hizi(satirlar, "iris_x", "iris_y")
+        if gv:
+            e_med, g_med = sorted(ekf)[len(ekf) // 2], sorted(gv)[len(gv) // 2]
+            fark = abs(e_med - g_med)
+            print(f"  EKF medyanı {e_med:.2f} m/s ↔ konum türevi {g_med:.2f} m/s "
+                  f"(fark {fark:.2f})")
+            if fark > 2.0:
+                print("  ⚠ İKİSİ UYUŞMUYOR — ArduPilot kendi hızını yanlış biliyor.")
+                print("    Hız kontrolcüsü hatayı GÖREMEZ; eğim küçük kalır, "
+                      "komut hiç uygulanmaz.")
+                print("    Bu bir GÜDÜM ayarı sorunu DEĞİL, EKF/telemetri sorunudur.")
+            else:
+                print("  ✓ Uyuşuyorlar — hız ölçümü güvenilir, sorun başka yerde.")
 
     return sure
 

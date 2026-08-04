@@ -17,10 +17,20 @@
 #   ARSPD_FBW_MIN 1200 → AIRSPEED_MIN     12
 #   ARSPD_FBW_MAX 2200 → AIRSPEED_MAX     22
 #
-# FBWB'de gaz slider'ı doğrudan HIZ komutudur (ArduPlane navigation.cpp:177):
-#   slider ≤ %50 → hız = AIRSPEED_MIN … AIRSPEED_CRUISE arası doğrusal
-#   slider ≥ %50 → hız = AIRSPEED_CRUISE … AIRSPEED_MAX arası doğrusal
-# Yani hedefin ulaşabileceği EN DÜŞÜK hız = AIRSPEED_MIN.
+# FBWB'de gaz slider'ı doğrudan HIZ komutudur — AMA HANGİ FORMÜLLE olduğu
+# FLIGHT_OPTIONS'a bağlı (ArduPlane/navigation.cpp:161-189). Üç dal var:
+#   CRUISE_TRIM_AIRSPEED biti → hız = AIRSPEED_CRUISE (slider hiç okunmaz)
+#   CRUISE_TRIM_THROTTLE biti → slider ≤%50: MIN…CRUISE, ≥%50: CRUISE…MAX
+#   HİÇBİRİ (varsayılan)      → hız = MIN + (MAX − MIN) · slider_oranı
+#
+# DÜZELTME (2026-08-04): bu dosyada eskiden orta dal yazılıydı. SITL param
+# dökümünde `FLIGHT_OPTIONS 0` (~/Masaüstü/ardupilot/mav_2_1.parm:326) — yani
+# ALTTAKİ dal işliyor ve **AIRSPEED_CRUISE'un FBWB'de HİÇBİR ETKİSİ YOK**.
+# Doğrulama: MIN 12 / MAX 22, slider 500/1000 → talep = (22−12)·50 + 1200
+# = 1700 cm/s = 17.0 m/s. Ölçülen yer hızı 18.0 m/s (gps_guidance_20260801_173612,
+# 22784 kare, kümülatif yol/süre). Formül birebir tutuyor.
+# Bu, geçmişte AIRSPEED_CRUISE'u 14→12→10 çekmenin neden hiçbir şeyi
+# değiştirmediğini de açıklıyor: o parametre bu modda okunmuyordu.
 #
 # Hız bandı neden 9/10 (2026-08-01, sekiz uçuşun ölçümü):
 #
@@ -41,17 +51,33 @@
 #     Bu fark yüzünden avcı (13.9 m/s ortalama, kare dönüşleriyle) hedeften
 #     1.6 m/s YAVAŞ kalıyordu ve menzil 34 m'nin altına inemiyordu.
 #
-# SONUÇ: bant, uçağın GERÇEKTE uçtuğu hıza göre dürüstçe ayarlandı.
-# VFR_HUD ölçümü (bkz. aşağıdaki THR_MAX notu) uçağın talepten bağımsız
-# ~15.3 m/s'de seyrettiğini gösterdi. Talebi 10'a indirmek gerçekleşen hızı
-# yalnız 14.2'ye çekebildi ve dosyayı gerçeğe aykırı hale getirdi.
-# 15/12, uçağın yaptığı işi tarif eder: irtifasını tutar, stall etmez, ve
-# "ne komutlandığı" ile "ne uçtuğu" arasında yanıltıcı bir fark bırakmaz.
-# Hedefi bundan daha yavaş uçurmak AYRI BİR İŞ KALEMİDİR (TKOFF_THR_MAX + THR_MAX
-# çifti ya da senaryonun kendi hız kontrolü) — bkz. docs/GUDUM_ARIZA_ZINCIRI.
+# ── AIRSPEED_MAX 22 → 16 (2026-08-04) ──
+# Yukarıdaki formül anlaşılınca asıl arıza ortaya çıktı: SLIDER'IN TAMAMI
+# yakalanamaz bir banda düşüyordu. 12…22 bandında slider ortası 17 m/s talep
+# eder; ölçülen 19 dakikalık chase'te (gps_guidance_20260801_173612) hedef
+# 18.0 m/s uçtu, avcı 8.3 m/s (kümülatif yol/süre, aynı saat). Sonuç: menzil
+# ilk dakikada 89 m'den 82 m'ye indi ve 19 dakika boyunca ORADA KALDI —
+# 1143 s'de tek bir görsel devir olmadı. Saf takipte pusuyu kuran daha
+# yavaşsa kapalı bir desende asla yakalayamaz; kendi orbitine spirallenir.
+#
+# 16 ile slider'ın ANLAMI şu olur (talep, ölçülene ≈ +1 m/s eklenerek):
+#   slider   0% → 12 m/s talep (~13 gerçek)
+#   slider  50% → 14 m/s talep (~15 gerçek)
+#   slider 100% → 16 m/s talep (~17 gerçek)
+# Yani kullanıcı slider'ı kısarak hedefi yakalanabilir hale getirebilir;
+# eskiden bandın HİÇBİR yerinde bu mümkün değildi.
+#
+# AIRSPEED_MIN neden 12'de kalıyor: TECS talebi MIN'in altına indiremez, yani
+# 12 hedefin fiziksel taban hızıdır. Daha düşürmek stall riskini açar —
+# AIRSPEED_STALL 8 ve senaryolar 29-48° yatış kullanıyor; yatışta stall hızı
+# 1/√cos(yatış) ile büyür (45°'de 8 → 9.5 m/s). 12'de pay var, 10'da yok.
+# Bandı daha da aşağı çekmek AYRI BİR İŞ: önce yatışlı stall ölçümü gerekir.
+#
+# AIRSPEED_CRUISE FBWB'de OKUNMUYOR (yukarıdaki FLIGHT_OPTIONS notu). AUTO /
+# CRUISE / RTL modları için anlamlı olduğundan bandın ortasında bırakıldı.
 AIRSPEED_MIN 12
-AIRSPEED_CRUISE 15
-AIRSPEED_MAX 22
+AIRSPEED_CRUISE 14
+AIRSPEED_MAX 16
 
 # ── HIZ SENSÖRÜNÜ KULLAN (2026-08-01, asıl irtifa arızasının kökü) ──
 # Uçakta sensör VARDI ve kalibre oluyordu ("AP: Airspeed 1 calibrated",

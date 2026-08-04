@@ -11,11 +11,20 @@ Kadraj merkezi ⇔ gövde-çerçevesinde hedefe bakış: azimut=0, yükseliş=+2
 (guidance_core.hedef_kadraj_hatasi) ve her kare CSV'ye yazılır → merkezleme
 başarısı ölçülebilir.
 
-KADEME 1 (bu sürüm): GEOMETRİK kadraj-noktası takibi. Hedefin hız yönünün
-D_BEHIND gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek)
-bir istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
+KADEME 1: GEOMETRİK kadraj-noktası takibi. Hedefin hız yönünün D_BEHIND
+gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek) bir
+istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
 kilitlenince kararlı hold). Burun daima gerçek hedefe döner (yaw). Drone hedefin
 ALTINDA kalır → gökyüzü arka planı, pose kopmaz.
+
+KADEME 1b (2026-08-04): İSTASYON ARTIK ÖNGÖRÜLÜ. Kademe 1 istasyonu hedefin
+ANLIK konumuna kuruyordu, yani saf takip (pure pursuit). Kapalı bir desende
+(daire/kare) saf takip yapan ve hedeften yavaş olan bir avcı hedefi ASLA
+yakalayamaz — desenin ortasına spirallenir. Ölçüm bunu birebir gösterdi
+(gps_guidance_20260801_173612, 1143 s): menzil 89 m'den 82 m'ye indi ve 19
+dakika orada kaldı, tek bir görsel devir olmadı. Çare köşeyi KESMEK: hedefin
+dönüş hızı (omega) kestirilir, t_go sonrası nerede olacağı sabit-dönüş
+(coordinated turn) modeliyle tahmin edilir ve istasyon ORAYA kurulur.
 (KADEME 2'de: gerçek attitude'la kadraj hatasını doğrudan kapatma eklenecek.)
 
 Arayüz (supervisor / gcs_server ile aynı sözleşme):
@@ -116,6 +125,28 @@ class Cfg:
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(45.0)
 
+    # --- KESME (öngörülü istasyon) ---
+    # Neden gerekli: bkz. modül başlığı KADEME 1b. Saf takip, hedeften yavaş
+    # bir avcıyla kapalı desende yakınsamaz — 1143 s'lik ölçümde menzil 82 m'de
+    # kilitlendi. Öngörü, istasyonu hedefin GELECEK konumuna kurarak köşeyi
+    # kestirir; hız üstünlüğü olmadan da menzil kapanır.
+    KESME = os.environ.get("AVCI_GPS_KESME", "on").lower() not in ("0", "off", "false")
+    # t_go = istasyon mesafesi / V_MAX. Tavan neden 6 s: kestirim hatası t_go
+    # ile büyür; hedef 15 m/s'de 6 s'de 90 m gider, bu zaten desenin çapı
+    # mertebesinde (ölçülen desen kutusu 133×132 m). Daha uzun öngörü desenin
+    # dışına nişan alır.
+    T_GO_MAX = _env_f("AVCI_GPS_TGO_MAX", 6.0)          # s
+    # Ek tavan: bir çeyrek turdan fazlasını öngörme. omega·t_go bu açıyı aşarsa
+    # t_go kısılır. Sabit-dönüş modeli hedefin yatışını SABİT varsayar; kare
+    # senaryosunda yatış 2-3 s'de değişiyor, o yüzden yarım turdan azı güvenli.
+    TAHMIN_ACI_MAX = math.radians(120.0)
+    # omega kestirimi: hız vektörünün dönme hızı, EMA'lı ve fiziksel sınırda
+    # kırpılmış. Talon 15 m/s'de 48° yatışla (senaryodaki en sert dönüş)
+    # omega = g·tan(48°)/V = 0.73 rad/s ≈ 42 °/s yapar. 60 °/s tavanı bunun
+    # üstünde pay bırakır ve gürültülü kareleri fizik dışı değerlere taşımaz.
+    OMEGA_EMA = 0.25
+    OMEGA_MAX = math.radians(60.0)                       # rad/s
+
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
     VEL_EMA = 0.3
@@ -129,6 +160,10 @@ class Cfg:
 status = {
     "durum": "WARMUP", "d_h": None, "menzil": None,
     "kadraj_yaw_deg": None, "kadraj_elev_deg": None, "none_count": 0,
+    # Kuyruk açısı: hedefin KUYRUK yönü ile hedeften bize olan bakış arasındaki
+    # açı. 0° = tam arkasındayız (yandanlık 0, pose'un en iyi çalıştığı geometri),
+    # 90° = tam yandan (yandanlık 1). supervisor devir kapısında okur.
+    "kuyruk_aci_deg": None,
 }
 
 # CSV çıktı dizini. AVCI_LEAD_LOG_DIR ile taşınabilir — testler bunu geçici bir
@@ -144,7 +179,61 @@ _CSV_ALANLAR = [
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
+    # ── ÖLÇÜM KOLONLARI (2026-08-04) ──
+    # "komut 20 m/s, konum türevi 8.3 m/s, eğim yalnız 14.6°" üçlü çelişkisini
+    # ayırmak için eklendi. iris_v* ArduPilot'un KENDİ hız kestirimi
+    # (LOCAL_POSITION_NED, yani EKF); konum türevinden farklıysa sorun EKF'te,
+    # aynıysa araç komutu gerçekten uygulamıyor demektir. iris_egim_deg ise
+    # hız kontrolcüsünün ne kadar itki isteği ürettiğini gösterir: komut ile
+    # gerçek arasında 12 m/s fark varken eğim 15°'de kalıyorsa kontrolcü o
+    # hatayı GÖRMÜYOR (aksi halde ANGLE_MAX=70°'e dayanırdı).
+    "iris_vx", "iris_vy", "iris_vz", "iris_hiz", "iris_egim_deg",
+    "v_cmd_mag", "tgt_hiz", "tgt_omega_deg", "t_go_s",
 ]
+
+
+def hedef_tahmin(x, y, vx, vy, omega, t_go):
+    """Sabit-dönüş (coordinated turn) modeliyle hedefin t_go sonraki hali.
+
+    SAF HESAP — IO yok, birim test edilir (tests/test_gps_guidance.py).
+
+    Uçak seviyeli koordineli dönüşte sabit yarıçaplı bir yay çizer: hız
+    BÜYÜKLÜĞÜ korunur, yön omega hızıyla döner. Yarıçap R = V/omega.
+        psi_t = psi + omega·t
+        x(t)  = x + R·( sin(psi_t) − sin(psi) )
+        y(t)  = y − R·( cos(psi_t) − cos(psi) )
+    omega → 0 limitinde bu ifade düz uçuşa (x + vx·t) yakınsar; sayısal
+    kararlılık için küçük omega'da doğrudan düz model kullanılır.
+
+    Dönüş: (x_tahmin, y_tahmin, psi_tahmin) — psi radyan, NED'de kuzeyden saat
+    yönü (atan2(vy, vx) ile aynı konvansiyon).
+    """
+    V = math.hypot(vx, vy)
+    psi = math.atan2(vy, vx)
+    if V < 1e-6 or t_go <= 0.0:
+        return x, y, psi
+    if abs(omega) < 1e-3:                       # düz uçuş (R > 15 km)
+        return x + vx * t_go, y + vy * t_go, psi
+    R = V / omega
+    psi_t = psi + omega * t_go
+    return (x + R * (math.sin(psi_t) - math.sin(psi)),
+            y - R * (math.cos(psi_t) - math.cos(psi)),
+            psi_t)
+
+
+def tgo_hesapla(mesafe, v_max, omega, cfg=Cfg):
+    """İstasyona uçuş süresi kestirimi, iki tavanla kırpılmış.
+
+    (1) T_GO_MAX: mutlak tavan (kestirim hatası t_go ile büyür).
+    (2) TAHMIN_ACI_MAX: |omega·t_go| bir çeyrek/yarım turu aşmasın — sabit
+        yatış varsayımı o kadar uzun geçerli kalmaz.
+    SAF HESAP — birim test edilir."""
+    if v_max <= 0.0:
+        return 0.0
+    t = min(max(mesafe, 0.0) / v_max, cfg.T_GO_MAX)
+    if abs(omega) > 1e-6:
+        t = min(t, cfg.TAHMIN_ACI_MAX / abs(omega))
+    return t
 
 
 def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
@@ -163,6 +252,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     de = [0.0, 0.0, 0.0]           # EMA'lı yatay/dikey hata türevi
     e_prev = None
     t_prev_deriv = None
+
+    omega = 0.0                    # hedefin kestirilen dönüş hızı (rad/s)
+    psi_prev = None                # önceki hedef hız-yönü (rad)
 
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
@@ -196,6 +288,10 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             iroll = iris.get("roll", 0.0)
             ipitch = iris.get("pitch", 0.0)
             iyaw = iris.get("yaw", 0.0)
+            # ArduPilot'un KENDİ hız kestirimi (EKF) — yalnız log/teşhis.
+            ivx = iris.get("vx", 0.0)
+            ivy = iris.get("vy", 0.0)
+            ivz = iris.get("vz", 0.0)
             plane = get_plane()
 
             # ── 1) TAZELİK + FİLTRE (EMA pozisyon, sonlu-fark hız) ──
@@ -219,6 +315,19 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                             vel_x = b * ((nx - est_x) / fdt) + (1 - b) * vel_x
                             vel_y = b * ((ny - est_y) / fdt) + (1 - b) * vel_y
                             vel_z = b * ((nz - est_z) / fdt) + (1 - b) * vel_z
+                            # dönüş hızı: hız VEKTÖRÜNÜN dönme oranı. Hedef
+                            # duruyorsa/çok yavaşsa yön gürültüdür — okuma.
+                            if math.hypot(vel_x, vel_y) >= cfg.TRACK_MIN_SPD:
+                                psi = math.atan2(vel_y, vel_x)
+                                if psi_prev is not None:
+                                    w_ham = normalize_angle(psi - psi_prev) / fdt
+                                    w_ham = clamp(w_ham, -cfg.OMEGA_MAX, cfg.OMEGA_MAX)
+                                    omega = (cfg.OMEGA_EMA * w_ham
+                                             + (1 - cfg.OMEGA_EMA) * omega)
+                                psi_prev = psi
+                            else:
+                                psi_prev = None
+                                omega = 0.0
                     est_x, est_y, est_z = nx, ny, nz
                 t_last_fresh = now
             else:
@@ -246,17 +355,35 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             d_h = math.hypot(ex, ey)
             menzil = math.sqrt(ex * ex + ey * ey + (est_z - iz) ** 2)
 
-            # ── 4) KADRAJ NOKTASI (istasyon): hedefin gerisi + altı ──
+            # ── 4) KADRAJ NOKTASI (istasyon): ÖNGÖRÜLEN hedefin gerisi + altı ──
+            # Saf takip yerine kesme: hedefin t_go sonraki yeri tahmin edilir ve
+            # istasyon ORAYA kurulur (bkz. modül başlığı KADEME 1b). t_go,
+            # istasyona olan mesafeden türer — yakınken 0'a gider ve davranış
+            # eski saf-takiple ÖZDEŞ hale gelir (kilitte kararlılık korunur).
             tgt_spd_h = math.hypot(vel_x, vel_y)
+            t_go = 0.0
+            ff_x, ff_y = vel_x, vel_y                # feedforward hız vektörü
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
-                bx, by = -vel_x / tgt_spd_h, -vel_y / tgt_spd_h   # hız yönünün gerisi (kuyruk)
-            elif d_h > 1e-6:
-                bx, by = -ex / d_h, -ey / d_h                     # LOS gerisi (drone tarafı)
+                if cfg.KESME:
+                    # istasyona mesafenin kaba ölçüsü: hedefe olan mesafe eksi
+                    # standoff (istasyonun kendisi henüz hesaplanmadı)
+                    t_go = tgo_hesapla(max(menzil - cfg.RANGE_SET, 0.0),
+                                       cfg.V_MAX, omega, cfg)
+                px, py, psi_t = hedef_tahmin(est_x, est_y, vel_x, vel_y, omega, t_go)
+                bx, by = -math.cos(psi_t), -math.sin(psi_t)   # ÖNGÖRÜLEN kuyruk yönü
+                ff_x = tgt_spd_h * math.cos(psi_t)            # FF de öngörülen yönde
+                ff_y = tgt_spd_h * math.sin(psi_t)
             else:
-                bx, by = 0.0, 0.0
-            st_x = est_x + bx * d_behind
-            st_y = est_y + by * d_behind
-            st_z = est_z + d_below                                # NED: altında (+z aşağı)
+                px, py = est_x, est_y
+                if d_h > 1e-6:
+                    bx, by = -ex / d_h, -ey / d_h             # LOS gerisi (drone tarafı)
+                else:
+                    bx, by = 0.0, 0.0
+            st_x = px + bx * d_behind
+            st_y = py + by * d_behind
+            # dikey de öngörülür: hedef tırmanıyorsa istasyonu bugünkü değil
+            # varış anındaki irtifasının altına kur
+            st_z = est_z + vel_z * t_go + d_below                 # NED: altında (+z aşağı)
             if -st_z < cfg.LOOKUP_MIN_ALT:                        # yere çakılma koruması
                 st_z = -cfg.LOOKUP_MIN_ALT
 
@@ -272,8 +399,11 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             e_prev, t_prev_deriv = e_now, now
 
             # ── 6) HIZ KOMUTU: hedef-hızı FF + PD ──
-            vx = vel_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
-            vy = vel_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
+            # FF, ÖNGÖRÜLEN hız yönünde (ff_x/ff_y): varış anında hedefin hangi
+            # yöne gideceğine göre hizalanırız. Kilitte t_go→0 olduğundan bu
+            # anlık hız vektörüne yakınsar, yani hold davranışı değişmez.
+            vx = ff_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
+            vy = ff_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
             vmag = math.hypot(vx, vy)
             if vmag > cfg.V_MAX and vmag > 1e-6:
                 s = cfg.V_MAX / vmag
@@ -302,9 +432,20 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
             # ── 10) DURUM ──
             durum = "KILIT" if d_h < cfg.HANDOFF_RANGE else "ARAMA"
+            # kuyruk açısı: hedefin kuyruk yönü (−hız) ile hedeften bize olan
+            # bakış arasındaki açı. 0° = tam arkasındayız. Devir kapısı bunu
+            # okur — yandan devralınan görsel faz 0.3 s'de temas kaybediyor
+            # (ölçüm: visual_lead_20260801_173610, yandanlik_f ≈ 0.9-1.0).
+            kuyruk_aci = None
+            if tgt_spd_h >= cfg.TRACK_MIN_SPD and d_h > 1e-6:
+                kuyruk_aci = math.degrees(math.acos(clamp(
+                    ((-vel_x / tgt_spd_h) * (-ex / d_h)
+                     + (-vel_y / tgt_spd_h) * (-ey / d_h)), -1.0, 1.0)))
             status.update(durum=durum, d_h=round(d_h, 1), menzil=round(menzil, 1),
                           kadraj_yaw_deg=round(math.degrees(kad["yaw_hata"]), 1),
-                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1))
+                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1),
+                          kuyruk_aci_deg=(round(kuyruk_aci, 1)
+                                          if kuyruk_aci is not None else None))
 
             w.writerow({
                 "t": round(now, 3), "dt": round(dt, 4), "durum": durum,
@@ -323,15 +464,29 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "kadraj_pitch_hata_deg": round(math.degrees(kad["pitch_hata"]), 2),
                 "u_px": round(kad["u"], 1) if kad["u"] is not None else "",
                 "v_px": round(kad["v"], 1) if kad["v"] is not None else "",
+                "iris_vx": round(ivx, 2), "iris_vy": round(ivy, 2),
+                "iris_vz": round(ivz, 2), "iris_hiz": round(math.hypot(ivx, ivy), 2),
+                "iris_egim_deg": round(math.degrees(math.acos(clamp(
+                    math.cos(iroll) * math.cos(ipitch), -1.0, 1.0))), 1),
+                "v_cmd_mag": round(math.hypot(vx, vy), 2),
+                "tgt_hiz": round(tgt_spd_h, 2),
+                "tgt_omega_deg": round(math.degrees(omega), 1),
+                "t_go_s": round(t_go, 2),
             })
             f.flush()
 
             loop_count += 1
             if loop_count % int(cfg.LOOP_HZ * 3) == 0:
+                # "komut ne, GERÇEKLEŞEN ne, hedef ne" üçlüsü aynı satırda:
+                # menzil kapanmıyorsa sebebin hız mı geometri mi olduğu buradan
+                # anlaşılır. gercek < hedef ise avcı fiziksel olarak yetişemiyor
+                # demektir ve güdüm ayarı bunu çözemez.
                 print(f"[GPS] {durum} d_h={d_h:.1f}m menzil={menzil:.1f}m "
                       f"kadraj(yaw={math.degrees(kad['yaw_hata']):+.0f}°,"
                       f"elev={math.degrees(kad['elev']):+.0f}°/hedef {cfg.CENTER_ELEV_DEG:.0f}°) "
-                      f"v=({vx:+.1f},{vy:+.1f},{vz:+.1f}) tgt_v={tgt_spd_h:.1f}")
+                      f"hiz(komut={math.hypot(vx, vy):.1f} gercek={math.hypot(ivx, ivy):.1f} "
+                      f"hedef={tgt_spd_h:.1f}) egim={math.degrees(math.acos(clamp(math.cos(iroll)*math.cos(ipitch), -1.0, 1.0))):.0f}° "
+                      f"vz={vz:+.1f} t_go={t_go:.1f}s omega={math.degrees(omega):+.0f}°/s")
 
             _sleep(now, loop_period)
 

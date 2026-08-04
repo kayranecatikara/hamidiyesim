@@ -503,6 +503,96 @@ def main():
             r_norm["burun_kuyruk_takas"] == 0 and r_takas["burun_kuyruk_takas"] == 1,
             f"normal={r_norm['burun_kuyruk_takas']} takas={r_takas['burun_kuyruk_takas']}")
 
+    # ══════════════════════════════════════════════════════════
+    #  T34-T37  LOS KAPISI (adapter_copter.kapanma_hizi)
+    # ══════════════════════════════════════════════════════════
+    cfgL = cfg_copy()
+    adL = CopterAdapter(cfgL)
+
+    # T34 KUYRUK takibi: yandanlik≈0, lead≈0 → LOS neredeyse dönmüyor, kapı
+    # AÇILMALI (tam V_KAPANMA). Stash'teki ilk sürüm burada da frenliyordu.
+    v_kuyruk = adL.kapanma_hizi(10.0, 0.0, 0.0)
+    kontrol("T34 kuyruktan takipte LOS kapısı kısıtlamaz (tam V_KAPANMA)",
+            abs(v_kuyruk - cfgL.V_KAPANMA) < 1e-9,
+            f"v={v_kuyruk:.2f} (V_KAPANMA={cfgL.V_KAPANMA})")
+
+    # T35 YANDAN geçiş, 8 m: 2026-08-01 uçuşunun tam geometrisi
+    # (yandanlik_f≈0.95, lead≈23°, menzil_kestirim≈8 m). Kapı BAĞLAMALI.
+    lead23 = math.radians(23.0)
+    v_yan = adL.kapanma_hizi(8.0, 0.95, lead23)
+    kontrol("T35 yandan geçişte (8 m, yandanlık 0.95) kapı frenler",
+            v_yan < cfgL.V_KAPANMA and v_yan >= cfgL.V_KAPANMA_MIN,
+            f"v={v_yan:.2f} < {cfgL.V_KAPANMA} ve ≥ taban {cfgL.V_KAPANMA_MIN}")
+
+    # T36 ASIL AMAÇ: kapıdan çıkan hızla LOS açısal hızı, aracın izleyebildiği
+    # bandın İÇİNDE kalmalı. Kapı olmadan aynı geometride 155 °/s çıkıyordu
+    # (ölçüm: hedef 0.30 s'de kadrajı terk etti).
+    def omega_los(v, menzil, yandanlik, lead):
+        return math.degrees(v * (cfgL.K_LEAD * yandanlik + math.sin(lead)) / menzil)
+    w_kapili = omega_los(v_yan, 8.0, 0.95, lead23)
+    w_kapisiz = omega_los(cfgL.V_KAPANMA, 8.0, 0.95, lead23)
+    kontrol("T36 kapılı LOS hızı izlenebilir bandın içinde, kapısız değil",
+            w_kapili <= cfgL.LOS_YAW_IZLENEBILIR and w_kapisiz > cfgL.LOS_YAW_IZLENEBILIR,
+            f"kapılı={w_kapili:.0f}°/s, kapısız={w_kapisiz:.0f}°/s, "
+            f"araç {cfgL.LOS_YAW_IZLENEBILIR:.0f}°/s")
+
+    # T37 menzil kestirimi YOKSA kapı uygulanmaz (yanlış sıfır yüzünden aracı
+    # durdurmak, hızlı gitmekten kötü) — ve kapatma anahtarı çalışır.
+    cfgOff = cfg_copy(); cfgOff.LOS_KAPISI = False
+    v_none = adL.kapanma_hizi(None, 1.0, lead23)
+    v_off = CopterAdapter(cfgOff).kapanma_hizi(8.0, 0.95, lead23)
+    kontrol("T37 menzil None → kapı kapalı; LOS_KAPISI=False → kapı kapalı",
+            abs(v_none - cfgL.V_KAPANMA) < 1e-9 and abs(v_off - cfgOff.V_KAPANMA) < 1e-9,
+            f"none={v_none:.1f} off={v_off:.1f}")
+
+    # ══════════════════════════════════════════════════════════
+    #  T38-T40  HAREKET TUTARLILIĞI (kalıcı burun/kuyruk takası)
+    # ══════════════════════════════════════════════════════════
+    # T38 Model ısrarla TERS etiketliyor ama hedef kadrajda +x yönünde kayıyor.
+    # Uçak burnu ileri uçtuğuna göre eksen +x olmalı; çekirdek bunu düzeltmeli.
+    core_t = LeadPursuitCore(cfg_copy())
+    d_son, warn_son = None, []
+    for i in range(8):
+        p = make_pose(12.0, 90.0, cx=CX - 40 + 10.0 * i, cy=CY,
+                      d_aci_deg=0.0, swap=True)       # etiketler TERS
+        r = core_t.process(p, i / 30.0, ATT_KAMERA_YATAY)
+        d_son, warn_son = r["d_birim"], r["warn"]
+    kontrol("T38 kalıcı takas: akış tutarlılığı ekseni hareket yönüne çevirir",
+            float(d_son[0]) > 0.9 and core_t.takas_sayaci > 0,
+            f"d_birim=({d_son[0]:+.2f},{d_son[1]:+.2f}) hareket=+x, "
+            f"takas_sayaci={core_t.takas_sayaci}, warn={warn_son}")
+
+    # T39 Etiketler DOĞRUYKEN kapı asla devreye girmemeli (yanlış pozitif yok).
+    core_ok = LeadPursuitCore(cfg_copy())
+    for i in range(8):
+        p = make_pose(12.0, 90.0, cx=CX - 40 + 10.0 * i, cy=CY, d_aci_deg=0.0)
+        r_ok = core_ok.process(p, i / 30.0, ATT_KAMERA_YATAY)
+    kontrol("T39 doğru etiketlemede takas kapısı susar (yanlış pozitif yok)",
+            core_ok.takas_sayaci == 0 and float(r_ok["d_birim"][0]) > 0.9,
+            f"takas_sayaci={core_ok.takas_sayaci} akis_skor={core_ok.akis_skor:+.2f}")
+
+    # T40 KUYRUK TAKİBİ: hedef kadrajda neredeyse durgun (akış eşiğin altında)
+    # → oy verilmez, skor 0'da kalır, hiçbir şey çevrilmez. Kapının kendi
+    # kendine bozmadığının garantisi.
+    core_dur = LeadPursuitCore(cfg_copy())
+    for i in range(10):
+        p = make_pose(12.0, 20.0, cx=CX + 0.02 * i, cy=CY, d_aci_deg=0.0)
+        core_dur.process(p, i / 30.0, ATT_KAMERA_YATAY)
+    kontrol("T40 durgun kadrajda (kuyruk takibi) kapı oy vermez",
+            core_dur.takas_sayaci == 0 and abs(core_dur.akis_skor) < 1e-9,
+            f"takas_sayaci={core_dur.takas_sayaci} akis_skor={core_dur.akis_skor:+.3f}")
+
+    # T41 yandanlık fiziksel sınırı: yükselti düzeltmesi aşırı telafi etse bile
+    # a/olcek 1'i aşamaz (ölçüldü: 1.0269 ve 1.21). Aşarsa lead şişer ve LOS
+    # kapısının paydası fizik dışı büyür.
+    core_y = LeadPursuitCore(cfg_copy())
+    p_asiri = make_pose(12.0, 90.0, a_ovr=60.0, b_ovr=0.0)   # kanat yok, gövde uzun
+    r_y = core_y.process(p_asiri, 0.0, (0.0, math.radians(-70.0), 0.0))
+    kontrol("T41 yandanlık ≤ 1.0 (fiziksel sınır dayatılır)",
+            r_y["yandanlik_ham"] <= 1.0 + 1e-12,
+            f"yandanlik_ham={r_y['yandanlik_ham']:.4f} "
+            f"(a/olcek ham={r_y['a']/r_y['olcek']:.4f})")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

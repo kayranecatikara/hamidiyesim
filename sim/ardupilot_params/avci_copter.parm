@@ -1,31 +1,95 @@
 # =============================================================
 #  AVCI DRONE (ArduCopter) — Avcı İHA parametre yamaları
 # =============================================================
-# start_ardupilot_sitl.sh içinde --add-param-file ile yüklenir.
+# start_harmonic.sh içinde --add-param-file ile EN SON yüklenir.
 # Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
 #
-# Neden bu değerler (SITL'de ölçülerek belirlendi):
-#  - Varsayılan ANGLE_MAX=30° ile "+"quad yatayda ~10.3 m/s'de takılıyordu
-#    (aerodinamik terminal hız). 55°'de ~18.6 m/s'e çıkıyor — chase'in
-#    ihtiyacı olan MAX_SPEED (19.5) aralığına giriyor.
-#  - WPNAV_SPEED pozisyon-hedefli setpoint'lerdeki hız tavanını açar.
+# =============================================================
+#  ⚠ 2026-08-04: BU DOSYADAKİ HER SATIR ÖLÜ ADDI — HİÇBİRİ UYGULANMIYORDU
+# =============================================================
+# ArduPilot bilinmeyen parametre adını SESSİZCE yok sayar (CLAUDE.md §8).
+# ArduCopter, hareket parametrelerini hem YENİDEN ADLANDIRDI hem BİRİM
+# DEĞİŞTİRDİ (cm/s → m/s, centi-derece → derece). Eski dosya:
+#
+#   dosyadaki (ÖLÜ)      gerçek ad        birim   istenen   GERÇEKTE uygulanan
+#   ─────────────────────────────────────────────────────────────────────────
+#   ANGLE_MAX 7000       ATC_ANGLE_MAX    derece  70°       30°   (varsayılan)
+#   WPNAV_SPEED 3000     WP_SPD           m/s     30 m/s    10 m/s
+#   WPNAV_ACCEL 2000     WP_ACC           m/s²    20 m/s²   2.5 m/s²
+#   WPNAV_SPEED_UP 3000  WP_SPD_UP        m/s     30 m/s    2.5 m/s
+#   WPNAV_SPEED_DN 3000  WP_SPD_DN        m/s     30 m/s    1.5 m/s
+#   LOIT_SPEED 3000      LOIT_SPEED_MS    m/s     30 m/s    12.5 m/s
+#   PSC_VELXY_P 2.0      PSC_NE_VEL_P     —       2.0       2.0 (tesadüfen aynı)
+#
+# Doğrulama yolu (CLAUDE.md §8'in tarif ettiği kesin yöntem): SITL'in kaydettiği
+# ~/Masaüstü/ardupilot/mav_5_1.parm dökümünde adı ara. `ANGLE_MAX` yok,
+# `ATC_ANGLE_MAX 30.000000` var — yani firmware varsayılanı. Aynı şekilde
+# `WPNAV_ACCEL` yok, `WP_ACC 2.500000` var.
+#
+# NEDEN ÖNEMLİ — bu, chase'in hiç yakalayamamasının KÖKÜ:
+#   WP_ACC = 2.5 m/s² ⇒ yatay ivme tavanı 2.5 m/s² ⇒ denge yatışı
+#   atan(2.5/9.81) = 14.3°. ÖLÇÜLEN yatış: medyan 14.6°, std yalnız 1.18°
+#   (22784 kare, gps_guidance_20260801_173612). Bu dar dağılım bir kontrol
+#   çıktısı değil, bir TAVANDIR — ve tam da WP_ACC'nin varsayılanına oturuyor.
+#   Sonuçları:
+#     · komut 20 m/s, gerçekleşen medyan 9.4 m/s (oran 0.47)
+#     · daire uçan hedefte "dönüş tuzağı": v = a/omega = 2.5/0.26 = 9.8 m/s,
+#       ölçülen 9.4 — birebir (bkz. tools/analiz/analiz_gps.py §7)
+#     · hedef 18 m/s uçarken menzil 82 m'de 19 dakika kilitli kaldı
+#   GUIDED hız modunun bu iki değeri kullandığı kaynakta da doğrulandı:
+#   ArduCopter/mode_guided.cpp:255 → NE_set_max_speed_accel_m(
+#       wp_nav->get_default_speed_NE_ms(), wp_nav->get_wp_acceleration_mss())
+#
+# Aşağıdaki adların HEPSİ mav_5_1.parm dökümünde bizzat görülerek yazıldı.
+# Yeni bir ad eklemeden önce AYNI DOĞRULAMAYI YAP.
 
-# ── LİMİTSİZ TEST (2026-07-25): firmware tavanları açıldı ──
-# Kullanıcı isteği: güdüm kodunun gerçek davranışını görmek için yazılım+firmware
-# kısıtlamaları kaldırıldı. Eski değerler (geri almak için):
-#   ANGLE_MAX 5500, WPNAV_SPEED 2200, WPNAV_SPEED_UP/DN 1000, WPNAV_ACCEL 600,
-#   LOIT_SPEED 2200.
-# Agresif eğim → yüksek yatay hız/ivme
-ANGLE_MAX 7000
+# =============================================================
+#  Yatış tavanı
+# =============================================================
+# 55° neden: MOT_THST_HOVER = 0.39 ölçüldü (aynı döküm). Bir multirotorun
+# irtifasını koruyabildiği en yüksek yatış acos(hover_itki) = acos(0.39) = 67°;
+# bunun üstünde itkinin düşey bileşeni ağırlığı taşıyamaz ve araç alçalır.
+# 55°, 12°'lik pay bırakır. Beklenen terminal hız: ölçülen 8.33 m/s @ 14.6°
+# noktasından sürükleme ∝ v² ile ölçeklenirse 8.33·√(tan55/tan14.6) = 19.5 m/s
+# — hedefin yeni bandının (13-17 m/s, avci_plane.parm) rahatça üstünde.
+# (Eski dosya 70° istiyordu; o 67° sınırının ÜSTÜNDE olduğu için araç yatışı
+# koruyamaz, irtifa sızdırır. İstenmiş ama zaten hiç uygulanmamıştı.)
+ATC_ANGLE_MAX 55
 
-# GUIDED/WPNAV hız ve ivme tavanları (cm, cm/s, cm/s²)
-WPNAV_SPEED 3000
-WPNAV_SPEED_UP 3000
-WPNAV_SPEED_DN 3000
-WPNAV_ACCEL 2000
-LOIT_SPEED 3000
-PSC_VELXY_P 2.0
+# =============================================================
+#  GUIDED hız/ivme tavanları — güdümün asıl darboğazı
+# =============================================================
+# WP_ACC 12 m/s²: 55° yatışta ulaşılabilir ivme g·tan(55°) = 14.0 m/s².
+# 12, o zarfın İÇİNDE kalır (yatış 50.7°) — kontrolcü ATC_ANGLE_MAX'a
+# dayanıp limit çevrimine girmez. Ayrıca gps_guidance.Cfg.MAX_ACCEL de
+# 12 m/s²; ikisinin aynı olması komut ile aracın aynı zarfta çalışmasını sağlar.
+WP_ACC 12
+# WP_SPD 25 m/s: gps_guidance V_MAX 20, görsel faz V_KAPANMA 25. Tavan
+# güdümün isteyebileceği en yüksek değere eşit — kısıtlama güdümde kalsın.
+WP_SPD 25
+# Dikey: gps_guidance VZ_MAX 6 m/s (drone hedefin 4.65 m altına inip çıkıyor).
+# Varsayılanlar 2.5/1.5 m/s idi, yani dikey kanal komutun yarısını uyguluyordu.
+WP_SPD_UP 6
+WP_SPD_DN 6
+WP_ACC_Z 5
 
-# SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
+# Jerk (ivmenin değişim hızı, m/s³). Varsayılan 5 ile 12 m/s²'ye ulaşmak
+# 2.4 s sürer — hedefin manevrasından uzun, yani ivme tavanı pratikte hiç
+# kullanılamaz. 20, tam ivmeye 0.6 s'de çıkarır.
+PSC_JERK_NE 20
+PSC_JERK_D 10
+
+# Hız kontrolcüsü P kazancı (eski dosyadaki PSC_VELXY_P'nin yeni adı).
+# 2.0 zaten varsayılan; açıkça yazılıyor ki analiz notlarındaki "hata ×
+# PSC_VELXY_P" hesapları hangi değere dayandığını göstersin.
+PSC_NE_VEL_P 2.0
+
+# LOITER (GUIDED'de kullanılmaz; elle uçuş/park için tutarlı kalsın)
+LOIT_SPEED_MS 20
+LOIT_ACC_MAX_M 10
+
+# SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor).
+# Bu iki ad HÂLÂ GEÇERLİ — dökümde FS_GCS_ENABLE 0 / FS_THR_ENABLE 0 olarak
+# göründüler, yani bunlar uygulanan tek satırlardı.
 FS_GCS_ENABLE 0
 FS_THR_ENABLE 0

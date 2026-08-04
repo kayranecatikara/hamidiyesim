@@ -138,6 +138,96 @@ def main():
             f"vx_cmd={vx_cmd} (~{TV}) durum={snap['durum']} d_h={snap['d_h']} "
             f"elev={snap['kadraj_elev_deg']}°")
 
+    # ══════════════════════════════════════════════════════════
+    #  G10-G15  KESME: eğrisel hedef kestirimi (KADEME 1b)
+    # ══════════════════════════════════════════════════════════
+    # G10 düz uçuş: omega≈0 → tahmin düz doğrusal olmalı
+    px, py, psi = gg.hedef_tahmin(0.0, 0.0, 10.0, 0.0, 0.0, 3.0)
+    kontrol("G10 omega=0 → düz tahmin (x=v·t)",
+            abs(px - 30.0) < 1e-6 and abs(py) < 1e-6 and abs(psi) < 1e-9,
+            f"({px:.3f}, {py:.3f}) psi={math.degrees(psi):.1f}°")
+
+    # G11 çeyrek daire: V=10, omega=+0.1 rad/s, t=π/2/0.1 → yarıçap 100 m,
+    # +X'ten +Y'ye çeyrek tur; hedef (100, 100)'e varmalı, başlık +90°.
+    t_ceyrek = (math.pi / 2) / 0.1
+    px, py, psi = gg.hedef_tahmin(0.0, 0.0, 10.0, 0.0, 0.1, t_ceyrek)
+    kontrol("G11 çeyrek daire: R=V/omega=100 m, (100,100), başlık +90°",
+            abs(px - 100.0) < 1e-6 and abs(py - 100.0) < 1e-6
+            and abs(math.degrees(psi) - 90.0) < 1e-6,
+            f"({px:.2f}, {py:.2f}) psi={math.degrees(psi):.1f}°")
+
+    # G12 süreklilik: küçük omega, eğrisel model düz modele yakınsamalı
+    a = gg.hedef_tahmin(0.0, 0.0, 15.0, 0.0, 1e-4, 2.0)
+    b = gg.hedef_tahmin(0.0, 0.0, 15.0, 0.0, 0.0, 2.0)
+    kontrol("G12 omega→0 sürekliliği (eğrisel ≈ düz)",
+            math.dist(a[:2], b[:2]) < 0.01,
+            f"fark={math.dist(a[:2], b[:2]):.5f} m")
+
+    # G13 t_go tavanları: uzak mesafe T_GO_MAX'ı, büyük omega açı tavanını dayatır
+    t_uzak = gg.tgo_hesapla(1000.0, 20.0, 0.0, C)
+    t_hizli_donus = gg.tgo_hesapla(1000.0, 20.0, math.radians(60.0), C)
+    kontrol("G13 t_go: mesafe tavanı T_GO_MAX, dönüşte açı tavanı",
+            abs(t_uzak - C.T_GO_MAX) < 1e-9
+            and abs(t_hizli_donus - C.TAHMIN_ACI_MAX / math.radians(60.0)) < 1e-9,
+            f"düz={t_uzak:.2f}s dönüşte={t_hizli_donus:.2f}s "
+            f"(tavanlar {C.T_GO_MAX}s / {math.degrees(C.TAHMIN_ACI_MAX):.0f}°)")
+
+    # G14 KİLİTTE ÖZDEŞLİK: istasyondayken t_go→0, tahmin = anlık konum.
+    # Bu, kesmenin hold davranışını BOZMADIĞININ garantisi.
+    t0 = gg.tgo_hesapla(0.0, C.V_MAX, 0.5, C)
+    p0 = gg.hedef_tahmin(7.0, -3.0, 12.0, 5.0, 0.5, t0)
+    kontrol("G14 kilitte t_go=0 → tahmin anlık konumla ÖZDEŞ",
+            t0 == 0.0 and abs(p0[0] - 7.0) < 1e-12 and abs(p0[1] + 3.0) < 1e-12,
+            f"t_go={t0} tahmin=({p0[0]}, {p0[1]})")
+
+    # G15 KAPALI FORM ↔ SAYISAL İNTEGRASYON. Kapalı formu kendisiyle
+    # karşılaştırmak totolojidir; bunun yerine sabit-dönüşü küçük adımlarla
+    # BAĞIMSIZ olarak integre edip kapalı formla kıyaslarız. Aynı ölçüm,
+    # saf takibin (anlık konuma nişan) ne kadar geride kaldığını da verir.
+    V, w, tg = 15.0, 0.3, 4.0
+    ix, iy, ipsi, adim = 0.0, 0.0, 0.0, 1e-4
+    for _ in range(int(tg / adim)):
+        ix += V * math.cos(ipsi) * adim
+        iy += V * math.sin(ipsi) * adim
+        ipsi += w * adim
+    kapali = gg.hedef_tahmin(0.0, 0.0, V, 0.0, w, tg)[:2]
+    saf = (0.0, 0.0)                                    # saf takip: anlık konum
+    kontrol("G15 kapalı form = sayısal integrasyon; saf takip 56 m geride",
+            math.dist(kapali, (ix, iy)) < 0.01
+            and math.dist(saf, (ix, iy)) > 50.0,
+            f"kapalı-integral farkı={math.dist(kapali, (ix, iy)):.4f} m, "
+            f"saf takip sapması={math.dist(saf, (ix, iy)):.1f} m")
+
+    # ══════════════════════════════════════════════════════════
+    #  G16-G18  DEVİR KAPISI: menzil + kadraj + kuyruk açısı
+    # ══════════════════════════════════════════════════════════
+    from control.guidance import supervisor as sv
+
+    def _kapi(d_h=None, kadraj=None, kuyruk=None, durum="ARAMA"):
+        yedek = dict(gg.status)
+        gg.status.update(d_h=d_h, kadraj_yaw_deg=kadraj,
+                         kuyruk_aci_deg=kuyruk, durum=durum)
+        try:
+            return sv._kapi_degerlendir(sv.SupCfg)
+        finally:
+            gg.status.clear(); gg.status.update(yedek)
+
+    S = sv.SupCfg
+    acik, _ = _kapi(d_h=10.0, kadraj=3.0, kuyruk=15.0)
+    kapali_m, sm = _kapi(d_h=80.0, kadraj=3.0, kuyruk=15.0)
+    kontrol("G16 kapı: yakın + merkezde + kuyrukta → AÇIK; uzakta KAPALI",
+            acik and not kapali_m, f"uzak sebep: {sm}")
+
+    kapali_k, sk = _kapi(d_h=10.0, kadraj=-51.0, kuyruk=15.0)
+    kapali_y, sy = _kapi(d_h=10.0, kadraj=3.0, kuyruk=88.0)
+    kontrol("G17 kapı: kadraj kenarda VEYA yandan geçişte KAPALI",
+            not kapali_k and not kapali_y, f"{sk} | {sy}")
+
+    # DROPOUT (jamming): telemetri yok → geometri ölçülemez, kapı atlanmalı
+    drop, sd = _kapi(d_h=None, kadraj=None, kuyruk=None, durum="DROPOUT")
+    kontrol("G18 DROPOUT tüm geometri koşullarını atlar (jamming fallback)",
+            drop, sd)
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
