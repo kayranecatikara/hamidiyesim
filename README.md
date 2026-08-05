@@ -264,8 +264,9 @@ avci_sim/
 
 | Doküman | İçerik |
 |---------|--------|
-| **[TODO.md](TODO.md)** | **Güncel öncelik** — sıradaki işler |
-| **[DURUM.md](DURUM.md)** | **İş listesi ve gerekçeleri** — hangi madde bitti, neden, ve hangi fikirler ölçümle çürütüldü (tekrar denemeyin) |
+| **[TODO.md](TODO.md)** | **Yapılacak işlerin tamamı** — öncelik sırasıyla, her maddenin ölçülmüş gerekçesiyle |
+| **[DURUM.md](DURUM.md)** | **Sistem şu an nasıl** — aktif ayarlar, ölçülmüş gerçekler, bitenler, ölçümle çürütülen fikirler (tekrar denemeyin), sözlük |
+| **[DENEY.md](DENEY.md)** | Tek değişkenli deney adımları (A2/A3/A4/pose) ve sonuç tabloları |
 | [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) | Kopyala-yapıştır çalıştırma komutları (5 terminal) |
 | [docs/GUIDANCE.md](docs/GUIDANCE.md) | Güdüm mimarisi — kodda şu an çalışan sistem |
 | [docs/GUIDANCE_ROADMAP.md](docs/GUIDANCE_ROADMAP.md) | Güdüm yol haritası (plan/vizyon) |
