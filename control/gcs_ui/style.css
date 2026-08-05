@@ -14,7 +14,11 @@
 *{box-sizing:border-box}
 body{margin:0}
 .app{
-  min-height:100vh;
+  /* height:100vh + iç kaydırma (2026-08-05): eskiden min-height'ti ve içerik
+     büyüyünce SAYFA kayıyordu — yan panelde tekerlek çevirince tüm ekran
+     hareket ediyordu. Artık uygulama ekrana sabit, kaydırma panelin içinde. */
+  height:100vh;
+  overflow:hidden;
   background:
     radial-gradient(1100px 520px at 82% -8%, #10202b 0%, transparent 58%),
     radial-gradient(800px 480px at -4% 108%, #14100b 0%, transparent 52%),
@@ -60,8 +64,17 @@ body{margin:0}
 .stat.term{border-left-color:var(--green)} .stat.term .big{color:var(--green)}
 
 /* main */
-.main{display:grid;grid-template-columns:284px minmax(0,1fr) 288px;gap:8px;align-items:stretch}
+.main{display:grid;grid-template-columns:284px minmax(0,1fr) 288px;gap:8px;align-items:stretch;
+      flex:1;min-height:0}
 .col{display:flex;flex-direction:column;min-width:0;gap:8px}
+/* Yan paneller KENDİ İÇİNDE kayar; overscroll-behavior:contain kaydırmanın
+   panel sonunda sayfaya zincirlenmesini engeller (istenen davranış buydu). */
+#leftCol,#rightCol{min-height:0;overflow-y:auto;overscroll-behavior:contain;
+                   scrollbar-width:thin}
+#centerCol{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+#leftCol::-webkit-scrollbar,#rightCol::-webkit-scrollbar{width:8px}
+#leftCol::-webkit-scrollbar-thumb,#rightCol::-webkit-scrollbar-thumb{
+  background:var(--line2);border-radius:4px}
 
 /* left control */
 .mc{padding:14px;display:flex;flex-direction:column;gap:15px;flex:1}

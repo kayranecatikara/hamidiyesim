@@ -779,7 +779,7 @@ function renderStatus(){
   $('guideTxt').innerHTML = '';
   $('guideTxt').append(main + ' ');
   const sub = document.createElement('span'); sub.className = 'sub';
-  sub.textContent = model + (gec ? ` · ${gec}. GEÇİŞ` : '');
+  sub.textContent = model;
   $('guideTxt').append(sub);
   const ag = $('aGuide'); ag.textContent = tel; ag.style.color = col;
   const am = $('aModel'); am.textContent = mdl; am.style.color = col;
@@ -842,20 +842,17 @@ function renderStatus(){
     yaz('pDet', p.tespit_var
         ? `VAR ${p.tespit_conf}${p.det_px != null ? ` · ${p.det_px} px` : ''}`
         : 'YOK', p.tespit_var ? 'green' : 'red');
-    // "Pose YOK" niye yok? Model kapalı mı, hedef çok mu küçük — ekran söylesin.
-    // Gövde 0.81 m / FX≈167 px: 10 px ≈ 13.5 m. Altında pose keypoint bulamaz.
-    let poseTxt, poseCls;
-    if (p.pose_var){
-      poseTxt = `VAR ${p.pose_conf}${p.kanat_gorunur ? '' : ' (kanat yok)'}`;
-      poseCls = p.kanat_gorunur ? 'green' : 'amber';
-    } else if (p.pose_model_var === false){
-      poseTxt = 'MODEL YÜKLÜ DEĞİL'; poseCls = 'red';
-    } else if (p.tespit_var && p.det_px != null && p.det_px < 10){
-      poseTxt = `hedef çok küçük (${p.det_px} px)`; poseCls = 'amber';
-    } else {
-      poseTxt = 'YOK'; poseCls = 'red';
-    }
-    yaz('pPose', poseTxt, poseCls);
+    // ── FAZ + kaçıncı geçiş (tek satır: "GPS · 3. geçiş") ──
+    // Pose/kilit satırları kaldırıldı; aynı bilgi zaten "Engel" satırında
+    // ("POSE KİLİDİ" / "MENZİL KAPISI") daha doğrudan veriliyor.
+    const fazAd = st.imha || st.faz === 'VURULDU' ? 'VURULDU'
+                : st.faz === 'VISUAL' ? 'GÖRSEL'
+                : st.faz === 'GPS' ? 'GPS'
+                : st.mission ? 'BEKLİYOR' : '—';
+    const gecN = p.gecis_sayisi || 0;
+    yaz('pFaz', fazAd + (gecN ? ` · ${gecN}. geçiş` : ''),
+        st.faz === 'VURULDU' || st.faz === 'VISUAL' ? 'green'
+        : st.faz === 'GPS' ? 'amber' : '');
     yaz('pDist', p.gorus_menzil != null ? p.gorus_menzil.toFixed(1) + ' m' : '--',
         p.gorus_menzil == null ? '' : p.gorus_menzil < 10 ? 'red' : p.gorus_menzil < 30 ? 'amber' : 'green');
     yaz('pTruth', p.gercek_menzil != null ? p.gercek_menzil.toFixed(1) + ' m' : '--', '');
@@ -864,7 +861,6 @@ function renderStatus(){
       yaz('pErr', (h >= 0 ? '+' : '') + h.toFixed(1) + ' m',
           Math.abs(h) < 3 ? 'green' : Math.abs(h) < 8 ? 'amber' : 'red');
     } else yaz('pErr', '--', '');
-    yaz('pLock', `${p.kilit_sayac}/${p.kilit_n} (son ${p.kilit_pencere} kare)`, p.poz_kapi_ok ? 'green' : 'amber');
     yaz('pDh', p.d_h != null ? `${p.d_h.toFixed(1)} / ${p.gate_menzil} m` : '--', p.menzil_kapi_ok ? 'green' : 'amber');
     yaz('pBlock', p.engel, p.engel === '—' ? 'green' : 'red');
   } else {

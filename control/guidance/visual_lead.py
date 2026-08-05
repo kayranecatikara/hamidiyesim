@@ -337,6 +337,10 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
         f"LOCK={os.environ.get('AVCI_LOCK', 'on')}",
         f"V_KAPANMA={cfg.V_KAPANMA}",
         f"K_LEAD={cfg.K_LEAD}",
+        # GPS istasyon menzili: devir menzilini doğrudan belirliyor, karne
+        # kıyaslarında en çok değiştirilen ayar. Damgada olmadığı için 08-05
+        # analizinde istasyon geometrisinden geri hesaplamak gerekmişti.
+        f"GPS_RANGE={os.environ.get('AVCI_GPS_RANGE', '11.0')}",
         f"IVME={cfg.IVME_TAVAN}/{cfg.IVME_TAVAN_DIKEY}",
     ])
     _yapilandirma_yazildi = False
