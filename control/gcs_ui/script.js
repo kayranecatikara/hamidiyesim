@@ -432,27 +432,55 @@ function sendCommand(endpoint, logMsg) {
 // Manuel mod butonu ise uçuşu klavye kontrolüne devralır.
 const SCN_LABELS = {
     square:     '▢ KARE ÇİZ',
-    circle:     '◯ DAİRE ÇİZ',
+    circle:     '◯ DAİRE ⌀55 m',
     aggressive: '⚡ AGRESİF UÇUŞ',
+    circle_xl:  '◯ DAİRE ⌀96 m',
+    circle_l:   '◯ DAİRE ⌀71 m',
+    circle_s:   '◯ DAİRE ⌀41 m',
+    circle_xs:  '◯ DAİRE ⌀32 m',
 };
 const scnButtons = {
     square:     document.getElementById('btn-scn-square'),
     circle:     document.getElementById('btn-scn-circle'),
     aggressive: document.getElementById('btn-scn-aggressive'),
 };
+
+// ── DAİRE ÇAPI SEÇİMİ ──
+// "DAİRE ÇİZ" senaryoyu doğrudan başlatmaz, çap listesini açar/kapatır.
+// Böylece yanlış çapla uçuşa başlama riski yok. Aktif çap vurgulanır.
+const capGrup = document.getElementById('daire-caplari');
+const capButonlari = capGrup ? [...capGrup.querySelectorAll('.cap-btn')] : [];
+
+function capVurgula() {
+    capButonlari.forEach(b =>
+        b.classList.toggle('aktif', b.dataset.scenario === activeScenario));
+}
+capButonlari.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const ad = btn.dataset.scenario;
+        if (ad === activeScenario) stopScenario();
+        else startScenario(ad);
+    });
+});
 let activeScenario = null;
 
 function markScenarioButtons() {
     for (const [name, btn] of Object.entries(scnButtons)) {
         if (!btn) continue;
-        if (name === activeScenario) {
+        // Daire butonu tüm çap varyantlarını temsil eder: hangi çap uçuyorsa
+        // durdurma etiketi onu göstermeli.
+        const bizimki = (name === 'circle')
+            ? String(activeScenario || '').startsWith('circle')
+            : (name === activeScenario);
+        if (bizimki) {
             btn.classList.add('scn-active');
-            btn.textContent = '⛔ DURDUR — ' + SCN_LABELS[name].slice(2);
+            btn.textContent = '⛔ DURDUR — ' + SCN_LABELS[activeScenario].slice(2);
         } else {
             btn.classList.remove('scn-active');
             btn.textContent = SCN_LABELS[name];
         }
     }
+    capVurgula();
 }
 
 async function startScenario(name) {
@@ -483,6 +511,16 @@ async function stopScenario() {
 for (const [name, btn] of Object.entries(scnButtons)) {
     if (!btn) continue;
     btn.addEventListener('click', () => {
+        if (name === 'circle') {
+            // Daire uçuyorsa buton "durdur" işlevi görür; uçmuyorsa çap
+            // listesini açar (hangi çap olduğu sorulmadan başlatılmaz).
+            if (String(activeScenario || '').startsWith('circle')) {
+                stopScenario();
+            } else if (capGrup) {
+                capGrup.hidden = !capGrup.hidden;
+            }
+            return;
+        }
         if (activeScenario === name) stopScenario();
         else startScenario(name);
     });

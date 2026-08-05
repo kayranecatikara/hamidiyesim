@@ -182,7 +182,10 @@ def id_to_name(sysid):
 # -----------------------------------------------------------------------
 # UÇUŞ SENARYOLARI (kare / daire / agresif) — run_plane_scenario.py süreci
 # -----------------------------------------------------------------------
-_SCENARIO_NAMES = ("square", "circle", "aggressive")
+# Daire çapları (run_plane_scenario.DAIRE_CAPLARI ile aynı adlar) — yarıçap-oranlı
+# iç daire nişanını farklı yarıçaplarda sınayabilmek için.
+_SCENARIO_NAMES = ("square", "circle", "aggressive",
+                   "circle_xl", "circle_l", "circle_s", "circle_xs")
 
 
 def _stop_scenario_proc():

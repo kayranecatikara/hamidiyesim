@@ -53,6 +53,16 @@
                     <div class="btn-grid">
                         <button id="btn-scn-square" class="t-btn btn-action">▢ KARE ÇİZ</button>
                         <button id="btn-scn-circle" class="t-btn btn-action">◯ DAİRE ÇİZ</button>
+                        <!-- Daire çapları: butona basınca açılır. Yarıçap yatış
+                             açısıyla belirlenir (R = v²/g·tanθ); değerler
+                             run_plane_scenario.DAIRE_CAPLARI ile aynı. -->
+                        <div id="daire-caplari" class="cap-grup" hidden>
+                            <button class="t-btn cap-btn" data-scenario="circle_xl">⌀ 96 m</button>
+                            <button class="t-btn cap-btn" data-scenario="circle_l">⌀ 71 m</button>
+                            <button class="t-btn cap-btn" data-scenario="circle">⌀ 55 m</button>
+                            <button class="t-btn cap-btn" data-scenario="circle_s">⌀ 41 m</button>
+                            <button class="t-btn cap-btn" data-scenario="circle_xs">⌀ 32 m</button>
+                        </div>
                         <button id="btn-scn-aggressive" class="t-btn btn-danger">⚡ AGRESİF UÇUŞ</button>
                         <button id="btn-plane-manual" class="t-btn btn-warning">🕹 MANUEL MOD</button>
                     </div>

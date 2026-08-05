@@ -218,11 +218,46 @@ def scenario_square(conn):
         i += 1
 
 
-def scenario_circle(conn):
-    # roll=500 → ~22° yatış: ~18 m/s'de ~80m yarıçaplı daire
-    print("[SCN] DAİRE — sabit yatışla süresiz tur")
+# ── DAİRE ÇAPLARI (2026-08-05) ──
+# Yarıçap yatış açısıyla belirlenir: R = v²/(g·tanθ). Roll komutu FBWA'da
+# yatış hedefine ölçeklenir (roll=1000 ≈ 45°). v≈15 m/s için:
+#     roll   yatış   yarıçap   yük faktörü   stall hızı×
+#      300     14°      96 m       1.03         1.01
+#      400     18°      71 m       1.05         1.03
+#      500     22°      55 m       1.08         1.04   ← eski tek daire
+#      650     29°      41 m       1.15         1.07
+#      800     36°      32 m       1.24         1.11
+# 40°+ eklenmedi: AIRSPEED_MIN=12 / CRUISE=15 ile stall payı daralıyor.
+#
+# NEDEN VAR: iç daire nişanının yarıçap-oranlı sürümünü sınamak için hedefin
+# FARKLI yarıçaplarda dönmesi gerekiyor. Sabit-metre sürüm (14 m) yalnız
+# ~52 m yarıçapta ölçüldü; oranlı sürümün asıl kazancı dar ve geniş dairede
+# ortaya çıkar (24 m'de 6.5 m, 80 m'de 21.6 m kayma üretir).
+#
+# Pitch, yatışla birlikte artar: yatışta düşey kaldırma bileşeni azalır,
+# irtifayı korumak için burun biraz yukarı gerekir (kabaca 1/cosθ ile).
+DAIRE_CAPLARI = {
+    "circle_xl": (300, "çok geniş (~96 m)"),
+    "circle_l":  (400, "geniş (~71 m)"),
+    "circle":    (500, "orta (~55 m) — referans"),
+    "circle_s":  (650, "dar (~41 m)"),
+    "circle_xs": (800, "çok dar (~32 m)"),
+}
+
+
+def _daire(conn, roll_cmd, etiket):
+    """Sabit yatışla süresiz tur. Pitch yatışa göre ölçeklenir (irtifa korunsun)."""
+    import math as _m
+    yatis_deg = roll_cmd / 1000.0 * 45.0
+    pitch_cmd = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
+    print(f"[SCN] DAİRE {etiket} — roll={roll_cmd} (~{yatis_deg:.0f}° yatış), "
+          f"pitch={pitch_cmd}")
     while not _abort:
-        hold(conn, 0.5, roll=500, pitch=150)
+        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
+
+
+def scenario_circle(conn):
+    _daire(conn, *DAIRE_CAPLARI["circle"])
 
 
 TIRMANIS_MIN_THR = 600      # tırmanış/spiral için taban gaz (= THROTTLE_CRUISE)
@@ -281,6 +316,12 @@ SCENARIOS = {
     "circle": scenario_circle,
     "aggressive": scenario_aggressive,
 }
+
+# Beş daire çapı tek tek kaydedilir (functools.partial yerine varsayılan
+# argümanlı lambda: döngü değişkeni geç-bağlanma tuzağına düşmesin).
+for _ad, (_roll, _etiket) in DAIRE_CAPLARI.items():
+    if _ad != "circle":
+        SCENARIOS[_ad] = (lambda c, r=_roll, e=_etiket: _daire(c, r, e))
 
 
 def main():

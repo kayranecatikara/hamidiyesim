@@ -241,6 +241,37 @@ def main():
             olcek_duz == 0.0 and olcek_daire == 1.0,
             f"düz={olcek_duz:.2f}  daire(ω=0.384)={olcek_daire:.2f}")
 
+    # ── G12: YARIÇAP-ORANLI KAYMA ──
+    def _oranli(Rr, vv, oran=0.27):
+        ww = vv / Rr
+        olc = min(1.0, abs(ww) / C.IC_OMEGA_REF)
+        if Rr < C.IC_R_MIN:
+            return 0.0
+        return min(oran * Rr, C.IC_KAYMA_MAX) * olc
+
+    kontrol("G12a varsayılan KAPALI — sabit metre geçerli (regresyon koruması)",
+            C.IC_ORAN == 0.0, f"IC_ORAN={C.IC_ORAN}")
+
+    # Katsayı ölçümden geldi: 2026-08-05'te 14 m kayma, hedefin 52.2 m
+    # yarıçapının 0.268'iydi. Yani oranlı sürüm O SENARYODA sabit sürümle
+    # aynı kaymayı üretmeli — fark yalnız yarıçap değişince doğmalı.
+    k52 = _oranli(52.2, 14.5)
+    kontrol("G12b ölçüm senaryosunda sabit sürümle AYNI kayma",
+            abs(k52 - 14.0) < 0.5, f"R=52.2 m → {k52:.1f} m (sabit sürüm 14.0 m)")
+
+    k24, k80 = _oranli(24.0, 14.5), _oranli(80.0, 15.0)
+    kontrol("G12c dar dairede daha az, geniş dairede daha çok kayma",
+            k24 < 14.0 < k80,
+            f"R=24 m → {k24:.1f} m   |   R=80 m → {k80:.1f} m   (sabit: hep 14.0)")
+
+    kontrol("G12d aşırı geniş yarıçapta tavan bağlıyor",
+            _oranli(200.0, 15.0) <= C.IC_KAYMA_MAX + 1e-9,
+            f"R=200 m → {_oranli(200.0, 15.0):.1f} m ≤ tavan {C.IC_KAYMA_MAX}")
+
+    kontrol("G12e güvenilmez dar yarıçapta kayma kapanıyor",
+            _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
+            f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

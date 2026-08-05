@@ -148,6 +148,33 @@ class Cfg:
     IC_KAYMA = _env_f("AVCI_GPS_IC", 14.0)     # m; dönüş merkezine doğru kayma
     IC_OMEGA_REF = 0.15                        # rad/s; bu dönüş hızında tam kayma
     IC_OMEGA_EMA = 0.15                        # açısal hız kestirimi yumuşatması
+
+    # ── YARIÇAP-ORANLI KAYMA (2026-08-05, sabit-metre sürümünün devamı) ──
+    # SABİT METRENİN AÇIĞI: 14 m, bu senaryonun dairesi (hedef R ≈ 52 m) için
+    # ölçülmüş doğru değer. Ama hedef DAR bir daire çizerse (uçağın yapabileceği
+    # en dar ~24 m yarıçap) aynı 14 m nişanı merkeze fazla yaklaştırır: drone
+    # gereğinden içeride uçar, hedefe 14 m kalır — oysa oranlı olsa ~6 m olurdu.
+    # Tehlikeli değil ama performans kaybı; ve dar daire yarışmada olası.
+    #
+    # ÇÖZÜM: kaymayı hedefin DÖNÜŞ YARIÇAPININ oranı yap. Yarıçap zaten
+    # elimizde: R = |v_hedef| / |ω|  (ikisini de ölçüyoruz).
+    #     kayma = IC_ORAN × R,  IC_KAYMA_MAX ile tavanlı
+    #
+    # KATSAYI ÖLÇÜMDEN: 2026-08-05 uçuşunda 14 m kayma, hedefin 52.2 m'lik
+    # yarıçabının 0.268'iydi → IC_ORAN = 0.27. Böylece bu senaryoda oranlı
+    # sürüm sabit sürümle AYNI kaymayı üretir (14.1 m); fark yalnız yarıçap
+    # değişince ortaya çıkar — istenen davranış bu.
+    #
+    # ⚠ TEORİK TAHMİN TUTMADI, ölçüme uyuldu. Geometrik beklenti
+    # (1 − v_drone/v_hedef ≈ 0.06) gerçeğin dörtte biriydi; çünkü drone hedefin
+    # çemberini birebir izlemiyor ve istasyonun 10.6 m'lik "arka" bileşeni de
+    # menzile katkı veriyor. Katsayı teoriden değil uçuştan alınmıştır.
+    #
+    # VARSAYILAN 0.0 = KAPALI (sabit metre kullanılır). Denemek için:
+    #     AVCI_GPS_IC_ORAN=0.27
+    IC_ORAN = _env_f("AVCI_GPS_IC_ORAN", 0.0)  # 0 = kapalı, sabit IC_KAYMA geçerli
+    IC_KAYMA_MAX = _env_f("AVCI_GPS_IC_MAX", 25.0)   # m; oranlı kaymanın tavanı
+    IC_R_MIN = 15.0            # m; bundan dar yarıçap kestirimi güvenilmez sayılır
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
@@ -364,9 +391,20 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # x'ten y'ye döner; o dönüşün merkezi (-v̂y, +v̂x) yönündedir.
             # İşaret tgt_omega'dan gelir → sağa ve sola dönüşte doğru taraf.
             ic_kayma = 0.0
-            if cfg.IC_KAYMA > 0.0 and tgt_spd_h >= cfg.TRACK_MIN_SPD:
+            ic_yaricap = None
+            if tgt_spd_h >= cfg.TRACK_MIN_SPD:
                 olcek = min(1.0, abs(tgt_omega) / cfg.IC_OMEGA_REF)
-                ic_kayma = cfg.IC_KAYMA * olcek
+                if cfg.IC_ORAN > 0.0:
+                    # YARIÇAP-ORANLI: R = |v| / |ω|. Dar dairede küçük, geniş
+                    # dairede büyük kayma → tek katsayı her yarıçapta doğru.
+                    if abs(tgt_omega) > 1e-6:
+                        ic_yaricap = tgt_spd_h / abs(tgt_omega)
+                        if ic_yaricap >= cfg.IC_R_MIN:
+                            ic_kayma = min(cfg.IC_ORAN * ic_yaricap,
+                                           cfg.IC_KAYMA_MAX) * olcek
+                else:
+                    # SABİT METRE (uçuşta doğrulanmış varsayılan)
+                    ic_kayma = cfg.IC_KAYMA * olcek
                 if ic_kayma > 1e-6:
                     vhx, vhy = vel_x / tgt_spd_h, vel_y / tgt_spd_h
                     isaret = 1.0 if tgt_omega >= 0 else -1.0
