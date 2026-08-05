@@ -596,6 +596,9 @@ def start_chase():
     # temas hâlâ latch'li kalır ve görsel faz daha ilk karede "vuruldu" der.
     hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
     carpisma_state.sifirla()
+    # Geçiş sayacı GÖREV başına sıfırlanır (run_hybrid'de değil — mod seçici
+    # döngüsü onu defalarca çağırıyor, orada sıfırlamak sayacı hep 0 tutuyordu).
+    _supervisor_mod.status.update(gecis_sayisi=0)
 
     _chase_active = True
     t = threading.Thread(target=_chase_thread, daemon=True)
@@ -1043,6 +1046,7 @@ def start_visual():
     # A5: temas mandalını yeni koşu için temizle (bkz. start_chase).
     hasar_durumu.update(imha=False, menzil=None, t=None, temas=None)
     carpisma_state.sifirla()
+    _supervisor_mod.status.update(gecis_sayisi=0)   # görev başı (bkz. start_chase)
     _visual_active = True
     threading.Thread(target=_visual_thread, daemon=True).start()
     return {"status": "success", "message": "Görsel güdüm (lead pursuit) başlatıldı."}

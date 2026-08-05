@@ -106,6 +106,10 @@ class Cfg:
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(120.0)
+    # Ardışık kaç kare AYNI YÖNDE yaw doygunluğuna izin verilir (bkz. döngüdeki
+    # "yaw kaçağı koruması"). adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe;
+    # GPS fazı 20 Hz olduğu için 15 kare ≈ 0.75 s.
+    YAW_DOYGUN_N = int(_env_f("AVCI_GPS_YAW_DOYGUN_N", 15))
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -154,6 +158,8 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
+    yaw_doygun_n = 0        # ardışık "doygun ama hata kapanmıyor" kare sayısı
+    yaw_ref = None          # önceki karenin |yaw_err|'i (ilerleme ölçümü için)
     prev_time = None
     loop_count = 0
 
@@ -305,12 +311,48 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
             # ── 7) YAW: burun GERÇEK hedefe ──
             bearing = math.atan2(ey, ex)
-            if cmd_yaw is None:
-                cmd_yaw = bearing
-            yaw_err = normalize_angle(bearing - cmd_yaw)
-            if abs(yaw_err) > cfg.YAW_DEADBAND:
-                step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
-                cmd_yaw = normalize_angle(cmd_yaw + step)
+            # ── YAW KAÇAĞI KORUMASI (2026-08-05) ──
+            # ESKİ HÂLİ: cmd_yaw kendi kendini besleyen bir birikimdi
+            #     yaw_err = bearing - cmd_yaw ;  cmd_yaw += clamp(yaw_err)
+            # Aracın GERÇEK başlığına hiç bakmıyordu. Araç komuta yetişemezse
+            # cmd_yaw yürümeye devam ediyor, hata kapanmıyor ve komut kaçıyor.
+            # adapter_copter'da bu tehlike zaten yazılıydı ("kalıcı cmd_yaw
+            # demirlemeyi kaybeder") ama koruma yalnız görsel fazda vardı.
+            #
+            # ÖLÇÜM (08-05, pose modu): GPS fazında yaw hızı 28 → 90 → 402 →
+            # 710 → 1237 °/s diye ıraksıyordu (komut yalnız 240 °/s). Araç
+            # fırıldak gibi dönüp itkiyi aşağı çeviriyor ve yerçekiminden hızlı
+            # düşüp çakılıyordu — 5/22 faz yerde bitti.
+            #
+            # DÜZELTME 1 — DEMİRLEME: komut her karede aracın GERÇEK başlığından
+            # üretilir; böylece komut asla actual+adım'dan öne geçemez.
+            yaw_err = normalize_angle(bearing - iyaw)
+            adim_ham = yaw_err
+            tavan = cfg.YAW_RATE_MAX * dt
+            adim = clamp(adim_ham, -tavan, tavan)
+            yaw_doygun = abs(adim_ham) > tavan
+
+            # DÜZELTME 2 — SÜREKLİ DOYGUNLUK KAPISI (adapter_copter T44/T45'in
+            # eşi): adım sürekli tavandayken hata AZALMIYORSA dönüş işe
+            # yaramıyor demektir; dönmeye devam etmek yalnız aracı çevirir.
+            # Ölçüt doygunluk değil, hatanın kapanmaması — büyük ama meşru bir
+            # dönüş de doygundur, onu kesmemeliyiz.
+            if yaw_doygun:
+                ilerleme = (None if yaw_ref is None else yaw_ref - abs(yaw_err))
+                if ilerleme is not None and ilerleme > 0.25 * abs(adim):
+                    yaw_doygun_n = 0          # hata kapanıyor → yetki tam
+                else:
+                    yaw_doygun_n += 1
+                yaw_ref = abs(yaw_err)
+            else:
+                yaw_doygun_n = 0
+                yaw_ref = None
+            if yaw_doygun_n > cfg.YAW_DOYGUN_N:
+                adim = 0.0                    # döngü kapanmıyor → yaw'ı sustur
+
+            if abs(yaw_err) <= cfg.YAW_DEADBAND:
+                adim = 0.0
+            cmd_yaw = normalize_angle(iyaw + adim)
 
             # ── 8) İVME SINIRI + GÖNDER ──
             vx, vy, vz = limit_acceleration(

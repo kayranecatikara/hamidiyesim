@@ -121,7 +121,11 @@ def _kopru(parent_event, child_event):
 def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg, get_temas=None,
                get_menzil=None, get_gt=None):
-    status.update(faz="GPS", gecis_sayisi=0, kilit_sayac=0, son_sebep=None)
+    # gecis_sayisi BURADA SIFIRLANMAZ (2026-08-05): gcs_server'ın güdüm modu
+    # seçici döngüsü run_hybrid'i görev boyunca defalarca çağırıyor; burada
+    # sıfırlamak sayacı her çağrıda 0'a düşürüp arayüzde hep boş gösteriyordu.
+    # Sayaç GÖREV başına anlamlı → start_chase/start_visual sıfırlıyor.
+    status.update(faz="GPS", kilit_sayac=0, son_sebep=None)
     # Kilit sinyali GT akışına devredilsin mi (varsayılan HAYIR — ölçümle
     # çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS).
     gt_modu = bool(getattr(lead_cfg, "GT_ROT", False) and get_gt is not None

@@ -16,6 +16,7 @@ import time
 
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance import gps_guidance as gg
+from control.guidance.common import normalize_angle as _norm
 
 # Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
 import tempfile as _tf
@@ -205,6 +206,72 @@ def main():
             eski_4m - tilt_hedef > 20.0,
             f"eski: {eski_4m:.1f}° (merkezden {eski_4m - tilt_hedef:+.1f}°), "
             f"yeni: {_istasyon_elev(4.0):.1f}°")
+
+    # ══════════════════════════════════════════════════════════
+    # G12/G13 — YAW KAÇAĞI KORUMASI (2026-08-05)
+    # 08-05 uçuşlarında GPS fazında yaw hızı 28 → 402 → 1237 °/s diye
+    # ıraksayıp araç fırıldak gibi dönerek çakılıyordu (5/22 faz yerde bitti).
+    # Kök neden: cmd_yaw kendi kendini besleyen bir birikimdi, aracın GERÇEK
+    # başlığına hiç demirlenmiyordu. Bu iki test o davranışı kilitler.
+    # ══════════════════════════════════════════════════════════
+
+    def yaw_kosusu(kare, arac_doner_mi, hedef_yonu=math.pi):
+        """Sahte döngü: hedef sabit `hedef_yonu` bearing'inde. arac_doner_mi
+        False ise araç komuta HİÇ uymuyor (yaw sabit kalıyor) — bayat/arızalı
+        durum. Dönüş: gönderilen yaw komutlarının listesi (rad)."""
+        cfgY = gg.Cfg
+        dt = 0.05
+        iyaw = 0.0
+        cmd_list = []
+        yaw_doygun_n = 0
+        yaw_ref = None
+        for _ in range(kare):
+            yaw_err = _norm(hedef_yonu - iyaw)
+            adim_ham = yaw_err
+            tavan = cfgY.YAW_RATE_MAX * dt
+            adim = max(-tavan, min(tavan, adim_ham))
+            doygun = abs(adim_ham) > tavan
+            if doygun:
+                ilerleme = None if yaw_ref is None else yaw_ref - abs(yaw_err)
+                if ilerleme is not None and ilerleme > 0.25 * abs(adim):
+                    yaw_doygun_n = 0
+                else:
+                    yaw_doygun_n += 1
+                yaw_ref = abs(yaw_err)
+            else:
+                yaw_doygun_n = 0
+                yaw_ref = None
+            if yaw_doygun_n > cfgY.YAW_DOYGUN_N:
+                adim = 0.0
+            if abs(yaw_err) <= cfgY.YAW_DEADBAND:
+                adim = 0.0
+            cmd = _norm(iyaw + adim)
+            cmd_list.append(cmd)
+            if arac_doner_mi:
+                iyaw = cmd                      # araç komutu uyguluyor
+            # arac_doner_mi False → iyaw sabit: araç komuta uymuyor
+        return cmd_list
+
+    # ── G12: SAĞLIKLI araçta 180°'lik dönüş TAM yapılır (kapı yanlış tetiklenmez) ──
+    cmds = yaw_kosusu(120, arac_doner_mi=True)
+    son = math.degrees(abs(_norm(cmds[-1] - math.pi)))
+    kontrol("G12 sağlıklı araçta büyük dönüş tamamlanır (kapı yanlış tetiklenmez)",
+            son < 5.0,
+            f"180° hedef → komut {math.degrees(cmds[-1]):.1f}°, kalan {son:.1f}°")
+
+    # ── G13: araç komuta UYMUYORSA yaw susar (fırıldak biter) ──
+    # Eski kod: cmd_yaw birikimli olduğu için komut sonsuza kadar yürüyordu.
+    # Yeni kod: komut aracın gerçek başlığına demirli → asla iyaw+tavan'ı aşamaz,
+    # üstelik hata kapanmıyorsa YAW_DOYGUN_N sonrası adım sıfırlanır.
+    cmds = yaw_kosusu(600, arac_doner_mi=False)   # 30 s boyunca araç dönmüyor
+    en_buyuk = max(abs(math.degrees(c)) for c in cmds)
+    tavan_deg = math.degrees(gg.Cfg.YAW_RATE_MAX * 0.05)
+    # Susma gerçekten devreye girdi mi: son karelerde komut 0 (=iyaw) olmalı
+    sustu = abs(math.degrees(cmds[-1])) < 1e-9
+    kontrol("G13 araç komuta uymuyorsa yaw susar (kaçak biter)",
+            sustu and en_buyuk <= tavan_deg + 1e-9,
+            f"30 s'de en büyük komut {en_buyuk:.1f}° (tek kare tavanı {tavan_deg:.1f}°), "
+            f"son komut {math.degrees(cmds[-1]):.2f}° — eski birikimli kodda sınırsız yürüyordu")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

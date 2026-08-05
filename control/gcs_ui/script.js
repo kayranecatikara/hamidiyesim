@@ -767,19 +767,23 @@ function renderStatus(){
     key = 'idle'; main = 'GÜDÜM BEKLEMEDE'; model = 'MODEL PASİF';
     tel = '—'; mdl = 'PASİF'; col = 'var(--muted)'; cap = 'güdüm bekliyor';
   }
+  // ── Kaçıncı GPS→görsel GEÇİŞİ (eski arayüzden geri getirildi) ──
+  // 1 ideal. Yüksek sayı görsel temasın kopup kopup yeniden kurulduğunu,
+  // yani fazın gidip geldiğini gösterir — 5+ sorunlu sayılır.
+  // FAZIN YANINDA gösterilir: "hangi fazdayım" ile "kaçıncı kez bu faza
+  // girdim" birlikte okunmalı, ayrı yerlerde işe yaramıyor.
+  const gec = p && p.gecis_sayisi ? p.gecis_sayisi : 0;
+
   $('guideBadge').className = 'guidebadge ' + key;
   $('guideIcon').innerHTML = G_ICONS[key];
   $('guideTxt').innerHTML = '';
   $('guideTxt').append(main + ' ');
-  const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = model;
+  const sub = document.createElement('span'); sub.className = 'sub';
+  sub.textContent = model + (gec ? ` · ${gec}. GEÇİŞ` : '');
   $('guideTxt').append(sub);
   const ag = $('aGuide'); ag.textContent = tel; ag.style.color = col;
   const am = $('aModel'); am.textContent = mdl; am.style.color = col;
 
-  // ── Kaçıncı GPS→görsel GEÇİŞİ (eski arayüzden geri getirildi) ──
-  // 1 ideal. Yüksek sayı görsel temasın kopup kopup yeniden kurulduğunu,
-  // yani fazın gidip geldiğini gösterir — 5+ sorunlu sayılır.
-  const gec = p && p.gecis_sayisi ? p.gecis_sayisi : 0;
   const ge = $('aGecis');
   if (ge){
     ge.textContent = gec ? `${gec}.` : '—';
