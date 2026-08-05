@@ -176,7 +176,6 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .guidebadge.hit svg{stroke:var(--red)}
 .guidebadge.idle{color:var(--muted);border-color:var(--line2)}
 .guidebadge.idle svg{stroke:var(--muted)}
-.scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(52,216,168,.5),transparent);pointer-events:none}
 
 /* position tracker (3D scene) */
 #posPanel{flex:1;min-height:0}
@@ -230,4 +229,4 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .logrow.err .tag{color:var(--red)} .logrow.err .msg{color:#ff9a9a}
 
 @media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}.stats{grid-template-columns:repeat(2,1fr)}}
-@media (prefers-reduced-motion:reduce){.online .d,.scan{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}

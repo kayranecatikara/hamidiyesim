@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -103,6 +103,9 @@
               <div class="trow"><span class="tk">Kilit</span><span class="tv muted" id="aLock">BEKLEMEDE</span></div>
               <div class="trow"><span class="tk">Terminal</span><span class="tv muted" id="aTerm">HAZIR</span></div>
               <div class="trow"><span class="tk">Kilit %</span><span class="tv" id="aPct">0</span></div>
+              <!-- Kaçıncı GPS→görsel geçişi. 1 ideal; yüksek sayı görsel
+                   temasın kopup kopup yeniden kurulduğunu gösterir. -->
+              <div class="trow"><span class="tk">Geçiş</span><span class="tv muted" id="aGecis">—</span></div>
             </div>
           </div>
         </div>
@@ -117,7 +120,6 @@
           <img id="fpvImg" alt="">
           <canvas id="noiseCv"></canvas>
           <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
-          <div class="scan" id="scan" style="top:40%"></div>
           <div class="xhair"></div>
           <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
           <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
@@ -208,6 +210,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=11"></script>
+<script src="script.js?v=12"></script>
 </body>
 </html>

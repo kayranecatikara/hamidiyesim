@@ -775,7 +775,17 @@ function renderStatus(){
   $('guideTxt').append(sub);
   const ag = $('aGuide'); ag.textContent = tel; ag.style.color = col;
   const am = $('aModel'); am.textContent = mdl; am.style.color = col;
-  $('sTermCap').textContent = cap;
+
+  // ── Kaçıncı GPS→görsel GEÇİŞİ (eski arayüzden geri getirildi) ──
+  // 1 ideal. Yüksek sayı görsel temasın kopup kopup yeniden kurulduğunu,
+  // yani fazın gidip geldiğini gösterir — 5+ sorunlu sayılır.
+  const gec = p && p.gecis_sayisi ? p.gecis_sayisi : 0;
+  const ge = $('aGecis');
+  if (ge){
+    ge.textContent = gec ? `${gec}.` : '—';
+    ge.className = 'tv' + (gec === 0 ? ' muted' : gec <= 2 ? ' green' : gec <= 4 ? '' : ' red');
+  }
+  $('sTermCap').textContent = cap + (gec ? ` · ${gec}. geçiş` : '');
   if (faz && faz !== lastFaz){
     lastFaz = faz;
     if (faz === 'GPS') addLog('gps', 'GÜDÜM', 'GPS fazı — detection modeliyle kadraj merkezleme.');
@@ -887,7 +897,8 @@ function frame(now){
   drawNoise();
   const img = $('fpvImg');
   $('noFeed').hidden = !!(img && img.naturalWidth > 0);
-  if (!reduced) $('scan').style.top = (30 + Math.sin(now / 1400) * 22) + '%';
+  // (Aşağı yukarı süzülen yeşil "tarama" çizgisi KALDIRILDI — sinüsle
+  //  hareket eden salt dekoratif bir öğeydi, hiçbir veriyi göstermiyordu.)
   requestAnimationFrame(frame);
 }
 

@@ -68,6 +68,41 @@ WP_ACC 5
 LOIT_SPEED_MS 15
 PSC_NE_VEL_P 2.0
 
+# ── DİKEY İVME (2026-08-04) — "gereksiz irtifa" ve "dikey ıska"nın ortak kökü ──
+# WP_ACC_Z firmware varsayılanı 1.0 m/s² idi (SITL dökümüyle doğrulandı:
+# `grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm` → 1.000000). Yani araç dikey
+# hızını saniyede yalnız 1 m/s değiştirebiliyordu.
+#
+# İKİ AYRI ARIZANIN da sebebi buydu:
+#
+# 1) GEREKSİZ İRTİFA (ölçüldü, 2026-08-04): görsel faz hedefe alttan
+#    yaklaştığı için sürekli tırmanma emrediyor; temas kopunca kontrol GPS
+#    fazına drone HÂLÂ TIRMANIRKEN dönüyor. 1 m/s² ile:
+#       kalan 4 m/s → durması 4 s, bu sırada  8 m yükselir
+#       kalan 7 m/s → durması 7 s, bu sırada 24 m yükselir
+#    Ölçüm: GT modunda >4 m/s tırmanarak GPS'e giriş 15/92 (en hızlı 9.5 m/s),
+#    istasyon aşımı medyanı 8.5 m. Gözlenen 15-25 m aşımlar tam olarak bu.
+#
+# 2) DİKEY ISKA (2026-08-02 kara kutu teşhisi, bkz. DURUM.md): terminalde
+#    kapatılacak dikey mesafeyi 1 m/s²'de yetiştiremiyorduk. 4.65 m kapatmak
+#    3.05 s sürüyordu, elde 2.4-2.8 s vardı → drone hedefin ALTINDAN geçiyordu.
+#
+# ASIL KUSUR SİMETRİSİZLİK: güdüm 20 m/s'ye kadar tırmanma komutu verebiliyor
+# (IVME_TAVAN_DIKEY=10) ama araç bunu 1 m/s² ile söndürebiliyor. Komut yetkisi
+# ile frenleme yetkisi eşit değil.
+#
+# 3.0 seçildi (1.0 → 3.0). Neden abartılmadı: yukarı ivmelenmek itki ister,
+# thrust = m·(g+a). 3 m/s²'de hover itkisinin 1.31 katı (MOT_THST_HOVER=0.39
+# ile gaz ~%51) — rahat. 5 m/s²'de 1.51 kat (~%59); 10 m/s²'de doygunluğa
+# yaklaşır ve yaw yetkisi gider (bkz. adapter_copter dikey tavan notu).
+# 0→5 m/s (WP_SPD_UP) artık 5 s yerine 1.7 s sürüyor.
+#
+# ⚠ Bu TEK DEĞİŞKENLİ bir değişikliktir. Uçtuktan sonra karneyle doğrula:
+#   - istasyon aşımı medyanı düşmeli (GT'de 8.5 m idi)
+#   - terminalde "kalan dikey" küçülmeli, alttan geçme azalmalı
+# Uygulandığını doğrula:  grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm
+WP_ACC_Z 3
+
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
 # seyir dilimleri): yaw takip hatası std 1.4-2.4°, salınım ~1.1-2.0 Hz.
