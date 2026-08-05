@@ -97,11 +97,33 @@ PSC_NE_VEL_P 2.0
 # yaklaşır ve yaw yetkisi gider (bkz. adapter_copter dikey tavan notu).
 # 0→5 m/s (WP_SPD_UP) artık 5 s yerine 1.7 s sürüyor.
 #
-# ⚠ Bu TEK DEĞİŞKENLİ bir değişikliktir. Uçtuktan sonra karneyle doğrula:
-#   - istasyon aşımı medyanı düşmeli (GT'de 8.5 m idi)
-#   - terminalde "kalan dikey" küçülmeli, alttan geçme azalmalı
-# Uygulandığını doğrula:  grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm
-WP_ACC_Z 3
+# ⚠⚠ 3.0 DENENDİ VE GERİ ALINDI (2026-08-05). TEKRAR YÜKSELTMEYİN —
+#     önce aşağıdaki yaw kararsızlığı çözülmeli.
+#
+# Parametre uygulandı (parm_denetle: WP_ACC_Z 3 / SITL 3.000000 ✓), yani
+# etkisiz kalma sorunu değil. AYNI yapılandırmada (pose modu, kapı açık)
+# önce/sonra ölçümü:
+#
+#                             ACC_Z=1 (08-04)   ACC_Z=3 (08-05)
+#   yere çakılan faz              1/18 (%5)       5/22 (%22)
+#   tepe yaw hızı medyanı          265 °/s         514 °/s
+#   en hızlı düşüş medyanı         4.3 m/s         6.2 m/s
+#
+# MEKANİZMA: GPS fazında zaten var olan bir yaw kararsızlığı mevcut
+# (fırıldak oranı ikisinde de %22 — sıklık DEĞİŞMEDİ, ŞİDDET ikiye katlandı).
+# Dikey ivme talebi artınca itki payı büyüyor, motorlar doygunluğa yaklaşıyor
+# ve yaw için ayrılan diferansiyel pay azalıyor. Kararsızlık ıraksayınca araç
+# yerçekiminden hızlı düşüp (itki aşağı bakıyor) çakılıyor.
+# Tipik iz: yaw hızı 28 → 90 → 402 → 710 → 1237 °/s (komut yalnız 240 °/s).
+#
+# ASIL KUSUR: görsel fazda "yaw hatası kapanmıyorsa yaw'ı sustur" koruması var
+# (adapter_copter, testler T44/T45) ama GPS FAZINDA YOK. Çakılmalar tam olarak
+# GPS fazında, hedef kaçırıldıktan sonra kontrol GPS'e döndüğünde oluyor.
+# Önce o koruma gps_guidance'a taşınmalı; dikey ivme ondan SONRA tekrar denenir.
+#
+# Dikey ivmenin gerekçesi hâlâ geçerli (aşım ve dikey ıska), yalnız sırası
+# yanlıştı: kararsız bir yaw döngüsünün üstüne itki talebi eklemek.
+WP_ACC_Z 1
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
