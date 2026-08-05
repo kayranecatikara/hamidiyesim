@@ -14,11 +14,12 @@ Tek değişkenli deney adımları → **[DENEY.md](DENEY.md)**.
 | # | iş | neden şimdi |
 |---|---|---|
 | **0** | [25° + `WP_ACC_Z=3` geri al](#0--acil-son-değişikliği-geri-al) | ölçüldü, **kötüleştirdi** |
-| **1** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
-| **2** | [B5 — fly-past + faz sonu komut sıfırlama](#b5--fly-past-davranışı) | ıska sonrası toparlayamama |
-| **3** | [B8 — frenleme eğrisi](#b8--frenleme-eğrisi-mesafeye-bağlı-hız-tavanı) | "18 m/s çok yavaş" sorusunun cevabı |
-| **4** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | 1 m'de ıskalamanın fizik sınırı |
-| 5+ | aşağıdaki diğer maddeler | |
+| **1** | [B9 — dikey hız tavanı](#b9--dikey-hız-bileşenine-ayrı-tavan) | **dikey kaçışın doğrudan sebebi** |
+| **2** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
+| **3** | [B5 — fly-past + faz sonu komut sıfırlama](#b5--fly-past-davranışı) | ıska sonrası toparlayamama |
+| **4** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | son metrede 25 m/s = kare başına 0.81 m |
+| **5** | [B8 — frenleme eğrisi](#b8--frenleme-eğrisi-mesafeye-bağlı-hız-tavanı) | "18 m/s çok yavaş" sorusunun cevabı |
+| 6+ | aşağıdaki diğer maddeler | |
 
 ---
 
@@ -52,6 +53,55 @@ Beklenen kazanç (aşımın küçülmesi) **gerçekleşmedi, tersine büyüdü**
 ---
 
 ## Yüksek öncelik
+
+### B9 — Dikey hız bileşenine ayrı tavan
+`control/guidance/adapter_copter.py` → `v_hedef` üretimi · YENİ (2026-08-05)
+
+*Neden — "dikeyde kaçışı yapmamalıyız" isteğinin kök nedeni.* Araştırıldı:
+sorun **hız**, ivme değil.
+
+```python
+v_hedef = cfg.V_KAPANMA * u_dunya          # adapter_copter.py:154
+```
+
+`u_dunya` birim vektör, `V_KAPANMA = 25`. Yani dikey bileşen doğrudan
+**`25 · sin(yükseliş)`**:
+
+| nişan yükselişi | emredilen tırmanma |
+|---|---|
+| 15° | 6.5 m/s |
+| 30° | **12.5 m/s** |
+| 60° | **21.7 m/s** |
+
+**Dikey hız için ayrı tavan YOK.** `IVME_TAVAN_DIKEY = 10` var ama o hızın ne
+kadar *büyüyeceğini* değil, ne kadar hızlı *değişeceğini* sınırlıyor.
+ArduPilot'un `WP_SPD_UP = 5 m/s` tavanı da GUIDED hız komutuna **uygulanmıyor**
+(ölçüldü: gerçekleşen tırmanma p99 = 9.4 m/s).
+
+*Ölçüm (08-05, pose modu, `durum=ok` kareler):*
+- karelerin **%79'unda** tırmanma emrediliyor
+- büyüklük: medyan **5.8 m/s**, p90 **12.1**, tepe **25.0 m/s**
+
+Drone hedefe alttan yaklaştığı için nişan sürekli yukarıyı gösteriyor; temas
+kopunca kontrol GPS fazına araç **hâlâ tırmanırken** dönüyor ve istasyonun
+5-8 m üstüne fırlıyor.
+
+*Nasıl:* `v_hedef` hesaplandıktan sonra dikey bileşeni ayrı bir tavanla kırp —
+yatayı bozmadan. Yeni ayar `VZ_KAPANMA_MAX` (öneri: 6-8 m/s, `VZ_MAX=6` ile
+tutarlı). Yönü koru, yalnız büyüklüğü kırp:
+
+```python
+if abs(v_hedef[2]) > cfg.VZ_KAPANMA_MAX:
+    v_hedef[2] = math.copysign(cfg.VZ_KAPANMA_MAX, v_hedef[2])
+```
+
+⚠ **Bedeli ölçülmeli:** dikey hızı kısmak "dikey ıska"yı geri getirebilir
+(DURUM.md §3, terminalde kapatılamayan dikey mesafe). O yüzden tavan
+`TERMINAL_MENZIL` altında gevşetilebilir — önce sabit tavanla ölç.
+
+*Ölçüt:* istasyon aşımı medyanı |−5.4 m| belirgin küçülmeli; terminalde
+"kalan dikey" büyümemeli; vuruş oranı düşmemeli.
+*Sonuç:*
 
 ### B1 — Görsel faza irtifa tabanı
 `control/guidance/visual_lead.py` (veya `adapter_copter`)
