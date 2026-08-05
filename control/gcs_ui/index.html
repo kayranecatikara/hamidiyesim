@@ -1,277 +1,213 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avcı Operasyon Merkezi</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Ciddi Tipografi: Roboto Mono (sayılar ve teknik veri için) ve Inter veya Roboto -->
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avcı GCS — Taktik Saha Ekranı</title>
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
-    <div class="gcs-container">
-        
-        <!-- Header: En Ust Ince Cizgi (Baglanti kalitesi) -->
-        <header class="gcs-header">
-            <div class="left-head">
-                <span class="title-head">Y.K.İ // TAKTİK SAHA EKRANI</span>
+
+<div class="app">
+  <header class="panel topbar">
+    <div class="logo">A</div>
+    <div class="htxt"><h1>Y.K.İ // TAKTİK SAHA EKRANI</h1><div class="sub">Avcı Operasyon Merkezi</div></div>
+    <div class="spacer"></div>
+    <span class="online" id="connBadge"><span class="d"></span><span id="connTxt">BAĞLANIYOR</span></span>
+    <div class="hstat"><span class="k">Latency</span><span class="v" id="hLat">--</span></div>
+    <div class="hstat"><span class="k">Loss</span><span class="v" id="hLoss">--</span></div>
+    <div class="hstat"><span class="k">HB</span><span class="v" id="hHb">--</span></div>
+    <a class="hlink" href="/panel" target="_blank" title="Uçuş loglarının görsel analizi">Uçuş Logları</a>
+  </header>
+
+  <section class="stats">
+    <div class="panel stat lock"><div class="label">Kilit Durumu</div><div class="big" id="sLock">BEKLEMEDE</div><div class="cap" id="sLockCap">görev başlatılmadı</div></div>
+    <div class="panel stat rng"><div class="label">Hedef Mesafe</div><div class="big"><span id="sRng">--</span><span class="u">m</span></div><div class="cap" id="sRngCap">telemetri bekleniyor</div></div>
+    <div class="panel stat term"><div class="label">Terminal Mod</div><div class="big" id="sTerm">HAZIR</div><div class="cap" id="sTermCap">güdüm bekliyor</div></div>
+  </section>
+
+  <div class="main">
+    <!-- LEFT -->
+    <div class="col">
+      <section class="panel" id="ctrlPanel" style="flex:1;display:flex;flex-direction:column">
+        <div class="phead"><span class="ptitle">Görev ve Kontrol</span><button class="iconbtn" id="ctrlToggle" title="Paneli kapat" aria-label="Görev ve kontrol panelini kapat">⯆</button></div>
+        <div class="mc" id="ctrlBody">
+          <div class="seg" role="group" aria-label="Kontrol kaynağı">
+            <button id="segT" aria-pressed="true">Hedef İHA</button>
+            <button id="segA" aria-pressed="false">Avcı Drone</button>
+          </div>
+
+          <!-- HEDEF İHA -->
+          <div class="view" id="viewHedef">
+            <div class="grp">
+              <span class="label">Uçuş Senaryoları</span>
+              <div class="scn" id="scn">
+                <button data-scn="square" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" stroke-width="2"/></svg><span>Kare Çiz</span></button>
+                <button data-scn="circle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg><span>Daire Çiz</span></button>
+                <button class="aggr" data-scn="aggressive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M13 3 L6 13 H11 L10 21 L18 10 H12 Z" stroke-width="2" stroke-linejoin="round"/></svg><span>Agresif Uçuş</span></button>
+                <button class="manuel" id="manBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="10" rx="4" stroke-width="2"/><path d="M8 13h-3M6.5 11.5v3M15 12h.01M18 14h.01" stroke-width="2" stroke-linecap="round"/></svg><span id="manLbl">Manuel Mod</span></button>
+              </div>
             </div>
-            <div class="right-head">
-                <div class="status-indicator">
-                    <span id="conn-dot" class="dot red"></span>
-                    <span id="conn-text">OFFLINE</span>
-                </div>
-                <div class="network-stats">
-                    <span>LATENCY: <span id="net-latency">--</span>ms</span>
-                    <span>PACKET LOSS: <span id="net-loss">--</span>%</span>
-                    <span>LAST HB: <span id="net-hb">--</span>s</span>
-                </div>
-                <!-- Uçuş log paneli: her GPS uçuşu bitince otomatik tazelenir -->
-                <a href="/panel" target="_blank" class="log-panel-link"
-                   title="Uçuş loglarının görsel analizi (her uçuş sonrası güncellenir)">📊 UÇUŞ LOGLARI</a>
+
+            <!-- Manuel kumanda: yalnız manuel modda görünür -->
+            <div class="manwrap" id="manwrap" hidden>
+              <div class="stick" id="stick" tabindex="0" role="slider" aria-label="Manuel uçuş çubuğu — WASD veya sürükle" aria-valuetext="merkez">
+                <div class="ring"></div>
+                <span class="ax n">↑ W</span><span class="ax s">S ↓</span><span class="ax w">A ←</span><span class="ax e">→ D</span>
+                <div class="knob" id="knob"></div>
+              </div>
+              <div class="readout">
+                <span>ROLL: <b id="rRoll">0.00</b></span>
+                <span>PITCH: <b id="rPitch">0.00</b></span>
+                <span>GAZ: <b id="rThr">60%</b></span>
+              </div>
+              <div class="hint">W/S pitch · A/D roll · L hızlan · I yavaşla</div>
             </div>
-        </header>
 
-        <!-- Main Layout -->
-        <div class="gcs-main">
-            
-            <!-- LEFT PANEL: GOREV / KONTROL -->
-            <aside class="panel left-panel">
-                <div class="panel-title">GÖREV VE KONTROL</div>
-                
-                <div class="vehicle-selector">
-                    <input type="radio" id="mode-target" name="vehicle-mode" value="target" checked>
-                    <label for="mode-target">HEDEF İHA</label>
-                    
-                    <input type="radio" id="mode-hunter" name="vehicle-mode" value="hunter">
-                    <label for="mode-hunter">AVCI DRONE</label>
-                </div>
+            <!-- Gaz + bozma: her modda geçerli (senaryo da manuel de bu gazı kullanır) -->
+            <div class="envbox">
+              <div class="sec">
+                <span class="slabel">↕ Gaz Ayarı</span>
+                <div class="slrow"><span class="sk">Throttle</span><span class="sv" id="thrV">60%</span></div>
+                <input type="range" id="thrSl" min="0" max="100" value="60" aria-label="Gaz ayarı">
+                <div class="scale"><span>Rölanti</span><span>Yavaş</span><span>Cruise</span><span>Hızlı</span><span>Max</span></div>
+              </div>
+              <div class="sec">
+                <span class="slabel">⚡ GPS Karıştırma</span>
+                <div class="slrow"><span class="sk">Seviye</span><span class="sv" id="gpsV">0%</span></div>
+                <input type="range" id="gpsSl" min="0" max="100" value="0" aria-label="GPS karıştırma seviyesi">
+                <div class="scale"><span>Temiz</span><span>Hafif</span><span>Orta</span><span>Şiddetli</span><span>Kayıp</span></div>
+                <div class="sig" id="gpsSig"><span class="d"></span><span id="gpsSigTxt">GPS Sinyali Normal</span></div>
+              </div>
+              <div class="sec">
+                <span class="slabel">▚ Video Parazit</span>
+                <div class="slrow"><span class="sk">Seviye</span><span class="sv" id="vidV">0%</span></div>
+                <input type="range" id="vidSl" min="0" max="100" value="0" aria-label="Video parazit seviyesi">
+                <div class="scale"><span>Temiz</span><span>Hafif</span><span>Orta</span><span>Şiddetli</span><span>Yok</span></div>
+                <div class="sig" id="vidSig"><span class="d"></span><span id="vidSigTxt">Temiz Analog Sinyal</span></div>
+              </div>
+            </div>
+          </div>
 
-                <!-- Hedef İHA Kontrol Paneli -->
-                <div id="target-controls" class="control-section active-section">
-                    <h3 class="section-title">UÇUŞ SENARYOLARI</h3>
-                    <div class="btn-grid">
-                        <button id="btn-scn-square" class="t-btn btn-action">▢ KARE ÇİZ</button>
-                        <button id="btn-scn-circle" class="t-btn btn-action">◯ DAİRE ÇİZ</button>
-                        <button id="btn-scn-aggressive" class="t-btn btn-danger">⚡ AGRESİF UÇUŞ</button>
-                        <button id="btn-plane-manual" class="t-btn btn-warning">🕹 MANUEL MOD</button>
-                    </div>
-
-                    <!-- MANUEL KONTROL BLOGU: Manuel Mod basildiginda acilir -->
-                    <!-- Joystick (mouse) + klavye: W/S pitch, A/D roll, L/I gaz -->
-                    <div id="manual-control-block" class="hidden mt-1">
-                        <div class="joystick-area">
-                            <div id="joystick-base" class="joystick-base">
-                                <div id="joystick-knob" class="joystick-knob"></div>
-                                <div class="joystick-axes">
-                                    <span class="axis-label axis-left">← A</span>
-                                    <span class="axis-label axis-right">D →</span>
-                                    <span class="axis-label axis-top">↑ W</span>
-                                    <span class="axis-label axis-bottom">S ↓</span>
-                                </div>
-                            </div>
-                            <div class="joystick-readout">
-                                <span>ROLL: <span id="js-x">0.00</span></span>
-                                <span>PITCH: <span id="js-y">0.00</span></span>
-                                <span>GAZ: <span id="js-thr">60</span>%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- HEDEF GAZ AYARI — HER ZAMAN görünür: senaryo (Kare/Daire/Agresif)
-                         modunda hedefin gazını, manuel modda doğrudan gazı sürer (L/I ile senkron).
-                         Senaryo süreci bu değeri /api/plane_throttle'dan 0.5 sn'de bir okur, yani
-                         uçuş SIRASINDA da değiştirilebilir. -->
-                    <div id="plane-speed-block" class="mt-1">
-                        <h3 class="section-title">✈ HEDEF GAZ AYARI</h3>
-                        <div class="gps-jam-panel">
-                            <div class="gps-jam-header">
-                                <span class="gps-jam-label">THROTTLE:</span>
-                                <span id="plane-thr-value" class="gps-jam-value">60%</span>
-                            </div>
-                            <input type="range" id="plane-thr-slider" class="gps-jam-slider"
-                                   min="0" max="100" value="60" step="1">
-                            <div class="gps-jam-labels">
-                                <span>RÖLANTI</span>
-                                <span>YAVAS</span>
-                                <span>CRUISE</span>
-                                <span>HIZLI</span>
-                                <span>MAX</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- GPS KARIŞTIRMA SİMÜLASYONU -->
-                    <h3 class="section-title mt-2">📡 GPS KARIŞTIRMA</h3>
-                    <div class="gps-jam-panel">
-                        <div class="gps-jam-header">
-                            <span class="gps-jam-label">SEVİYE:</span>
-                            <span id="gps-jam-value" class="gps-jam-value">0%</span>
-                        </div>
-                        <input type="range" id="gps-jam-slider" class="gps-jam-slider"
-                               min="0" max="100" value="0" step="1">
-                        <div class="gps-jam-labels">
-                            <span>TEMİZ</span>
-                            <span>HAFİF</span>
-                            <span>ORTA</span>
-                            <span>ŞİDDETLİ</span>
-                            <span>KAYIP</span>
-                        </div>
-                        <div id="gps-jam-status" class="gps-jam-status">
-                            <span class="dot green"></span> GPS Sinyali Normal
-                        </div>
-                    </div>
-
-                </div>
-
-                <!-- Avcı Drone Kontrol Paneli -->
-                <div id="hunter-controls" class="control-section">
-                    <h3 class="section-title">TAKİP MODU</h3>
-                    <div class="btn-grid">
-                        <button id="btn-chase" class="t-btn btn-success block-btn">🚀 GÖREVİ BAŞLAT</button>
-                    </div>
-                    
-                    <div id="chase-info" class="chase-info-panel mt-1">
-                        <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
-                        <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
-                        <!-- Güdüm fazı göstergesi: aktif faz yeşil yanar (supervisor.faz) -->
-                        <div class="d-row"><span>GÜDÜM:</span>
-                            <span class="faz-grup">
-                                <span id="faz-gps" class="faz-isik">● GPS</span>
-                                <span id="faz-gorsel" class="faz-isik">● GÖRSEL</span>
-                            </span>
-                        </div>
-                    </div>
-
-
-                    <!-- VIDEO PARAZİT SİMÜLASYONU -->
-                    <h3 class="section-title mt-2">📷 VIDEO PARAZİT</h3>
-                    <div class="gps-jam-panel">
-                        <div class="gps-jam-header">
-                            <span class="gps-jam-label">PARAZİT:</span>
-                            <span id="video-noise-value" class="gps-jam-value green">0%</span>
-                        </div>
-                        <input type="range" id="video-noise-slider" class="gps-jam-slider"
-                               min="0" max="100" value="0" step="1">
-                        <div class="gps-jam-labels">
-                            <span>TEMİZ</span>
-                            <span>HAFİF</span>
-                            <span>ORTA</span>
-                            <span>ŞİDDETLİ</span>
-                            <span>SİYAH</span>
-                        </div>
-                        <div id="video-noise-status" class="gps-jam-status">
-                            <span class="dot green"></span> Temiz Analog Sinyal
-                        </div>
-                    </div>
-
-                    <!-- GÖRÜŞ HATTI & FAZ KAPILARI (gerçek veri) -->
-                    <div class="section-divider"></div>
-                    <h3 class="section-title mt-2">👁 GÖRÜŞ & FAZ</h3>
-                    <div class="chase-info-panel">
-                        <div class="d-row"><span>FAZ:</span> <span id="pnp-faz" class="val">--</span></div>
-                        <div class="d-row"><span>TESPİT (bbox):</span> <span id="pnp-det" class="val">--</span></div>
-                        <div class="d-row"><span>POSE:</span> <span id="pnp-pose" class="val">--</span></div>
-                        <div class="d-row"><span>MESAFE (görüş):</span> <span id="pnp-dist" class="val">-- m</span></div>
-                        <div class="d-row"><span>MESAFE (gerçek):</span> <span id="pnp-truth" class="val">-- m</span></div>
-                        <div class="d-row"><span>GÖRÜŞ HATASI:</span> <span id="pnp-err" class="val">--</span></div>
-                        <div class="d-row"><span>POSE KİLİDİ:</span> <span id="pnp-lock" class="val">--</span></div>
-                        <div class="d-row"><span>YATAY MESAFE:</span> <span id="pnp-dh" class="val">--</span></div>
-                        <div class="d-row"><span>GEÇİŞİ ENGELLEYEN:</span> <span id="pnp-block" class="val">--</span></div>
-                    </div>
-                    <div style="font-size:10px;opacity:.55;padding:2px 6px 0">
-                        "gerçek" = sim ground-truth, yalnız kıyas için — güdüme girmez.
-                    </div>
-                </div>
-            </aside>
-
-            <!-- CENTER PANEL: FPV & OVERLAY -->
-            <main class="center-panel">
-                <div class="fpv-container">
-                    <!-- CANLI ROS GORUNTUSU -->
-                    <img id="fpv-stream" src="/api/video_feed/plane" alt="Video Yükleniyor..." width="1280" height="720" style="object-fit: cover; width: 100%; height: 100%;">
-                    
-                    <!-- Overlay Elements (HTML/CSS) -->
-                    <div class="hud-overlay">
-                        <!-- VIDEO PARAZİT CANVAS KATMANI -->
-                        <canvas id="video-noise-canvas" class="video-noise-canvas"></canvas>
-                        <div class="hud-top-center">
-                            <div id="hud-status" class="lock-status mode-search">ARAMA MODU</div>
-                        </div>
-                        
-                        <div class="hud-center-crosshair">
-                            <div class="ch-h"></div>
-                            <div class="ch-v"></div>
-                        </div>
-
-                        <!-- Target Bounding Box and Error Vector will be drawn on canvas or moved via JS here -->
-                        <div id="target-box" class="target-box hidden">
-                            <span class="t-class">FIXED WING <span class="t-conf">0.96</span></span>
-                        </div>
-
-                        <!-- Warning Corner -->
-                        <div class="hud-warnings hidden" id="analog-warning">
-                            ANALOG GLITCH DETECTED
-                        </div>
-                    </div>
-                </div>
-            </main>
-
-            <!-- RIGHT PANEL: TELEMETRY -->
-            <aside class="panel right-panel">
-                <div class="panel-title">TELEMETRİ & ALGORİTMA</div>
-                
-                <div class="telemetry-block">
-                    <h4 class="block-head">HEDEF İHA METRİKLERİ</h4>
-                    <div class="data-list">
-                        <div class="d-row"><span>HIZ:</span> <span id="tele-plane-speed" class="val">0.0 m/s</span></div>
-                        <div class="d-row"><span>İRTİFA:</span> <span id="tele-plane-alt" class="val">0.0 m</span></div>
-                        <div class="d-row"><span>KONUM:</span> <span id="tele-plane-pos" class="val">0.0, 0.0</span></div>
-                        <div class="d-row"><span>HEADING:</span> <span id="tele-plane-hdg" class="val">0°</span></div>
-                    </div>
-                </div>
-
-                <div class="telemetry-block mt-2">
-                    <h4 class="block-head">AVCI DRONE METRİKLERİ</h4>
-                    <div class="data-list">
-                        <div class="d-row"><span>HIZ:</span> <span id="tele-hunter-speed" class="val">0.0 m/s</span></div>
-                        <div class="d-row"><span>İRTİFA:</span> <span id="tele-hunter-alt" class="val">0.0 m</span></div>
-                        <div class="d-row"><span>KONUM:</span> <span id="tele-hunter-pos" class="val">0.0, 0.0</span></div>
-                        <div class="d-row"><span>HEADING:</span> <span id="tele-hunter-hdg" class="val">0°</span></div>
-                        <div class="d-row"><span>BATARYA:</span> <span class="val green">98%</span></div>
-                    </div>
-                </div>
-
-                <div class="telemetry-block mt-2">
-                    <h4 class="block-head">GÖREV DURUMU</h4>
-                    <div class="data-list">
-                        <div class="d-row"><span>KİLİT:</span> <span id="tele-lock-status" class="val red">YOK</span></div>
-                        <div class="d-row"><span>TERMİNAL MOD:</span> <span id="tele-terminal-status" class="val warning">BEKLEMEDE</span></div>
-                    </div>
-                </div>
-
-                <!-- 3B KONUM İZLEME: avcı + hedef, gerçek zamanlı, izli -->
-                <div class="telemetry-block mt-2 pos3d-block">
-                    <h4 class="block-head">3B KONUM İZLEME</h4>
-                    <canvas id="pos3d-canvas"></canvas>
-                    <div class="pos3d-legend">
-                        <span><span class="legend-dot dot-avci"></span>AVCI</span>
-                        <span><span class="legend-dot dot-hedef"></span>HEDEF</span>
-                        <span class="pos3d-hint">sürükle: döndür</span>
-                    </div>
-                </div>
-            </aside>
+          <!-- AVCI DRONE -->
+          <div class="view" id="viewAvci" hidden>
+            <div class="grp">
+              <span class="label">Takip Modu — Otonom</span>
+              <button class="startbtn" id="startBtn">
+                <svg class="play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>
+                <span id="startLbl">Görevi Başlat</span>
+              </button>
+              <span class="hint">Avcı drone kalkar, hedefi otonom tespit eder ve hibrit güdümle (GPS fazı → görsel faz) müdahale eder. Manuel parametre yoktur.</span>
+            </div>
+            <div class="avcinfo">
+              <div class="trow"><span class="tk">Kilit</span><span class="tv muted" id="aLock">BEKLEMEDE</span></div>
+              <div class="trow"><span class="tk">Terminal</span><span class="tv muted" id="aTerm">HAZIR</span></div>
+              <div class="trow"><span class="tk">Kilit %</span><span class="tv" id="aPct">0</span></div>
+            </div>
+          </div>
         </div>
-
-        <!-- BOTTOM PANEL: EVENT LOG -->
-        <footer class="panel bottom-panel">
-            <div class="panel-title small-title">MISSION LOG / EVENT TIMELINE</div>
-            <div id="event-log" class="log-container">
-                <!-- Logs will be prepended here via JS -->
-            </div>
-        </footer>
+      </section>
     </div>
 
-    <script src="script.js?v=10"></script>
+    <!-- CENTER FPV -->
+    <div class="col" id="centerCol">
+      <section class="panel fpvpanel" style="display:flex;flex-direction:column">
+        <div class="phead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
+        <div class="fpvwrap" id="fpvwrap">
+          <img id="fpvImg" alt="">
+          <canvas id="noiseCv"></canvas>
+          <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
+          <div class="scan" id="scan" style="top:40%"></div>
+          <div class="xhair"></div>
+          <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
+          <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
+          <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
+          <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>POSE</b> <span id="oPose">--</span></div>
+          <div class="lockbadge idle" id="lockBadge">BEKLEMEDE</div>
+          <div class="guidebadge idle" id="guideBadge" title="Aktif takip güdümü — GPS konumu mu, kamera (görsel) mi?">
+            <svg id="guideIcon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+            <span id="guideTxt">GÜDÜM BEKLEMEDE <span class="sub">MODEL PASİF</span></span>
+          </div>
+          <div class="manbadge" id="manBadge" hidden>MANUEL — HEDEF İHA UÇURULUYOR</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col" id="rightCol">
+      <section class="panel" style="display:flex;flex-direction:column">
+        <div class="phead"><span class="ptitle">Telemetri &amp; Algoritma</span></div>
+        <div class="tel">
+          <div class="tgrp">
+            <span class="mgh">Hedef İHA Metrikleri</span>
+            <div class="trow"><span class="tk">Hız</span><span class="tv" id="tHiz">--</span></div>
+            <div class="trow"><span class="tk">İrtifa</span><span class="tv" id="tIrt">--</span></div>
+            <div class="trow"><span class="tk">Konum</span><span class="tv" id="tPos">--</span></div>
+            <div class="trow"><span class="tk">Heading</span><span class="tv" id="tHead">--</span></div>
+          </div>
+          <div class="tgrp">
+            <span class="mgh">Avcı Drone Metrikleri</span>
+            <div class="trow"><span class="tk">Hız</span><span class="tv" id="aHiz">--</span></div>
+            <div class="trow"><span class="tk">İrtifa</span><span class="tv" id="aIrt">--</span></div>
+            <div class="trow"><span class="tk">Konum</span><span class="tv" id="aPos">--</span></div>
+            <div class="trow"><span class="tk">Heading</span><span class="tv" id="aHead">--</span></div>
+            <div class="trow"><span class="tk">Algı Modeli</span><span class="tv muted" id="aModel">PASİF</span></div>
+            <div class="trow"><span class="tk">Güdüm Tipi</span><span class="tv muted" id="aGuide">—</span></div>
+          </div>
+          <div class="tgrp">
+            <span class="mgh">Görüş Hattı &amp; Faz Kapıları</span>
+            <div class="trow"><span class="tk">Tespit</span><span class="tv muted" id="pDet">YOK</span></div>
+            <div class="trow"><span class="tk">Pose</span><span class="tv muted" id="pPose">YOK</span></div>
+            <div class="trow"><span class="tk">Görüş menzili</span><span class="tv" id="pDist">--</span></div>
+            <div class="trow"><span class="tk">Gerçek menzil</span><span class="tv" id="pTruth">--</span></div>
+            <div class="trow"><span class="tk">Menzil hatası</span><span class="tv" id="pErr">--</span></div>
+            <div class="trow"><span class="tk">Pose kilidi</span><span class="tv" id="pLock">--</span></div>
+            <div class="trow"><span class="tk">d_h / kapı</span><span class="tv" id="pDh">--</span></div>
+            <div class="trow"><span class="tk">Engel</span><span class="tv muted" id="pBlock">—</span></div>
+          </div>
+          <div class="tgrp" style="margin-top:auto">
+            <span class="label" style="padding:4px 2px">Görev Durumu</span>
+            <div class="trow red"><span class="tk">Kilit</span><span class="tv" id="tLock">BEKLEMEDE</span></div>
+            <div class="trow green"><span class="tk">Terminal</span><span class="tv" id="tTerm">HAZIR</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel posPanel" id="posPanel" style="display:flex;flex-direction:column">
+        <div class="phead">
+          <span class="ptitle">Konum İzleme</span>
+          <button class="iconbtn" id="posExpand" title="Büyüt" aria-label="Konum ekranını büyüt">⤢</button>
+        </div>
+        <div class="scenewrap">
+          <canvas id="scene"></canvas>
+          <div class="viewbtns">
+            <button data-view="iso" class="on" title="İzometrik 3B">3B</button>
+            <button data-view="top" title="Üstten — Z'ye dik (K-D)">KD</button>
+            <button data-view="front" title="Önden (D-İrtifa)">Dİ</button>
+            <button data-view="side" title="Yandan (K-İrtifa)">Kİ</button>
+            <button id="panBtn" title="Kaydırma modu (Shift+sürükle de olur)" style="border-left:1px solid var(--line2)">✥</button>
+          </div>
+          <div class="menzil" id="posRng">MENZİL -- m</div>
+          <div class="legend">
+            <span class="lg"><span class="sw" style="background:#FF4D4D"></span>Hedef</span>
+            <span class="lg"><span class="sw" style="background:#37E06B"></span>Avcı</span>
+            <span class="lg"><span class="sw" style="background:#F4B740"></span>Başlangıç</span>
+          </div>
+          <div class="draghint">SÜRÜKLE: döndür · SHIFT: kaydır · TEKER: yakınlaştır · ÇİFT TIK: sıfırla</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="phead"><span class="ptitle">Görev Kaydı / Olay Zaman Çizelgesi</span></div>
+    <div class="logbody" id="logBody"></div>
+  </section>
+</div>
+
+<!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
+     ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
+     şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
+<script src="script.js?v=11"></script>
 </body>
 </html>
