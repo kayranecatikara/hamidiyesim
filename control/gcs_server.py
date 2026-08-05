@@ -611,19 +611,33 @@ def stop_chase():
     return {"status": "success"}
 
 
+def _gercek_menzil():
+    """Araçlar arası GERÇEK mesafe — (metre|None, kaynak).
+
+    Önce sim_truth (iki araç TEK gz mesajından, zaman hizalı), yoksa telemetri
+    farkı. visual_lead._menzil_olc ile AYNI öncelik: arayüzdeki sayı ile logdaki
+    sayı aynı kaynaktan gelsin. Telemetri farkı iki ayrı akışın zaman hizasız
+    farkıdır ve loglarda karelerin %37'sinde donuk çıkıyordu.
+    """
+    m = sim_truth.menzil()
+    if m is not None:
+        return m, "gz"
+    plane, iris = telemetry_state["plane"], telemetry_state["iris"]
+    if plane["x"] == 0 and plane["y"] == 0 and plane["z"] == 0:
+        return None, None
+    return math.sqrt((plane["x"] - iris["x"]) ** 2
+                     + (plane["y"] - iris["y"]) ** 2
+                     + (plane["z"] - iris["z"]) ** 2), "telem"
+
+
 @app.get("/api/chase_status")
 def chase_status():
     """Frontend için chase durumu."""
     if not _chase_active:
         return {"active": False, "distance": 0}
-    plane = telemetry_state["plane"]
-    iris  = telemetry_state["iris"]
-    dist = math.sqrt(
-        (plane["x"] - iris["x"])**2 +
-        (plane["y"] - iris["y"])**2 +
-        (plane["z"] - iris["z"])**2
-    )
-    resp = {"active": True, "distance": round(dist, 1)}
+    dist, kaynak = _gercek_menzil()
+    resp = {"active": True, "distance": round(dist, 1) if dist is not None else None,
+            "menzil_kaynak": kaynak}
     # GPS-YAKLASMA yasasının canlı durumu (ARAMA/KILIT/DROPOUT + handoff)
     resp["guidance"] = dict(_gps_guidance_mod.status)
     resp["supervisor"] = dict(_supervisor_mod.status)
@@ -703,12 +717,9 @@ def pnp_telemetry():
         gorus_menzil, kanat_ok = _gorus_menzil_kestirimi(pose, iris_att)
 
     # ── Ground-truth (SİM KOLAYLIĞI — gerçek harekâtta yok, etiketli göster) ──
-    gercek_menzil = None
+    # Kaynak _gercek_menzil ile ortak: zaman hizalı gz önce, telemetri yedek.
     telem_var = not (plane["x"] == 0 and plane["y"] == 0 and plane["z"] == 0)
-    if telem_var:
-        gercek_menzil = math.sqrt((plane["x"] - iris["x"]) ** 2
-                                  + (plane["y"] - iris["y"]) ** 2
-                                  + (plane["z"] - iris["z"]) ** 2)
+    gercek_menzil, gercek_menzil_kaynak = _gercek_menzil()
 
     # ── Faz kapıları: "neden hâlâ geçmedi" sorusunun cevabı ──
     sup = _supervisor_mod.status
@@ -746,6 +757,7 @@ def pnp_telemetry():
         "gorus_menzil": round(gorus_menzil, 1) if gorus_menzil else None,
         # ground-truth (etiketli)
         "gercek_menzil": round(gercek_menzil, 1) if gercek_menzil else None,
+        "gercek_menzil_kaynak": gercek_menzil_kaynak,
         "menzil_hata": (round(gorus_menzil - gercek_menzil, 1)
                         if (gorus_menzil and gercek_menzil) else None),
         # faz kapıları

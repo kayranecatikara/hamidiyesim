@@ -784,7 +784,9 @@ function startChaseStatusPolling() {
             const res = await fetch('/api/chase_status');
             const data = await res.json();
             if (data.active) {
-                document.getElementById('chase-dist').textContent = (data.distance + 8).toFixed(1) + ' m';
+                // (Eskiden burada `data.distance + 8` vardı — gerekçesiz sabit
+                //  8 m ofset, gösterilen mesafeyi gerçeğin 8 m fazlası yapıyordu.)
+                document.getElementById('chase-dist').textContent = data.distance.toFixed(1) + ' m';
             } else {
                 // Backend chase bitti
                 if (chaseActive) {

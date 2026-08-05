@@ -136,6 +136,15 @@ sonra ne olacağıyla hiç yüzleşmiyordu. Gerçek temas ölçütü bu sorunu
       uygulanmıyordu (firmware SI birimine geçip yeniden adlandırmış).
       `tools/parm_denetle.py` tekrarını önlüyor.
 
+- [x] **Ölçüm araçları test altına alındı** — `tests/olcum_araclari/`
+      (22 senaryo, `python3 -m tests.olcum_araclari`). Gerekçe: bu araçlar
+      "vurduk mu, nereden ıskaladık" sorusunun hakemi; sessiz bir hesap hatası
+      ona dayanan her kararı bozar ve fark edilmez. Kritik olanlar: kara kutu
+      DİKEY işaret sözleşmesi (E4 — tersine dönerse her "alttan/üstten geçti"
+      hükmü tersine döner), telemetri boşluğuna uydurma enterpolasyon yapılmaması
+      (E3), sentetik süzgecin gerçek uçuşu elememesi (K8), ve parametre
+      denetiminde 45 ↔ 45.000000 biçim farkının sahte alarm üretmemesi (P3).
+
 - [x] **Kendi etrafında dönme** — kök neden: `yaw_hata` kapanmıyorken komut her
       karede bir tavan adımı daha ekliyordu (90 °/s sürekli dönme).
       `adapter_copter`'a "hata kapanmıyorsa yaw'ı sustur" kapısı eklendi

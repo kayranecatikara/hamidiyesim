@@ -251,6 +251,9 @@ avci_sim/
 - Talon V-kuyruk servo eşlemesi (SERVO2/4 = Sol/Sağ V-Tail) `avci_plane.parm`'dadır.
 - Kod değiştirmeden önce Gazebo'suz kabul testlerini çalıştırın:
   `python3 -m tests.test_visual_lead` ve `python3 -m tests.test_gps_guidance`.
+- Ölçüm araçlarını (`tools/`) değiştirdiyseniz ayrıca
+  `python3 -m tests.olcum_araclari` — bunlar "vurduk mu, nereden ıskaladık"
+  sorusunun hakemi, sessizce yanılmamaları gerekir.
 
 ### Dokümanlar
 

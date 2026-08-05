@@ -246,6 +246,11 @@ iki modun ıska farkı buradan gelebilir.
   pose'suz çalışma (T50), gerçek menzilden ölçek (T51), yandanlık (T52),
   **GT yolu ≈ kusursuz pose yolu** (T53: Δyaw < 2°, Δyandanlık < 0.02),
   yatık hedefte bilinçli ayrışma (T53b) ve `gt=None` regresyonu (T54).
+- **Ölçüm aracı testleri:** `python3 -m tests.olcum_araclari` — 22 senaryo;
+  güdümü değil `tools/` altındaki ölçüm araçlarını denetler: kara kutu
+  geometrisi ve zaman hizalama (E1-E8), CSV karne metrikleri (K1-K8),
+  parametre denetimi (P1-P6). Araçlar uçuş kaydı okur ve kayıtlar depoda
+  yoktur; test edilen kısım içlerindeki **saf hesap**.
 - **Bilinen boşluk:** `supervisor`ın gerçek döngüsü ve `common` doğrudan testsiz.
 - **Uçuş logları:** her faz kendi CSV'sini yazar —
   `logs/visual_lead_<zaman>.csv` (pose ölçümleri, nişan yönü, komutlar,

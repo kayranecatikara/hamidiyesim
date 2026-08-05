@@ -1,0 +1,116 @@
+"""tools/gudum_karne.py — CSV karnesinin metrik toplamı.
+
+    python3 -m tests.olcum_araclari.test_gudum_karne
+
+Karne, iki koşuyu kıyaslamanın (`--kiyasla`) tek yolu; bir metrik sessizce
+yanlış toplanırsa "yeni ayar daha iyi" hükmü de yanlış olur. Buradaki testler
+sentetik CSV satırlarıyla saf toplama mantığını denetler.
+
+K1-K3  _vis_metrik    faz sonucu sınıflaması, en yakın menzil, vuruş bayrağı
+K4     _vis_metrik    pose oranı — hangi satır "pose var" sayılıyor
+K5-K6  _gps_metrik    istasyonda oturma yüzdesi, kadraj hatası yalnız KİLİT'te
+K7-K8  _sentetik      eski test artefaktı süzgeci (gerçek uçuşu ELEMEMELİ)
+"""
+
+import math
+
+from tests.olcum_araclari.ortak import kontrol, ozet, sifirla
+from tools import gudum_karne as gk
+
+VIS = "logs/visual_lead_20260804_164352.csv"
+GPS = "logs/gps_guidance_20260804_164352.csv"
+
+
+def _vis_satir(t, menzil, durum, kalite="0.8", yaw="1.0", lead="5.0"):
+    return {"t_ros": str(t), "menzil_gercek_m": str(menzil), "durum": durum,
+            "kalite": kalite, "yaw_hata_deg": yaw, "lead_deg": lead}
+
+
+def main():
+    sifirla()
+    print("Ölçüm aracı: gudum_karne (CSV metrikleri)")
+    print("=" * 60)
+
+    # ── K1: temas olan faz VURULDU sayılmalı, en yakın menzil doğru ──
+    rows = [_vis_satir(0.0, 10.0, "ok"), _vis_satir(0.1, 4.0, "ok"),
+            _vis_satir(0.2, 0.7, "ok"), _vis_satir(0.3, 0.9, "vuruldu")]
+    v = gk._vis_metrik([(VIS, rows)])
+    kontrol("K1  temas olan faz VURULDU, en yakın menzil minimumdan",
+            v["fazlar"][0]["sonuc"] == "VURULDU" and v["vurus"] is True
+            and abs(v["en_yakin"] - 0.7) < 1e-9
+            and abs(v["fazlar"][0]["devir_menzil"] - 10.0) < 1e-9,
+            f"sonuç={v['fazlar'][0]['sonuc']} devir={v['fazlar'][0]['devir_menzil']:.1f} m "
+            f"en yakın={v['en_yakin']:.2f} m")
+
+    # ── K2: 15+ tespit_yok karesi = 'kayıp'; altındaki = 'ıska/koptu' ──
+    kayip = [_vis_satir(i * 0.03, 8.0, "tespit_yok") for i in range(15)]
+    iska = [_vis_satir(i * 0.03, 8.0, "tespit_yok") for i in range(14)]
+    v_kayip = gk._vis_metrik([(VIS, kayip)])["fazlar"][0]["sonuc"]
+    v_iska = gk._vis_metrik([(VIS, iska)])["fazlar"][0]["sonuc"]
+    kontrol("K2  faz sonucu sınıflaması (kayıp eşiği 15 kare)",
+            v_kayip == "kayıp" and v_iska == "ıska/koptu",
+            f"15 kare → '{v_kayip}'   14 kare → '{v_iska}'")
+
+    # ── K3: çok fazlı uçuşta en_yakin TÜM fazların minimumu olmalı ──
+    faz_a = [_vis_satir(0.0, 9.0, "ok"), _vis_satir(0.1, 3.4, "ok")]
+    faz_b = [_vis_satir(5.0, 8.0, "ok"), _vis_satir(5.1, 1.2, "ok")]
+    v = gk._vis_metrik([(VIS, faz_a), (VIS, faz_b)])
+    kontrol("K3  en_yakin tüm fazların minimumu",
+            v["faz_sayisi"] == 2 and abs(v["en_yakin"] - 1.2) < 1e-9
+            and v["vurus"] is False,
+            f"{v['faz_sayisi']} faz, min(3.40, 1.20) = {v['en_yakin']:.2f} m")
+
+    # ── K4: "pose var mı" ölçütü satırın DOLU olması (kalite 0.0 da sayılır) ──
+    # Boş kalite = tespit yok. kalite="0.0" gerçek bir pose'dur (kanat güveni
+    # düşük → kalite söndürülmüş); pose oranı bunu pose sayar. Eşiğe çevrilirse
+    # bu test uyarır — eski karnelerle kıyas bozulur.
+    karisik = [_vis_satir(0.0, 8.0, "ok", kalite="0.9"),
+               _vis_satir(0.1, 8.0, "kanat_dusuk", kalite="0.0"),
+               _vis_satir(0.2, 8.0, "tespit_yok", kalite=""),
+               _vis_satir(0.3, 8.0, "tespit_yok", kalite="")]
+    v = gk._vis_metrik([(VIS, karisik)])
+    kontrol("K4  pose oranı: dolu kalite sütunu = pose var (0.0 dahil)",
+            abs(v["pose_orani_%"] - 50.0) < 1e-9,
+            f"4 kareden 2'si dolu → %{v['pose_orani_%']:.1f}")
+
+    # ── K5: istasyonda oturma, İLK kez 15 m altına inildikten SONRA ölçülür ──
+    # Uzun ilk yaklaşma (30, 20 m) yüzdeyi sulandırmamalı.
+    dh = [30.0, 20.0, 14.0, 10.0, 10.0, 9.0, 12.0, 30.0]
+    rows = [{"d_h": str(d), "t": str(i * 0.05)} for i, d in enumerate(dh)]
+    g = gk._gps_metrik([(GPS, rows)])
+    kontrol("K5  oturma yüzdesi ilk yaklaşmayı dışarıda bırakıyor",
+            abs(g["oturma_%"] - 100.0 * 4 / 6) < 1e-6
+            and abs(g["min_d_h"] - 9.0) < 1e-9 and abs(g["son_d_h"] - 30.0) < 1e-9,
+            f"14 m'den sonraki 6 karenin 4'ü 8-12 m bandında → %{g['oturma_%']:.1f}")
+
+    # ── K6: kadraj hatası YALNIZ 'KILIT' karelerinden — kilitsiz kare kirletmemeli ──
+    rows = [{"d_h": "10.0", "t": "0.0", "durum": "KILIT", "kadraj_yaw_deg": "3.0"},
+            {"d_h": "10.0", "t": "0.1", "durum": "KILIT", "kadraj_yaw_deg": "-4.0"},
+            {"d_h": "10.0", "t": "0.2", "durum": "ARAMA", "kadraj_yaw_deg": "100.0"}]
+    g = gk._gps_metrik([(GPS, rows)])
+    kontrol("K6  kadraj yaw RMS yalnız KİLİT karelerinden",
+            abs(g["kadraj_yaw_rms"] - math.sqrt(12.5)) < 1e-9,
+            f"RMS(3, −4) = {g['kadraj_yaw_rms']:.4f}  (100° kilitsiz kare atıldı)")
+
+    # ── K7: eski test artefaktı süzgeci sentetik CSV'yi elemeli ──
+    sentetik_vis = [_vis_satir(1 / 30, 8.0, "ok")]
+    sentetik_gps = [{"tgt_x": "50.0", "tgt_y": "20.0", "tgt_z": "-40.0"}]
+    kontrol("K7  sentetik test artefaktları eleniyor",
+            gk._sentetik(VIS, sentetik_vis) and gk._sentetik(GPS, sentetik_gps)
+            and gk._sentetik(VIS, []),
+            "t_ros=1/30 (visual) ve tgt=(50,20,−40) (gps) imzaları + boş dosya")
+
+    # ── K8: ...ama GERÇEK uçuş elenmemeli (sessiz veri kaybı en kötü hata) ──
+    kontrol("K8  gerçek uçuş kayıtları ELENMİYOR",
+            not gk._sentetik(VIS, [_vis_satir(1234.5, 8.0, "ok")])
+            and not gk._sentetik(GPS, [{"tgt_x": "12.3", "tgt_y": "4.5",
+                                        "tgt_z": "-30.0"}]),
+            "gerçekçi t_ros ve hedef konumu süzgeçten geçiyor")
+
+    return ozet("gudum_karne")
+
+
+if __name__ == "__main__":
+    import sys
+    gecen, toplam = main()
+    sys.exit(0 if gecen == toplam else 1)

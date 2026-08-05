@@ -8,8 +8,6 @@
 #   bash scripts/gcs.sh A2    A1 + pose kilidi kapısı AÇIK
 #   bash scripts/gcs.sh A3    A2 + HybridSORT takip AÇIK
 #   bash scripts/gcs.sh A4    A3 + kilitli-ID politikası AÇIK
-#   bash scripts/gcs.sh A5    A1 + takip AÇIK  → takibin ETKİSİNİ İZOLE EDER
-#                             (A1 ile tek farkı takip; kapı ikisinde de atlanıyor)
 #   bash scripts/gcs.sh pose  GERÇEK SİSTEM: GT yok, güdüm pose modelinden
 #
 # Argümansız çalıştırmak A0 demektir.
@@ -32,9 +30,8 @@ case "$ADIM" in
   A2)   export AVCI_GT_ROT=on  AVCI_POSE=on  AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=off AVCI_LOCK=off ;;
   A3)   export AVCI_GT_ROT=on  AVCI_POSE=on  AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=on  AVCI_LOCK=off ;;
   A4)   export AVCI_GT_ROT=on  AVCI_POSE=on  AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=on  AVCI_LOCK=on  ;;
-  A5)   export AVCI_GT_ROT=on  AVCI_POSE=on  AVCI_GT_KILIT_BYPASS=on  AVCI_TRACKER=on  AVCI_LOCK=off ;;
   pose) export AVCI_GT_ROT=off AVCI_POSE=on  AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=off AVCI_LOCK=off ;;
-  *) echo "kullanım: bash scripts/gcs.sh [A0|A1|A2|A3|A4|A5|pose]  (bkz. DENEY.md)" >&2
+  *) echo "kullanım: bash scripts/gcs.sh [A0|A1|A2|A3|A4|pose]  (bkz. DENEY.md)" >&2
      exit 2 ;;
 esac
 
