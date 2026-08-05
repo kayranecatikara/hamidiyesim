@@ -177,7 +177,11 @@ class CopterAdapter:
         # ayrışma yalnız devir anından sonra başlar.
         alt_faz = "terminal"
         yaklasma = (menzil is not None and menzil > cfg.TERMINAL_MENZIL
-                    and cfg.V_YAKLASMA > 0)
+                    and cfg.V_YAKLASMA > 0
+                    # Üst sınır: çok uzakta yavaşlama yerine tam hız kapanma
+                    # (GT modunda devir 20+ m'de olabiliyor — bkz. Cfg notu).
+                    and (cfg.YAKLASMA_MAX_MENZIL <= 0
+                         or menzil <= cfg.YAKLASMA_MAX_MENZIL))
         if yaklasma:
             alt_faz = "yaklasma"
             yatay_n = math.hypot(float(u_dunya[0]), float(u_dunya[1]))

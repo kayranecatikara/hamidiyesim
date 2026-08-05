@@ -1008,22 +1008,24 @@ def main():
             f"(tavan {cfgA.VZ_TERMINAL_MAX})")
 
     # ── T57: YAKLAŞMA alt-fazı yavaşlatır ──
+    # Yaklaşma bandının İÇİNDE bir menzil seç (TERMINAL_MENZIL < m ≤ MAX)
+    _m_yak = (cfgA.TERMINAL_MENZIL + cfgA.YAKLASMA_MAX_MENZIL) / 2.0
     r_y = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0,
-                                      menzil=cfgA.TERMINAL_MENZIL + 10.0)
+                                      menzil=_m_yak)
     yatay_y = math.hypot(r_y["v_cmd"][0], r_y["v_cmd"][1])
     r_tt = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0,
                                        menzil=cfgA.TERMINAL_MENZIL - 1.0)
     yatay_t = math.hypot(r_tt["v_cmd"][0], r_tt["v_cmd"][1])
     kontrol("T57 yaklaşmada yatay hız V_YAKLASMA'ya iner, terminalde tam hız",
             r_y["alt_faz"] == "yaklasma" and r_tt["alt_faz"] == "terminal"
-            and abs(yatay_y - cfgA.V_YAKLASMA) < 0.1 and yatay_t > yatay_y * 1.5,
+            and abs(yatay_y - cfgA.V_YAKLASMA) < 0.1 and yatay_t > yatay_y,
             f"yaklaşma {yatay_y:.1f} m/s (hedef {cfgA.V_YAKLASMA}) · "
             f"terminal {yatay_t:.1f} m/s")
 
     # ── T58: yaklaşmada dikey, hedefle İRTİFA FARKINI kapatır ──
     # Hedef 20° yukarıda, 20 m menzilde → dikey fark ≈ 6.8 m → drone TIRMANMALI
     # (NED'de vz negatif). Ters durumda (hedef aşağıda) alçalmalı.
-    m20 = 20.0
+    m20 = _m_yak                       # yaklaşma bandının içinde
     r_up = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0, menzil=m20)
     ug_dn = np.array([math.cos(e20), 0.0, +math.sin(e20)])      # hedef AŞAĞIDA
     r_dn = CopterAdapter(cfgA).compute(ug_dn, 0.0, (0, 0, 0), dtA, 0.0, menzil=m20)

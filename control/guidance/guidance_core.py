@@ -85,8 +85,22 @@ class Cfg:
     # Artık devirden sonra önce YAKLAŞMA yapılıyor: yavaşla + hedefle irtifayı
     # eşitle, sonra TERMINAL_MENZIL altında tam hız hücuma geç.
     # V_YAKLASMA=0 → alt-faz kapalı, eski davranış birebir geri gelir.
-    V_YAKLASMA   = _env_f("AVCI_IBVS_V_YAKLASMA", 12.0)   # m/s; yaklaşma yatay hızı
+    # ⚠ V_YAKLASMA HEDEFİN HIZINDAN BELİRGİN YÜKSEK OLMALI — mutlak hız tavanı,
+    # göreli değil. İlk denemede 12.0 seçildi ve GT modunu tamamen bozdu:
+    # hedef 14.2 m/s (ölçüldü, medyan) uçarken net kapanma −2.2 m/s oldu, yani
+    # drone UZAKLAŞTI. 222803 uçuşu: 1070 karenin hepsi yaklaşma alt-fazında,
+    # menzil 24.2 → 82.8 m. Pose modu etkilenmedi çünkü orada devir zaten
+    # ~6 m'de (TERMINAL_MENZIL altında) oluyor ve alt-faz hiç çalışmıyor.
+    # 20.0 → net kapanma +5.8 m/s: yavaşlama faydası korunuyor (25 yerine 20)
+    # ama yetişme garanti. Hedef daha hızlı bir uçağa çevrilirse BU DEĞER DE
+    # yükseltilmeli; ölçüt: V_YAKLASMA − hedef_hızı ≥ ~4 m/s.
+    V_YAKLASMA   = _env_f("AVCI_IBVS_V_YAKLASMA", 20.0)   # m/s; yaklaşma yatay hızı
     VZ_YAKLASMA  = _env_f("AVCI_IBVS_VZ_YAKLASMA", 4.0)   # m/s; yaklaşmada dikey tavan
+    # Yaklaşma alt-fazının ÜST sınırı: bundan uzakta yavaşlamanın anlamı yok,
+    # tam hızla kapanmak gerekir. GT modunda devir 20+ m'de olabiliyor; üst
+    # sınır olmadan araç oradan itibaren yavaş moda giriyordu.
+    # 0 → üst sınır yok (her menzilde yaklaşma).
+    YAKLASMA_MAX_MENZIL = _env_f("AVCI_IBVS_YAKLASMA_MAX", 18.0)  # m
     KP_IRTIFA    = _env_f("AVCI_IBVS_KP_IRTIFA", 0.6)     # 1/s; irtifa farkı → dikey hız
     # Terminalde dikey tavan: nişan dikeye yaklaşınca V_KAPANMA'nın TAMAMI
     # dikeye geçebiliyordu (25 m/s tırmanma). Bu, ıska sonrası "yukarı fırlama"
