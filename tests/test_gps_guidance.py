@@ -206,6 +206,41 @@ def main():
             f"eski: {eski_4m:.1f}° (merkezden {eski_4m - tilt_hedef:+.1f}°), "
             f"yeni: {_istasyon_elev(4.0):.1f}°")
 
+
+    # ── G11: İÇ DAİRE NİŞANI — ölçülmüş varsayılan, yön doğru, düzde sıfır ──
+    # 2026-08-05 uçuş ölçümü: kayma 0→8→14 m ile menzil 34.1→22.8→9.8 m.
+    # Bu değer bir tahmin değil, üç koşuluk kontrollü deneyin sonucudur.
+    kontrol("G11a iç daire nişanı ölçülmüş varsayılanda (14 m)",
+            C.IC_KAYMA == 14.0, f"IC_KAYMA={C.IC_KAYMA}")
+    kontrol("G11a2 lead kazancı ölçülmüş varsayılanda (0.60)",
+            C.KD_H == 0.60, f"KD_H={C.KD_H}  (0.20 → 34.3 m, 0.60 → 29.4 m)")
+
+    # Kayma yönü: hız vektörünün dönüş yönünde 90°'si = dönüş merkezi.
+    # Sentetik daire (R=38, saat yönü) üzerinde iki noktada kontrol.
+    R, vh = 38.0, 14.6
+    w = vh / R
+    en_kotu = 0.0
+    for tt in (0.0, math.pi / (2 * w), math.pi / w):
+        px, py = R * math.cos(w * tt), R * math.sin(w * tt)
+        vx, vy = -vh * math.sin(w * tt), vh * math.cos(w * tt)
+        sp = math.hypot(vx, vy)
+        vhx, vhy = vx / sp, vy / sp
+        # omega > 0 (başlık artıyor) → merkez (-v̂y, +v̂x) yönünde
+        cx, cy = -vhy, vhx
+        gx, gy = -px / R, -py / R          # gerçek merkez yönü
+        en_kotu = max(en_kotu, math.degrees(
+            math.acos(max(-1.0, min(1.0, cx * gx + cy * gy)))))
+    kontrol("G11b kayma yönü tam dönüş merkezine bakıyor",
+            en_kotu < 1e-6, f"en kötü sapma {en_kotu:.2e}°")
+
+    # Düz uçuşta (açısal hız ~0) kayma ölçeği sıfıra gitmeli — düz kovalama
+    # senaryosunda regresyon olmasın diye kritik.
+    olcek_duz = min(1.0, 0.0 / C.IC_OMEGA_REF)
+    olcek_daire = min(1.0, 0.384 / C.IC_OMEGA_REF)
+    kontrol("G11c düz uçuşta kayma 0, dairede tam",
+            olcek_duz == 0.0 and olcek_daire == 1.0,
+            f"düz={olcek_duz:.2f}  daire(ω=0.384)={olcek_daire:.2f}")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

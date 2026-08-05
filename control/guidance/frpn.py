@@ -55,8 +55,13 @@ Kullanım (hepsi saf fonksiyon, yan etkisiz):
 """
 
 import math
+import os
 
 # NED: +z aşağı. Tüm 3'lüler (kuzey, doğu, aşağı).
+
+
+def _env_f(ad, varsayilan):
+    return float(os.environ.get(ad, varsayilan))
 
 
 class Cfg:
@@ -71,9 +76,23 @@ class Cfg:
     # 15 m altında geçirilen TOPLAM süre (görsel fazın devralabileceği pencere).
     # 144 kombinasyon tarandı; kazanan K_C=0.40, V_C_MAX=20.0, K_ZEM=0.60
     # (265.3 s), başlangıç değerlerine (0.25/22/1.0) göre belirgin üstün.
-    K_C = 0.40
+    # ⚠ UÇUŞ ÖLÇÜMÜ TARAMAYI ÇÜRÜTTÜ (2026-08-05, 133002 vs 134019 A/B).
+    # Masa üstü tezgâh K_C=0.40'ı seçmişti; gerçek uçuşta FRPN 27 m'de takıldı,
+    # eski yasa 11.9 m'ye oturdu. Sebep DOYGUNLUKTA YÖN PAYI:
+    #   komut V_MAX'a kırpılır ve kırpma YÖNÜ KORUR, oranı değil. Yani K_C,
+    #   "hız bütçemin ne kadarı yaklaşmaya, ne kadarı yan yana uçmaya gitsin"
+    #   sorusunun cevabıdır. 27 m'de ölçülen:
+    #     FRPN : 14.3 (ileri besleme) + 6.8 (K_C·27)  → kapanma payı  5.8 m/s
+    #     ESKİ : 14.3               + 21.7 (KP_H·27)  → kapanma payı 10.8 m/s
+    #   Gerçek hız marjımız yalnız 0.88 m/s olduğu için bu fark belirleyici.
+    # Tezgâh bunu kaçırdı çünkü modelde marj 2 m/s varsayılmıştı.
+    #
+    # V_C_MAX tavanı "yumuşak duruş" için konmuştu ama doygunlukta kapanma
+    # otoritesini kısıyor. Uçuşta denemek için kod değiştirmeye gerek yok:
+    #     AVCI_FRPN_KC=0.9 AVCI_FRPN_VCMAX=60 AVCI_GPS_GUDUM=frpn ...
+    K_C = _env_f("AVCI_FRPN_KC", 0.40)
     V_C_MIN = 1.0            # m/s; istasyona oturunca bile hafif baskı kalsın
-    V_C_MAX = 20.0           # m/s; ölçülen araç zarfı: düz 18, dairede 14.4 m/s
+    V_C_MAX = _env_f("AVCI_FRPN_VCMAX", 20.0)   # m/s; kapanma teriminin tavanı
 
     # ── MANEVRA DÜZELTMESİ (terim 3) — "lead" terimi ──
     # ⚠ 1.0 (tam düzeltme) EN İYİ DEĞİL, ölçüldü. Denge analizi bunu öngörüyordu:
