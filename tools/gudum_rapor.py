@@ -57,7 +57,8 @@ def _mod(rows):
 
 def topla(sonra=None):
     V = {m: {"menzil": [], "sapma": [], "lead": [], "kalite": [], "vz": [],
-             "hiz_bant": {}, "sapma_bant": {}, "devir": []}
+             "hiz_bant": {}, "sapma_bant": {}, "devir": [],
+             "rot_yan": [], "rot_aci": [], "rot_cift": []}
          for m in ("pose", "gt")}
     say = {"pose": 0, "gt": 0}
     for f in sorted(glob.glob(os.path.join(_LOGS, "visual_lead_*.csv"))):
@@ -96,6 +97,14 @@ def topla(sonra=None):
                             break
             if sy is not None:
                 v["sapma"].append(sy)
+            ys, ds = _f(r.get("yandanlik_sapma")), _f(r.get("d_aci_sapma_deg"))
+            if ys is not None:
+                v["rot_yan"].append(ys)
+            if ds is not None:
+                v["rot_aci"].append(ds)
+            gy, py_ = _f(r.get("gt_yandanlik")), _f(r.get("yandanlik_ham"))
+            if None not in (gy, py_):
+                v["rot_cift"].append((gy, py_))
             if vz is not None:
                 v["vz"].append(vz)
             for ad, k in (("lead", "lead_deg"), ("kalite", "kalite")):
@@ -182,6 +191,41 @@ def g_dikey(V):
     return _png(fig)
 
 
+def g_rotasyon(V):
+    """Pose'un ölçtüğü ROTASYON vs gerçek rotasyon — asıl kıyas.
+    Veri yoksa (eski loglar) None döner; rapor bölümü o zaman uyarı gösterir."""
+    P = V["pose"]
+    if not P["rot_cift"] and not P["rot_aci"]:
+        return None
+    fig, ax = plt.subplots(1, 2, figsize=(13, 4.6))
+    a = ax[0]
+    if P["rot_cift"]:
+        gy = [x for x, _ in P["rot_cift"]]
+        py = [y for _, y in P["rot_cift"]]
+        a.scatter(gy, py, s=6, alpha=.25, color=C_POSE, edgecolors="none")
+        a.plot([0, 1], [0, 1], color="#111", ls="--", lw=1.5, label="kusursuz (y=x)")
+        a.set_xlim(0, 1); a.set_ylim(0, 1)
+        a.set_xlabel("GERÇEK yandanlık (Gazebo)")
+        a.set_ylabel("POSE'un ölçtüğü yandanlık")
+        a.legend(fontsize=9)
+    a.set_title("Yandanlık: pose vs gerçek", fontweight="bold")
+    a.grid(alpha=.3)
+
+    a = ax[1]
+    if P["rot_aci"]:
+        d = [x for x in P["rot_aci"] if -90 < x < 90]
+        a.hist(d, bins=60, color=C_POSE, alpha=.85)
+        a.axvline(0, color="#111", ls="--", lw=1.5, label="hatasız")
+        a.axvline(st.median(P["rot_aci"]), color="#B03A00", lw=2,
+                  label=f"medyan {st.median(P['rot_aci']):+.1f}°")
+        a.legend(fontsize=9)
+    a.set_xlabel("gövde ekseni açı sapması (°)"); a.set_ylabel("kare sayısı")
+    a.set_title("Gövde ekseni yönü: pose − gerçek", fontweight="bold")
+    a.grid(alpha=.3)
+    fig.tight_layout()
+    return _png(fig)
+
+
 def g_devir(V, say):
     fig, a = plt.subplots(figsize=(6.4, 4.4))
     kutu, et, renk = [], [], []
@@ -233,6 +277,34 @@ def html(V, say, grafik):
     P, G = V["pose"], V["gt"]
     pose3 = [abs(x) for m, x in zip(P["menzil"], P["sapma"]) if m >= 3 and abs(x) <= 90] \
         if len(P["menzil"]) == len(P["sapma"]) else []
+    # ── Rotasyon bölümü: yeni sütunlar (gt_yandanlik / d_aci_sapma_deg) ──
+    if grafik.get("rot"):
+        ry, ra = P["rot_yan"], P["rot_aci"]
+        rot_bolum = f'''<div class="k iyi">
+Bu, pose modelinin <b>rotasyon</b> çıktısının gerçekle doğrudan kıyası —
+aynı kare, aynı an. Solda yandanlık (hedef ne kadar yandan görünüyor; lead
+açısını bu belirler), sağda gövde ekseninin görüntü düzlemindeki yönü
+(lead'in hangi yöne kaydırılacağını bu belirler).
+<table><tr><th>ölçüm</th><th>n</th><th>medyan sapma</th><th>p90 |sapma|</th></tr>
+<tr><td>yandanlık (0-1 arası)</td><td class=n>{len(ry)}</td>
+<td class=n>{st.median(ry):+.3f}</td>
+<td class=n>{sorted(abs(x) for x in ry)[int(len(ry)*.9)]:.3f}</td></tr>
+<tr><td>gövde ekseni açısı (°)</td><td class=n>{len(ra)}</td>
+<td class=n>{st.median(ra):+.2f}</td>
+<td class=n>{sorted(abs(x) for x in ra)[int(len(ra)*.9)]:.2f}</td></tr></table>
+</div>
+<img src="data:image/png;base64,{grafik['rot']}">'''
+    else:
+        rot_bolum = '''<div class="k kotu">
+<b>Bu kıyas için veri yok.</b> Rotasyon cevap anahtarı sütunları
+(<code>gt_yandanlik</code>, <code>gt_d_aci_deg</code>,
+<code>yandanlik_sapma</code>, <code>d_aci_sapma_deg</code>) 2026-08-05'te
+eklendi; mevcut loglar bunlardan önce alınmış.<br><br>
+<b>Yapılacak:</b> bir uçuş yap (mod fark etmez, sütunlar her modda yazılır),
+sonra bu raporu yeniden üret — pose'un ölçtüğü yandanlık ve gövde ekseni
+yönü, aynı karedeki gerçek değerle yan yana çıkacak.
+</div>'''
+
     hb = P["hiz_bant"]
     hiz_satir = "".join(
         f"<tr><td>{lo}–{hi} m</td><td class=n>{len(hb[(lo,hi)])}</td>"
@@ -247,7 +319,10 @@ def html(V, say, grafik):
 <p class=alt>{say['pose']} pose modu + {say['gt']} GT modu logu ·
 yalnız <code>durum=ok</code> kareler · 2026-08-05</p>
 
-<h2>1. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
+<h2>1. POSE'un ürettiği ROTASYON vs GERÇEK rotasyon</h2>
+{rot_bolum}
+
+<h2>2. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
 <div class="k iyi">
 Hedef önde ve 3 m'den uzakken pose'un nişan sapması:
 {_ozet(pose3, "°")} <br><br>
@@ -259,7 +334,7 @@ ile zaten söndürüyor.
 <div class=g2><img src="data:image/png;base64,{grafik['sapma']}">
 <img src="data:image/png;base64,{grafik['menzil']}"></div>
 
-<h2>2. "Kötü" pose neden GT'den iyi uçuyor?</h2>
+<h2>3. "Kötü" pose neden GT'den iyi uçuyor?</h2>
 <div class="k iyi">
 Fark algıda değil, <span class=b>güdümün nerede çalıştığında</span>:
 <table><tr><th>mod</th><th>güdümün çalıştığı menzil</th><th>kalite</th></tr>
@@ -272,7 +347,7 @@ kopmadığı için görsel faz onlarca metreden devralıp yaklaşmayı da üstle
 oysa sabit <code>V_KAPANMA</code> ile bunun için tasarlanmadı.
 </div>
 
-<h2>3. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
+<h2>4. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
 <div class="k acil">
 <code>V_KAPANMA</code> <span class=b>sabit</span>; menzilden bağımsız.
 Ölçülen komut hızı:
@@ -284,7 +359,7 @@ hedefi iki kare arasında atlıyor.
 </div>
 <img src="data:image/png;base64,{grafik['hiz']}">
 
-<h2>4. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
+<h2>5. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
 <div class="k acil">
 <code>adapter_copter</code>: <code>v_hedef = V_KAPANMA × u_dunya</code>.
 Dikey bileşen = <code>25 × sin(yükseliş)</code> — yani nişan 30° yukarıysa
@@ -301,7 +376,7 @@ ArduPilot'un <code>WP_SPD_UP=5</code> tavanı GUIDED hız komutuna
 <div class=g2><img src="data:image/png;base64,{grafik['dikey']}">
 <img src="data:image/png;base64,{grafik['devir']}"></div>
 
-<h2>5. Görsel faza geçişin kuralı</h2>
+<h2>6. Görsel faza geçişin kuralı</h2>
 <div class=k>
 <code>supervisor.run_hybrid</code> içinde <span class=b>İKİ şart birden</span>:
 <table>
@@ -344,6 +419,7 @@ def main():
     if not V["pose"]["menzil"] and not V["gt"]["menzil"]:
         print("Log bulunamadı."); return 1
     grafik = {"menzil": g_menzil(V, say), "sapma": g_sapma(V), "hiz": g_hiz(V),
+              "rot": g_rotasyon(V),
               "dikey": g_dikey(V), "devir": g_devir(V, say)}
     with open(args.cikti, "w") as f:
         f.write(html(V, say, grafik))

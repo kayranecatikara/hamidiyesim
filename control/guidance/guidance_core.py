@@ -77,6 +77,22 @@ class Cfg:
     # Gerçek tavanı ArduCopter param/gövde limiti belirler — canlıda CSV'deki
     # kapanma_hizi_ms ile doğrula. K_LEAD taramasında SABİT tut.
     V_KAPANMA = _env_f("AVCI_IBVS_V_KAPANMA", 25.0)   # m/s
+
+    # ── YAKLAŞMA ALT-FAZI (2026-08-05) — bkz. adapter_copter.compute ──
+    # Görsel faz devir anından itibaren tek davranıştı: sabit V_KAPANMA ile
+    # dalış. Ölçüldü: kapanma hızı menzilden BAĞIMSIZ, 0-2 m'de bile 24.4 m/s;
+    # 30 Hz'de kare başına 0.81 m yol = ıska mesafesi medyanının tamamı.
+    # Artık devirden sonra önce YAKLAŞMA yapılıyor: yavaşla + hedefle irtifayı
+    # eşitle, sonra TERMINAL_MENZIL altında tam hız hücuma geç.
+    # V_YAKLASMA=0 → alt-faz kapalı, eski davranış birebir geri gelir.
+    V_YAKLASMA   = _env_f("AVCI_IBVS_V_YAKLASMA", 12.0)   # m/s; yaklaşma yatay hızı
+    VZ_YAKLASMA  = _env_f("AVCI_IBVS_VZ_YAKLASMA", 4.0)   # m/s; yaklaşmada dikey tavan
+    KP_IRTIFA    = _env_f("AVCI_IBVS_KP_IRTIFA", 0.6)     # 1/s; irtifa farkı → dikey hız
+    # Terminalde dikey tavan: nişan dikeye yaklaşınca V_KAPANMA'nın TAMAMI
+    # dikeye geçebiliyordu (25 m/s tırmanma). Bu, ıska sonrası "yukarı fırlama"
+    # ve istasyon aşımının doğrudan sebebiydi. 0 → tavan yok (eski davranış).
+    VZ_TERMINAL_MAX = _env_f("AVCI_IBVS_VZ_TERMINAL", 12.0)  # m/s
+
     KP_YAW = 1.2
     # ── TAVANLAR GERİ ALINDI (2026-07-31) ──
     # 2026-07-25'te "limitsiz test" için YAW_HIZ_MAX=1080 / IVME_TAVAN=1000

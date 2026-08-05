@@ -131,14 +131,16 @@ class CopterAdapter:
         return u_yeni, pn_lead, coalt
 
     def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False, azimut_kalite=1.0):
+                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None):
         """Saf hesap (test edilir; göndermez).
         attitude: (roll, pitch, yaw) radyan. dt: kare aralığı (s).
         kalite: pose kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
         (co-altitude yanlılığı aktif). azimut_kalite: 0..1, nişan dikeye yaklaşınca
         yaw_hata tanımsızlaşır (guidance_core) — yaw adımı bununla sönümlenir.
+        menzil: hedefe gerçek mesafe (m) — YAKLAŞMA alt-fazı için; None ise
+        alt-faz devre dışı, davranış eskisiyle birebir aynı.
         Dönüş: dict(v_cmd, yaw_cmd, u_dunya, v_doygun, yaw_doygun, pn_dikey_deg,
-        coalt_deg, yaw_adim_deg)."""
+        coalt_deg, yaw_adim_deg, alt_faz)."""
         cfg = self.cfg
         # Kadraj tutma için nişanın GÖVDE çerçevesindeki yükselişi gerekir —
         # hedefin sensörde nereye düştüğünü bu belirler (dünya yükselişi değil;
@@ -151,7 +153,54 @@ class CopterAdapter:
         u_dunya = u_dunya / np.linalg.norm(u_dunya)
         u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal,
                                                  kadraj_elev=kadraj_elev)
-        v_hedef = cfg.V_KAPANMA * u_dunya
+        # ── YAKLAŞMA ALT-FAZI (2026-08-05) ──
+        # Görsel faz eskiden tek davranıştı: devir anından itibaren sabit
+        # V_KAPANMA ile hedefe dalıyordu. Ölçüldü — kapanma hızı menzilden
+        # BAĞIMSIZ: 0-2 m bandında bile medyan 24.4 m/s. 30 Hz'de bu kare
+        # başına 0.81 m yol; ıska mesafesi medyanı 0.65-0.85 m, yani tam bir
+        # karelik yol. Nişan kusursuz olsa bile araç hedefi iki kare arasında
+        # atlıyordu.
+        #
+        # Ayrıca dikey bileşen v_hedef = V_KAPANMA · u_dunya tanımından geliyor:
+        # nişan 30° yukarıysa 12.5 m/s tırmanma. Dikey hıza AYRI TAVAN YOKTU
+        # (IVME_TAVAN_DIKEY yalnız değişim hızını sınırlar), araç istasyonun
+        # 5-8 m üstüne fırlıyordu.
+        #
+        # Yeni davranış — görsel faz ikiye ayrıldı:
+        #   YAKLAŞMA (menzil > TERMINAL_MENZIL): yatay hız V_YAKLASMA'ya
+        #     düşürülür, dikey hız hedefle İRTİFA FARKINI kapatmaya ayrılır
+        #     (VZ_YAKLASMA tavanlı). Amaç: terminale hedefle aynı seviyede,
+        #     düz ve yavaş girmek.
+        #   TERMINAL (menzil <= TERMINAL_MENZIL): eski davranış, tam V_KAPANMA.
+        #
+        # GPS fazına DOKUNULMAZ — istasyon geometrisi olduğu gibi kalır; bu
+        # ayrışma yalnız devir anından sonra başlar.
+        alt_faz = "terminal"
+        yaklasma = (menzil is not None and menzil > cfg.TERMINAL_MENZIL
+                    and cfg.V_YAKLASMA > 0)
+        if yaklasma:
+            alt_faz = "yaklasma"
+            yatay_n = math.hypot(float(u_dunya[0]), float(u_dunya[1]))
+            if yatay_n > 1e-6:
+                # Yatay yön korunur, büyüklük V_YAKLASMA'ya çekilir.
+                vx = cfg.V_YAKLASMA * float(u_dunya[0]) / yatay_n
+                vy = cfg.V_YAKLASMA * float(u_dunya[1]) / yatay_n
+            else:
+                vx = vy = 0.0
+            # Dikey: hedefin bize göre yükseklik farkı ≈ −u_dunya[2] · menzil
+            # (NED: z aşağı pozitif, u_dunya[2] negatifse hedef YUKARIDA).
+            # Bunu KP_IRTIFA kazancıyla kapat, VZ_YAKLASMA ile tavanla.
+            dikey_fark = -float(u_dunya[2]) * menzil          # + ise hedef yukarıda
+            vz = clamp(-cfg.KP_IRTIFA * dikey_fark,
+                       -cfg.VZ_YAKLASMA, cfg.VZ_YAKLASMA)     # NED: -vz = tırmanma
+            v_hedef = np.array([vx, vy, vz])
+        else:
+            v_hedef = cfg.V_KAPANMA * u_dunya
+            # Terminalde de dikey hızın kendi tavanı var: nişan dikeye
+            # yaklaşınca V_KAPANMA'nın tamamı dikeye geçebiliyordu (25 m/s).
+            if cfg.VZ_TERMINAL_MAX > 0 and abs(v_hedef[2]) > cfg.VZ_TERMINAL_MAX:
+                v_hedef = np.array([v_hedef[0], v_hedef[1],
+                                    math.copysign(cfg.VZ_TERMINAL_MAX, v_hedef[2])])
 
         # LİMİT dt'si: ham dt kare boşluğunda şişiyor (tespit kesilince
         # process() çağrılmıyor, boşluğun tamamı tek dt'ye biniyor). Hız/ivme
@@ -226,6 +275,7 @@ class CopterAdapter:
 
         return {"v_cmd": v_cmd, "yaw_cmd": yaw_cmd, "u_dunya": u_dunya,
                 "v_doygun": v_doygun, "yaw_doygun": yaw_doygun,
+                "alt_faz": alt_faz,
                 "pn_dikey_deg": math.degrees(pn_lead),
                 "coalt_deg": math.degrees(coalt),
                 "yaw_adim_deg": math.degrees(adim),
@@ -241,11 +291,11 @@ class CopterAdapter:
                 "kadraj_duz_deg": math.degrees(self.kadraj_duz)}
 
     def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False, azimut_kalite=1.0):
+                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None):
         """Hesapla + gönder. Dönen dict CSV loguna girer."""
         out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw,
                             kalite=kalite, terminal=terminal,
-                            azimut_kalite=azimut_kalite)
+                            azimut_kalite=azimut_kalite, menzil=menzil)
         send_velocity(conn, out["v_cmd"][0], out["v_cmd"][1], out["v_cmd"][2],
                       out["yaw_cmd"])
         return out

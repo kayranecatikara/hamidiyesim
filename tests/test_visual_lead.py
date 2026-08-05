@@ -429,7 +429,11 @@ def main():
     # 70°'ye fırlamamalı (slew kırpma) ve |v|=V_KAPANMA korunmalı.
     # Rampa BURADA kapatılır: ölçülen şey dikey aim yumuşatması, ivme tavanı değil
     # (tavan açıkken |v| 4 karede V_KAPANMA'ya oturamaz — T20 rampayı ayrıca test eder).
+    # VZ_TERMINAL_MAX da kapatılır: 70° yükselişte dikey bileşen 23.5 m/s olur ve
+    # tavan onu kırpınca |v| < V_KAPANMA olur — bu YENİ ve İSTENEN davranış
+    # (T56 ayrıca test eder), ama bu testin ölçtüğü şey değil.
     cfg = cfg_copy(); cfg.IVME_TAVAN = 1e6; cfg.IVME_TAVAN_DIKEY = 1e6
+    cfg.VZ_TERMINAL_MAX = 0.0
     ad = CopterAdapter(cfg)
     for e_deg in (20.0, 20.5, 21.0):                  # sakin seyir → yumuşatma otursun
         e = math.radians(e_deg)
@@ -976,6 +980,70 @@ def main():
             len(_R2) > 0 and {r.get("menzil_kaynak") for r in _R2} == {"telem"}
             and abs(float(_R2[0]["menzil_ham_m"]) - _menz_telem[0]) < 1e-6,
             f"{len(_R2)} satır, kaynak=telem, ilk menzil={_R2[0]['menzil_ham_m']}")
+
+    # ══════════════════════════════════════════════════════════
+    # T56-T59 — YAKLAŞMA ALT-FAZI (2026-08-05)
+    # Görsel faz devirden itibaren sabit V_KAPANMA ile dalıyordu; ölçüldü ki
+    # kapanma hızı menzilden bağımsız (0-2 m'de bile 24.4 m/s = kare başına
+    # 0.81 m, ıska mesafesi medyanının tamamı). Artık devirden sonra önce
+    # YAKLAŞMA: yavaşla + hedefle irtifayı eşitle, sonra terminal.
+    # ══════════════════════════════════════════════════════════
+    dtA = 1.0 / 30.0
+    cfgA = cfg_copy()
+    cfgA.IVME_TAVAN = 1e6; cfgA.IVME_TAVAN_DIKEY = 1e6   # rampa testi değil
+    e20 = math.radians(20.0)
+    ug20 = np.array([math.cos(e20), 0.0, -math.sin(e20)])
+
+    # ── T56: terminalde dikey tavan — nişan dikeye yaklaşınca vz kırpılır ──
+    e70 = math.radians(70.0)
+    ug70 = np.array([math.cos(e70), 0.0, -math.sin(e70)])
+    r_t = CopterAdapter(cfgA).compute(ug70, 0.0, (0, 0, 0), dtA, 0.0,
+                                      menzil=cfgA.TERMINAL_MENZIL - 1.0)
+    vz_ham = cfgA.V_KAPANMA * math.sin(e70)
+    kontrol("T56 terminalde dikey hız tavanı (yukarı fırlama kesiliyor)",
+            r_t["alt_faz"] == "terminal"
+            and abs(r_t["v_cmd"][2]) <= cfgA.VZ_TERMINAL_MAX + 1e-6
+            and vz_ham > cfgA.VZ_TERMINAL_MAX,
+            f"tavansız {vz_ham:.1f} m/s olurdu → {abs(r_t['v_cmd'][2]):.1f} m/s "
+            f"(tavan {cfgA.VZ_TERMINAL_MAX})")
+
+    # ── T57: YAKLAŞMA alt-fazı yavaşlatır ──
+    r_y = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0,
+                                      menzil=cfgA.TERMINAL_MENZIL + 10.0)
+    yatay_y = math.hypot(r_y["v_cmd"][0], r_y["v_cmd"][1])
+    r_tt = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0,
+                                       menzil=cfgA.TERMINAL_MENZIL - 1.0)
+    yatay_t = math.hypot(r_tt["v_cmd"][0], r_tt["v_cmd"][1])
+    kontrol("T57 yaklaşmada yatay hız V_YAKLASMA'ya iner, terminalde tam hız",
+            r_y["alt_faz"] == "yaklasma" and r_tt["alt_faz"] == "terminal"
+            and abs(yatay_y - cfgA.V_YAKLASMA) < 0.1 and yatay_t > yatay_y * 1.5,
+            f"yaklaşma {yatay_y:.1f} m/s (hedef {cfgA.V_YAKLASMA}) · "
+            f"terminal {yatay_t:.1f} m/s")
+
+    # ── T58: yaklaşmada dikey, hedefle İRTİFA FARKINI kapatır ──
+    # Hedef 20° yukarıda, 20 m menzilde → dikey fark ≈ 6.8 m → drone TIRMANMALI
+    # (NED'de vz negatif). Ters durumda (hedef aşağıda) alçalmalı.
+    m20 = 20.0
+    r_up = CopterAdapter(cfgA).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0, menzil=m20)
+    ug_dn = np.array([math.cos(e20), 0.0, +math.sin(e20)])      # hedef AŞAĞIDA
+    r_dn = CopterAdapter(cfgA).compute(ug_dn, 0.0, (0, 0, 0), dtA, 0.0, menzil=m20)
+    kontrol("T58 yaklaşmada dikey irtifa farkını kapatır (yön doğru, tavanlı)",
+            r_up["v_cmd"][2] < 0 and r_dn["v_cmd"][2] > 0
+            and abs(r_up["v_cmd"][2]) <= cfgA.VZ_YAKLASMA + 1e-6,
+            f"hedef yukarıda → vz={r_up['v_cmd'][2]:+.2f} (tırmanma) · "
+            f"aşağıda → vz={r_dn['v_cmd'][2]:+.2f} · tavan {cfgA.VZ_YAKLASMA}")
+
+    # ── T59: REGRESYON — menzil verilmezse davranış BİREBİR eski ──
+    cfgB = cfg_copy(); cfgB.IVME_TAVAN = 1e6; cfgB.IVME_TAVAN_DIKEY = 1e6
+    cfgB.VZ_TERMINAL_MAX = 0.0                    # eski: dikey tavan yok
+    r_a = CopterAdapter(cfgB).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0)
+    r_b = CopterAdapter(cfgB).compute(ug20, 0.0, (0, 0, 0), dtA, 0.0, menzil=None)
+    vn = np.linalg.norm(np.array(r_a["v_cmd"]))
+    kontrol("T59 menzil=None → eski davranış birebir (regresyon)",
+            r_a["alt_faz"] == "terminal"
+            and all(abs(x - y) < 1e-12 for x, y in zip(r_a["v_cmd"], r_b["v_cmd"]))
+            and abs(vn - cfgB.V_KAPANMA) / cfgB.V_KAPANMA < 0.01,
+            f"|v|={vn:.2f} (V_KAPANMA={cfgB.V_KAPANMA})")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

@@ -135,11 +135,20 @@ PSC_NE_VEL_P 2.0
 # alternatif" deneyi: istasyonu 15° yerine 25°'de bırakıp dikey ivmeyi
 # yükseltmek. Tutarsa 15°/25° ayrımı gereksizleşir.
 #
-# ⚠ NE İZLENECEK: koruma en KÖTÜ durumları bitirmedi (bir uçuşta hâlâ
-# 3590 °/s tepe görüldü). Çakılma oranı yükselirse (17:00+ tabanı %22) ya da
-# tepe yaw hızı medyanı 134 °/s'in belirgin üstüne çıkarsa GERİ AL.
-# Beklenen kazanç: istasyon aşımı medyanı (şu an −5.9 m) küçülmeli.
-WP_ACC_Z 3
+# ── 2. DENEME DE GERİ ALINDI (2026-08-05 akşamı) ──
+# Ölçüm: aynı GPS_RANGE=11 ile vuruş %22 → %10, en yakın menzil medyanı
+# 1.11 → 2.04 m, istasyon aşımı −5.4 → −8.3 m. Beklenen kazanç TERS çıktı.
+# (Deney kirliydi: ISTASYON_ELEV_DEG de aynı anda 15° → 25° değişmişti.)
+#
+# ASIL ÇÖZÜM BAŞKA YERDE: aşımın kaynağı aracın frenleme yetkisi değil,
+# GÜDÜMÜN EMRETTİĞİ DİKEY HIZ. adapter_copter'da v_hedef = V_KAPANMA·u_dunya
+# olduğu için nişan 30° yukarıysa 12.5 m/s tırmanma emrediliyordu ve dikey
+# hıza ayrı tavan yoktu. 2026-08-05'te görsel faza YAKLAŞMA alt-fazı +
+# VZ_TERMINAL_MAX tavanı eklendi (guidance_core.Cfg) — sorun kaynağında
+# kesiliyor, aracı zorlamaya gerek kalmıyor.
+#
+# WP_ACC_Z tekrar denenecekse: yalnız başına, ISTASYON_ELEV_DEG sabitken.
+WP_ACC_Z 1
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun

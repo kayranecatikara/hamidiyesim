@@ -45,6 +45,7 @@ _CSV_ALANLAR = [
     "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "menzil_ham_m", "menzil_red",
     "menzil_kaynak",   # "gz" (zaman hizalı) | "telem" (yedek) — bkz. _menzil_olc
+    "alt_faz",         # "yaklasma" | "terminal" — görsel fazın alt-fazı
     "kapanma_hizi_ms", "mod",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
@@ -53,6 +54,10 @@ _CSV_ALANLAR = [
     "gercek_yaw_deg", "gercek_elev_deg", "gercek_menzil_ham_m",
     "gercek_u_px", "gercek_v_px", "gercek_onde", "gercek_kadraj_ici",
     "pose_yaw_sapma_deg", "pose_elev_sapma_deg", "pose_menzil_sapma_m",
+    # ROTASYON cevap anahtarı — pose'un ölçtüğü yönelim vs GERÇEK yönelim.
+    # Her karede yazılır (GT modu kapalı olsa bile); güdüme GİRMEZ.
+    "gt_yandanlik", "gt_d_aci_deg", "pose_d_aci_deg",
+    "yandanlik_sapma", "d_aci_sapma_deg",
     # Hangi bayraklarla uçuldu — yalnız İLK satırda dolu (bkz. _yapilandirma).
     "yapilandirma",
 ]
@@ -427,6 +432,13 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             wall_recv = kayit["wall_recv"]
             # GT modunda algı girdisi burada tazelenir; pose artık okunmaz.
             gt = get_gt() if gt_modu else None
+            # ROTASYON CEVAP ANAHTARI (2026-08-05): GT modu KAPALI olsa bile
+            # gerçek rotasyonu her karede hesapla ve logla. Böylece pose'un
+            # ürettiği rotasyon (yandanlık, gövde ekseni yönü) ile gerçeği AYNI
+            # KARE ÜZERİNDE karşılaştırılabiliyor. Bu sütunlar olmadan iki mod
+            # ancak ayrı uçuşların dağılımıyla kıyaslanabiliyordu.
+            # ⚠ Yalnız ÖLÇÜM — güdüme girmez (gt_modu kapalıysa `gt` None kalır).
+            gt_olcum = gt if gt is not None else (get_gt() if get_gt else None)
 
             aras.drenaj(conn)
             satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
@@ -553,6 +565,22 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
 
+            # ── ROTASYON KIYASI (yalnız ölçüm) ──
+            if gt_olcum is not None:
+                satir["gt_yandanlik"] = round(float(gt_olcum["yandanlik"]), 4)
+                satir["yandanlik_sapma"] = round(
+                    res["yandanlik_ham"] - float(gt_olcum["yandanlik"]), 4)
+                gd = gt_olcum.get("d_birim")
+                if gd is not None:
+                    gt_aci = math.degrees(math.atan2(gd[1], gd[0]))
+                    pz_aci = math.degrees(math.atan2(float(res["d_birim"][1]),
+                                                     float(res["d_birim"][0])))
+                    satir["gt_d_aci_deg"] = round(gt_aci, 2)
+                    satir["pose_d_aci_deg"] = round(pz_aci, 2)
+                    # ±180 sarmalı: gövde ekseni yönü, 179° ile -179° arası 2°
+                    satir["d_aci_sapma_deg"] = round(
+                        (pz_aci - gt_aci + 180) % 360 - 180, 2)
+
             satir.update({
                 "dt": res["dt"], "a": round(res["a"], 2), "b": round(res["b"], 2),
                 "olcek_ham": round(res["olcek_ham"], 2),
@@ -590,7 +618,11 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                 cmd = adapter.command(conn, res["u_govde"], res["yaw_hata"],
                                       aras.attitude, res["dt"], mevcut_yaw,
                                       kalite=res["kalite"], terminal=coalt_latch,
-                                      azimut_kalite=res["azimut_kalite"])
+                                      azimut_kalite=res["azimut_kalite"],
+                                      # YAKLAŞMA alt-fazı için (bkz. adapter):
+                                      # menzil > TERMINAL_MENZIL iken yavaşla ve
+                                      # hedefle irtifayı eşitle.
+                                      menzil=menzil_onceki)
                 # kör dalışta sürdürülecek son nişan komutu
                 son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
                              cmd["yaw_cmd"])
@@ -609,6 +641,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     "gama_deg": round(cmd["gama_deg"], 2),
                     "kadraj_hata_deg": round(cmd["kadraj_hata_deg"], 2),
                     "kadraj_duz_deg": round(cmd["kadraj_duz_deg"], 2),
+                    "alt_faz": cmd.get("alt_faz"),
                 })
                 # quad'a özgü izleme: burun eğimi + kameranın DÜNYAYA göre bakışı
                 # (ivme tavanı aşılırsa kamera yere bakmaya başlar — Cfg.IVME_TAVAN)

@@ -16,6 +16,7 @@ import time
 
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance import gps_guidance as gg
+from control.guidance.guidance_core import Cfg as LC
 from control.guidance.common import normalize_angle as _norm
 
 # Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
@@ -193,21 +194,32 @@ def main():
     # (veya RANGE_SET küçültülürse) burada yakalanır.
     # ── 2026-08-05: A_DIKEY 1.0 → 3.0 ──
     # Bu sabit ARACIN gerçek yeteneği; testin keyfi bir varsayımı değil.
-    # avci_copter.parm'da WP_ACC_Z 1 → 3 yapıldı (SITL dökümüyle doğrulanır:
-    # `grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm`). Bütçe 3× büyüdüğü için
-    # istasyon 25°'ye geri döndürülebildi — testin işlevi aynı: geometri
-    # aracın dikey ivme bütçesini AŞARSA burada yakalanır.
-    # ⚠ WP_ACC_Z geri alınırsa BU SAYI DA geri alınmalı, yoksa test 25°'lik
-    # geometriyi yanlışlıkla onaylar ve dikey ıska sessizce geri döner.
-    A_DIKEY = 3.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
+    # ── 2026-08-05: BÜTÇE İKİ PARÇAYA AYRILDI ──
+    # Eski varsayım: dikey farkın TAMAMI terminal fazda kapatılacak. Görsel faza
+    # YAKLAŞMA alt-fazı eklenince bu değişti (adapter_copter.compute): devirden
+    # TERMINAL_MENZIL'e kadar drone yavaşlar (V_YAKLASMA) ve dikey farkı
+    # VZ_YAKLASMA tavanıyla ÖNCEDEN kapatır. Terminale artık seviyeye yakın
+    # giriliyor, kalan fark aracın ivme rampasına bırakılıyor.
+    # Testin işlevi aynı: geometri TOPLAM bütçeyi aşarsa burada yakalanır.
+    A_DIKEY = 1.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
     V_YATAY = 4.3        # m/s; ÖLÇÜLEN en hızlı terminal yatay kapanma (kötü hal)
     t_var = d_behind / V_YATAY
-    tirmanilabilir = 0.5 * A_DIKEY * t_var ** 2
-    kontrol("G11 terminal dikey bütçesi: istasyonun altı ivme sınırında kapanabilir",
+    terminal_pay = 0.5 * A_DIKEY * t_var ** 2
+
+    # Yaklaşma payı — EN KÖTÜ HAL: devir tam menzil kapısında olur (GATE_MENZIL),
+    # yani yaklaşma için en kısa yol. Pratikte devir daha yakında oluyor
+    # (ölçülen medyan ~6 m pose modunda) ama test kötü hale göre kurulur.
+    from control.guidance.supervisor import SupCfg as _S
+    yaklasma_yolu = max(0.0, _S.GATE_MENZIL - LC.TERMINAL_MENZIL)
+    yaklasma_pay = (LC.VZ_YAKLASMA * (yaklasma_yolu / LC.V_YAKLASMA)
+                    if LC.V_YAKLASMA > 0 else 0.0)
+    tirmanilabilir = terminal_pay + yaklasma_pay
+    kontrol("G11 dikey bütçe: yaklaşma + terminal payı istasyonun altını kapatmalı",
             tirmanilabilir > d_below,
-            f"kapatılacak {d_below:.2f} m, {t_var:.2f} s var → {tirmanilabilir:.2f} m "
-            f"tırmanılabilir (pay {tirmanilabilir - d_below:+.2f} m); "
-            f"25°'de kapatılacak {C.RANGE_SET*math.sin(math.radians(25)):.2f} m olurdu")
+            f"kapatılacak {d_below:.2f} m → yaklaşma {yaklasma_pay:.2f} m "
+            f"({yaklasma_yolu:.0f} m yol / {LC.V_YAKLASMA:.0f} m/s) + terminal "
+            f"{terminal_pay:.2f} m = {tirmanilabilir:.2f} m "
+            f"(pay {tirmanilabilir - d_below:+.2f} m)")
 
     eski_4m = _eski_elev(4.0)
     kontrol("G10b eski sabit-metre davranışı 4 m'de kadrajı taşırırdı",
