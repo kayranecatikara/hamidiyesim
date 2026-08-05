@@ -1399,20 +1399,88 @@ def gz_iris_camera_thread():
         print(f"[GCS] gz-transport Python yok, Harmonic kamera atlandı: {e}")
         return
 
+    # ═══════════════════════════════════════════════════════════════════
+    #  EN SON KARE KAZANIR (2026-08-05) — gecikme birikmesini önler
+    # ═══════════════════════════════════════════════════════════════════
+    # ESKİ HÂLİ: callback tüm işi SENKRON yapıyordu (YOLO + tracker + overlay
+    # + JPEG). Ölçüldü: process_iris_frame medyan 21.8 ms, tepe 32.1 ms —
+    # kamera 30 Hz yayın yapıyor, yani bütçe 33.3 ms. BOŞ makinede bile pay
+    # neredeyse sıfır; gerçek uçuşta Gazebo render + Talon kamerası + güdüm
+    # döngüsü + iki SITL aynı CPU'yu paylaşınca bütçe AŞILIYOR.
+    # Bütçe aşılınca gz-transport kareleri KUYRUĞA alıyor ve kuyruk hiç
+    # boşalmıyor → arayüz Gazebo'nun giderek gerisine düşüyor.
+    # Kullanıcı belirtisi: "uçuş uzayınca gecikme birikiyor, hedefin
+    # hareketleri sonradan geliyor". Yavaş tüketici + sınırsız kuyruk.
+    # Desen izole edilip ölçüldü (30 Hz üretici, 40 ms işleme):
+    #     eski desen : ilk çeyrek 80 ms → son çeyrek 579 ms (sürekli büyüyor)
+    #     yeni desen : ilk çeyrek 19 ms → son çeyrek  19 ms (sabit)
+    #
+    # YENİ HÂLİ: callback yalnız EN SON kareyi saklayıp döner (~0.1 ms).
+    # İşçi thread her turda en yeni kareyi alır; o sırada gelen ara kareler
+    # DÜŞÜRÜLÜR. Gecikme en fazla BİR işleme çevrimi kadar olur, birikmez.
+    # Görüntü akıcılığı düşebilir ama TAZE kalır — güdüm için doğru takas.
+    #
+    # ⚠ wall_recv artık karenin GAZEBO'DAN GELDİĞİ an (callback girişi), işleme
+    # başlangıcı değil. Eskiden işleme anı yazılıyordu ve kuyrukta geçen süre
+    # ÖLÇÜLEMİYORDU — loglar "29 ms gecikme" derken gerçek gecikme görünmüyordu.
+    # Artık visual_lead'in bayat-kare kapısı gerçek gecikmeyi görür.
+    kare_kutu = {"veri": None, "en": 0, "boy": 0, "stamp": 0.0, "wall": 0.0}
+    kare_kilit = threading.Lock()
+    kare_olay = threading.Event()
+    sayac = {"gelen": 0, "islenen": 0, "dusen": 0, "t_log": time.time()}
+
     def cb(msg):
+        # SADECE sakla ve dön. msg.data bytes'tır; referansı tutmak yeterli
+        # (np.frombuffer işçi tarafında sıfır-kopya çalışır).
         try:
-            wall_recv = time.time()
-            stamp = msg.header.stamp.sec + msg.header.stamp.nsec * 1e-9
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
-                               stamp=stamp, wall_recv=wall_recv)
+            with kare_kilit:
+                if kare_kutu["veri"] is not None:
+                    sayac["dusen"] += 1          # önceki kare hiç işlenmedi
+                kare_kutu["veri"] = msg.data
+                kare_kutu["en"] = msg.width
+                kare_kutu["boy"] = msg.height
+                kare_kutu["stamp"] = (msg.header.stamp.sec
+                                      + msg.header.stamp.nsec * 1e-9)
+                kare_kutu["wall"] = time.time()
+                sayac["gelen"] += 1
+            kare_olay.set()
         except Exception as e:
-            print(f"[GCS GZ-CAM] hata: {e}")
+            print(f"[GCS GZ-CAM] cb hata: {e}")
+
+    def isci():
+        while True:
+            kare_olay.wait(1.0)
+            kare_olay.clear()
+            with kare_kilit:
+                veri = kare_kutu["veri"]
+                en, boy = kare_kutu["en"], kare_kutu["boy"]
+                stamp, wall = kare_kutu["stamp"], kare_kutu["wall"]
+                kare_kutu["veri"] = None         # tüketildi
+            if veri is None:
+                continue
+            try:
+                arr = np.frombuffer(veri, dtype=np.uint8).reshape((boy, en, 3))
+                process_iris_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
+                                   stamp=stamp, wall_recv=wall)
+                sayac["islenen"] += 1
+            except Exception as e:
+                print(f"[GCS GZ-CAM] işçi hata: {e}")
+            # 10 s'de bir sağlık raporu: düşme oranı yüksekse işleme hattı
+            # kameraya yetişemiyor demektir (o zaman YOLO'yu seyreltmek gerekir).
+            simdi = time.time()
+            if simdi - sayac["t_log"] >= 10.0:
+                gecen = simdi - sayac["t_log"]
+                g, i, d = sayac["gelen"], sayac["islenen"], sayac["dusen"]
+                print(f"[GZ-CAM] {g/gecen:.1f} kare/s geldi, {i/gecen:.1f} işlendi, "
+                      f"{d} düştü (%{100*d/max(g,1):.0f}) — gecikme birikmiyor")
+                sayac.update(gelen=0, islenen=0, dusen=0, t_log=simdi)
 
     topic = os.environ.get("AVCI_GZ_CAMERA_TOPIC", "/iris_cam/image")
     node = GzNode()
+    threading.Thread(target=isci, daemon=True, name="gz-cam-isci").start()
     node.subscribe(GzImage, topic, cb)
-    print(f"[GCS] gz-transport kamera dinleniyor ({topic}, Harmonic)")
+    print(f"[GCS] gz-transport kamera dinleniyor ({topic}, Harmonic) "
+          f"— en-son-kare-kazanır")
     while True:
         time.sleep(1)
 
@@ -1437,15 +1505,40 @@ def gz_talon_camera_thread():
         print(f"[GCS] gz-transport Python yok, Talon kamera atlandı: {e}")
         return
 
+    # İris kamerasıyla AYNI desen (en-son-kare-kazanır). Talon hattı daha ucuz
+    # (YOLO yok, ~7 ms) ama 30 Hz'de aynı CPU'yu paylaşıyor; kuyruğa girerse
+    # hem kendi görüntüsü gecikir hem iris hattından zaman çalar.
+    t_kutu = {"veri": None, "en": 0, "boy": 0}
+    t_kilit = threading.Lock()
+    t_olay = threading.Event()
+
     def cb(msg):
         try:
-            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            process_plane_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            with t_kilit:
+                t_kutu["veri"] = msg.data
+                t_kutu["en"], t_kutu["boy"] = msg.width, msg.height
+            t_olay.set()
         except Exception as e:
-            print(f"[GCS GZ-CAM] Talon hata: {e}")
+            print(f"[GCS GZ-CAM] Talon cb hata: {e}")
+
+    def t_isci():
+        while True:
+            t_olay.wait(1.0)
+            t_olay.clear()
+            with t_kilit:
+                veri, en, boy = t_kutu["veri"], t_kutu["en"], t_kutu["boy"]
+                t_kutu["veri"] = None
+            if veri is None:
+                continue
+            try:
+                arr = np.frombuffer(veri, dtype=np.uint8).reshape((boy, en, 3))
+                process_plane_frame(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            except Exception as e:
+                print(f"[GCS GZ-CAM] Talon işçi hata: {e}")
 
     topic = os.environ.get("AVCI_GZ_TALON_TOPIC", "/talon_cam/image")
     node = GzNode()
+    threading.Thread(target=t_isci, daemon=True, name="gz-talon-isci").start()
     node.subscribe(GzImage, topic, cb)
     print(f"[GCS] gz-transport Talon kamera dinleniyor ({topic}, Harmonic)")
     while True:
@@ -1575,12 +1668,27 @@ async def mavlink_listener():
     # sysid -> is_plane (bool) eşleşmesi
     sysid_is_plane = {}
 
+    # ── SOKET BOŞALTMA (2026-08-05) — kamerayla AYNI birikme hatası ──
+    # ESKİ HÂLİ: her turda TEK mesaj okunup 5 ms uyunuyordu → tavan 200 msg/s.
+    # Ama 14550'ye İKİ araç birden yayın yapıyor (--streamrate=25 ×2, tipik
+    # 300-500 msg/s). Fark UDP tamponunda birikir; tampon dolana kadar
+    # telemetri giderek geriden gelir, dolduktan sonra büyük ve sabit bir
+    # gecikmeye oturur. Bu KAMERADAN AYRI bir hattır: harita konumları,
+    # irtifa/hız göstergeleri ve arayüzün gördüğü hedef konumu bundan etkilenir.
+    # YENİ HÂLİ: her turda soket bitene kadar boşaltılır (BATCH tavanıyla —
+    # tek tur asyncio döngüsünü aç bırakmasın).
+    BATCH = 500
     while True:
-        msg = _mav_conn.recv_match(
-            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
-            blocking=False
-        )
-        if msg:
+        okunan = 0
+        while okunan < BATCH:
+            msg = _mav_conn.recv_match(
+                type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
+                      'ATTITUDE', 'HEARTBEAT'],
+                blocking=False
+            )
+            if msg is None:
+                break
+            okunan += 1
             sys_id = msg.get_srcSystem()
             if msg.get_type() == 'HEARTBEAT' and sys_id != 255:
                 # msg.type: 1=FixedWing, 2=Quadrotor, vs.
@@ -1636,13 +1744,22 @@ def _iris_telem_worker():
         print(f"[GCS] İris 14541 bağlantı hatası: {e}")
         return
 
+    # Soket boşaltma — mavlink_listener ile aynı gerekçe (bkz. oradaki not).
+    # Tek mesaj/5 ms tavanı 200 msg/s'ti; iris SITL'i streamrate=25 ile bunun
+    # üstünde yayın yapabiliyor ve fark UDP tamponunda birikiyordu.
+    BATCH = 500
     while not _iris_telem_stop.is_set():
         try:
-            msg = _iris_telem_conn.recv_match(
-                type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
-                blocking=False
-            )
-            if msg:
+            okunan = 0
+            while okunan < BATCH:
+                msg = _iris_telem_conn.recv_match(
+                    type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
+                          'ATTITUDE', 'HEARTBEAT'],
+                    blocking=False
+                )
+                if msg is None:
+                    break
+                okunan += 1
                 _process_mavlink_msg(msg, "iris")
         except Exception:
             pass
