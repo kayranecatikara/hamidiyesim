@@ -81,7 +81,18 @@ class Cfg:
     #       sığan en büyük açı (18°? 20°?) merkeze daha yakın olurdu.
     #   (2) Asıl alternatif: istasyonu 25°'de bırakıp WP_ACC_Z'yi 1.0 → 2.5
     #       yükseltmek. Tutarsa bu ayrım gereksiz hale gelir.
-    ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 15.0)
+    #
+    # ── 2026-08-05: 25°'YE GERİ DÖNÜLDÜ — yukarıdaki (2) şıkkı deneniyor ──
+    # 15°'ye inilmesinin TEK gerekçesi dikey ivme bütçesiydi (4.65 m'yi
+    # 1 m/s² ile kapatamıyorduk). O kısıt kalktı: WP_ACC_Z 1 → 3 yapıldı,
+    # yani 4.65 m artık √(2·4.65/3) ≈ 1.76 s'de kapanıyor (eskiden 3.05 s;
+    # terminalde eldeki süre 2.4-2.8 s). Bütçe artık 25°'ye RAHAT sığıyor.
+    # Kazanç: hedef kadrajın TAM MERKEZİNDE görünür — 15°'de merkezin ~10°
+    # altındaydı ve merkez dışı kadrajlamanın bedeli hiç izole ölçülmemişti
+    # (B7 açık sorusu). Bu değişiklik o soruyu da kapatmayı hedefliyor.
+    # ⚠ İkisi BİRLİKTE değerlendirilmeli: WP_ACC_Z=3 geri alınırsa bu da 15'e
+    # dönmeli, yoksa dikey ıska geri gelir.
+    ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 25.0)
     TRACK_MIN_SPD = 3.0       # m/s; üstünde istasyon HIZ yönünün gerisi (kuyruk), altında LOS gerisi
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)
 

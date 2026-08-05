@@ -176,7 +176,18 @@ Sırayla git, atlama. Her madde: uygula → testler → **uç** → ölç →
 ### Şimdi karara bağlanacak
 
 - [ ] **B7 — AÇIK SORU: istasyon açısını kamera tilt'inden ayırmak doğru muydu?**
-      `control/guidance/gps_guidance.py` → `ISTASYON_ELEV_DEG` (şu an 15.0)
+      `control/guidance/gps_guidance.py` → `ISTASYON_ELEV_DEG`
+
+      ⚑ **2026-08-05: 25°'YE GERİ DÖNÜLDÜ, ölçüm bekleniyor.** Aşağıdaki
+      "iki şey denenmedi" listesindeki **(2). şık uygulandı**: istasyon 25°'de
+      bırakılıp `WP_ACC_Z` 1 → 3 yükseltildi. 15°'ye inilmesinin TEK gerekçesi
+      dikey ivme bütçesiydi; 4.65 m artık ~1.76 s'de kapanıyor (eskiden 3.05 s,
+      terminalde eldeki süre 2.4-2.8 s) — bütçe 25°'ye rahat sığıyor.
+      İkisi BİRLİKTE değerlendirilecek: `WP_ACC_Z=3` geri alınırsa istasyon da
+      15'e dönmeli, yoksa dikey ıska geri gelir.
+      *Ölçüt:* terminalde "kalan dikey" ≈ 0, alttan geçme bitmeli; hedef kadraj
+      merkezinde görünmeli (15°'de merkezin ~10° altındaydı).
+      *Sonuç:*
 
       *Şüphe:* 25° tesadüf değildi — kamera tilt'i o. İstasyon 25°'de kurulunca
       hedef kadrajın TAM MERKEZİNDE oluyordu. 15°'ye inince hedef merkezin ~10°
@@ -220,6 +231,22 @@ Sırayla git, atlama. Her madde: uygula → testler → **uç** → ölç →
       *Sonuç:*
 
 ### Yüksek öncelik
+
+- [ ] **B8 — Frenleme eğrisi: mesafeye bağlı hız tavanı** · YENİ (2026-08-05)
+      `control/guidance/gps_guidance.py` → `V_MAX` kullanımı
+      *Neden:* `V_MAX` tek bir sabit tavan (şu an 18). 28 iken araç istasyona
+      zamanında yavaşlayamayıp savruluyordu (28 m/s'den 12 m/s² ile durma
+      mesafesi v²/2a = 32.7 m, istasyon standoff'u ise 10 m); o yüzden 18'e
+      çekildi. Ama 18 uzakta ÇOK YAVAŞ — hedefe yetişmeyi geciktiriyor.
+      Sabit tavanla ikisi aynı anda çözülemez.
+      *Nasıl:* tavanı kalan mesafeye bağla —
+          V_MAX_etkin = min(V_MAX_UZAK, sqrt(2 · MAX_ACCEL · kalan_mesafe))
+      12 m/s² ile: 40 m → 28 m/s, 20 m → 21.9, 10 m → 15.5, 5 m → 11.0.
+      Uzakta hızlı gelir, istasyona yaklaşırken kendiliğinden yavaşlar ve
+      TAM istasyonda durur.
+      *Ölçüt:* istasyona oturma oranı artmalı, overshoot (min d_h) küçülmeli,
+      hedefe yetişme süresi kısalmalı.
+      *Sonuç:*
 
 - [ ] **B1 — Görsel faza irtifa tabanı** · A8'den ÖNCE
       `control/guidance/visual_lead.py` (veya `adapter_copter`)

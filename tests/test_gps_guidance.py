@@ -191,7 +191,15 @@ def main():
     #   ölçülen kalan dikey: vurdu +0.03 m | ıskaladı +1.52 m, +2.06 m (alttan)
     # Bu test o hatanın geri gelmesini engeller: istasyon açısı yükseltilirse
     # (veya RANGE_SET küçültülürse) burada yakalanır.
-    A_DIKEY = 1.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
+    # ── 2026-08-05: A_DIKEY 1.0 → 3.0 ──
+    # Bu sabit ARACIN gerçek yeteneği; testin keyfi bir varsayımı değil.
+    # avci_copter.parm'da WP_ACC_Z 1 → 3 yapıldı (SITL dökümüyle doğrulanır:
+    # `grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm`). Bütçe 3× büyüdüğü için
+    # istasyon 25°'ye geri döndürülebildi — testin işlevi aynı: geometri
+    # aracın dikey ivme bütçesini AŞARSA burada yakalanır.
+    # ⚠ WP_ACC_Z geri alınırsa BU SAYI DA geri alınmalı, yoksa test 25°'lik
+    # geometriyi yanlışlıkla onaylar ve dikey ıska sessizce geri döner.
+    A_DIKEY = 3.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
     V_YATAY = 4.3        # m/s; ÖLÇÜLEN en hızlı terminal yatay kapanma (kötü hal)
     t_var = d_behind / V_YATAY
     tirmanilabilir = 0.5 * A_DIKEY * t_var ** 2
