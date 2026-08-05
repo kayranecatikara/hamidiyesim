@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 
@@ -91,6 +91,17 @@
 
           <!-- AVCI DRONE -->
           <div class="view" id="viewAvci" hidden>
+            <div class="grp">
+              <!-- Güdüm modu seçimi (5bc5f8d) — Ayşenur arayüzü merge edilirken
+                   kaybolmuştu, geri getirildi. gps=hep GPS, visual=yalnız görsel
+                   (temas kopunca durur), hybrid=supervisor geçişli. -->
+              <span class="label">Güdüm Modu</span>
+              <div class="mod-grup" role="group" aria-label="Güdüm modu">
+                <button id="mod-gps" class="mod-btn" data-mode="gps">GPS</button>
+                <button id="mod-gorsel" class="mod-btn" data-mode="visual">GÖRSEL</button>
+                <button id="mod-hibrit" class="mod-btn" data-mode="hybrid">HİBRİT</button>
+              </div>
+            </div>
             <div class="grp">
               <span class="label">Takip Modu — Otonom</span>
               <button class="startbtn" id="startBtn">
@@ -211,6 +222,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=15"></script>
+<script src="script.js?v=16"></script>
 </body>
 </html>

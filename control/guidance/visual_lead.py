@@ -58,6 +58,13 @@ _CSV_ALANLAR = [
     # Her karede yazılır (GT modu kapalı olsa bile); güdüme GİRMEZ.
     "gt_yandanlik", "gt_d_aci_deg", "pose_d_aci_deg",
     "yandanlik_sapma", "d_aci_sapma_deg",
+    # Hedefin 3B ROTASYONU: gerçek (Gazebo) vs pose keypoint'lerinden PnP
+    # çözümü. Pose modeli rotasyonu DOĞRUDAN üretmez — 6 keypoint üretir;
+    # bu sütunlar "üretebileceği en iyi rotasyon ne kadar doğru" sorusunu
+    # ölçer (geometry.pose_rpy_cozum). Güdüme GİRMEZ.
+    "gt_roll_deg", "gt_pitch_deg", "gt_yaw_deg",
+    "pose_roll_deg", "pose_pitch_deg", "pose_yaw_deg",
+    "roll_sapma_deg", "pitch_sapma_deg", "yaw_rot_sapma_deg", "pnp_kpt",
     # Hangi bayraklarla uçuldu — yalnız İLK satırda dolu (bkz. _yapilandirma).
     "yapilandirma",
 ]
@@ -564,6 +571,28 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             res = core.process(pose, stamp, aras.attitude, gt=gt)
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
+
+            # ── 3B ROTASYON KIYASI: gerçek rpy vs pose'un PnP çözümü ──
+            if gt_olcum is not None and gt_olcum.get("hedef_rpy") is not None:
+                hr = gt_olcum["hedef_rpy"]
+                satir["gt_roll_deg"] = round(math.degrees(hr[0]), 2)
+                satir["gt_pitch_deg"] = round(math.degrees(hr[1]), 2)
+                satir["gt_yaw_deg"] = round(math.degrees(hr[2]), 2)
+                if pose is not None and gt_olcum.get("iris_rpy") is not None:
+                    kp = pose.get("kpts")
+                    gorunur = sum(1 for k in (kp or [])
+                                  if k[2] >= cfg.KPT_CONF_MIN and not (k[0] == 0 and k[1] == 0))
+                    satir["pnp_kpt"] = gorunur
+                    cz = geo.pose_rpy_cozum(kp, gt_olcum["iris_rpy"],
+                                            kpt_conf_min=cfg.KPT_CONF_MIN) if kp else None
+                    if cz is not None:
+                        satir["pose_roll_deg"] = round(math.degrees(cz[0]), 2)
+                        satir["pose_pitch_deg"] = round(math.degrees(cz[1]), 2)
+                        satir["pose_yaw_deg"] = round(math.degrees(cz[2]), 2)
+                        for ad, i in (("roll_sapma_deg", 0), ("pitch_sapma_deg", 1),
+                                      ("yaw_rot_sapma_deg", 2)):
+                            d = math.degrees(cz[i] - hr[i])
+                            satir[ad] = round((d + 180) % 360 - 180, 2)
 
             # ── ROTASYON KIYASI (yalnız ölçüm) ──
             if gt_olcum is not None:

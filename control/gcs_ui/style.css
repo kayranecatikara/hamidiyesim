@@ -242,3 +242,14 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 
 @media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}.stats{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}
+
+/* ── Güdüm modu butonları (GPS / GÖRSEL / HİBRİT) ──
+   5bc5f8d'den geri getirildi (Ayşenur arayüzü merge edilirken kaybolmuştu).
+   Renkler yeni arayüzün değişkenlerine uyarlandı. */
+.mod-grup{display:inline-flex;gap:6px;margin-top:4px}
+.mod-btn{background:transparent;border:1px solid var(--line2);color:var(--muted);
+  font:inherit;font-size:11px;font-weight:700;letter-spacing:.5px;
+  padding:4px 12px;border-radius:5px;cursor:pointer;transition:all .15s}
+.mod-btn:hover{border-color:var(--green);color:var(--text)}
+.mod-btn.aktif{background:rgba(55,224,107,.15);border-color:var(--green);
+  color:var(--green);text-shadow:0 0 6px rgba(55,224,107,.5)}

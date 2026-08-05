@@ -729,6 +729,8 @@ async function pollChase(){
     const d = await (await fetch('/api/chase_status')).json();
     if (d.active !== st.mission) setMission(d.active);
     st.faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
+    // Güdüm modu vurgusu — sunucudaki GERÇEK mod (5bc5f8d'den geri getirildi)
+    if (d.mode) modVurgula(d.mode);
   } catch (e){ st.faz = null; }
 }
 async function pollPnp(){
@@ -901,6 +903,34 @@ function frame(now){
   //  hareket eden salt dekoratif bir öğeydi, hiçbir veriyi göstermiyordu.)
   requestAnimationFrame(frame);
 }
+
+// ══ GÜDÜM MODU SEÇİMİ (GPS / GÖRSEL / HİBRİT) ══════════════════════════
+// 5bc5f8d'de eklenmişti, Ayşenur arayüzü merge edilirken kayboldu; geri getirildi.
+// Basınca sunucuya yazılır; vurgu HER ZAMAN sunucudan dönen gerçek modla
+// güncellenir (görev sırasında da geçerli — chase thread aktif fazı kırıp
+// yeni modu kurar).
+function modVurgula(mode){
+  document.querySelectorAll('.mod-btn').forEach(b =>
+    b.classList.toggle('aktif', b.dataset.mode === mode));
+}
+const MOD_AD = { gps: 'GPS', visual: 'GÖRSEL', hybrid: 'HİBRİT' };
+document.querySelectorAll('.mod-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    fetch('/api/guidance_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: btn.dataset.mode })
+    }).then(r => r.json()).then(d => {
+      if (d.mode){
+        modVurgula(d.mode);
+        addLog('sys', 'MOD', `Güdüm modu: ${MOD_AD[d.mode] || d.mode}`);
+      }
+    }).catch(() => addLog('err', 'MOD', 'Güdüm modu değiştirilemedi.'));
+  });
+});
+// Açılışta sunucudaki modu oku (görev başlamamış olsa da doğru vurgu)
+fetch('/api/chase_status').then(r => r.json())
+  .then(d => { if (d.mode) modVurgula(d.mode); }).catch(() => {});
 
 // ══ AÇILIŞ ═════════════════════════════════════════════════════════════
 markScenario();

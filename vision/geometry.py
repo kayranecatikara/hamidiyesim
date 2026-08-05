@@ -246,6 +246,67 @@ def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
             "yandanlik": min(1.0, yandanlik), "menzil": menzil}
 
 
+def pose_rpy_cozum(kpts, iris_rpy, kpt_conf_min=0.5):
+    """Pose keypoint'lerinden hedefin DÜNYA roll/pitch/yaw'ı — PnP çözümü.
+
+    NEDEN GEREKLİ: pose modeli doğrudan rotasyon vermez, 6 keypoint verir.
+    Güdüm bundan yalnız iki türev kullanır (gövde ekseninin görüntüdeki yönü ve
+    yandanlık) — tam 3B rotasyon hiç hesaplanmaz, çünkü lead için gerekmez.
+    Bu fonksiyon yalnız ÖLÇÜM içindir: "pose modeli hedefin rotasyonunu ne
+    kadar doğru kestirebilirdi" sorusunu cevaplar (cevap anahtarı kıyası).
+
+    kpts     : 6×(u, v, conf) tam kare pikselde (pose_detector çıktısı)
+    iris_rpy : kendi aracımızın (roll, pitch, yaw) radyan
+    Dönüş    : (roll, pitch, yaw) radyan DÜNYA çerçevesinde, veya None.
+
+    Çözüm zinciri: solvePnP hedefin KAMERAYA göre rotasyonunu verir
+    (OpenCV optik çerçeve); önce link çerçevesine, sonra kamera dünya
+    rotasyonuyla çarpılıp dünya çerçevesine taşınır.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return None
+    model = talon_keypoints()
+    obj, img = [], []
+    for i, (u, v, c) in enumerate(kpts):
+        if c is None or c < kpt_conf_min:
+            continue
+        if u == 0 and v == 0:              # YOLO-pose "görünmez" kuralı
+            continue
+        obj.append(model[i])
+        img.append((u, v))
+    if len(obj) < 4:                       # PnP en az 4 nokta ister
+        return None
+    K = np.array([[FX, 0.0, CX], [0.0, FY, CY], [0.0, 0.0, 1.0]])
+    # ITERATIVE (DLT) en az 6 nokta ister; uçuşta çoğu karede 4-5 keypoint
+    # görünür (bir kanat/kuyruk gövde arkasında kalır). EPNP 4 noktayla çalışır.
+    bayrak = cv2.SOLVEPNP_ITERATIVE if len(obj) >= 6 else cv2.SOLVEPNP_EPNP
+    try:
+        ok, rvec, _ = cv2.solvePnP(
+            np.asarray(obj, np.float64),
+            np.asarray(img, np.float64).reshape(-1, 1, 2),
+            K, None, flags=bayrak)
+    except cv2.error:
+        return None
+    if not ok:
+        return None
+    R_opt, _ = cv2.Rodrigues(rvec)         # hedef → OPTİK çerçeve
+
+    # optik (X sağ, Y aşağı, Z ileri) → link (X ileri, Y sol, Z yukarı)
+    R_link_opt = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
+    _, R_cam = camera_world_pose((0.0, 0.0, 0.0), iris_rpy)   # yalnız rotasyon
+    R_dunya = R_cam @ R_link_opt @ R_opt
+
+    # rot_rpy = Rz(yaw)·Ry(pitch)·Rx(roll) tersine çözümü
+    pitch = math.asin(max(-1.0, min(1.0, -float(R_dunya[2, 0]))))
+    if abs(math.cos(pitch)) < 1e-6:        # gimbal kilidi
+        return None
+    roll = math.atan2(float(R_dunya[2, 1]), float(R_dunya[2, 2]))
+    yaw = math.atan2(float(R_dunya[1, 0]), float(R_dunya[0, 0]))
+    return roll, pitch, yaw
+
+
 def camera_world_pose(iris_pos, iris_rpy):
     """iris (drone) world poz + rpy'den kamera world (konum, rotasyon matrisi).
     iris_rpy = (roll, pitch, yaw) radyan — drone gövde oryantasyonu.

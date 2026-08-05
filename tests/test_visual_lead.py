@@ -1045,6 +1045,30 @@ def main():
             and abs(vn - cfgB.V_KAPANMA) / cfgB.V_KAPANMA < 0.01,
             f"|v|={vn:.2f} (V_KAPANMA={cfgB.V_KAPANMA})")
 
+    # ── T60: PnP rotasyon çözümü — bilinen rotasyon geri çözülebilmeli ──
+    # Pose modeli rotasyonu DOĞRUDAN üretmez (6 keypoint üretir). Bu test,
+    # keypoint'lerden 3B rotasyonun ÇÖZÜLEBİLDİĞİNİ doğrular; uçuş logundaki
+    # gt_* / pose_* rpy sütunları bu çözüme dayanıyor.
+    IP, IR = (0.0, 0.0, 5.0), (0.0, 0.0, 0.0)
+    _cam, _Rc = geo.camera_world_pose(IP, IR)
+    _hp = _cam + 15.0 * (_Rc @ np.array([1.0, 0.0, 0.0]))
+    _hatalar, _cozulen = [], 0
+    for _rpy in ((0.0, 0.0, math.pi), (0.0, 0.0, math.radians(90)),
+                 (math.radians(30), 0.0, math.radians(120)),
+                 (0.0, 0.0, math.radians(45))):
+        _kp = geo.target_keypoints(_hp, _rpy, IP, IR)
+        _kpts = [(float(k[0]), float(k[1]), 1.0 if k[2] > 0 else 0.0) for k in _kp]
+        _cz = geo.pose_rpy_cozum(_kpts, IR)
+        if _cz is None:
+            continue
+        _cozulen += 1
+        _hatalar.append(max(abs((math.degrees(a - b) + 180) % 360 - 180)
+                            for a, b in zip(_rpy, _cz)))
+    kontrol("T60 PnP: keypoint'lerden 3B rotasyon geri çözülür",
+            _cozulen >= 3 and max(_hatalar) < 12.0,
+            f"{_cozulen}/4 sahne çözüldü, en kötü hata {max(_hatalar):.1f}° "
+            f"(6 kpt görünürken ~0°, 4 kpt'te EPNP daha zayıf)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

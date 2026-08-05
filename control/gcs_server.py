@@ -991,8 +991,16 @@ def _gt_rot_girdi():
     if p is None:
         return None
     ir, hd = p["iris"], p["plane"]
-    return _geo.rot_gt_goruntu(hd["pos"], _geo.quat_to_rpy(*hd["quat"]),
-                               ir["pos"], _geo.quat_to_rpy(*ir["quat"]))
+    h_rpy = _geo.quat_to_rpy(*hd["quat"])
+    i_rpy = _geo.quat_to_rpy(*ir["quat"])
+    r = _geo.rot_gt_goruntu(hd["pos"], h_rpy, ir["pos"], i_rpy)
+    if r is not None:
+        # Hedefin ve kendi aracımızın GERÇEK rpy'si — yalnız ÖLÇÜM için
+        # (visual_lead pose keypoint'lerinden PnP ile rotasyon çözüp bunlarla
+        # karşılaştırıyor; güdüm bu alanları okumaz).
+        r["hedef_rpy"] = h_rpy
+        r["iris_rpy"] = i_rpy
+    return r
 
 
 def _visual_thread():

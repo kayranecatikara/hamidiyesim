@@ -58,7 +58,8 @@ def _mod(rows):
 def topla(sonra=None):
     V = {m: {"menzil": [], "sapma": [], "lead": [], "kalite": [], "vz": [],
              "hiz_bant": {}, "sapma_bant": {}, "devir": [],
-             "rot_yan": [], "rot_aci": [], "rot_cift": []}
+             "rot_yan": [], "rot_aci": [], "rot_cift": [],
+             "rpy": {"roll": [], "pitch": [], "yaw": []}, "rpy_cift": []}
          for m in ("pose", "gt")}
     say = {"pose": 0, "gt": 0}
     for f in sorted(glob.glob(os.path.join(_LOGS, "visual_lead_*.csv"))):
@@ -105,6 +106,14 @@ def topla(sonra=None):
             gy, py_ = _f(r.get("gt_yandanlik")), _f(r.get("yandanlik_ham"))
             if None not in (gy, py_):
                 v["rot_cift"].append((gy, py_))
+            for ad, k in (("roll", "roll_sapma_deg"), ("pitch", "pitch_sapma_deg"),
+                          ("yaw", "yaw_rot_sapma_deg")):
+                x = _f(r.get(k))
+                if x is not None:
+                    v["rpy"][ad].append(x)
+            gyw, pyw = _f(r.get("gt_yaw_deg")), _f(r.get("pose_yaw_deg"))
+            if None not in (gyw, pyw):
+                v["rpy_cift"].append((gyw, pyw))
             if vz is not None:
                 v["vz"].append(vz)
             for ad, k in (("lead", "lead_deg"), ("kalite", "kalite")):
@@ -188,6 +197,40 @@ def g_dikey(V):
     a.set_xlabel("emredilen TIRMANMA hızı (m/s)"); a.set_ylabel("kare sayısı")
     a.set_title("Dikey komutun ayrı tavanı YOK", fontweight="bold")
     a.legend(fontsize=9); a.grid(alpha=.3)
+    return _png(fig)
+
+
+def g_rpy(V):
+    """Hedefin GERÇEK roll/pitch/yaw'ı vs pose keypoint'lerinden PnP çözümü."""
+    P = V["pose"]
+    if not any(P["rpy"].values()):
+        return None
+    fig, ax = plt.subplots(1, 2, figsize=(13, 4.6))
+    a = ax[0]
+    renk = {"roll": "#E8833A", "pitch": "#16A085", "yaw": "#8E44AD"}
+    for ad in ("roll", "pitch", "yaw"):
+        d = [x for x in P["rpy"][ad] if -90 < x < 90]
+        if d:
+            a.hist(d, bins=50, alpha=.55, color=renk[ad],
+                   label=f"{ad}  medyan {st.median(P['rpy'][ad]):+.1f}°")
+    a.axvline(0, color="#111", ls="--", lw=1.5)
+    a.set_xlabel("pose (PnP) − gerçek  (derece)"); a.set_ylabel("kare sayısı")
+    a.set_title("Rotasyon sapması: roll / pitch / yaw", fontweight="bold")
+    a.legend(fontsize=9); a.grid(alpha=.3)
+
+    a = ax[1]
+    if P["rpy_cift"]:
+        gy = [x for x, _ in P["rpy_cift"]]
+        py = [y for _, y in P["rpy_cift"]]
+        a.scatter(gy, py, s=7, alpha=.3, color="#8E44AD", edgecolors="none")
+        a.plot([-180, 180], [-180, 180], color="#111", ls="--", lw=1.5,
+               label="kusursuz (y=x)")
+        a.set_xlim(-185, 185); a.set_ylim(-185, 185)
+        a.set_xlabel("GERÇEK yaw (°)"); a.set_ylabel("POSE (PnP) yaw (°)")
+        a.legend(fontsize=9)
+    a.set_title("Hedefin yaw'ı: pose vs gerçek", fontweight="bold")
+    a.grid(alpha=.3)
+    fig.tight_layout()
     return _png(fig)
 
 
@@ -278,6 +321,27 @@ def html(V, say, grafik):
     pose3 = [abs(x) for m, x in zip(P["menzil"], P["sapma"]) if m >= 3 and abs(x) <= 90] \
         if len(P["menzil"]) == len(P["sapma"]) else []
     # ── Rotasyon bölümü: yeni sütunlar (gt_yandanlik / d_aci_sapma_deg) ──
+    # ── Hedefin 3B rotasyonu: gerçek vs pose (PnP) ──
+    if grafik.get("rpy"):
+        rr = P["rpy"]
+        satirlar = "".join(
+            f"<tr><td>{ad}</td><td class=n>{len(rr[ad])}</td>"
+            f"<td class=n>{st.median(rr[ad]):+.2f}°</td>"
+            f"<td class=n>{st.median([abs(x) for x in rr[ad]]):.2f}°</td>"
+            f"<td class=n>{sorted(abs(x) for x in rr[ad])[int(len(rr[ad])*.9)]:.1f}°</td></tr>"
+            for ad in ("roll", "pitch", "yaw") if rr[ad])
+        rpy_bolum = f'''<div class="k iyi">
+Hedefin <b>gerçek roll/pitch/yaw</b>'ı (Gazebo) ile pose keypoint'lerinden
+<b>PnP</b> ile çözülen rotasyon, aynı kare üzerinde:
+<table><tr><th>eksen</th><th>kare</th><th>medyan sapma</th>
+<th>|sapma| medyan</th><th>p90</th></tr>{satirlar}</table>
+</div>
+<img src="data:image/png;base64,{grafik['rpy']}">'''
+    else:
+        rpy_bolum = '''<div class="k kotu">
+Rotasyon (roll/pitch/yaw) sütunları bu loglarda yok — 2026-08-05'te eklendi.
+Bir uçuş yapıp raporu yeniden üret.</div>'''
+
     if grafik.get("rot"):
         ry, ra = P["rot_yan"], P["rot_aci"]
         rot_bolum = f'''<div class="k iyi">
@@ -319,10 +383,22 @@ yönü, aynı karedeki gerçek değerle yan yana çıkacak.
 <p class=alt>{say['pose']} pose modu + {say['gt']} GT modu logu ·
 yalnız <code>durum=ok</code> kareler · 2026-08-05</p>
 
-<h2>1. POSE'un ürettiği ROTASYON vs GERÇEK rotasyon</h2>
+<h2>1. Hedefin ROTASYONU: gerçek vs pose tahmini</h2>
+<div class=k>
+<b>Önemli:</b> pose modeli roll/pitch/yaw'ı <b>doğrudan üretmez</b> — 6 keypoint
+üretir (burun, kuyruk, kanat uçları, V-tail uçları). Güdüm bunlardan yalnız iki
+türev kullanır: gövde ekseninin görüntüdeki yönü ve yandanlık. Tam 3B rotasyon
+hiç hesaplanmaz çünkü lead açısı için gerekmez.<br><br>
+Aşağıdaki tablo, keypoint'lerden <b>PnP</b> (Perspective-n-Point) ile çözülen
+rotasyonu gerçekle kıyaslar — yani "pose modeli isteseydi rotasyonu ne kadar
+doğru bilebilirdi" sorusunun cevabı.
+</div>
+{rpy_bolum}
+
+<h2>2. Güdümün fiilen kullandığı rotasyon türevleri</h2>
 {rot_bolum}
 
-<h2>2. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
+<h2>3. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
 <div class="k iyi">
 Hedef önde ve 3 m'den uzakken pose'un nişan sapması:
 {_ozet(pose3, "°")} <br><br>
@@ -334,7 +410,7 @@ ile zaten söndürüyor.
 <div class=g2><img src="data:image/png;base64,{grafik['sapma']}">
 <img src="data:image/png;base64,{grafik['menzil']}"></div>
 
-<h2>3. "Kötü" pose neden GT'den iyi uçuyor?</h2>
+<h2>4. "Kötü" pose neden GT'den iyi uçuyor?</h2>
 <div class="k iyi">
 Fark algıda değil, <span class=b>güdümün nerede çalıştığında</span>:
 <table><tr><th>mod</th><th>güdümün çalıştığı menzil</th><th>kalite</th></tr>
@@ -347,7 +423,7 @@ kopmadığı için görsel faz onlarca metreden devralıp yaklaşmayı da üstle
 oysa sabit <code>V_KAPANMA</code> ile bunun için tasarlanmadı.
 </div>
 
-<h2>4. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
+<h2>5. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
 <div class="k acil">
 <code>V_KAPANMA</code> <span class=b>sabit</span>; menzilden bağımsız.
 Ölçülen komut hızı:
@@ -359,7 +435,7 @@ hedefi iki kare arasında atlıyor.
 </div>
 <img src="data:image/png;base64,{grafik['hiz']}">
 
-<h2>5. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
+<h2>6. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
 <div class="k acil">
 <code>adapter_copter</code>: <code>v_hedef = V_KAPANMA × u_dunya</code>.
 Dikey bileşen = <code>25 × sin(yükseliş)</code> — yani nişan 30° yukarıysa
@@ -376,7 +452,7 @@ ArduPilot'un <code>WP_SPD_UP=5</code> tavanı GUIDED hız komutuna
 <div class=g2><img src="data:image/png;base64,{grafik['dikey']}">
 <img src="data:image/png;base64,{grafik['devir']}"></div>
 
-<h2>6. Görsel faza geçişin kuralı</h2>
+<h2>7. Görsel faza geçişin kuralı</h2>
 <div class=k>
 <code>supervisor.run_hybrid</code> içinde <span class=b>İKİ şart birden</span>:
 <table>
@@ -419,7 +495,7 @@ def main():
     if not V["pose"]["menzil"] and not V["gt"]["menzil"]:
         print("Log bulunamadı."); return 1
     grafik = {"menzil": g_menzil(V, say), "sapma": g_sapma(V), "hiz": g_hiz(V),
-              "rot": g_rotasyon(V),
+              "rot": g_rotasyon(V), "rpy": g_rpy(V),
               "dikey": g_dikey(V), "devir": g_devir(V, say)}
     with open(args.cikti, "w") as f:
         f.write(html(V, say, grafik))
