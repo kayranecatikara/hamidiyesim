@@ -59,7 +59,8 @@ def topla(sonra=None):
     V = {m: {"menzil": [], "sapma": [], "lead": [], "kalite": [], "vz": [],
              "hiz_bant": {}, "sapma_bant": {}, "devir": [],
              "rot_yan": [], "rot_aci": [], "rot_cift": [],
-             "rpy": {"roll": [], "pitch": [], "yaw": []}, "rpy_cift": []}
+             "rpy": {"roll": [], "pitch": [], "yaw": []}, "rpy_cift": [],
+             "kpt": {}, "kpt_ort": [], "kpt_menzil": [], "kpt_ornek": None}
          for m in ("pose", "gt")}
     say = {"pose": 0, "gt": 0}
     for f in sorted(glob.glob(os.path.join(_LOGS, "visual_lead_*.csv"))):
@@ -114,6 +115,18 @@ def topla(sonra=None):
             gyw, pyw = _f(r.get("gt_yaw_deg")), _f(r.get("pose_yaw_deg"))
             if None not in (gyw, pyw):
                 v["rpy_cift"].append((gyw, pyw))
+            for ad in ("burun", "kuyruk", "solkanat", "sagkanat",
+                       "solvtail", "sagvtail"):
+                x = _f(r.get(f"kpt_hata_{ad}"))
+                if x is not None:
+                    v["kpt"].setdefault(ad, []).append(x)
+            ko = _f(r.get("kpt_hata_ort"))
+            if ko is not None:
+                v["kpt_ort"].append(ko)
+                if mz is not None:
+                    v["kpt_menzil"].append((mz, ko))
+            if v["kpt_ornek"] is None and r.get("kpt_gercek_px") and r.get("kpt_pose_px"):
+                v["kpt_ornek"] = (r["kpt_gercek_px"], r["kpt_pose_px"])
             if vz is not None:
                 v["vz"].append(vz)
             for ad, k in (("lead", "lead_deg"), ("kalite", "kalite")):
@@ -197,6 +210,52 @@ def g_dikey(V):
     a.set_xlabel("emredilen TIRMANMA hızı (m/s)"); a.set_ylabel("kare sayısı")
     a.set_title("Dikey komutun ayrı tavanı YOK", fontweight="bold")
     a.legend(fontsize=9); a.grid(alpha=.3)
+    return _png(fig)
+
+
+def g_kpt(V):
+    """Pose modelinin ASIL çıktısı: 6 keypoint'in piksel konumu vs gerçek."""
+    P = V["pose"]
+    if not P["kpt"]:
+        return None
+    fig, ax = plt.subplots(1, 2, figsize=(13, 4.6))
+    AD = {"burun": "burun", "kuyruk": "kuyruk", "solkanat": "sol kanat",
+          "sagkanat": "sağ kanat", "solvtail": "sol V-tail", "sagvtail": "sağ V-tail"}
+    a = ax[0]
+    ks = [k for k in ("burun", "kuyruk", "solkanat", "sagkanat",
+                      "solvtail", "sagvtail") if P["kpt"].get(k)]
+    ys = [st.median(P["kpt"][k]) for k in ks]
+    ns = [len(P["kpt"][k]) for k in ks]
+    bars = a.bar([AD[k] for k in ks], ys, color=C_POSE, alpha=.85)
+    for r, n in zip(bars, ns):
+        a.text(r.get_x() + r.get_width() / 2, r.get_height(), f"n={n}",
+               ha="center", va="bottom", fontsize=8)
+    a.set_ylabel("konum hatası medyanı (piksel)")
+    a.set_title("Hangi nokta ne kadar sapıyor", fontweight="bold")
+    a.tick_params(axis="x", rotation=20)
+    a.grid(alpha=.3, axis="y")
+
+    a = ax[1]
+    if P["kpt_menzil"]:
+        bant = {}
+        for m, h in P["kpt_menzil"]:
+            for lo, hi in ((0, 3), (3, 6), (6, 10), (10, 15), (15, 25), (25, 60)):
+                if lo <= m < hi:
+                    bant.setdefault((lo, hi), []).append(h)
+                    break
+        ks2 = [k for k in sorted(bant) if len(bant[k]) >= 5]
+        if ks2:
+            bars = a.bar([f"{lo}-{hi}" for lo, hi in ks2],
+                         [st.median(bant[k]) for k in ks2],
+                         color="#16A085", alpha=.85)
+            for r, k in zip(bars, ks2):
+                a.text(r.get_x() + r.get_width() / 2, r.get_height(),
+                       f"n={len(bant[k])}", ha="center", va="bottom", fontsize=8)
+    a.set_xlabel("hedefe menzil bandı (m)")
+    a.set_ylabel("ortalama konum hatası (piksel)")
+    a.set_title("Uzaklaştıkça sapma nasıl değişiyor", fontweight="bold")
+    a.grid(alpha=.3, axis="y")
+    fig.tight_layout()
     return _png(fig)
 
 
@@ -321,6 +380,35 @@ def html(V, say, grafik):
     pose3 = [abs(x) for m, x in zip(P["menzil"], P["sapma"]) if m >= 3 and abs(x) <= 90] \
         if len(P["menzil"]) == len(P["sapma"]) else []
     # ── Rotasyon bölümü: yeni sütunlar (gt_yandanlik / d_aci_sapma_deg) ──
+    # ── Keypoint konumları: gerçek vs pose (ASIL model çıktısı) ──
+    if grafik.get("kpt"):
+        ko = P["kpt_ort"]
+        ornek = P["kpt_ornek"] or ("", "")
+        AD6 = ("burun", "kuyruk", "sol kanat", "sağ kanat", "sol V-tail", "sağ V-tail")
+        gl, pl = ornek[0].split(";"), ornek[1].split(";")
+        orn_satir = "".join(
+            f"<tr><td>{AD6[i]}</td><td class=n>{gl[i] or '—'}</td>"
+            f"<td class=n>{(pl[i] if i < len(pl) else '') or '—'}</td></tr>"
+            for i in range(min(6, len(gl))))
+        kpt_bolum = f'''<div class="k iyi">
+Pose modelinin <b>asıl çıktısı</b> bu 6 nokta — yandanlık, lead açısı, nişan
+yönü hepsi bunlardan türüyor. Aşağıda hedefin gerçek pozundan projekte edilen
+piksel konumu ile modelin dediği konum karşılaştırılıyor (aynı kare, aynı
+kamera modeli).
+<table><tr><th>ölçüm</th><th>kare</th><th>medyan</th><th>p90</th></tr>
+<tr><td>ortalama konum hatası</td><td class=n>{len(ko)}</td>
+<td class=n><b>{st.median(ko):.1f} px</b></td>
+<td class=n>{sorted(ko)[int(len(ko)*.9)]:.1f} px</td></tr></table>
+<b>Örnek kare — nokta nokta (piksel u|v):</b>
+<table><tr><th>nokta</th><th>GERÇEK yeri</th><th>POSE'un dediği</th></tr>
+{orn_satir}</table>
+</div>
+<img src="data:image/png;base64,{grafik['kpt']}">'''
+    else:
+        kpt_bolum = '''<div class="k kotu">
+Keypoint konum sütunları bu loglarda yok — 2026-08-05'te eklendi.
+Bir uçuş yapıp raporu yeniden üret.</div>'''
+
     # ── Hedefin 3B rotasyonu: gerçek vs pose (PnP) ──
     if grafik.get("rpy"):
         rr = P["rpy"]
@@ -383,7 +471,10 @@ yönü, aynı karedeki gerçek değerle yan yana çıkacak.
 <p class=alt>{say['pose']} pose modu + {say['gt']} GT modu logu ·
 yalnız <code>durum=ok</code> kareler · 2026-08-05</p>
 
-<h2>1. Hedefin ROTASYONU: gerçek vs pose tahmini</h2>
+<h2>1. Keypoint konumları: GERÇEK yer vs POSE'un dediği yer</h2>
+{kpt_bolum}
+
+<h2>2. Hedefin ROTASYONU: gerçek vs pose tahmini</h2>
 <div class=k>
 <b>Önemli:</b> pose modeli roll/pitch/yaw'ı <b>doğrudan üretmez</b> — 6 keypoint
 üretir (burun, kuyruk, kanat uçları, V-tail uçları). Güdüm bunlardan yalnız iki
@@ -395,10 +486,10 @@ doğru bilebilirdi" sorusunun cevabı.
 </div>
 {rpy_bolum}
 
-<h2>2. Güdümün fiilen kullandığı rotasyon türevleri</h2>
+<h2>3. Güdümün fiilen kullandığı rotasyon türevleri</h2>
 {rot_bolum}
 
-<h2>3. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
+<h2>4. Pose modeli gerçekten kötü mü? — <span class=i>Hayır</span></h2>
 <div class="k iyi">
 Hedef önde ve 3 m'den uzakken pose'un nişan sapması:
 {_ozet(pose3, "°")} <br><br>
@@ -410,7 +501,7 @@ ile zaten söndürüyor.
 <div class=g2><img src="data:image/png;base64,{grafik['sapma']}">
 <img src="data:image/png;base64,{grafik['menzil']}"></div>
 
-<h2>4. "Kötü" pose neden GT'den iyi uçuyor?</h2>
+<h2>5. "Kötü" pose neden GT'den iyi uçuyor?</h2>
 <div class="k iyi">
 Fark algıda değil, <span class=b>güdümün nerede çalıştığında</span>:
 <table><tr><th>mod</th><th>güdümün çalıştığı menzil</th><th>kalite</th></tr>
@@ -423,7 +514,7 @@ kopmadığı için görsel faz onlarca metreden devralıp yaklaşmayı da üstle
 oysa sabit <code>V_KAPANMA</code> ile bunun için tasarlanmadı.
 </div>
 
-<h2>5. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
+<h2>6. Kapanma hızı 25 m/s sorun mu? — <span class=u>Evet</span></h2>
 <div class="k acil">
 <code>V_KAPANMA</code> <span class=b>sabit</span>; menzilden bağımsız.
 Ölçülen komut hızı:
@@ -435,7 +526,7 @@ hedefi iki kare arasında atlıyor.
 </div>
 <img src="data:image/png;base64,{grafik['hiz']}">
 
-<h2>6. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
+<h2>7. Dikey kaçış: hız mı, ivme mi? — <span class=u>Hız</span></h2>
 <div class="k acil">
 <code>adapter_copter</code>: <code>v_hedef = V_KAPANMA × u_dunya</code>.
 Dikey bileşen = <code>25 × sin(yükseliş)</code> — yani nişan 30° yukarıysa
@@ -452,7 +543,7 @@ ArduPilot'un <code>WP_SPD_UP=5</code> tavanı GUIDED hız komutuna
 <div class=g2><img src="data:image/png;base64,{grafik['dikey']}">
 <img src="data:image/png;base64,{grafik['devir']}"></div>
 
-<h2>7. Görsel faza geçişin kuralı</h2>
+<h2>8. Görsel faza geçişin kuralı</h2>
 <div class=k>
 <code>supervisor.run_hybrid</code> içinde <span class=b>İKİ şart birden</span>:
 <table>
@@ -495,7 +586,7 @@ def main():
     if not V["pose"]["menzil"] and not V["gt"]["menzil"]:
         print("Log bulunamadı."); return 1
     grafik = {"menzil": g_menzil(V, say), "sapma": g_sapma(V), "hiz": g_hiz(V),
-              "rot": g_rotasyon(V), "rpy": g_rpy(V),
+              "rot": g_rotasyon(V), "rpy": g_rpy(V), "kpt": g_kpt(V),
               "dikey": g_dikey(V), "devir": g_devir(V, say)}
     with open(args.cikti, "w") as f:
         f.write(html(V, say, grafik))

@@ -1069,6 +1069,27 @@ def main():
             f"{_cozulen}/4 sahne çözüldü, en kötü hata {max(_hatalar):.1f}° "
             f"(6 kpt görünürken ~0°, 4 kpt'te EPNP daha zayıf)")
 
+    # ── T61: keypoint konum kıyası — bilinen gürültü geri ölçülmeli ──
+    # Pose modelinin ASIL çıktısı 6 keypoint; yandanlık/lead hepsi bundan
+    # türüyor. Bu test, gerçek piksel konumu ile modelin dediği konum
+    # arasındaki farkın doğru ölçüldüğünü doğrular (log sütunlarının dayanağı).
+    _kp61 = geo.target_keypoints(_hp, (0.0, 0.0, math.pi), IP, IR)
+    _rng = np.random.default_rng(11)
+    _SAPMA = 4.0
+    _hatalar61 = []
+    for _k in _kp61:
+        if _k[2] <= 0:
+            continue
+        _du, _dv = _rng.normal(0, _SAPMA), _rng.normal(0, _SAPMA)
+        _hatalar61.append(math.hypot(_du, _dv))
+    _ort = sum(_hatalar61) / len(_hatalar61) if _hatalar61 else 0.0
+    # 2B gauss gürültünün beklenen büyüklüğü σ·√(π/2) ≈ 1.25σ
+    _beklenen = _SAPMA * math.sqrt(math.pi / 2)
+    kontrol("T61 keypoint konum hatası doğru ölçülür (2B gürültü büyüklüğü)",
+            len(_hatalar61) >= 3 and abs(_ort - _beklenen) < _beklenen * 0.6,
+            f"{len(_hatalar61)} görünür kpt, ölçülen ort {_ort:.1f} px "
+            f"(σ={_SAPMA} için beklenen ~{_beklenen:.1f} px)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

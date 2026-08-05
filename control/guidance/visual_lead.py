@@ -65,6 +65,13 @@ _CSV_ALANLAR = [
     "gt_roll_deg", "gt_pitch_deg", "gt_yaw_deg",
     "pose_roll_deg", "pose_pitch_deg", "pose_yaw_deg",
     "roll_sapma_deg", "pitch_sapma_deg", "yaw_rot_sapma_deg", "pnp_kpt",
+    # KEYPOINT KONUM KIYASI — hedefin gerçek pozundan projekte edilen piksel
+    # yeri vs pose modelinin dediği yer. Her keypoint için piksel hatası;
+    # ham konumlar "u|v;u|v;..." biçiminde (6 nokta, KEYPOINT_NAMES sırası,
+    # görünmeyen/tespit edilmeyen nokta boş). Yalnız ÖLÇÜM, güdüme GİRMEZ.
+    "kpt_hata_burun", "kpt_hata_kuyruk", "kpt_hata_solkanat",
+    "kpt_hata_sagkanat", "kpt_hata_solvtail", "kpt_hata_sagvtail",
+    "kpt_hata_ort", "kpt_gercek_px", "kpt_pose_px",
     # Hangi bayraklarla uçuldu — yalnız İLK satırda dolu (bkz. _yapilandirma).
     "yapilandirma",
 ]
@@ -571,6 +578,46 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             res = core.process(pose, stamp, aras.attitude, gt=gt)
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
+
+            # ── KEYPOINT KONUM KIYASI: gerçek piksel yeri vs pose'un dediği ──
+            # Pose modelinin ASIL çıktısı bu 6 nokta; yandanlık/lead hepsi
+            # bundan türüyor. Gerçek konumlar hedefin Gazebo pozundan
+            # projekte ediliyor (geometry.target_keypoints) — aynı kare,
+            # aynı kamera modeli, dolayısıyla doğrudan kıyaslanabilir.
+            if (gt_olcum is not None and pose is not None
+                    and gt_olcum.get("hedef_pos") is not None):
+                try:
+                    gk = geo.target_keypoints(gt_olcum["hedef_pos"],
+                                              gt_olcum["hedef_rpy"],
+                                              gt_olcum["iris_pos"],
+                                              gt_olcum["iris_rpy"])
+                    pk = pose.get("kpts") or []
+                    adlar = ("burun", "kuyruk", "solkanat", "sagkanat",
+                             "solvtail", "sagvtail")
+                    g_str, p_str, hatalar = [], [], []
+                    for i, ad in enumerate(adlar):
+                        gu, gv, gvis = (float(gk[i][0]), float(gk[i][1]),
+                                        float(gk[i][2]))
+                        pu = pv = pc = None
+                        if i < len(pk):
+                            pu, pv, pc = (float(pk[i][0]), float(pk[i][1]),
+                                          float(pk[i][2]))
+                        # GERÇEKTE görünür + model de o noktayı verdiyse kıyasla
+                        var_g = gvis > 0
+                        var_p = (pu is not None and pc >= cfg.KPT_CONF_MIN
+                                 and not (pu == 0 and pv == 0))
+                        g_str.append(f"{gu:.0f}|{gv:.0f}" if var_g else "")
+                        p_str.append(f"{pu:.0f}|{pv:.0f}" if var_p else "")
+                        if var_g and var_p:
+                            h = math.hypot(pu - gu, pv - gv)
+                            hatalar.append(h)
+                            satir[f"kpt_hata_{ad}"] = round(h, 1)
+                    satir["kpt_gercek_px"] = ";".join(g_str)
+                    satir["kpt_pose_px"] = ";".join(p_str)
+                    if hatalar:
+                        satir["kpt_hata_ort"] = round(sum(hatalar) / len(hatalar), 1)
+                except Exception:
+                    pass          # ölçüm sütunu — güdümü asla düşürmesin
 
             # ── 3B ROTASYON KIYASI: gerçek rpy vs pose'un PnP çözümü ──
             if gt_olcum is not None and gt_olcum.get("hedef_rpy") is not None:

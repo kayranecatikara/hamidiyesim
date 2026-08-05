@@ -1000,6 +1000,11 @@ def _gt_rot_girdi():
         # karşılaştırıyor; güdüm bu alanları okumaz).
         r["hedef_rpy"] = h_rpy
         r["iris_rpy"] = i_rpy
+        # Keypoint kıyası için pozlar da gerekli: geometry.target_keypoints
+        # bunlardan GERÇEK piksel konumlarını üretiyor (visual_lead'de pose
+        # modelinin dediği konumlarla yan yana loglanıyor).
+        r["hedef_pos"] = hd["pos"]
+        r["iris_pos"] = ir["pos"]
     return r
 
 
