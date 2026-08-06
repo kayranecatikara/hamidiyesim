@@ -187,36 +187,6 @@ class Cfg:
     # geometrik olarak zamanında yavaşlayamıyor, hedefin etrafında savruluyor.
     # ⚠ TODO: main branch 20.0 kullanıyor — merge sonrası 18 vs 20 karşılaştırma testi yapılacak.
     V_MAX = _env_f("AVCI_GPS_V_MAX", 18.0)   # m/s; yatay hız tavanı
-
-    # ── DÖNÜŞ-FARKINDA HIZ TAVANI (2026-08-06) ──
-    # SORUN: V_MAX tek bir sabit sayı ve iki zıt gereksinimi aynı anda karşılamak
-    # zorunda kalıyor:
-    #   • DÜZ uçuşta yüksek olmalı — yoksa komut doyar ve mesafe kapanmaz.
-    #     Ölçüldü (20260806_123727): menzil 16 m'yi geçtiği anda komut 18'e
-    #     kırpılıyor; uzaktaki karelerin %64'ü tam 18.0. Bu yüzden RANGE_SET'i
-    #     11→5 düşürmek HİÇBİR ŞEY değiştirmedi — komut zaten doygundu.
-    #     Doygun kaldığı 3.5 s'lik dilimlerde drone 11.7 → 15.5 m/s hızlanıyor
-    #     ve eğimi yalnız 21° (tavan 45°) — yani araçta pay VAR, komutta yok.
-    #   • DAR DÖNÜŞTE düşük olmalı — yüksek hızda drone tightturn yapamaz,
-    #     geniş yay çizip savrulur. Ölçüldü (2026-08-05): V_MAX 18→24 yapılınca
-    #     drone yarıçapı 38→43 m'ye çıktı ve menzil 29→41 m'ye AÇILDI.
-    #
-    # ÇÖZÜM: tavanı sabit değil, hedefin dönüş hızına bağlı yap. Dönerken
-    # sürdürülebilir en yüksek hız fizik tarafından veriliyor:
-    #       v_tavan = A_DONUS / |ω|
-    # Düz uçuşta ω→0 → sınır kalkar, V_MAX geçerli. Dar dönüşte kendiliğinden
-    # devreye girer. Tek formül, iki gereksinim.
-    #
-    # A_DONUS = kullanılabilir yanal ivme bütçesi (m/s²). WPNAV_ACCEL 8.0 ile
-    # hizalı; daha küçük seçmek daha muhafazakâr (dönüşte daha yavaş) olur.
-    #     ω=0.156 (⌀96) → 51 m/s tavan (bağlamaz)
-    #     ω=0.273 (⌀55) → 29 m/s      (bağlamaz)
-    #     ω=0.375 (⌀41) → 21 m/s      (V_MAX 25 ise bağlar)
-    #     ω=0.564 (⌀32) → 14 m/s      (sert bağlar — o senaryo kaldırıldı)
-    #
-    # VARSAYILAN 0.0 = KAPALI (V_MAX sabit kalır, mevcut davranış).
-    # Açmak için:  AVCI_GPS_A_DONUS=8
-    A_DONUS = _env_f("AVCI_GPS_A_DONUS", 0.0)   # m/s²; 0 = dönüş tavanı kapalı
     MAX_ACCEL = 12.0         # m/s²; komut hızı değişim sınırı
     DERIV_EMA = 0.2
 
@@ -458,14 +428,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # ── 6) HIZ KOMUTU: hedef-hızı FF + PD ──
             vx = vel_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
             vy = vel_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
-            # Dönüş-farkında tavan: düz uçuşta V_MAX, dar dönüşte A_DONUS/|ω|.
-            # (Kapalıyken v_tavan = V_MAX, yani davranış birebir eskisi.)
-            v_tavan = cfg.V_MAX
-            if cfg.A_DONUS > 0.0 and abs(tgt_omega) > 1e-3:
-                v_tavan = min(v_tavan, cfg.A_DONUS / abs(tgt_omega))
             vmag = math.hypot(vx, vy)
-            if vmag > v_tavan and vmag > 1e-6:
-                s = v_tavan / vmag
+            if vmag > cfg.V_MAX and vmag > 1e-6:
+                s = cfg.V_MAX / vmag
                 vx *= s
                 vy *= s
             vz = clamp(vel_z + cfg.KP_Z * ez_cmd, -cfg.VZ_MAX, cfg.VZ_MAX)

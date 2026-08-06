@@ -820,7 +820,15 @@ function startChaseStatusPolling() {
             const res = await fetch('/api/chase_status');
             const data = await res.json();
             if (data.active) {
-                document.getElementById('chase-dist').textContent = (data.distance + 8).toFixed(1) + ' m';
+                // ⚠ BURADA "+ 8" VARDI — deponun ilk commit'inden beri (fbbe15c).
+                // Panel, gerçek mesafeye SABİT 8 METRE ekleyerek gösteriyordu.
+                // 2026-08-06'da yakalandı: ekranda MESAFE 21.3 m yazarken
+                // "MESAFE (gerçek)" 13.2 m, güdümün yatay ölçümü 11.4 m ve aynı
+                // ekrandaki KONUM değerlerinden elle hesap 13.3 m veriyordu.
+                // 21.3 − 8 = 13.3 → birebir. Üç bağımsız kaynak ~13, panel 21.
+                // Bu ofset yüzünden TÜM uçuş gözlemleri 8 m şişik okundu ve
+                // güdüm olduğundan çok daha kötü sanıldı.
+                document.getElementById('chase-dist').textContent = data.distance.toFixed(1) + ' m';
             } else {
                 // Backend chase bitti
                 if (chaseActive) {
