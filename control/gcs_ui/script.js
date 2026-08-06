@@ -437,7 +437,6 @@ const SCN_LABELS = {
     circle_xl:  '◯ DAİRE ⌀96 m',
     circle_l:   '◯ DAİRE ⌀71 m',
     circle_s:   '◯ DAİRE ⌀41 m',
-    circle_xs:  '◯ DAİRE ⌀32 m',
 };
 const scnButtons = {
     square:     document.getElementById('btn-scn-square'),

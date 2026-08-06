@@ -241,7 +241,11 @@ DAIRE_CAPLARI = {
     "circle_l":  (400, "geniş (~71 m)"),
     "circle":    (500, "orta (~55 m) — referans"),
     "circle_s":  (650, "dar (~41 m)"),
-    "circle_xs": (800, "çok dar (~32 m)"),
+    # ⌀32 (roll 800) KALDIRILDI (2026-08-06, kullanıcı kararı): o kadar sert ve
+    # SÜREKLİ bir manevra gerçekçi bir hedef davranışı değil; ayrıca avcı drone
+    # orada ivme tavanına dayanıp kontrolü kaybediyordu (v_sürdürülebilir =
+    # a_max/ω = 8/0.564 = 14.2 m/s, hedefin hızına eşit → sıfır pay).
+    # Geri eklemek gerekirse: "circle_xs": (800, "çok dar (~32 m)")
 }
 
 
