@@ -82,9 +82,271 @@ function setTab(t){
   $('manBadge').hidden = !(t === 'hedef' && st.manual);
   switchCamera(t === 'hedef' ? 'plane' : 'iris');
   addLog('sys', 'SYS', t === 'hedef' ? 'Kamera: HEDEF İHA (Talon burun)' : 'Kamera: AVCI DRONE (iris)');
+  // Sekme değişince ana sahnedeki kamera değişir: akış yeniden açılmış olur ve
+  // artık ANA olan görüşün ayrı penceresi varsa gereksizdir — kapatılır.
+  anaAcik = true;
+  if (camWins.has(camAnaKey())) closeCamWin(camAnaKey());
+  camDotDurum();
 }
 $('segT').addEventListener('click', () => { if (st.tab !== 'hedef') setTab('hedef'); });
 $('segA').addEventListener('click', () => { if (st.tab !== 'avci')  setTab('avci'); });
+
+// ══ KAMERA GÖRÜŞLERİ ─ pencereler ══════════════════════════════════════
+// FPV sahnesinin sağ üst köşesindeki 4 daire, dört görüşün TAMAMINI yönetir.
+// Bir daire iki işten birini yapar — hangisi olduğu görüşün nerede olduğuna
+// bağlıdır:
+//   • ANA sahnedeki görüş (sekmeye göre iris ya da plane): dairesi o akışı
+//     AÇAR/KAPATIR. Pencere olarak ikinci kez açılmaz — zaten ekranda.
+//   • Diğer görüşler: taşınabilir/boyutlandırılabilir pencere olarak açılır.
+// Böylece dört görüş de aynı anda izlenebilir, hiçbiri iki kez çizilmez.
+// Akışlar sunucuda: /api/video_feed/{iris|plane|iris_chase|talon_chase}
+const CAMS = [
+  { key: 'iris',        kod: 'AV',  ad: 'Avcı Drone Kamerası',
+    alt: 'iris ön kamera — tespit/kilit overlay’i sunucuda çizili' },
+  { key: 'plane',       kod: 'TL',  ad: 'Talon Kamerası',
+    alt: 'hedef İHA burun kamerası — ham' },
+  { key: 'iris_chase',  kod: 'AVD', ad: 'Gazebo · Avcı Dış Görüş',
+    alt: 'avcıyı arkadan/üstten gösteren sahne kamerası — ham' },
+  { key: 'talon_chase', kod: 'TLD', ad: 'Gazebo · Talon Dış Görüş',
+    alt: 'talonu arkadan/üstten gösteren sahne kamerası — ham' },
+];
+// Dış görüş kameraları SDF'teki chase_camera sensörlerinden gelir ve YALNIZ
+// Gazebo Harmonic (gz-transport) yolunda yayınlanır. Boş kalmasının iki tipik
+// sebebi var, ikisi de kurulumla ilgili — "bağlantı koptu" değil:
+//   1) Gazebo, sensörler eklenmeden ÖNCE başlatılmış (model belleğe alınmış),
+//   2) ROS 2 (Classic) yolu kullanılıyor, o köprü bu topic'leri yayınlamıyor.
+const CHASE_IPUCU = 'Gazebo, dış görüş sensörleriyle yeniden başlatılmalı ' +
+                    '(Harmonic + AVCI_GZ_CAMERA=1)';
+
+const camWins = new Map();          // key → {win, img, nofeed, dot, ad}
+let camZ = 60, camCascade = 0;
+let anaAcik = true;                 // ana sahnedeki kamera akışı açık mı
+
+// Ana sahnede hangi kamera var — sekmeye bağlı (Avcı Drone / Hedef İHA).
+function camAnaKey(){ return st.tab === 'hedef' ? 'plane' : 'iris'; }
+
+// Ana sahne akışını aç/kapat. Kapatmak <img>'i DOM'dan siler: MJPEG multipart
+// bağlantısı ancak böyle bırakılır (src boşaltmak her tarayıcıda kapatmıyor —
+// switchCamera'nın da gerekçesi bu). Kapalıyken sunucudan kare çekilmez.
+function setAnaFeed(on){
+  anaAcik = on;
+  const noFeed = $('noFeed');
+  if (on){
+    switchCamera(st.tab === 'hedef' ? 'plane' : 'iris');
+    noFeed.textContent = 'GÖRÜNTÜ BEKLENİYOR';
+  } else {
+    const old = $('fpvImg');
+    if (old){ old.src = ''; old.remove(); }
+    noFeed.textContent = 'KAPALI — sağ üstteki dairesine basarak açın';
+    noFeed.hidden = false;
+  }
+  camDotDurum();
+  const ad = CAMS.find(c => c.key === camAnaKey()).ad;
+  addLog('sys', 'SYS', `Ana ekran ${on ? 'açıldı' : 'kapatıldı'}: ${ad}`);
+}
+
+// Dairelerin görünümü tek yerden kurulur: hangisi ana ekran, hangisinin
+// penceresi açık, başlıkta ne yazacak.
+function camDotDurum(){
+  for (const b of camDock.children){
+    const c = CAMS.find(x => x.key === b.dataset.cam);
+    const ana = c.key === camAnaKey();
+    const acik = ana ? anaAcik : camWins.has(c.key);
+    b.classList.toggle('ana', ana);
+    b.setAttribute('aria-pressed', String(acik));
+    b.title = ana
+      ? `${c.ad} — ANA EKRAN` + (acik ? ' · basınca kapanır' : ' · KAPALI, basınca açılır')
+      : `${c.ad} — ${c.alt}` + (acik ? ' · basınca pencere kapanır' : ' · basınca pencerede açılır');
+    b.setAttribute('aria-label', ana ? `${c.ad} — ana ekran` : `${c.ad} penceresi`);
+  }
+}
+
+function camBringFront(key){
+  const w = camWins.get(key);
+  if (!w) return;
+  w.win.style.zIndex = ++camZ;
+  for (const o of camWins.values()) o.win.classList.toggle('front', o === w);
+}
+
+const CW_MIN_W = 220, CW_MIN_H = 180;   // altına inilemeyen pencere boyutu
+
+// Büyült / eski boyuta dön. Eski geometri pencerenin üzerinde saklanır, böylece
+// küçültünce kullanıcının kendi ayarladığı boyut geri gelir.
+function camMax(win, buyut){
+  if (buyut){
+    win._eski = { left: win.style.left, top: win.style.top,
+                  width: win.style.width, height: win.style.height };
+    win.style.left = '8px';
+    win.style.top  = '8px';
+    win.style.width  = (innerWidth  - 16) + 'px';
+    win.style.height = (innerHeight - 16) + 'px';
+  } else if (win._eski){
+    Object.assign(win.style, win._eski);
+  }
+  win.classList.toggle('max', !!buyut);
+  const b = win.querySelector('.cw-max');
+  if (b){
+    b.textContent = buyut ? '❐' : '▢';
+    b.title = buyut ? 'Eski boyuta dön' : 'Tam ekran büyüt';
+    b.setAttribute('aria-label', b.title);
+  }
+}
+
+// Sürükleme ve boyutlandırma tek kalıp: pointer capture ile — imleç pencere
+// dışına taşsa da olaylar gelmeye devam eder (manuel çubuktaki yaklaşımla aynı).
+// mode: 'move' | yön dizgesi ('n','s','e','w','ne','nw','se','sw').
+function camDrag(win, handle, mode){
+  let sx = 0, sy = 0, x0 = 0, y0 = 0, w0 = 0, h0 = 0, on = false;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    // Büyütülmüş pencereyi sürüklemek/boyutlandırmak onu eski boyutuna
+    // döndürür — "kilitlendi" hissi vermesin diye.
+    if (win.classList.contains('max')) camMax(win, false);
+    on = true;
+    sx = e.clientX; sy = e.clientY;
+    const r = win.getBoundingClientRect();
+    x0 = r.left; y0 = r.top; w0 = r.width; h0 = r.height;
+    win.classList.add('busy', mode === 'move' ? 'dragging' : 'resizing');
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!on) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (mode === 'move'){
+      // Pencere tamamen ekranda kalır — kaybolup geri getirilememesin.
+      win.style.left = clamp(x0 + dx, 0, Math.max(0, innerWidth  - w0)) + 'px';
+      win.style.top  = clamp(y0 + dy, 0, Math.max(0, innerHeight - h0)) + 'px';
+      return;
+    }
+    // Boyutlandırma sekiz yönden. Sol/üst kenar çekilirken pencere hem
+    // küçülür hem KAYAR; karşı kenar sabit kalsın diye left/top da güncellenir.
+    let L = x0, T = y0, W = w0, H = h0;
+    if (mode.includes('e')) W = clamp(w0 + dx, CW_MIN_W, Math.max(CW_MIN_W, innerWidth  - x0));
+    if (mode.includes('s')) H = clamp(h0 + dy, CW_MIN_H, Math.max(CW_MIN_H, innerHeight - y0));
+    if (mode.includes('w')){
+      W = clamp(w0 - dx, CW_MIN_W, x0 + w0);   // sol kenar ekranın dışına taşmasın
+      L = x0 + w0 - W;
+    }
+    if (mode.includes('n')){
+      H = clamp(h0 - dy, CW_MIN_H, y0 + h0);
+      T = y0 + h0 - H;
+    }
+    win.style.width = W + 'px'; win.style.height = H + 'px';
+    win.style.left  = L + 'px'; win.style.top    = T + 'px';
+  });
+  const bitir = e => {
+    if (!on) return;
+    on = false;
+    win.classList.remove('busy', 'dragging', 'resizing');
+    if (e && handle.hasPointerCapture?.(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+  };
+  handle.addEventListener('pointerup', bitir);
+  handle.addEventListener('pointercancel', bitir);
+}
+
+function openCamWin(key){
+  if (camWins.has(key)){ camBringFront(key); return; }
+  const c = CAMS.find(x => x.key === key);
+  if (!c) return;
+
+  const win = document.createElement('div');
+  win.className = 'camwin';
+  // 4:3 gövde + 39px başlık — açılışta video gerilmeden oturur.
+  const w = 420, h = Math.round(420 * 3 / 4) + 39;
+  const off = (camCascade++ % 5) * 26;      // üst üste açılmasın, kademeli dizilsin
+  win.style.width  = w + 'px';
+  win.style.height = h + 'px';
+  // Pencere DAİRELERİN ALTINDAN başlar: daireler sağ üstte olduğu için sağa
+  // hizalı bir pencere tam üstlerine düşer ve seçiciyi tıklanamaz hale getirir
+  // (tarayıcıda birebir bu yaşandı). Dock'un gerçek konumu ölçülüp altına
+  // iniliyor — sabit sayı yerine, düzen değişse de doğru kalsın diye.
+  const dock = camDock.getBoundingClientRect();
+  win.style.left = clamp(innerWidth - w - 40 - off, 0, Math.max(0, innerWidth  - w)) + 'px';
+  win.style.top  = clamp(dock.bottom + 14 + off,    0, Math.max(0, innerHeight - h)) + 'px';
+  // Sekiz boyutlandırma tutamacı: dört kenar + dört köşe. Sağ alt köşe ayrıca
+  // görünür bir işaret taşır (.cw-grip), çünkü kenarlar görünmezdir ve
+  // pencerenin boyutlandırılabildiğinin tek görsel ipucu odur.
+  const YONLER = ['n', 's', 'e', 'w', 'ne', 'nw', 'sw'];
+  win.innerHTML =
+    '<div class="cw-head"><span class="cw-title"></span>' +
+    '<button class="cw-max" type="button" title="Tam ekran büyüt" aria-label="Tam ekran büyüt">▢</button>' +
+    '<button class="cw-x" type="button" title="Kapat" aria-label="Kamera penceresini kapat">×</button></div>' +
+    '<div class="cw-body"><div class="cw-nofeed"></div></div>' +
+    YONLER.map(y => `<div class="cw-rs ${y}" data-yon="${y}"></div>`).join('') +
+    '<div class="cw-grip cw-rs se" data-yon="se" title="Köşeden boyutlandır"></div>';
+  win.querySelector('.cw-title').textContent = c.ad;
+
+  const nofeed = win.querySelector('.cw-nofeed');
+  nofeed.textContent = key.endsWith('_chase')
+    ? 'GÖRÜNTÜ BEKLENİYOR — ' + CHASE_IPUCU
+    : 'GÖRÜNTÜ BEKLENİYOR';
+
+  // MJPEG: <img> ana sahnedeki switchCamera ile aynı kuralla kurulur/yıkılır —
+  // src değiştirmek multipart bağlantısını her tarayıcıda kapatmaz, o yüzden
+  // kapanışta element DOM'dan silinir (bkz. closeCamWin).
+  const body = win.querySelector('.cw-body');
+  const img = document.createElement('img');
+  img.alt = '';
+  img.src = `/api/video_feed/${key}?t=${Date.now()}`;
+  body.insertBefore(img, body.firstChild);
+
+  const dot = camDock.querySelector(`[data-cam="${key}"]`);
+  win.querySelector('.cw-x').addEventListener('click', () => closeCamWin(key));
+  win.querySelector('.cw-max').addEventListener('click',
+    () => camMax(win, !win.classList.contains('max')));
+  // Başlığa çift tıklamak da büyütür/küçültür (alışılmış pencere davranışı).
+  win.querySelector('.cw-head').addEventListener('dblclick',
+    () => camMax(win, !win.classList.contains('max')));
+  win.addEventListener('pointerdown', () => camBringFront(key));
+  camDrag(win, win.querySelector('.cw-head'), 'move');
+  for (const h of win.querySelectorAll('.cw-rs')) camDrag(win, h, h.dataset.yon);
+
+  document.body.appendChild(win);
+  camWins.set(key, { win, img, nofeed, dot, ad: c.ad });
+  camDotDurum();
+  camBringFront(key);
+  addLog('sys', 'SYS', `Kamera penceresi açıldı: ${c.ad}`);
+}
+
+function closeCamWin(key){
+  const w = camWins.get(key);
+  if (!w) return;
+  w.img.src = '';                    // MJPEG bağlantısını bırak (element de siliniyor)
+  w.img.remove();
+  w.win.remove();
+  camWins.delete(key);
+  w.dot.classList.remove('live');
+  camDotDurum();
+  addLog('sys', 'SYS', `Kamera penceresi kapatıldı: ${w.ad}`);
+}
+
+const camDock = $('camDock');
+for (const c of CAMS){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'camdot';
+  b.dataset.cam = c.key;
+  b.textContent = c.kod;
+  // ANA ekrandaki görüşün dairesi akışı aç/kapat yapar (pencerede İKİNCİ kez
+  // açmanın anlamı yok — zaten ekranda). Diğerleri pencere aç/kapat.
+  b.addEventListener('click', () => {
+    if (c.key === camAnaKey())        setAnaFeed(!anaAcik);
+    else if (camWins.has(c.key))      closeCamWin(c.key);
+    else                              openCamWin(c.key);
+  });
+  camDock.appendChild(b);
+}
+camDotDurum();   // açılıştaki durum (ana ekran dairesi dolu başlar)
+
+// Pencere küçülünce dışarıda kalan kamera pencerelerini içeri çek.
+addEventListener('resize', () => {
+  for (const { win } of camWins.values()){
+    const r = win.getBoundingClientRect();
+    win.style.left = clamp(r.left, 0, Math.max(0, innerWidth  - r.width))  + 'px';
+    win.style.top  = clamp(r.top,  0, Math.max(0, innerHeight - r.height)) + 'px';
+  }
+});
 
 // ══ WEBSOCKET TELEMETRİ ════════════════════════════════════════════════
 let lastMsg = 0, msgCount = 0, wsOpen = false;
@@ -919,6 +1181,32 @@ $('ctrlToggle').addEventListener('click', () => {
   requestAnimationFrame(() => dispatchEvent(new Event('resize')));
 });
 
+// ══ ANA EKRANI BÜYÜT/KÜÇÜLT ════════════════════════════════════════════
+// Kamera pencerelerindeki ▢ ile aynı davranış, ana FPV paneli için: düğme,
+// başlığa çift tıklama ve Esc. Boyut değişince 'resize' yayınlanır — parazit
+// ve mini harita canvas'ları kendilerini yalnız bu olayda ölçüyor (mkCanvas).
+const fpvPanel = document.querySelector('.fpvpanel');
+function setFpvMax(buyut){
+  fpvPanel.classList.toggle('max', buyut);
+  const b = $('fpvMax');
+  b.textContent = buyut ? '❐' : '▢';
+  b.title = buyut ? 'Ana ekranı küçült (çift tıklama da olur)'
+                  : 'Ana ekranı büyüt (çift tıklama da olur)';
+  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-pressed', String(buyut));
+  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+  addLog('sys', 'SYS', `Ana ekran ${buyut ? 'büyütüldü' : 'eski boyutuna döndü'}.`);
+}
+$('fpvMax').addEventListener('click', () => setFpvMax(!fpvPanel.classList.contains('max')));
+// Başlığa çift tıklama — düğmenin kendisi hariç (çift tıklarsa iki kez dönmesin).
+$('fpvHead').addEventListener('dblclick', e => {
+  if (e.target.closest('#fpvMax')) return;
+  setFpvMax(!fpvPanel.classList.contains('max'));
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && fpvPanel.classList.contains('max')) setFpvMax(false);
+});
+
 // ══ ÇİZİM DÖNGÜSÜ ══════════════════════════════════════════════════════
 function frame(now){
   camAz += (camAzT - camAz) * 0.18;
@@ -927,6 +1215,17 @@ function frame(now){
   drawNoise();
   const img = $('fpvImg');
   $('noFeed').hidden = !!(img && img.naturalWidth > 0);
+  // Kamera pencereleri: MJPEG'de 'load' akış bitince tetiklendiği için ilk
+  // karenin gelip gelmediği burada da naturalWidth ile yoklanır (ana sahnedeki
+  // ile aynı gerekçe).
+  for (const { img: ci, nofeed } of camWins.values()) nofeed.hidden = ci.naturalWidth > 0;
+  // Dairedeki yeşil halka = o görüşten kare akıyor. Ana ekrandaki görüş için
+  // ölçüt fpvImg, diğerleri için kendi pencerelerinin <img>'i.
+  for (const b of camDock.children){
+    const key = b.dataset.cam;
+    const el = key === camAnaKey() ? (anaAcik ? img : null) : camWins.get(key)?.img;
+    b.classList.toggle('live', !!(el && el.naturalWidth > 0));
+  }
   // (Aşağı yukarı süzülen yeşil "tarama" çizgisi KALDIRILDI — sinüsle
   //  hareket eden salt dekoratif bir öğeydi, hiçbir veriyi göstermiyordu.)
   requestAnimationFrame(frame);
@@ -935,7 +1234,7 @@ function frame(now){
 // ══ AÇILIŞ ═════════════════════════════════════════════════════════════
 markScenario();
 drawKnob();
-setTab('hedef');
+setTab('avci');          // ana ekran avcı drone kamerasıyla açılır (hedef sekmesi elle seçilir)
 connectWS();
 pollChase(); pollPnp(); pollHasar();
 setInterval(pollChase, 500);

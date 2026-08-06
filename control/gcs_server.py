@@ -1264,7 +1264,13 @@ def _chase_thread():
 # -----------------------------------------------------------------------
 latest_frames = {
     "iris":  {"data": None, "id": 0},
-    "plane": {"data": None, "id": 0}
+    "plane": {"data": None, "id": 0},
+    # DIŞ GÖRÜŞ (chase) kameraları — SDF'te iris_chase/talon_chase topic'leri.
+    # Aracı DIŞARIDAN gösterirler; tespit/kilit hattına GİRMEZLER, ham geçerler.
+    # Yalnız gz-transport (Harmonic) yolunda beslenir: ROS 2 (Classic) köprüsü
+    # bu topic'leri yayınlamaz, o kurulumda akış boş kalır (arayüz "kaynak yok").
+    "iris_chase":  {"data": None, "id": 0},
+    "talon_chase": {"data": None, "id": 0},
 }
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
@@ -1564,6 +1570,41 @@ def gz_talon_camera_thread():
         time.sleep(1)
 
 
+def gz_chase_camera_thread(key, topic, etiket):
+    """Gazebo Harmonic dış görüş (chase) kamerası → ham MJPEG.
+
+    iris/plane akışlarından farkı: HİÇBİR işleme yok — YOLO, pose, kilit
+    overlay'i, parazit simülasyonu, hakem logu, hiçbiri. Kare doğrudan JPEG'e
+    kodlanıp latest_frames[key]'e yazılır. Bu görüntü hakem ispatı DEĞİLDİR,
+    yalnız operatör izlemesi içindir; tespit hattına karışmaması bilinçlidir.
+    """
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.image_pb2 import Image as GzImage
+    except Exception as e:
+        print(f"[GCS] gz-transport Python yok, {etiket} dış görüş atlandı: {e}")
+        return
+
+    def cb(msg):
+        try:
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+            ok, buf = cv2.imencode('.jpg', cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            if not ok:
+                return
+            if latest_frames[key]["data"] is None:
+                print(f"[GCS] ✓ {etiket} dış görüş kamerasından ilk görüntü!")
+            latest_frames[key]["data"] = buf.tobytes()
+            latest_frames[key]["id"] += 1
+        except Exception as e:
+            print(f"[GCS GZ-CAM] {etiket} dış görüş hata: {e}")
+
+    node = GzNode()
+    node.subscribe(GzImage, topic, cb)
+    print(f"[GCS] gz-transport {etiket} dış görüş dinleniyor ({topic}, Harmonic)")
+    while True:
+        time.sleep(1)
+
+
 class CameraSubscriber(RosNode):
     def __init__(self):
         if not _ROS2_VAR:
@@ -1618,7 +1659,7 @@ async def generate_mjpeg(vehicle: str):
 
 @app.get("/api/video_feed/{vehicle}")
 def video_feed(vehicle: str):
-    if vehicle not in ["iris", "plane"]:
+    if vehicle not in latest_frames:
         vehicle = "iris"
     return StreamingResponse(generate_mjpeg(vehicle),
                              media_type="multipart/x-mixed-replace; boundary=frame")
@@ -1855,6 +1896,15 @@ async def startup_event():
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
         threading.Thread(target=gz_iris_camera_thread, daemon=True).start()   # avcı iris
         threading.Thread(target=gz_talon_camera_thread, daemon=True).start()  # hedef Talon
+        # Dış görüş (chase) kameraları — AVCI_GZ_CHASE_CAM=0 ile kapatılabilir
+        # (iki ek 640x480@15Hz render; zayıf GPU'da kapatmak isteyebilirsiniz).
+        if os.environ.get("AVCI_GZ_CHASE_CAM", "1") == "1":
+            for _key, _env, _vars, _et in (
+                ("iris_chase",  "AVCI_GZ_IRIS_CHASE_TOPIC",  "/iris_chase/image",  "Avcı"),
+                ("talon_chase", "AVCI_GZ_TALON_CHASE_TOPIC", "/talon_chase/image", "Talon"),
+            ):
+                threading.Thread(target=gz_chase_camera_thread, daemon=True,
+                                 args=(_key, os.environ.get(_env, _vars), _et)).start()
     else:
         threading.Thread(target=ros2_spin_thread, daemon=True).start()
     if os.environ.get("AVCI_NO_BROWSER", "0") != "1":

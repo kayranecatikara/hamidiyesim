@@ -263,5 +263,92 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .logrow.sys .tag{color:var(--blue)} .logrow.sys .msg{color:#9db9e6}
 .logrow.err .tag{color:var(--red)} .logrow.err .msg{color:#ff9a9a}
 
+/* ── ANA EKRANI BÜYÜT ────────────────────────────────────────────────────
+   FPV paneli tüm görünüm alanını kaplar. z-index 55: kamera pencerelerinin
+   (60+) ALTINDA kalır — büyütülmüş ana ekranın üstünde pencereler görünmeye
+   devam etsin diye. Daireler sahnenin içinde olduğundan panelle birlikte
+   büyür, erişilebilir kalır. */
+.fpvpanel.max{position:fixed;inset:8px;z-index:55;margin:0;border-radius:9px}
+/* Büyükken 16/9 oranı kilit olmamalı — panel yüksekliği ne ise sahne onu
+   doldurur (.split varyantıyla aynı gerekçe). */
+.fpvpanel.max .fpvwrap{aspect-ratio:auto;flex:1;min-height:0;height:auto}
+.fpvpanel.max #fpvMax{color:#fff;background:var(--blue);border-color:var(--blue)}
+.fpvpanel.max .phead{cursor:zoom-out}
+.fpvpanel .phead{cursor:zoom-in}
+
+/* ── KAMERA SEÇİCİ (daireler) ────────────────────────────────────────────
+   FPV sahnesinin SAĞ üst köşesinde, ALT/SPD overlay'inin ALTINDA durur
+   (top:62px — .ov.tr iki satır + nefes payı). Ana ekrandaki görüşün dairesi
+   o akışı aç/kapat yapar; diğerleri pencere açar. */
+.camdock{position:absolute;top:62px;right:16px;display:flex;gap:8px;z-index:5}
+.camdot{width:34px;height:34px;border-radius:50%;flex:none;cursor:pointer;
+  border:1px solid var(--line2);background:rgba(8,12,18,.72);backdrop-filter:blur(3px);
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.02em;
+  display:flex;align-items:center;justify-content:center;transition:.15s;padding:0}
+.camdot:hover{color:var(--text);border-color:var(--blue);transform:translateY(-1px)}
+.camdot:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+/* Penceresi AÇIK olan daire dolu görünür — hangi görüşlerin açıldığı
+   pencereler ekranın başka yerine taşınmış olsa da buradan okunur. */
+.camdot[aria-pressed="true"]{background:linear-gradient(180deg,var(--blue),#2a5fc4);
+  color:#fff;border-color:var(--blue);box-shadow:0 2px 10px rgba(61,125,255,.4)}
+/* Canlı kare akan görüşte ince yeşil halka (akış sağlığı göstergesi). */
+.camdot.live{border-color:var(--green);color:var(--green)}
+.camdot.live[aria-pressed="true"]{border-color:var(--green);box-shadow:0 0 0 2px rgba(52,216,168,.35)}
+/* ANA ekrandaki görüşün dairesi: pencere değil, ana sahneyi aç/kapatır —
+   dıştaki ince halka bunu pencere dairelerinden ayırır. Kapalıyken (basılı
+   değil) kesikli halka kalır ki "ana ekran burada ama söndürülmüş" okunsun. */
+.camdot.ana{outline:1px solid var(--line2);outline-offset:3px}
+.camdot.ana[aria-pressed="true"]{outline-color:var(--blue)}
+.camdot.ana[aria-pressed="false"]{outline-style:dashed;outline-color:var(--muted)}
+
+/* ── KAMERA PENCERELERİ ──────────────────────────────────────────────────
+   position:fixed → ekranın herhangi bir yerine taşınabilir. Başlıktan
+   sürüklenir, sağ alt tutamaçtan boyutlandırılır (min 220x180). */
+.camwin{position:fixed;z-index:60;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line2);border-radius:9px;overflow:hidden;
+  box-shadow:0 18px 44px rgba(0,0,0,.62)}
+.camwin.front{border-color:var(--blue)}
+.cw-head{display:flex;align-items:center;gap:8px;padding:8px 10px;flex:none;
+  border-bottom:1px solid var(--line);cursor:grab;user-select:none;touch-action:none}
+.camwin.dragging .cw-head{cursor:grabbing}
+.cw-title{flex:1;min-width:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cw-title::before{content:"";display:inline-block;vertical-align:-1px;margin-right:8px;
+  width:3px;height:11px;background:var(--blue);border-radius:2px}
+.cw-x,.cw-max{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--muted);cursor:pointer;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;transition:.15s}
+.cw-max{font-size:11px}
+.cw-max:hover{color:#fff;background:var(--blue);border-color:var(--blue)}
+.cw-x:hover{color:#fff;background:var(--red);border-color:var(--red)}
+.cw-body{position:relative;flex:1;min-height:0;background:#000}
+.cw-body img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+/* Sürükleme/boyutlandırma sırasında imleç pencere içine girince <img> olayı
+   yakalamasın — aksi halde hızlı harekette sürükleme "düşer". */
+.camwin.busy .cw-body{pointer-events:none}
+.cw-nofeed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--dim);
+  text-align:center;padding:0 12px;line-height:1.6}
+.cw-nofeed[hidden]{display:none}
+/* Boyutlandırma tutamaçları: dört kenar + dört köşe. Kenarlar görünmez ince
+   şeritlerdir; görünür işaret yalnız sağ alt köşededir — pencerenin
+   boyutlandırılabildiğini oradan anlaşılsın diye belirgin tutuldu. */
+.cw-rs{position:absolute;z-index:3;touch-action:none}
+.cw-rs.n{top:0;left:10px;right:10px;height:6px;cursor:ns-resize}
+.cw-rs.s{bottom:0;left:10px;right:10px;height:6px;cursor:ns-resize}
+.cw-rs.w{left:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}
+.cw-rs.e{right:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}
+.cw-rs.nw{left:0;top:0;width:12px;height:12px;cursor:nwse-resize}
+.cw-rs.ne{right:0;top:0;width:12px;height:12px;cursor:nesw-resize}
+.cw-rs.sw{left:0;bottom:0;width:12px;height:12px;cursor:nesw-resize}
+.cw-grip{right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;
+  background:linear-gradient(135deg,transparent 48%,var(--line2) 48%,var(--line2) 60%,
+    transparent 60%,transparent 72%,var(--line2) 72%,var(--line2) 84%,transparent 84%)}
+.camwin:hover .cw-grip{background:linear-gradient(135deg,transparent 48%,var(--blue) 48%,var(--blue) 60%,
+    transparent 60%,transparent 72%,var(--blue) 72%,var(--blue) 84%,transparent 84%)}
+/* Tam ekran büyütülmüş pencerede köşe işareti anlamsız — gizlenir. */
+.camwin.max .cw-grip{display:none}
+
 @media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}.stats{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}

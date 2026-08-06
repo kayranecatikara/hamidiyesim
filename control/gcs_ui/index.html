@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -116,7 +116,7 @@
     <!-- CENTER FPV -->
     <div class="col" id="centerCol">
       <section class="panel fpvpanel" style="display:flex;flex-direction:column">
-        <div class="phead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
+        <div class="phead" id="fpvHead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="spacer"></span><span class="label" id="camTag">CAM · HEDEF İHA</span><button class="iconbtn" id="fpvMax" title="Ana ekranı büyüt (çift tıklama da olur)" aria-label="Ana ekranı büyüt" aria-pressed="false">▢</button></div>
         <div class="fpvwrap" id="fpvwrap">
           <!-- SOL: dikey kilitlenme bilgi paneli — 4:3 videonun pillarbox
                alanını doldurur (siyah şerit yerine). Veriler /api/telemetry/pnp
@@ -147,6 +147,10 @@
             <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
             <div class="xhair"></div>
             <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
+            <!-- KAMERA SEÇİCİ — 4 görüş açısı, her biri ayrı pencere olarak
+                 açılır (taşınabilir + boyutlandırılabilir). Daireler JS'te
+                 CAMS tanımından üretilir; ana sahne bundan etkilenmez. -->
+            <div class="camdock" id="camDock" role="group" aria-label="Kamera görüşleri — pencere olarak aç"></div>
             <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
             <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
             <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>POSE</b> <span id="oPose">--</span></div>
@@ -237,6 +241,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=18"></script>
+<script src="script.js?v=24"></script>
 </body>
 </html>
