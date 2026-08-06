@@ -172,6 +172,29 @@ class Cfg:
     #
     # VARSAYILAN 0.0 = KAPALI (sabit metre kullanılır). Denemek için:
     #     AVCI_GPS_IC_ORAN=0.27
+    # ── KAYMAYI EKLEME, YÖNÜ ÇEVİR (2026-08-05) ──
+    # Kayma bir OFSET olarak eklendiğinde istasyon hedeften uzaklaşıyor: arka,
+    # alt ve yan bileşenler birbirine DİK olduğu için mesafeler dikey toplanır.
+    #     |istasyon−hedef| = √(10.63² + 14² + 2.85²) = 17.8 m   (RANGE_SET 11 iken!)
+    # Uçuşta ölçüldü (20260805_233203): tam 17.8 m. Drone istasyonuna 1.6-1.8 m
+    # hatayla oturuyordu — yani TAKİP sorunu yoktu, istasyonun KENDİSİ uzaktaydı.
+    # Belirti: "araç istenilen mesafeye yaklaşmıyor, 20-25 m'de kalıyor".
+    #
+    # IC_NORMALIZE=1 iken kayma yön döndürmesi olarak uygulanır: istasyon
+    # hedeften her zaman TAM r_eff (≈RANGE_SET) uzaklıkta kalır, yalnız dönüşün
+    # içine kayar. Böylece iç daire faydası korunur, uzaklaştırma bedeli kalkar.
+    # Bedeli: içeri kayma miktarı artık RANGE_SET ile sınırlı (14 m yerine ≤11 m).
+    #
+    # VARSAYILAN KAPALI — uçuşta doğrulanana kadar mevcut davranış korunur.
+    # Açmak için: AVCI_GPS_IC_NORM=1
+    IC_NORMALIZE = os.environ.get("AVCI_GPS_IC_NORM", "0") in ("1", "on", "true")
+
+    # ── İSTASYON HIZI İLERİ BESLEMESİ ──
+    # v_istasyon = v_hedef + ω × s. Ayrıntı ve ölçüm tablosu komut satırında.
+    # Bu, "istasyonu sabit bir ofset yerine hedefin HAREKETİNE bağlı hesapla"
+    # fikrinin ilk ve en önemli parçası (kullanıcı önerisi, 2026-08-06).
+    IST_HIZ_FF = os.environ.get("AVCI_GPS_IST_FF", "0") in ("1", "on", "true")
+
     IC_ORAN = _env_f("AVCI_GPS_IC_ORAN", 0.0)  # 0 = kapalı, sabit IC_KAYMA geçerli
     IC_KAYMA_MAX = _env_f("AVCI_GPS_IC_MAX", 25.0)   # m; oranlı kaymanın tavanı
     IC_R_MIN = 15.0            # m; bundan dar yarıçap kestirimi güvenilmez sayılır
@@ -409,8 +432,32 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                     vhx, vhy = vel_x / tgt_spd_h, vel_y / tgt_spd_h
                     isaret = 1.0 if tgt_omega >= 0 else -1.0
                     cx_, cy_ = -vhy * isaret, vhx * isaret     # merkeze doğru
-                    st_x += cx_ * ic_kayma
-                    st_y += cy_ * ic_kayma
+                    if cfg.IC_NORMALIZE:
+                        # ── YÖNÜ ÇEVİR, UZAKLIĞI KORU ──
+                        # Kaymayı EKLEMEK istasyonu hedeften uzaklaştırıyordu:
+                        # üç bileşen (arka/alt/yan) birbirine dik olduğu için
+                        #   |istasyon−hedef| = √(10.6² + 14² + 2.85²) = 17.8 m
+                        # Ölçüldü (20260805_233203): tam 17.8 m. Yani drone
+                        # istasyonuna MÜKEMMEL otursa bile hedefe 17.8 m'den
+                        # yakın olamıyordu — kullanıcı belirtisi "araç istenilen
+                        # mesafeye yaklaşmıyor, 20-25 m'de kalıyor".
+                        # (Takip hatası değildi: drone→istasyon yalnız 1.6-1.8 m.)
+                        #
+                        # Burada kayma bir OFSET değil, YÖN döndürmesi olarak
+                        # uygulanır: istasyon hedeften her zaman TAM r_eff
+                        # uzaklıkta kalır, sadece dönüşün içine doğru kayar.
+                        # İç daire faydası korunur, uzaklaştırma bedeli kalkar.
+                        yx = bx * d_behind_eff + cx_ * ic_kayma
+                        yy = by * d_behind_eff + cy_ * ic_kayma
+                        yz = d_below_eff
+                        n = math.sqrt(yx * yx + yy * yy + yz * yz)
+                        if n > 1e-6:
+                            st_x = est_x + yx / n * r_eff
+                            st_y = est_y + yy / n * r_eff
+                            st_z = est_z + yz / n * r_eff
+                    else:
+                        st_x += cx_ * ic_kayma
+                        st_y += cy_ * ic_kayma
             if -st_z < cfg.LOOKUP_MIN_ALT:                        # yere çakılma koruması
                 st_z = -cfg.LOOKUP_MIN_ALT
 
@@ -426,8 +473,38 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             e_prev, t_prev_deriv = e_now, now
 
             # ── 6) HIZ KOMUTU: hedef-hızı FF + PD ──
-            vx = vel_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
-            vy = vel_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
+            # ── İSTASYON HIZI İLERİ BESLEMESİ (2026-08-06) ──
+            # İleri besleme olarak HEDEFİN hızı veriliyordu. Ama drone hedefi
+            # değil İSTASYONU takip ediyor ve istasyon, hedefin YANINDA duran
+            # bir ofsettir — hedef dönerken o ofset de hedefin etrafında DÖNER
+            # ve bu dönüşün kendi hızı vardır:
+            #     v_istasyon = v_hedef + ω × s        (s = istasyon − hedef)
+            #     |ω × s| = ω · |s| ≈ ω · 11 m
+            # Bu terim eksikti; eksikliği doğrudan takip hatasına dönüşüyordu.
+            #
+            # ÖLÇÜM (2026-08-06, beş daire çapı, aynı koşullar):
+            #     çap    ω       eksik FF    gözlenen menzil
+            #     96 m   0.156   1.7 m/s     13-14 m
+            #     71 m   0.211   2.3 m/s     17-18 m
+            #     55 m   0.273   3.0 m/s     23-24 m
+            #     41 m   0.366   4.0 m/s     30-33 m
+            #     32 m   0.469   5.2 m/s     40 m (+ kontrol kaybı, düşüş)
+            # Menzil, eksik ileri beslemeyle BİREBİR aynı sırada büyüyor.
+            # Araç suçsuz: ⌀32'de bile gereken yanal ivme 7.0 m/s², bütçe 9.8.
+            # Yani güdüm doğru şeyi İSTEMİYORDU.
+            #
+            # NED'de dönüş ekseni aşağı (z): ω ẑ × s = (−ω·sy, +ω·sx, 0).
+            # İşaret tgt_omega'dan gelir → sağa/sola dönüşte doğru taraf.
+            # VARSAYILAN KAPALI (AVCI_GPS_IST_FF=1 açar) — uçuşta doğrulanana dek.
+            ff_x, ff_y = vel_x, vel_y
+            if cfg.IST_HIZ_FF and abs(tgt_omega) > 1e-6:
+                sx_ = st_x - est_x
+                sy_ = st_y - est_y
+                ff_x += -tgt_omega * sy_
+                ff_y += tgt_omega * sx_
+
+            vx = ff_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
+            vy = ff_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
             vmag = math.hypot(vx, vy)
             if vmag > cfg.V_MAX and vmag > 1e-6:
                 s = cfg.V_MAX / vmag
