@@ -33,7 +33,14 @@ import uvicorn
 # Cessna renk tabanlı tespit
 from vision.detection_state import (set_detection, set_pose_detection,
                                     set_tracks, wait_new_pose, get_detection,
-                                    get_pose_detection)
+                                    get_pose_detection, set_kilit_durum,
+                                    get_kilit_durum)
+from control.kilitlenme import KilitTakip  # 6.1.4 kilitlenme gösterge/skor katmanı
+from vision import kilit_overlay as _kilit_overlay   # Adım 8 overlay (salt-okur)
+from control import kilit_log as _kilit_log          # Adım 8 CSV hakem logu
+from control import komut_kaydi as _komut_kaydi      # Adım 8 komut vektörü yakalama
+from control import menzil_tutucu as _menzil_tutucu_mod  # Adım 7 tutucu telemetrisi
+from comms.kilit_bildirim import KuruKosuBildirici        # Adım 8B bildirim iskeleti
 from control import carpisma_state       # A5 — gerçek temas, güdümle ortak durum
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
@@ -806,6 +813,9 @@ def pnp_telemetry():
         "poz_kapi_ok": poz_kapi_ok,
         "menzil_kapi_ok": bool(menzil_kapi_ok),
         "engel": engel,
+        # ── Adım 8: kilitlenme durumu + Adım 7 mesafe tutucu (additif) ──
+        "kilit": get_kilit_durum(),
+        "menzil_tutucu": _menzil_tutucu_mod.status,
     }
 
 
@@ -1264,6 +1274,9 @@ _target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=off kapatır; tracke
 _tracker_mod   = None   # vision.tracker modülü (draw_tracks için)
 _tracker_err   = False  # tekrarlayan tracker hatasında log seli önlenir
 _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
+_kilit_takip   = None   # KilitTakip örneği (ilk karede gerçek W,H ile kurulur)
+_bildirici     = None   # KilitBildirici (Adım 8B; startup'ta kurulur)
+_bildirim_onceki = False  # kilit_isteri_ok yükselen kenar tespiti için önceki değer
 # Parazit modellere de uygulansın mı? 1 = tespit/pose/tracker PARAZİTLİ kareyi
 # görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
 # yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
@@ -1303,6 +1316,38 @@ def _apply_video_noise(img, lvl):
         darken = 1.0 - (lvl - 0.7) * 2.5
         img = np.clip(img.astype(np.float32) * darken, 0, 255).astype(np.uint8)
     return img
+
+def _kilit_log_row(kdurum, t_sim):
+    """Hakem CSV satırını kur (Adım 8). SALT-OKUR: karar mantığına dokunmaz.
+    LOS telemetry_state'ten (iris→plane), menzil gps_guidance'tan, menzil_ref
+    tutucudan, komut vektörü komut_kaydı sarmalayıcısından gelir."""
+    kd = kdurum or {}
+    ah = kd.get("ah_kutu")
+    x1, y1, x2, y2 = ah if ah else ("", "", "", "")
+    ip, pp = telemetry_state["iris"], telemetry_state["plane"]
+    lx, ly, lz = pp["x"] - ip["x"], pp["y"] - ip["y"], pp["z"] - ip["z"]
+    n = math.sqrt(lx * lx + ly * ly + lz * lz)
+    if n > 1e-9:
+        lx, ly, lz = lx / n, ly / n, lz / n
+    komut = _komut_kaydi.get_son_komut()
+    vx, vy, vz, yaw = komut if komut else ("", "", "", "")
+    return {
+        "t_sim": round(t_sim, 4),
+        "faz": kd.get("faz"),
+        "gorev_faz": _supervisor_mod.status.get("faz"),
+        "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+        "marj": round(kd.get("marj", 0.0), 4),
+        "kumulatif_s": round(kd.get("kumulatif_s", 0.0), 4),
+        "kesintisiz_s": round(kd.get("kesintisiz_s", 0.0), 4),
+        "kilit": int(bool(kd.get("anlik_kilit"))),
+        "kilit_isteri_ok": int(bool(kd.get("kilit_isteri_ok"))),
+        "tespit_dogrulandi": int(bool(kd.get("tespit_dogrulandi"))),
+        "menzil": _gps_guidance_mod.status.get("menzil"),
+        "menzil_ref": _menzil_tutucu_mod.status.get("menzil_ref"),
+        "vx": vx, "vy": vy, "vz": vz, "yaw": yaw,
+        "los_x": round(lx, 4), "los_y": round(ly, 4), "los_z": round(lz, 4),
+    }
+
 
 def process_iris_frame(img, stamp=None, wall_recv=None):
     """Iris kamera karesini işle: Cessna/hedef tespiti + overlay + video parazit
@@ -1378,6 +1423,33 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             else:
                 det = None                             # coast: nişan komutu yok
         set_detection(det)
+
+    # ── 6.1.4 KİLİTLENME GÖSTERGE/SKOR KATMANI (güdüme GİRMEZ) ──
+    # Her karede KilitTakip'i besle: bbox = nişan kutusu (coast'ta None → tespit yok),
+    # t_sim = kare header.stamp (wall clock DEĞİL). Çözünürlük kareden okunur; sabit yok.
+    global _kilit_takip
+    _kdurum = None
+    if stamp is not None:
+        H, W = img.shape[:2]
+        if _kilit_takip is None:
+            _kilit_takip = KilitTakip(W, H)
+        elif (_kilit_takip.img_w, _kilit_takip.img_h) != (W, H):
+            print(f"[GCS] Çözünürlük değişti {_kilit_takip.img_w}x{_kilit_takip.img_h}"
+                  f" → {W}x{H}; KilitTakip yeniden kuruluyor.")
+            _kilit_takip = KilitTakip(W, H)
+        _kbbox = det["bbox"] if det is not None else None
+        _kdurum = _kilit_takip.guncelle(_kbbox, stamp)
+        set_kilit_durum(_kdurum)
+        # ── 8B: kilit isteri (pencere_ok latch) YÜKSELEN KENARINDA bildir ──
+        # Salt-okur gözlemci; beyan aralığı KilitSure'dan (gerçek kilitli örnekle
+        # başlar/biter). Latch düşüp tekrar kalkarsa yeni kilit olayı → yeni bildirim.
+        global _bildirim_onceki
+        _simdi_ok = bool(_kdurum.get("kilit_isteri_ok"))
+        if _simdi_ok and not _bildirim_onceki and _bildirici is not None:
+            _ar = _kilit_takip.beyan_araligi(stamp)
+            if _ar is not None:
+                _bildirici.bildir(*_ar)
+        _bildirim_onceki = _simdi_ok
     # Pose, detection kutusunun kropunda çalışır; det yoksa ama kilit COAST'taysa
     # Kalman tahmin kutusu krop olarak denenir (kısa kopmada pose akışı sürsün —
     # pose kendi güven süzgeciyle korumalı, kropta hedef yoksa çıktı vermez).
@@ -1409,6 +1481,11 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         cv2.putText(img, f"ID:{lock['id']} tahmin({lock['coast']})",
                     (x1, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                     (160, 160, 160), 1, cv2.LINE_AA)
+
+    # ── KİLİTLENME OVERLAY + HAKEM LOGU (mevcut overlay'lerin ÜSTÜNE) ──
+    img = _kilit_overlay.ciz(img, _kdurum, stamp)
+    if stamp is not None:                         # tespitsiz karede de satır (bbox boş)
+        _kilit_log.kaydet(_kilit_log_row(_kdurum, stamp))
 
     # ---- VIDEO PARAZİT (yayın) + MJPEG KODLAMA ----
     if not _NOISE_PRE_DETECT and lvl > 0.001:
@@ -1712,6 +1789,13 @@ def stop_iris_telem():
 async def startup_event():
     asyncio.create_task(mavlink_listener())          # plane — 14550
     start_iris_telem()                                # iris  — 14541 (background thread)
+    # Adım 8: komut vektörü yakalama — TÜM send_velocity yönlendirmeleri (DoW
+    # köprüsü dahil) modül-yükleme sırasında BAĞLANDIĞINDAN, kur() burada (import
+    # sonrası) çağrılır ve "o an bağlı olan" fonksiyonu sarar; idempotenttir.
+    _komut_kaydi.kur()
+    _kilit_log.baslat()                               # CSV hakem logu yazıcı thread'i
+    global _bildirici
+    _bildirici = KuruKosuBildirici()                  # Adım 8B: yarışma sunucusu bildirim iskeleti
     # Hasar modülü: çarpışma menzilini izler, temasta hedefi imha eder.
     # Güdümden bağımsız — hangi faz çalışırsa çalışsın (veya hiçbiri) izler.
     threading.Thread(target=_hasar_izleyici, daemon=True).start()

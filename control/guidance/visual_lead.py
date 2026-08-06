@@ -27,6 +27,7 @@ from control import carpisma_state
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
+from vision.detection_state import set_angajman_dalis  # ANGAJMAN faz hizası (yalnız etiket)
 from control.guidance.guidance_core import (Cfg, LeadPursuitCore, govde_to_dunya,
                                             hedef_kadraj_hatasi)
 from vision import geometry as geo
@@ -376,6 +377,7 @@ def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
             terminal_baslangic = time.time()
             terminal_min = menzil_onceki
             t_terminal_menzil = None
+            set_angajman_dalis(True)   # ANGAJMAN faz hizası (yalnız etiket; dalış aynı)
             print(f"[LEAD] KÖR DALIŞ (KİLİTLİ) — menzil ~{menzil_onceki:.1f} m, "
                   f"son nişan {cfg.TERMINAL_SURE:.1f} s sürdürülüyor")
         send_velocity(conn, *son_v_cmd)

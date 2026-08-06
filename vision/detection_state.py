@@ -18,6 +18,42 @@ def get_detection():
         return _last_detection
 
 
+# ── Kilitlenme durumu (gcs kamera thread'i yazar; overlay + supervisor okur) ──
+# KilitTakip.guncelle çıktısı sözlüğü; Adım 8 overlay'i ve ANGAJMAN monitörü okur.
+_last_kilit_durum = None
+
+
+def set_kilit_durum(durum):
+    """Son kilitlenme durum sözlüğünü sakla (KilitTakip.guncelle çıktısı | None)."""
+    global _last_kilit_durum
+    with _lock:
+        _last_kilit_durum = durum
+
+
+def get_kilit_durum():
+    """Son kilitlenme durum sözlüğünü döndür (dict | None)."""
+    with _lock:
+        return _last_kilit_durum
+
+
+# ── Terminal kör-dalış bayrağı (visual_lead yazar; ANGAJMAN monitörü okur) ──
+# visual_lead terminal_latch anını yayınlar; dalış matematiğine dokunulmaz.
+_angajman_dalis = False
+
+
+def set_angajman_dalis(deger):
+    """visual_lead kör-dalış latch'ini yayınla (bool)."""
+    global _angajman_dalis
+    with _lock:
+        _angajman_dalis = bool(deger)
+
+
+def get_angajman_dalis():
+    """Terminal kör-dalış latch'i etkin mi (bool)."""
+    with _lock:
+        return _angajman_dalis
+
+
 # ── HybridSORT takip durumu (gcs yazar; şimdilik overlay/inceleme için) ──
 _last_tracks = None
 

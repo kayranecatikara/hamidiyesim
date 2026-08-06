@@ -27,6 +27,9 @@ from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
+from control import menzil_tutucu as _tutucu
+from vision.detection_state import (get_kilit_durum, get_angajman_dalis,
+                                    set_angajman_dalis)
 
 
 class SupCfg:
@@ -126,6 +129,15 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
     # sıfırlamak sayacı her çağrıda 0'a düşürüp arayüzde hep boş gösteriyordu.
     # Sayaç GÖREV başına anlamlı → start_chase/start_visual sıfırlıyor.
     status.update(faz="GPS", kilit_sayac=0, son_sebep=None)
+    # Marj geri beslemeli mesafe tutucu (Adım 7) — bir kez başlar; YALNIZ VISUAL'de
+    # RANGE_SET'i ayarlar (gps_guidance.py'ye dokunmadan sınıf niteliği yazımıyla).
+    _tutucu.calistir(
+        stop_event,
+        get_faz=lambda: status["faz"],
+        get_marj=lambda: (get_kilit_durum() or {}).get("marj"),
+        get_range=lambda: _ga.Cfg.RANGE_SET,
+        set_range=lambda r: setattr(_ga.Cfg, "RANGE_SET", r),
+    )
     # Kilit sinyali GT akışına devredilsin mi (varsayılan HAYIR — ölçümle
     # çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS).
     gt_modu = bool(getattr(lead_cfg, "GT_ROT", False) and get_gt is not None
@@ -184,10 +196,28 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         status["gecis_sayisi"] += 1
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
               f"(geçiş #{status['gecis_sayisi']})")
+        # ── ANGAJMAN alt-fazı monitörü (TEK ATIŞ, yalnız FAZ ETİKETİ) ──
+        # KilitTakip TERMINAL'e geçince (pencere_ok latch) VEYA visual_lead kör-dalış
+        # latch'i yayınlanınca status["faz"]="ANGAJMAN" yazar ve KAPANIR (başka hiçbir
+        # duruma yazmaz — yarış koşulu yok). Geri düşme davranışsal değildir; VISUAL→GPS
+        # yalnız sebep=="kayip" ile (aşağıda) yaşanır. 15-kare pose kapısı değişmez.
+        set_angajman_dalis(False)                # bu VISUAL fazı için taze başla
+        angajman_stop = threading.Event()
+
+        def _angajman_izle():
+            while not angajman_stop.is_set():
+                kd = get_kilit_durum()
+                if (kd is not None and kd.get("kilit_isteri_ok")) or get_angajman_dalis():
+                    status["faz"] = "ANGAJMAN"   # TEK ATIŞ
+                    return
+                angajman_stop.wait(0.1)
+
+        threading.Thread(target=_angajman_izle, daemon=True).start()
         sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
                                 cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
                                 get_temas=get_temas, get_menzil=get_menzil,
                                 get_gt=get_gt)
+        angajman_stop.set()                      # monitörü durdur (faz'a yazmaz)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"
