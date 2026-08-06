@@ -116,6 +116,42 @@ az hızla aynı açısal hızı tutturur.
 Kayma hedefin açısal hızıyla ölçekleniyor, yani **düz uçuşta tam sıfır** —
 düz kovalama davranışı hiç bozulmuyor.
 
+### 3b. İç daire kayması neden SABİT, neden oranlı değil
+
+Sezgi "sabit bir sayı yalnız belli bir çapta doğru olur, yarıçapla orantılı
+olmalı" diyordu. **Ölçüm bunu çürüttü.** Üç yapılandırma, dört daire çapı:
+
+| | ⌀96 | ⌀71 | ⌀55 | ⌀41 |
+|---|---|---|---|---|
+| **sabit 14 m** | **14-15** | **15-16** | **15-16** | **16-17** |
+| oranlı 0.27·R | 17-18 | 15-16 | 16-17 | 22-23 |
+| sabit 20 m | 18-19 | 18-19 | 17-18 | 17-18 + **düşüş** |
+
+Sabit 14, 35-96 m yarıçap aralığında (2.7 kat) **her yerde** kazandı.
+
+**Mekanizma** — mesafe iki bileşenden oluşuyor (drone hedefin çemberinin
+içinde uçtuğu için):
+
+| Kayma | Radyal (içeride olma bedeli) | Teğetsel (geri kalma) | Toplam |
+|---|---|---|---|
+| 0 m | 0 m | 34.1 m | 34.1 m |
+| **14 m** | 7 m | **13.9 m** | **15.6 m** |
+| 20 m | 12 m | 13.8 m | 18.3 m |
+
+Kaymanın işi teğetsel gecikmeyi düşürmek (34 → 14 m). Ama **14'te doyuyor**:
+20'ye çıkınca teğetsel 13.9 → 13.8 (kazanç yok), radyal 7 → 12 (saf bedel).
+
+Doyma noktasını **dairenin büyüklüğü değil, drone'un kendi dinamiği**
+belirliyor — açısal olarak yetişebilmek için ne kadar "yükten kurtulması"
+gerekiyorsa o kadar. Bu miktar yarıçapla ölçeklenmediği için sabit bir sayı,
+orantılı kuraldan iyi.
+
+Oranlı sürüm her iki uçtan da kaybetti: ⌀96'da 25 m kaydırıyor (fazla),
+⌀41'de 11 m (az). Kod duruyor ama kapalı (`AVCI_GPS_IC_ORAN=0.27`).
+
+> **Açık:** 35 m'den dar daireler test edilmedi (⌀32 senaryosu kaldırıldı).
+> Orada 14 m, yarıçapın %40'ı olur ve radyal bedel baskın hale gelebilir.
+
 ### 4. Gecikme birikmesi — üç ayrı hatta aynı hata
 
 Kamera callback'i tüm işi senkron yapıyordu (YOLO + tracker + overlay + JPEG,
