@@ -148,9 +148,32 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 
 /* center FPV */
 .fpvpanel{flex:1}
-.fpvwrap{position:relative;width:100%;aspect-ratio:16/9;min-height:480px;background:#05080b;border-radius:0 0 9px 9px;overflow:hidden}
-.fpvwrap #fpvImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+/* FPV alanı yatay ikiye bölünür: SOL kilit paneli + SAĞ 4:3 video sahnesi.
+   Sahne 4:3 (aspect-ratio) ve object-fit:contain → gerilme YOK; sahnenin
+   solunda kalan (pillarbox) alanı kilit paneli doldurur. */
+.fpvwrap{position:relative;display:flex;flex-direction:row;width:100%;aspect-ratio:16/9;min-height:480px;background:#05080b;border-radius:0 0 9px 9px;overflow:hidden}
+.fpvstage{position:relative;flex:0 0 auto;height:100%;aspect-ratio:4/3;margin-left:auto;background:#000;overflow:hidden}
+.fpvwrap #fpvImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
 .fpvwrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+/* Kilit kutuları katmanı — img ile aynı 4:3 kutuya oturur, birlikte ölçeklenir */
+#avOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* SOL dikey kilitlenme paneli */
+.kilitpanel{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:9px;padding:14px 15px;overflow:auto;
+  background:linear-gradient(180deg,rgba(10,15,21,.6),rgba(6,9,13,.6));border-right:1px solid var(--line)}
+.kp-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.18em;color:#9fb0bf}
+.kp-faz{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:.06em;color:var(--text);padding:2px 0 4px}
+.kp-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.kp-k{font-size:11.5px;color:var(--muted)}
+.kp-v{font-family:var(--mono);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.kp-v.ok{color:var(--green)} .kp-v.no{color:var(--muted)} .kp-v.hot{color:var(--red)}
+.kp-cum{display:flex;flex-direction:column;gap:6px;padding:4px 0}
+.kp-bar{height:7px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
+.kp-fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber),var(--green));transition:width .25s}
+.kp-note{margin-top:auto;font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
+/* Avcı Drone bölümü — faz durumu (Takip Modu — Otonom başlığı altında) */
+.avci-faz{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 10px;
+  padding-bottom:8px;border-bottom:1px solid var(--line)}
+#viewAvci .kp-faz{font-size:16px;letter-spacing:.05em}
 .nofeed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--dim);pointer-events:none}
 .nofeed[hidden]{display:none}

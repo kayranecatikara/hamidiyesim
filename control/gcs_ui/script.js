@@ -57,7 +57,8 @@ const SCN_LBL = { square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
 // bağlantıyı her tarayıcıda kapatmaz. Bu yüzden <img> DOM'dan silinip
 // yeniden kurulur (klasik arayüzdeki switchCamera ile aynı gerekçe).
 function switchCamera(vehicle){
-  const wrap = $('fpvwrap');
+  // Video, 4:3 sahneye (fpvStage) eklenir — kilit paneli ayrı kolonda kalır.
+  const wrap = $('fpvStage') || $('fpvwrap');
   const old = $('fpvImg');
   if (old){ old.src = ''; old.remove(); }
   const img = document.createElement('img');
@@ -863,6 +864,35 @@ function renderStatus(){
     } else yaz('pErr', '--', '');
     yaz('pDh', p.d_h != null ? `${p.d_h.toFixed(1)} / ${p.gate_menzil} m` : '--', p.menzil_kapi_ok ? 'green' : 'amber');
     yaz('pBlock', p.engel, p.engel === '—' ? 'green' : 'red');
+
+    // ── SOL KİLİTLENME PANELİ (kilit + menzil_tutucu; server cv2 sayaçlarının
+    //    METİN karşılığı — kutu çizimleri videoda kalır) ──
+    const kd = p.kilit || {}, mt = p.menzil_tutucu || {};
+    const setk = (id, txt, cls) => { const e = $(id); if (!e) return; e.textContent = txt; if (cls !== undefined) e.className = 'kp-v ' + cls; };
+    setk('kpFaz', kd.faz || '—');
+    setk('kpMarj', kd.marj != null ? kd.marj.toFixed(2) : '--',
+         kd.marj == null ? 'no' : kd.anlik_kilit ? 'hot' : '');
+    const hed = kd.hedef_s || 5.0, kum = kd.kumulatif_s;
+    setk('kpKum', (kum != null ? kum.toFixed(1) : '--') + ' / ' + hed.toFixed(1) + ' s',
+         kd.pencere_ok ? 'ok' : '');
+    const bar = $('kpKumBar');
+    if (bar) bar.style.width = (kum != null ? Math.max(0, Math.min(100, 100 * kum / hed)) : 0) + '%';
+    setk('kpKes', kd.kesintisiz_s != null ? kd.kesintisiz_s.toFixed(1) + ' s' : '-- s');
+    setk('kpDogr', kd.tespit_dogrulandi ? 'EVET' : 'hayır', kd.tespit_dogrulandi ? 'ok' : 'no');
+    setk('kpRef', mt.menzil_ref != null ? mt.menzil_ref.toFixed(1) + ' m' : '-- m');
+
+    // ── VİDEO ÜSTÜ KİLİT KUTULARI (SVG, 640x480 koordinatı; img ile ölçeklenir) ──
+    // SARI AV çerçevesi: config oranlarından sunucuda hesaplanan av_kutu (her karede).
+    // KIRMIZI kilit dörtgeni: ah_kutu VE anlik_kilit true iken.
+    const rect = (el, box) => {
+      const e = $(el); if (!e) return;
+      if (box){ e.setAttribute('x', box[0]); e.setAttribute('y', box[1]);
+        e.setAttribute('width', box[2] - box[0]); e.setAttribute('height', box[3] - box[1]);
+        e.setAttribute('visibility', 'visible'); }
+      else e.setAttribute('visibility', 'hidden');
+    };
+    rect('avRect', kd.av_kutu);
+    rect('lockRect', (kd.anlik_kilit && kd.ah_kutu) ? kd.ah_kutu : null);
   } else {
     yaz('pBlock', 'API YOK', 'red');
   }

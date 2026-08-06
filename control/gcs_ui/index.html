@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -93,6 +93,7 @@
           <div class="view" id="viewAvci" hidden>
             <div class="grp">
               <span class="label">Takip Modu — Otonom</span>
+              <div class="avci-faz"><span class="kp-k">Faz</span><span class="kp-faz" id="kpFaz">—</span></div>
               <button class="startbtn" id="startBtn">
                 <svg class="play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>
                 <span id="startLbl">Görevi Başlat</span>
@@ -117,20 +118,45 @@
       <section class="panel fpvpanel" style="display:flex;flex-direction:column">
         <div class="phead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
         <div class="fpvwrap" id="fpvwrap">
-          <img id="fpvImg" alt="">
-          <canvas id="noiseCv"></canvas>
-          <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
-          <div class="xhair"></div>
-          <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
-          <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
-          <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
-          <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>POSE</b> <span id="oPose">--</span></div>
-          <div class="lockbadge idle" id="lockBadge">BEKLEMEDE</div>
-          <div class="guidebadge idle" id="guideBadge" title="Aktif takip güdümü — GPS konumu mu, kamera (görsel) mi?">
-            <svg id="guideIcon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
-            <span id="guideTxt">GÜDÜM BEKLEMEDE <span class="sub">MODEL PASİF</span></span>
+          <!-- SOL: dikey kilitlenme bilgi paneli — 4:3 videonun pillarbox
+               alanını doldurur (siyah şerit yerine). Veriler /api/telemetry/pnp
+               'den (kilit + menzil_tutucu). Kutu çizimleri videonun içindedir. -->
+          <aside class="kilitpanel" id="kilitPanel">
+            <div class="kp-title">KİLİTLENME</div>
+            <div class="kp-row"><span class="kp-k">Marj</span><span class="kp-v" id="kpMarj">--</span></div>
+            <div class="kp-cum">
+              <div class="kp-row"><span class="kp-k">Kümülatif</span><span class="kp-v" id="kpKum">-- / 5.0 s</span></div>
+              <div class="kp-bar"><div class="kp-fill" id="kpKumBar"></div></div>
+            </div>
+            <div class="kp-row"><span class="kp-k">Kesintisiz</span><span class="kp-v" id="kpKes">-- s</span></div>
+            <div class="kp-row"><span class="kp-k">Tespit doğrulandı</span><span class="kp-v" id="kpDogr">—</span></div>
+            <div class="kp-row"><span class="kp-k">Menzil ref (tutucu)</span><span class="kp-v" id="kpRef">-- m</span></div>
+            <div class="kp-note">Sarı AV çerçevesi ve kırmızı kilit dörtgeni videonun içindedir (hedefin kadraj konumu).</div>
+          </aside>
+          <!-- SAĞ: 4:3 video sahnesi — object-fit:contain, gerilme YOK -->
+          <div class="fpvstage" id="fpvStage">
+            <img id="fpvImg" alt="">
+            <canvas id="noiseCv"></canvas>
+            <!-- Kilit kutuları TARAYICI katmanında: viewBox 640x480 (kare koordinatı),
+                 img contain ile nasıl ölçekleniyorsa SVG de aynı ölçeklenir → video
+                 hareket/boyutlanınca kutular birlikte hareket eder. -->
+            <svg id="avOverlay" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <rect id="avRect" fill="none" stroke="#ffe000" stroke-width="1.5" visibility="hidden"/>
+              <rect id="lockRect" fill="none" stroke="#ff2d2d" stroke-width="2" visibility="hidden"/>
+            </svg>
+            <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
+            <div class="xhair"></div>
+            <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
+            <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
+            <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
+            <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>POSE</b> <span id="oPose">--</span></div>
+            <div class="lockbadge idle" id="lockBadge">BEKLEMEDE</div>
+            <div class="guidebadge idle" id="guideBadge" title="Aktif takip güdümü — GPS konumu mu, kamera (görsel) mi?">
+              <svg id="guideIcon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+              <span id="guideTxt">GÜDÜM BEKLEMEDE <span class="sub">MODEL PASİF</span></span>
+            </div>
+            <div class="manbadge" id="manBadge" hidden>MANUEL — HEDEF İHA UÇURULUYOR</div>
           </div>
-          <div class="manbadge" id="manBadge" hidden>MANUEL — HEDEF İHA UÇURULUYOR</div>
         </div>
       </section>
     </div>
@@ -211,6 +237,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=15"></script>
+<script src="script.js?v=18"></script>
 </body>
 </html>
