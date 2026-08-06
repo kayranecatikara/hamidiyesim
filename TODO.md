@@ -2,7 +2,7 @@
 
 Bu dosya **yalnız yapılacak işleri** tutar. Sistemin şu anki hali, ölçülmüş
 gerçekler ve çürütülmüş fikirler → **[DURUM.md](DURUM.md)**.
-Tek değişkenli deney adımları → **[DENEY.md](DENEY.md)**.
+GPS güdümünün kararlı referans hâli → **[KARARLI_HAL.md](KARARLI_HAL.md)**.
 
 **Çalışma kuralı:** tek seferde tek değişken → testler → **uç** → ölç →
 *Sonuç:* satırına yaz → tikle. (Gerekçesi DURUM.md'de.)
@@ -13,7 +13,7 @@ Tek değişkenli deney adımları → **[DENEY.md](DENEY.md)**.
 
 | # | iş | neden şimdi |
 |---|---|---|
-| **0** | [25° + `WP_ACC_Z=3` geri al](#0--acil-son-değişikliği-geri-al) | ölçüldü, **kötüleştirdi** |
+| **0** | [GPS entegrasyonunu UÇUR ve ölç](#0--acil-yeni-gps-tabanını-ölç) | kod geldi, **hiç uçmadı** |
 | **1** | [B10 — kalkışta hedefin üstüne çıkma](#b10--kalkışta-hedefin-üstüne-çıkma) | **her uçuşun başında bozuluyor** (max +17.9 m) |
 | **2** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
 | **3** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | son metrede 25 m/s = kare başına 0.81 m |
@@ -31,32 +31,57 @@ Tek değişkenli deney adımları → **[DENEY.md](DENEY.md)**.
 
 ---
 
-## 0 — ACİL: son değişikliği geri al
+## 0 — ACİL: yeni GPS tabanını ölç
 
-**Ölçüldü ve kötüleştirdi.** `ISTASYON_ELEV_DEG` 15° → 25° ve `WP_ACC_Z` 1 → 3
-aynı anda değiştirildi (2026-08-05 18:20). Aynı `GPS_RANGE=11` ile önce/sonra:
+`gps_kararli_hal` dalının GPS güdümü entegre edildi (2026-08-06). Kod geldi,
+testler geçiyor, ama **bu dalda hiç uçmadı**. Aynı anda birden çok şey değişti
+— o yüzden ilk iş tek bir taban ölçümü, ayarlama değil.
 
-| | C: 15° + ACC_Z=1 | D: 25° + ACC_Z=3 |
+**Bu entegrasyonla değişenler** (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md),
+DURUM.md §3):
+
+| ne | eski | yeni |
 |---|---|---|
-| görsel faz | 9 | 10 |
-| vuruş | 2 (%22) | **1 (%10)** |
-| <1.5 m geçiş | 5/9 | **3/10** |
-| en yakın menzil medyanı | 1.11 m | **2.04 m** |
-| istasyon aşımı medyanı | −5.4 m | **−8.3 m** |
-| yere çakılan uçuş | %27 | **%30** |
+| `KD_H` (lead) | 0.20 | **0.60** |
+| iç daire nişanı | yok | **14 m** (yalnız dönüşte) |
+| `ISTASYON_ELEV_DEG` | 25° | **15°** |
+| araç zarfı | 15 m/s, 5 m/s², `WP_ACC_Z 1` | **25 m/s, 8 m/s², 2.5 m/s², 45°** |
+| kamera/telemetri kuyruğu | birikiyordu | en-son-veri-kazanır |
 
-Beklenen kazanç (aşımın küçülmesi) **gerçekleşmedi, tersine büyüdü**.
-
-- [ ] `gps_guidance.Cfg.ISTASYON_ELEV_DEG` → **15.0**
-- [ ] `avci_copter.parm` → **`WP_ACC_Z 1`**
-- [ ] `tests/test_gps_guidance.py` G11 → **`A_DIKEY = 1.0`** (araç yeteneğiyle
-      birlikte hareket etmeli, yoksa test 25° geometriyi yanlışlıkla onaylar)
-- [ ] İkisi **birlikte** geri alınmalı; sonra tek tek denenecek.
+- [ ] **İLK: SITL'i yeniden başlat, sonra `python3 tools/parm_denetle.py`**
+      → COPTER **11/11 ✓** olmalı. Parm dosyası kararlı daldan alındı, adları
+      bu firmware'in şemasına çevrildi (değerler aynı). Bir satır bile
+      ✗ ise araç o parametrede firmware varsayılanında kalmıştır ve uçuş
+      ölçümü kararlı dalla karşılaştırılamaz.
+      *Sonuç:*
+- [ ] Düz uçuş senaryosu — regresyon kontrolü (iç daire kayması düzde 0
+      olmalı, `ic_kayma_m` CSV sütunu doğrular). *Sonuç:*
+- [ ] Daire senaryosu (`circle`, ⌀55 m) — oturmuş menzil. Kararlı dalın
+      karşılığı 15-16 m. *Sonuç:*
+- [ ] Görsel faz vuruş oranı — pose dönemindeki taban %27 (30 fazda 8).
       *Sonuç:*
 
-> **Ders:** iki değişken aynı anda değiştirildi, hangisinin suçlu olduğu
-> ayrılamadı. Geri aldıktan sonra önce yalnız `WP_ACC_Z=3` (15° ile), sonra
-> yalnız 25° (ACC_Z=1 ile) denenmeli.
+> Kötü çıkarsa geri dönüş: `AVCI_GPS_KD=0.2 AVCI_GPS_IC=0` tek uçuşta eski
+> yasaya döndürür (parm dosyası hariç).
+
+### Sonra ayrılacak değişkenler
+
+- [ ] `IC_ORAN=0.27` (yarıçap-oranlı kayma) — `circle_s` (⌀41) ve `circle_xl`
+      (⌀96) senaryolarında sabit-metreyle A/B. *Sonuç:*
+      > Daire çapı varyantlarının arayüzde butonu YOK (arayüz bu dalda baştan
+      > yazıldı, dokunulmadı). Çağırma:
+      > `curl -X POST localhost:8000/api/command/plane/scenario/circle_s`
+      > Çaplar: `circle_xl` ⌀96 · `circle_l` ⌀71 · `circle` ⌀55 · `circle_s` ⌀41
+- [ ] `WP_ACC_Z` 2.5 vs 1 — 08-05'te 3 denenip kötüleşmişti ama
+      `ISTASYON_ELEV_DEG=25` ile birlikte değişmişti, ayrılamadı. Şimdi 15°
+      sabitken tek başına denenebilir. *Sonuç:*
+- [ ] `ISTASYON_ELEV_DEG` 25° — yalnız başına (ACC_Z sabitken). *Sonuç:*
+- [ ] `AVCI_GPS_GUDUM=frpn` — kararlı dalda 31.1 m (istasyon yasası 29.4 m).
+      Yeni zarfla tekrar bakılabilir. *Sonuç:*
+
+> **Ders (08-05'ten):** iki değişken aynı anda değiştirildi, hangisinin suçlu
+> olduğu ayrılamadı. Bu entegrasyonda da çok şey birden değişti — bu yüzden
+> önce TEK bir taban ölçülür, sonra tek tek ayrılır.
 
 ---
 

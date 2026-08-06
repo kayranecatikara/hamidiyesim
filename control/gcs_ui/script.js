@@ -3,9 +3,9 @@
 
    Bu dosyada SİMÜLE VERİ YOKTUR. Ekrandaki her sayı gcs_server'dan gelir:
      ws://.../ws              → iris + plane telemetrisi (10 Hz)
-     /api/video_feed/{iris|plane} → MJPEG (YOLO/pose overlay'i sunucuda çizili)
+     /api/video_feed/{iris|plane} → MJPEG (YOLO overlay'i sunucuda çizili)
      /api/chase_status        → görev + supervisor fazı + gps_guidance durumu
-     /api/telemetry/pnp       → görüş hattı (tespit/pose/menzil) + faz kapıları
+     /api/telemetry/pnp       → görüş hattı (tespit/kutu/menzil) + faz kapıları
      /api/scenario_status     → senaryo süreci yaşıyor mu (buton senkronu)
      /api/hasar               → gerçek Gazebo teması (imha)
    Komutlar klasik arayüzle AYNI uçlara gider; PWM eşlemesi de birebir aynıdır.
@@ -754,14 +754,14 @@ function renderStatus(){
 
   // ── Güdüm tipi: supervisor fazı ne diyorsa o ──
   //   GPS fazı    → detection modeli, hedefin GPS pozuna göre kadraj merkezleme
-  //   Görsel faz  → pose modeli, kameradan lead pursuit
+  //   Görsel faz  → detection kutusu, kameradan saf takip + azimut-oranı lead'i
   let key, main, model, tel, mdl, col, cap;
   if (st.imha || faz === 'VURULDU'){
     key = 'hit'; main = 'HEDEF VURULDU'; model = 'GÖREV TAMAM';
-    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--red)'; cap = 'fiziksel temas doğrulandı';
+    tel = 'GÖRSEL'; mdl = 'BBOX'; col = 'var(--red)'; cap = 'fiziksel temas doğrulandı';
   } else if (faz === 'VISUAL'){
-    key = 'vision'; main = 'GÖRSEL GÜDÜM'; model = 'POSE MODELİ';
-    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--green)'; cap = 'pose modeli · lead pursuit';
+    key = 'vision'; main = 'GÖRSEL GÜDÜM'; model = 'IBVS — TESPİT KUTUSU';
+    tel = 'GÖRSEL'; mdl = 'BBOX'; col = 'var(--green)'; cap = 'tespit kutusu · IBVS + azimut lead';
   } else if (faz === 'GPS'){
     key = 'gps'; main = 'GPS GÜDÜM'; model = 'DETECTION MODELİ';
     tel = 'GPS'; mdl = 'DETECTION'; col = 'var(--amber)'; cap = 'detection modeli · kadraj merkezleme';
@@ -795,7 +795,7 @@ function renderStatus(){
   if (faz && faz !== lastFaz){
     lastFaz = faz;
     if (faz === 'GPS') addLog('gps', 'GÜDÜM', 'GPS fazı — detection modeliyle kadraj merkezleme.');
-    else if (faz === 'VISUAL') addLog('vision', 'GÜDÜM', 'Görsel temas oturdu → POSE modeli, lead pursuit devrede.');
+    else if (faz === 'VISUAL') addLog('vision', 'GÜDÜM', 'Görsel temas oturdu → IBVS, tespit kutusuyla takip devrede.');
     else if (faz === 'VURULDU') addLog('guide', 'GÜDÜM', 'Terminal vuruş — hedefe temas.');
     else if (faz === 'DURDU') addLog('sys', 'GÜDÜM', 'Güdüm durdu.');
   }
@@ -817,7 +817,7 @@ function renderStatus(){
   else if (!st.mission){ lockTxt = 'BEKLEMEDE'; lockCls = 'idle'; lockCap = 'görev başlatılmadı'; }
   else if (p && p.pose_var){
     lockTxt = 'KİLİT'; lockCls = '';
-    lockCap = `pose ${p.pose_conf ?? '--'}${p.kanat_gorunur ? '' : ' · kanat yok'}`;
+    lockCap = `kutu ${p.pose_conf ?? '--'}${p.kanat_gorunur ? '' : ' · kutu küçük'}`;
   } else if (p && p.tespit_var){
     lockTxt = 'TESPİT'; lockCls = 'searching'; lockCap = `detection ${p.tespit_conf ?? '--'}`;
   } else { lockTxt = 'ARANIYOR'; lockCls = 'searching'; lockCap = 'hedef kadrajda yok'; }
@@ -830,7 +830,7 @@ function renderStatus(){
   $('aLock').className = 'tv' + (lockTxt === 'KİLİT' ? ' green' : lockTxt === 'BEKLEMEDE' ? ' muted' : ' amber');
   if (st.mission && lockTxt !== lastLockTxt){
     lastLockTxt = lockTxt;
-    if (lockTxt === 'KİLİT') addLog('vision', 'GÖRÜŞ', 'Pose kilidi kuruldu — hedef 6 keypoint ile görülüyor.');
+    if (lockTxt === 'KİLİT') addLog('vision', 'GÖRÜŞ', 'Görsel kilit kuruldu — hedef kutusu kararlı.');
     else if (lockTxt === 'ARANIYOR') addLog('gps', 'GÖRÜŞ', 'Görsel temas yok — hedef kadrajda değil.');
   }
   if (!st.mission) lastLockTxt = null;
@@ -845,8 +845,8 @@ function renderStatus(){
         ? `VAR ${p.tespit_conf}${p.det_px != null ? ` · ${p.det_px} px` : ''}`
         : 'YOK', p.tespit_var ? 'green' : 'red');
     // ── FAZ + kaçıncı geçiş (tek satır: "GPS · 3. geçiş") ──
-    // Pose/kilit satırları kaldırıldı; aynı bilgi zaten "Engel" satırında
-    // ("POSE KİLİDİ" / "MENZİL KAPISI") daha doğrudan veriliyor.
+    // Kilit satırı kaldırıldı; aynı bilgi zaten "Engel" satırında
+    // ("GÖRSEL KİLİT" / "MENZİL KAPISI") daha doğrudan veriliyor.
     const fazAd = st.imha || st.faz === 'VURULDU' ? 'VURULDU'
                 : st.faz === 'VISUAL' ? 'GÖRSEL'
                 : st.faz === 'GPS' ? 'GPS'

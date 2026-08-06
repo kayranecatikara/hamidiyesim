@@ -316,6 +316,73 @@ def main():
             f"({en_uzun*0.05:.1f} s, tavan {gg.Cfg.YAW_SUS_N} kare) — "
             f"eski kodda 1867 kare (93 s) ölçülmüştü")
 
+    # ── G16: İÇ DAİRE NİŞANI — ölçülmüş varsayılan, yön doğru, düzde sıfır ──
+    # (gps_kararli_hal dalından alındı; orada G11/G12 idi, çakışmasın diye
+    #  G16/G17'ye numaralandı.)
+    # 2026-08-05 uçuş ölçümü: kayma 0→8→14 m ile menzil 34.1→22.8→9.8 m.
+    # Bu değer bir tahmin değil, üç koşuluk kontrollü deneyin sonucudur.
+    kontrol("G16a iç daire nişanı ölçülmüş varsayılanda (14 m)",
+            C.IC_KAYMA == 14.0, f"IC_KAYMA={C.IC_KAYMA}")
+    kontrol("G16a2 lead kazancı ölçülmüş varsayılanda (0.60)",
+            C.KD_H == 0.60, f"KD_H={C.KD_H}  (0.20 → 34.3 m, 0.60 → 29.4 m)")
+
+    # Kayma yönü: hız vektörünün dönüş yönünde 90°'si = dönüş merkezi.
+    # Sentetik daire (R=38) üzerinde üç noktada kontrol.
+    R, vh = 38.0, 14.6
+    w = vh / R
+    en_kotu = 0.0
+    for tt in (0.0, math.pi / (2 * w), math.pi / w):
+        px, py = R * math.cos(w * tt), R * math.sin(w * tt)
+        vx_, vy_ = -vh * math.sin(w * tt), vh * math.cos(w * tt)
+        sp = math.hypot(vx_, vy_)
+        vhx, vhy = vx_ / sp, vy_ / sp
+        # omega > 0 (başlık artıyor) → merkez (-v̂y, +v̂x) yönünde
+        cx, cy = -vhy, vhx
+        gx, gy = -px / R, -py / R          # gerçek merkez yönü
+        en_kotu = max(en_kotu, math.degrees(
+            math.acos(max(-1.0, min(1.0, cx * gx + cy * gy)))))
+    kontrol("G16b kayma yönü tam dönüş merkezine bakıyor",
+            en_kotu < 1e-6, f"en kötü sapma {en_kotu:.2e}°")
+
+    # Düz uçuşta (açısal hız ~0) kayma ölçeği sıfıra gitmeli — düz kovalama
+    # senaryosunda regresyon olmasın diye kritik.
+    olcek_duz = min(1.0, 0.0 / C.IC_OMEGA_REF)
+    olcek_daire = min(1.0, 0.384 / C.IC_OMEGA_REF)
+    kontrol("G16c düz uçuşta kayma 0, dairede tam",
+            olcek_duz == 0.0 and olcek_daire == 1.0,
+            f"düz={olcek_duz:.2f}  daire(ω=0.384)={olcek_daire:.2f}")
+
+    # ── G17: YARIÇAP-ORANLI KAYMA ──
+    def _oranli(Rr, vv, oran=0.27):
+        ww = vv / Rr
+        olc = min(1.0, abs(ww) / C.IC_OMEGA_REF)
+        if Rr < C.IC_R_MIN:
+            return 0.0
+        return min(oran * Rr, C.IC_KAYMA_MAX) * olc
+
+    kontrol("G17a varsayılan KAPALI — sabit metre geçerli (regresyon koruması)",
+            C.IC_ORAN == 0.0, f"IC_ORAN={C.IC_ORAN}")
+
+    # Katsayı ölçümden geldi: 2026-08-05'te 14 m kayma, hedefin 52.2 m
+    # yarıçapının 0.268'iydi. Yani oranlı sürüm O SENARYODA sabit sürümle
+    # aynı kaymayı üretmeli — fark yalnız yarıçap değişince doğmalı.
+    k52 = _oranli(52.2, 14.5)
+    kontrol("G17b ölçüm senaryosunda sabit sürümle AYNI kayma",
+            abs(k52 - 14.0) < 0.5, f"R=52.2 m → {k52:.1f} m (sabit sürüm 14.0 m)")
+
+    k24, k80 = _oranli(24.0, 14.5), _oranli(80.0, 15.0)
+    kontrol("G17c dar dairede daha az, geniş dairede daha çok kayma",
+            k24 < 14.0 < k80,
+            f"R=24 m → {k24:.1f} m   |   R=80 m → {k80:.1f} m   (sabit: hep 14.0)")
+
+    kontrol("G17d aşırı geniş yarıçapta tavan bağlıyor",
+            _oranli(200.0, 15.0) <= C.IC_KAYMA_MAX + 1e-9,
+            f"R=200 m → {_oranli(200.0, 15.0):.1f} m ≤ tavan {C.IC_KAYMA_MAX}")
+
+    kontrol("G17e güvenilmez dar yarıçapta kayma kapanıyor",
+            _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
+            f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

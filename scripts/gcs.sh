@@ -28,7 +28,7 @@ case "$ADIM" in
   bbox)  export AVCI_GT_ROT=off AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=off AVCI_LOCK=off ;;
   gt)    export AVCI_GT_ROT=on  AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=off AVCI_LOCK=off ;;
   takip) export AVCI_GT_ROT=off AVCI_GT_KILIT_BYPASS=off AVCI_TRACKER=on  AVCI_LOCK=on  ;;
-  *) echo "kullanım: bash scripts/gcs.sh [bbox|gt|takip]  (bkz. DENEY.md)" >&2
+  *) echo "kullanım: bash scripts/gcs.sh [bbox|gt|takip]  (bkz. docs/SIMULASYON_CALISTIRMA.md)" >&2
      exit 2 ;;
 esac
 

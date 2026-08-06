@@ -2,7 +2,7 @@
 
 Bu belge **mevcut hâli** anlatır: hangi ayarlar aktif, ne ölçüldü, hangi fikir
 çürütüldü. **Yapılacak iş buraya yazılmaz** → [TODO.md](TODO.md).
-Tek değişkenli deney adımları → [DENEY.md](DENEY.md).
+GPS güdümünün kararlı referans hâli → [KARARLI_HAL.md](KARARLI_HAL.md).
 Çalıştırma komutları → `docs/SIMULASYON_CALISTIRMA.md`.
 
 ---
@@ -44,8 +44,11 @@ henüz uçulmadı, yeni taban ilk uçuşlarda ölçülecek.
 | ayar | değer | dosya | ne yapar |
 |---|---|---|---|
 | `RANGE_SET` | 11.0 m | `gps_guidance.Cfg` | istasyonun hedefe slant menzili |
-| `ISTASYON_ELEV_DEG` | **25.0°** ⚠ | `gps_guidance.Cfg` | istasyonun LOS yükselişi |
+| `ISTASYON_ELEV_DEG` | **15.0°** | `gps_guidance.Cfg` | istasyonun LOS yükselişi (25°'den geri alındı) |
 | `CENTER_ELEV_DEG` | 25.0° | `gps_guidance.Cfg` | kameranın fiziksel tilt'i (referans) |
+| `KP_H` / `KD_H` | 0.8 / **0.60** | `gps_guidance.Cfg` | konum kazancı / **LEAD** (sönümleme değil, §3) |
+| `IC_KAYMA` | **14.0 m** | `gps_guidance.Cfg` | iç daire nişanı — dönüş merkezine kayma |
+| `IC_ORAN` | 0.0 (kapalı) | `gps_guidance.Cfg` | yarıçap-oranlı kayma; 0.27 ile açılır |
 | `V_MAX` | 18.0 m/s | `gps_guidance.Cfg` | GPS fazı yatay hız tavanı |
 | `VZ_MAX` / `MAX_ACCEL` | 6.0 / 12.0 | `gps_guidance.Cfg` | dikey hız / ivme tavanı |
 | `YAW_RATE_MAX` | 120 °/s | `gps_guidance.Cfg` | GPS fazı dönüş hızı |
@@ -67,20 +70,35 @@ henüz uçulmadı, yeni taban ilk uçuşlarda ölçülecek.
 
 ### ArduPilot parametreleri (`sim/ardupilot_params/avci_copter.parm`)
 
-| parametre | değer | not |
-|---|---|---|
-| `WP_ACC_Z` | **3** ⚠ | dikey ivme; varsayılan 1 idi |
-| `ATC_ANGLE_MAX` | 45° | yatay ivme tavanı ≈ 9.8 m/s² |
-| `WP_SPD` / `WP_ACC` | 15 / 5 | GUIDED hız/ivme |
-| `WP_SPD_UP` / `WP_SPD_DN` | 5 / 5 | dikey hız |
-| `WP_YAW_BEHAVIOR` | 0 | firmware yaw'a karışmaz, tek yetkili güdüm |
+Dosya **`gps_kararli_hal` dalından olduğu gibi alındı** (2026-08-06, kullanıcı
+kararı). Kararlı dalın uçuşta kullandığı zarf:
 
-⚠ **`ISTASYON_ELEV_DEG=25` ve `WP_ACC_Z=3` ölçümde KÖTÜLEŞTİRDİ** — geri alma
-işi TODO.md madde 0'da bekliyor.
+| parametre | değer | kararlı daldaki yazımı | not |
+|---|---|---|---|
+| `ATC_ANGLE_MAX` | 45° | `ANGLE_MAX 4500` | yatay ivme tavanı ≈ 9.8 m/s² |
+| `WP_SPD` | 25 m/s | `WPNAV_SPEED 2500` | GUIDED yatay hız tavanı |
+| `WP_ACC` | 8 m/s² | `WPNAV_ACCEL 800` | yatay ivme |
+| `WP_SPD_UP` / `WP_SPD_DN` | 6 / 4 m/s | `WPNAV_SPEED_UP/DN 600/400` | dikey hız |
+| `WP_ACC_Z` | **2.5 m/s²** | `WPNAV_ACCEL_Z 250` | dikey ivme (1'den yükseldi) |
+| `WP_JERK` | 4 m/s³ | `WPNAV_JERK 4` | ivme tavanını jerk boğmasın |
+| `PSC_NE_VEL_P` | 2.0 | `PSC_VELXY_P 2.0` | yatay hız halkası |
+| `WP_YAW_BEHAVIOR` | 0 | aynı | firmware yaw'a karışmaz, tek yetkili güdüm |
 
-> **Parametre adı uyarısı:** bu firmware parametreleri yeniden adlandırıp SI
-> birimine geçmiş. Tanımadığı adı **sessizce yok sayar**. Yeni parametre
-> eklerken uçuş sonrası doğrula: `python3 tools/parm_denetle.py`
+**Değerler kararlı dalın uçuşta doğruladığı değerlerdir; yalnız AD ve BİRİM
+çevrildi.** Kararlı dal 08-04 tarihli bir dökümle `WPNAV_*` şemasını
+kanıtlıyordu; bu makinedeki firmware (`ad28bb78d2`) o adları **tanımıyor**.
+`~/ardupilot/mav_5_1.parm` tam bir döküm (1421 satır, hiç set etmediğimiz
+`ATC_ANG_YAW_P`, `MOT_THST_HOVER`, `PSC_*` de içinde) ve orada `^WPNAV` **0
+satır**, `^WP_` 12 satır. Ad çevrilmeseydi bu 8 satır sessizce yok sayılır,
+araç firmware varsayılanlarıyla (10 m/s, 2.5 m/s², 30°) uçardı.
+
+> **Doğrulama zorunlu:** SITL yeniden başladıktan sonra
+> `python3 tools/parm_denetle.py` → 11/11 ✓ olmalı. Değilse uçuş ölçümü
+> geçersizdir. **TODO.md madde 0'ın ilk kutusu.**
+
+> **Genel kural:** bu firmware ailesinde ArduPlane ve ArduCopter **farklı** ad
+> şemaları kullanıyor ve sürüm değiştikçe kayıyor. Tanımadığı adı ArduPilot
+> **sessizce yok sayar** — bu tuzağa üç kez düşüldü.
 
 ### Ortam değişkenleri (varsayılanlar)
 
@@ -90,6 +108,10 @@ işi TODO.md madde 0'da bekliyor.
 | `AVCI_GT_ROT` | off | GT teşhis modu (bkz. §3) |
 | `AVCI_GPS_RANGE` | 11.0 | `RANGE_SET` override |
 | `AVCI_HYBRID_GATE_MENZIL` | 20.0 | menzil kapısı override |
+| `AVCI_GPS_GUDUM` | **istasyon** | `frpn` ile FRPN+IMM yasasına geçilir (§5) |
+| `AVCI_GPS_KD` | 0.60 | lead kazancı; 0.2 eski davranış |
+| `AVCI_GPS_IC` | 14.0 | iç daire kayması; 0 kapatır |
+| `AVCI_GPS_IC_ORAN` | 0.0 | 0.27 ile yarıçap-oranlı kaymaya geçilir |
 
 ---
 
@@ -132,6 +154,49 @@ Kapalı çevrim testinde (bayat algı, 30 s) kaçak 7.5 tur → **1.5 tur**; kil
 > Asıl koruma zaten **demirleme**: komut her karede aracın gerçek başlığından
 > üretilir (`cmd_yaw = iyaw + adim`), yani asla actual+adım'ı aşamaz. Doygunluk
 > kapısı ikinci kattır ve hiçbir zaman kalıcı olmamalıydı.
+
+### ⚑ GPS FAZI — `gps_kararli_hal` dalından entegre edildi (2026-08-06)
+
+Ayrı bir dalda GPS güdümü uçuşta doğrulanmış bir kararlı hâle getirilmişti;
+o daldaki **yalnız GPS'e ait** değişiklikler bu dala alındı. Tam kayıt ve
+uçuş sonuçları: **[KARARLI_HAL.md](KARARLI_HAL.md)**. Üç ölçülmüş bulgu:
+
+**1. `KD_H` bir sönümleme değil, LEAD'in kendisiymiş.** `de[]` istasyon
+hatasının türevi, yani ≈ göreli hız. Yasa açılınca
+`v_cmd = v_hedef + KP_H·Δp + KD_H·Δv` — FRPN'in hız formuyla aynı üç terimli
+yapı. Yani lead zaten vardı, sadece ~3 kat zayıftı. 0.20 → 0.60: oturmuş
+menzil **34.3 → 29.4 m** (aynı senaryo, 150 s boyunca ±0.3 m kararlı).
+
+**2. İç daire nişanı — en büyük tek kazanç.** Dairesel kovalamacada zorunlu
+bir bağ var: `yarıçap = hız / açısal_hız`. İstasyon "hedefin hız yönünün
+gerisi"ne konuyordu; o nokta hedefin **kendi çemberinin üzerinde**. Drone onu
+kovaladığı sürece aynı yarıçapta uçmak zorunda, dolayısıyla aynı hıza muhtaç —
+ve hedeften hızlı değilse asla yaklaşamaz. Bu yüzden `V_MAX` 18→24 yapılınca
+menzil **açılmıştı** (drone yarıçapı 38→43 m). Çözüm istasyonu dönüşün İÇİNE
+kaydırmak:
+
+| kayma | menzil (medyan) | en yakın | drone R − hedef R |
+|---:|---:|---:|---:|
+| 0 m | 34.1 m | 31.3 m | +2 m (aynı çember) |
+| 8 m | 22.8 m | 6.9 m | −7 m (içeride) |
+| **14 m** | **9.8 m** | **3.2 m** | **−11 m (içeride)** |
+
+Kayma hedefin açısal hızıyla ölçekleniyor → **düz uçuşta tam sıfır**, düz
+kovalama davranışı bozulmuyor (kare deseninin düz kenarlarında doğrulandı).
+
+**3. Gecikme birikmesi — üç ayrı hatta aynı hata.** Kamera callback'i tüm işi
+senkron yapıyordu (medyan 21.8 ms) ama kamera 30 Hz (bütçe 33.3 ms); bütçe
+aşılınca gz-transport kuyruğu hiç boşalmıyordu. Aynı hata telemetride: her
+turda tek mesaj + 5 ms uyku = tavan 200 msg/s, oysa iki araç ~300-500 msg/s
+yayın yapıyor. İzole ölçüm (30 Hz üretici, 40 ms işleme): eski desen
+80 → **579 ms** (sürekli büyüyor), yeni desen 19 → **19 ms** (sabit).
+Bayat telemetri doğrudan hedef hız kestirimini zehirlediği için bu GPS'i de
+ilgilendiriyor.
+
+**Alınmayanlar:** kararlı daldaki `guidance_core` / `visual_lead` / arayüz
+değişiklikleri **alınmadı** (görsel faz bu dalda baştan yazıldı ve pose
+söküldü). Kararlı dalın GPS yaw'ı hâlâ eski birikimli `cmd_yaw`'dı; bu dalın
+demirleme + süreli susma düzeltmesi **korundu**.
 
 ### BBOX ÖLÇEĞİ pose ölçeğinden DAHA KARARLI (2026-08-06)
 
@@ -260,6 +325,24 @@ altında. A yalnızca **rampayı erken başlattığı** için yetişti.
 |---|---:|---:|---:|
 | `gercek_kadraj_ici` | **%69** | %21 | %15 |
 | son 1.5 s'de `kor_dalis` kare | **1/46** | 30/46 | 29/46 |
+
+**Asıl kusur SİMETRİSİZLİK** (DENEY.md silinirken buraya taşındı, 2026-08-06):
+20 m/s tırmanma **komutu** verebiliyoruz ama onu yalnız 1 m/s² ile
+**söndürebiliyoruz**. Görsel faz hedefe alttan yaklaştığı için sürekli tırmanma
+komutu verir (karelerin %61-82'si negatif `vz_cmd`); temas kopunca kontrol GPS
+fazına döner ama drone hâlâ hızla tırmanıyordur:
+
+| kalan tırmanma | durması | bu sırada yükselme |
+|---|---|---|
+| 2 m/s | 2 s | 2 m |
+| 4 m/s | 4 s | **8 m** |
+| 7 m/s | 7 s | **24 m** |
+
+Gözlenen 15-25 m'lik istasyon aşımları tam olarak bu. Çözüm iki uçtan biri:
+`adapter_copter`'da dikey komut tavanını düşür (bkz. TODO B9), **veya**
+`WP_ACC_Z`/`PSC_ACCZ` yükselt — yani komut yetkisiyle frenleme yetkisini
+eşitle. `AVCI_GPS_RANGE=8`'in işe yaramasının sebebi de buydu: istasyon
+yakınlaşınca görsel faz daha yakında devralıyor, dikey savrulma birikmiyor.
 
 ### Yaw kaçağı: kök neden ve düzeltme (2026-08-05)
 

@@ -5,35 +5,82 @@
 # yüklenir. Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
 #
 # ═══════════════════════════════════════════════════════════════════════
-#  2026-08-01 — KRİTİK DÜZELTME: PARAMETRE İSİMLERİ YANLIŞTI
+#  ⚠⚠ 2026-08-06 — BU DOSYADAKİ 8 SATIR BU MAKİNEDE UYGULANMIYOR ⚠⚠
 # ═══════════════════════════════════════════════════════════════════════
-# Bu dosyadaki 9 parametrenin 7'si SITL'e HİÇ UYGULANMIYORDU. ArduPilot
-# tanımadığı parametre adını sessizce yok sayar — ne hata basar ne uyarır.
-# Kanıt: uçuş sonrası SITL param dökümünde (mav_5_1.parm) bu adların hiçbiri
-# yok; yalnız FS_GCS_ENABLE ve FS_THR_ENABLE geçmişti.
+# Bu dosya gps_kararli_hal dalından OLDUĞU GİBİ alındı (kullanıcı kararı).
+# Aşağıdaki 08-04 notu WPNAV_* / ANGLE_MAX / PSC_VELXY_P adlarının geçerli
+# olduğunu söylüyor. BU MAKİNEDE DEĞİL — ölçüldü, tahmin değil:
 #
-# Bu firmware sürümü parametreleri YENİDEN ADLANDIRMIŞ ve SI birimlerine
-# geçmiş (cm/cdeg → m/deg). Eski ad → yeni ad ve birim:
+#   ~/ardupilot/mav_5_1.parm (06.08 16:22, ArduPilot ad28bb78d2) TAM bir
+#   parametre dökümü: 1421 satır, hiç set etmediğimiz parametreler de içinde
+#   (ATC_ANG_YAW_P, MOT_THST_HOVER, PSC_* ...). Yani bir ad orada yoksa
+#   FİRMWARE'DE YOKTUR.
+#     grep -c "^WPNAV" → 0        grep -c "^WP_" → 12
+#     VAR:  ATC_ANGLE_MAX 45   WP_SPD 15   WP_ACC 5   WP_ACC_Z 1
+#           WP_SPD_UP 5   WP_SPD_DN 5   WP_JERK 1   PSC_NE_VEL_P 2.0
+#     YOK:  WPNAV_SPEED  WPNAV_ACCEL  WPNAV_SPEED_UP  WPNAV_SPEED_DN
+#           WPNAV_ACCEL_Z  WPNAV_JERK  ANGLE_MAX  PSC_VELXY_P
+#   Doğrulama aracı da aynısını diyor: tools/parm_denetle.py → 3/11 uygulandı.
 #
-#   ANGLE_MAX      6000 cdeg  →  ATC_ANGLE_MAX     60 deg
-#   WPNAV_SPEED    3000 cm/s  →  WP_SPD            30 m/s
-#   WPNAV_SPEED_UP 3000 cm/s  →  WP_SPD_UP         30 m/s
-#   WPNAV_SPEED_DN 3000 cm/s  →  WP_SPD_DN         30 m/s
-#   WPNAV_ACCEL    2000 cm/s² →  WP_ACC            20 m/s²
-#   LOIT_SPEED     3000 cm/s  →  LOIT_SPEED_MS     30 m/s
-#   PSC_VELXY_P     2.0       →  PSC_NE_VEL_P       2.0
+# SONUÇ: bu dosya şu hâliyle bırakılırsa araç firmware varsayılanlarıyla
+# (10 m/s, 2.5 m/s², 30° eğim) uçar — önceki ayardan (15 m/s, 5 m/s², 45°)
+# DAHA KÖTÜ. Kararlı daldaki menzil sonuçları bu zarfla tekrarlanmaz.
 #
-# SONUÇ — araç bugüne kadar FİRMWARE VARSAYILANLARIYLA uçtu:
-#   ATC_ANGLE_MAX 30°  → yatay ivme tavanı yalnız 5.7 m/s²
-#   WP_SPD 10 m/s, WP_ACC 2.5 m/s², LOIT_SPEED_MS 12.5 m/s
-# Oysa güdüm MAX_ACCEL=12 m/s² ve V_MAX=28 m/s komut ediyor. Yani araç
-# istenen manevranın YARISINDAN AZINI yapabiliyordu — "hedefi kaçırıyor,
-# manevra yapamıyor" belirtisinin doğrudan sebebi budur.
+# DÜZELTMEK İÇİN aşağıdaki SI karşılıklarına geçin (davranış aynı, ad farklı):
+#     ANGLE_MAX      4500  →  ATC_ANGLE_MAX  45
+#     WPNAV_SPEED    2500  →  WP_SPD         25
+#     WPNAV_ACCEL     800  →  WP_ACC          8
+#     WPNAV_SPEED_UP  600  →  WP_SPD_UP       6
+#     WPNAV_SPEED_DN  400  →  WP_SPD_DN       4
+#     WPNAV_ACCEL_Z   250  →  WP_ACC_Z        2.5   ⚠ 1'e geri alınmıştı
+#     WPNAV_JERK        4  →  WP_JERK         4
+#     PSC_VELXY_P     2.0  →  PSC_NE_VEL_P    2.0
+# İki dal iki farklı firmware sürümünde ölçüm yapmış; hangi şemanın geçerli
+# olduğunu DÖKÜM söyler, bu dosyadaki yorum değil. Bkz. TODO.md madde 0.
+# ═══════════════════════════════════════════════════════════════════════
 #
-# UYARI — bu dosyayı değiştirenlere: yeni bir parametre eklerken adının
-# gerçekten uygulandığını DOĞRULAYIN. Uçuş sonrası:
-#     grep -i "^<PARAM_ADI>" ~/ardupilot/mav_5_1.parm
-# Çıktı boşsa parametre yok sayılmıştır.
+# ═══════════════════════════════════════════════════════════════════════
+#  2026-08-04 — İKİNCİ KRİTİK DÜZELTME: İSİMLER YİNE YANLIŞTI (ters yönde)
+# ═══════════════════════════════════════════════════════════════════════
+# 2026-08-01'de bu dosyadaki adlar "firmware SI birimine geçti" gerekçesiyle
+# ATC_ANGLE_MAX / WP_SPD / WP_ACC / LOIT_SPEED_MS / PSC_NE_VEL_P olarak
+# değiştirildi. O çıkarım ArduPLANE'den genellenmişti ve COPTER için YANLIŞTI.
+#
+# KANIT — SITL'in kendi param dökümü (~/ardupilot/mav_5_1.parm, 04.08 15:49,
+# ArduCopter V4.7.0-dev):
+#     ANGLE_MAX        3000      ← ESKİ ad YAŞIYOR (cdeg)
+#     WPNAV_SPEED      1000      ← ESKİ ad YAŞIYOR (cm/s)
+#     WPNAV_ACCEL       250
+#     WPNAV_SPEED_UP    250
+#     WPNAV_SPEED_DN    150
+#     WPNAV_ACCEL_Z     100
+#     PSC_VELXY_P       2.0
+#     ATC_ANGLE_MAX / WP_SPD / WP_ACC / LOIT_SPEED_MS / PSC_NE_VEL_P → HİÇBİRİ YOK
+#
+# (ArduPlane gerçekten yeniden adlandırmış: avci_plane.parm'daki
+#  AIRSPEED_CRUISE/AIRSPEED_MIN mav_2_1.parm'da uygulanmış durumda. Yani
+#  iki araç iki farklı isim şemasında — genelleme yapmayın.)
+#
+# SONUÇ: araç 08-01'den beri YİNE firmware varsayılanlarıyla uçtu:
+#     yatay hız tavanı   10.0 m/s   ← güdüm 18 m/s komut ediyordu
+#     yatay ivme tavanı    2.5 m/s²  ← güdüm 12 m/s² komut ediyordu
+#     eğim tavanı           30°      (yatay ivme fiziksel tavanı 5.66 m/s²)
+#     tırmanma              2.5 m/s   ← güdüm 6 m/s
+#     iniş                  1.5 m/s   ← güdüm 6 m/s
+#     dikey ivme            1.0 m/s²  (B7 açık sorusunun cevabı: evet, 1.0'daydı)
+#
+# ÖLÇÜLEN SONUÇ (logs/gps_guidance_20260804_132820.csv, 63 dakika):
+#   komut edilen yatay hız medyan 18.0 m/s → GERÇEKLEŞEN medyan 12.3 m/s
+#   hedef uçağın hızı medyan 15.3 m/s
+#   → AVCI, AVINDAN YAVAŞTI. Menzil 42-147 m arasında salındı, hiç kapanmadı.
+#   Hiçbir güdüm yasası bu açığı kapatamaz; sorun yasada değil zarftaydı.
+#
+# ⚠ İSİM DOĞRULAMA — bu dosyayı değiştirenlere, artık ZORUNLU adım:
+#     grep -iE "^<PARAM_ADI>" ~/ardupilot/mav_5_1.parm
+#   Çıktı boşsa parametre SESSİZCE yok sayılmıştır. Bu tuzağa iki kez düşüldü.
+#   GUIDED hız komutunun bu tavanlara bağlı olduğunun kaynak kanıtı:
+#     ArduCopter/mode_guided.cpp:229  pos_control->set_max_speed_accel_NE_cm(
+#         wp_nav->get_default_speed_NE_cms(), wp_nav->get_wp_acceleration_cmss())
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── YAW DAVRANIŞI — kendi etrafında dönmenin en olası sebebi ──
@@ -43,112 +90,51 @@
 # sürüyor, güdüm değil. Ölçüm bunu destekliyor: GPS fazı 15.8 s'de yalnız 0.5
 # tur yaw komut ederken araç 26.6 tur dönmüştü — yani dönmeyi emreden güdüm
 # değildi. 0 = firmware yaw'a ASLA karışmaz, tek yetkili güdümdür.
+# (Bu parametrenin adı iki şemada da aynı; dökümde uygulanmış görünüyor.)
 WP_YAW_BEHAVIOR 0
 
-# ── Eğim tavanı (derece) ──
-# 2026-08-01 KADEMELİ GERİ ÇEKME: önce 60 yapılmıştı, uçuşta yalpalama ARTTI.
-# Bu değerler cm/cdeg çağından kalma ve HİÇ uygulanmadıkları için hiç
-# doğrulanmamıştı — hepsini birden açmak hataydı.
+# ── Eğim tavanı (bu firmware'de derece) ──
 #     eğim   gereken itki   gaz     yatay ivme tavanı
-#      30°       1.15x      %45       5.7 m/s²   (varsayılan — güdümün altında)
+#      30°       1.15x      %45       5.7 m/s²   (firmware varsayılanı — bugüne dek bu)
 #      45°       1.41x      %55       9.8 m/s²   ← SEÇİLEN
-#      60°       2.00x      %78      17.0 m/s²   (denendi, yalpalama arttı)
-# İtki/ağırlık 2.56x (MOT_THST_HOVER=0.39). Kara kutu ölçümü: motorlar %0.0
-# oranında tavanda — yani doygunluk YOK, sorun eğim tavanında değil. 45°,
-# varsayılanın belirgin üstünde ama araca aşırı yetki vermeden.
-# Sonraki uçuşlarda TEK TEK artırılacak, hepsi bir arada değil.
-ATC_ANGLE_MAX 45
+#      60°       2.00x      %78      17.0 m/s²   (denendi, yalpalama arttı — GERİ ALINDI)
+# İtki/ağırlık 2.56x (MOT_THST_HOVER=0.39). Kara kutu: motorlar %0.0 oranında
+# tavanda — doygunluk YOK, itki rezervi var.
+# NOT: 45° daha önce SEÇİLMİŞTİ ama yanlış adla yazıldığı için hiç uygulanmadı.
+# Bu yüzden 45° pratikte HÂLÂ DOĞRULANMAMIŞ — ilk uçuş bir karakterizasyon
+# uçuşudur, görev uçuşu değil. Yalpalama görülürse 3500'e (35°) çekin.
+ATC_ANGLE_MAX 45          # = ANGLE_MAX 4500 cdeg
 
-# ── GUIDED/WP hız ve ivme tavanları (SI: m/s, m/s²) ──
-# Bunlar da 30/20'den ölçülü değerlere çekildi (aynı gerekçe).
-WP_SPD 15
-WP_SPD_UP 5
-WP_SPD_DN 5
-WP_ACC 5
-LOIT_SPEED_MS 15
-PSC_NE_VEL_P 2.0
+# ── GUIDED/WP hız ve ivme tavanları (bu firmware'de SI: m/s, m/s²) ──
+# Hedef uçak: AIRSPEED_CRUISE 15, AIRSPEED_MAX 22 m/s (avci_plane.parm).
+# Ölçülen gerçek hedef hızı: medyan 15.3-16.0 m/s, tepe ~20 m/s.
+# Avcının anlamlı bir hız üstünlüğü olmadan kesme rotası da işe yaramaz;
+# bu yüzden tavan hedefin üstüne çıkarılıyor. 45° eğimde ulaşılabilecek
+# gerçek seyir hızını sürükleme belirler — tavan erken bağlamasın diye 25 m/s.
+WP_SPD 25                 # = WPNAV_SPEED 2500 cm/s
 
-# ── DİKEY İVME (2026-08-04) — "gereksiz irtifa" ve "dikey ıska"nın ortak kökü ──
-# WP_ACC_Z firmware varsayılanı 1.0 m/s² idi (SITL dökümüyle doğrulandı:
-# `grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm` → 1.000000). Yani araç dikey
-# hızını saniyede yalnız 1 m/s değiştirebiliyordu.
-#
-# İKİ AYRI ARIZANIN da sebebi buydu:
-#
-# 1) GEREKSİZ İRTİFA (ölçüldü, 2026-08-04): görsel faz hedefe alttan
-#    yaklaştığı için sürekli tırmanma emrediyor; temas kopunca kontrol GPS
-#    fazına drone HÂLÂ TIRMANIRKEN dönüyor. 1 m/s² ile:
-#       kalan 4 m/s → durması 4 s, bu sırada  8 m yükselir
-#       kalan 7 m/s → durması 7 s, bu sırada 24 m yükselir
-#    Ölçüm: GT modunda >4 m/s tırmanarak GPS'e giriş 15/92 (en hızlı 9.5 m/s),
-#    istasyon aşımı medyanı 8.5 m. Gözlenen 15-25 m aşımlar tam olarak bu.
-#
-# 2) DİKEY ISKA (2026-08-02 kara kutu teşhisi, bkz. DURUM.md): terminalde
-#    kapatılacak dikey mesafeyi 1 m/s²'de yetiştiremiyorduk. 4.65 m kapatmak
-#    3.05 s sürüyordu, elde 2.4-2.8 s vardı → drone hedefin ALTINDAN geçiyordu.
-#
-# ASIL KUSUR SİMETRİSİZLİK: güdüm 20 m/s'ye kadar tırmanma komutu verebiliyor
-# (IVME_TAVAN_DIKEY=10) ama araç bunu 1 m/s² ile söndürebiliyor. Komut yetkisi
-# ile frenleme yetkisi eşit değil.
-#
-# 3.0 seçildi (1.0 → 3.0). Neden abartılmadı: yukarı ivmelenmek itki ister,
-# thrust = m·(g+a). 3 m/s²'de hover itkisinin 1.31 katı (MOT_THST_HOVER=0.39
-# ile gaz ~%51) — rahat. 5 m/s²'de 1.51 kat (~%59); 10 m/s²'de doygunluğa
-# yaklaşır ve yaw yetkisi gider (bkz. adapter_copter dikey tavan notu).
-# 0→5 m/s (WP_SPD_UP) artık 5 s yerine 1.7 s sürüyor.
-#
-# ⚠⚠ 3.0 DENENDİ VE GERİ ALINDI (2026-08-05). TEKRAR YÜKSELTMEYİN —
-#     önce aşağıdaki yaw kararsızlığı çözülmeli.
-#
-# Parametre uygulandı (parm_denetle: WP_ACC_Z 3 / SITL 3.000000 ✓), yani
-# etkisiz kalma sorunu değil. AYNI yapılandırmada (pose modu, kapı açık)
-# önce/sonra ölçümü:
-#
-#                             ACC_Z=1 (08-04)   ACC_Z=3 (08-05)
-#   yere çakılan faz              1/18 (%5)       5/22 (%22)
-#   tepe yaw hızı medyanı          265 °/s         514 °/s
-#   en hızlı düşüş medyanı         4.3 m/s         6.2 m/s
-#
-# MEKANİZMA: GPS fazında zaten var olan bir yaw kararsızlığı mevcut
-# (fırıldak oranı ikisinde de %22 — sıklık DEĞİŞMEDİ, ŞİDDET ikiye katlandı).
-# Dikey ivme talebi artınca itki payı büyüyor, motorlar doygunluğa yaklaşıyor
-# ve yaw için ayrılan diferansiyel pay azalıyor. Kararsızlık ıraksayınca araç
-# yerçekiminden hızlı düşüp (itki aşağı bakıyor) çakılıyor.
-# Tipik iz: yaw hızı 28 → 90 → 402 → 710 → 1237 °/s (komut yalnız 240 °/s).
-#
-# ASIL KUSUR: görsel fazda "yaw hatası kapanmıyorsa yaw'ı sustur" koruması var
-# (adapter_copter, testler T44/T45) ama GPS FAZINDA YOK. Çakılmalar tam olarak
-# GPS fazında, hedef kaçırıldıktan sonra kontrol GPS'e döndüğünde oluyor.
-# Önce o koruma gps_guidance'a taşınmalı; dikey ivme ondan SONRA tekrar denenir.
-#
-# Dikey ivmenin gerekçesi hâlâ geçerli (aşım ve dikey ıska), yalnız sırası
-# yanlıştı: kararsız bir yaw döngüsünün üstüne itki talebi eklemek.
-#
-# ── 2. DENEME (2026-08-05 akşamı): 3.0 TEKRAR AÇILDI ──
-# Aradaki fark: GPS fazına yaw kaçağı koruması eklendi (gps_guidance, testler
-# G12/G13). Koruma uçuşta DOĞRULANDI — |yaw_cmd − gerçek_yaw| 31/31 uçuşta
-# ≤6.3° kaldı (koruma öncesi 179.9°'ye çıkıyordu), tepe yaw hızı medyanı
-# 202 → 134 °/s düştü. Yani 1. denemede fırıldağı besleyen komut kaçağı artık
-# kapalı; dikey ivmeyi bu zemin üzerinde tekrar denemek anlamlı.
-#
-# Bu aynı zamanda gps_guidance.Cfg.ISTASYON_ELEV_DEG yorumundaki "(2) asıl
-# alternatif" deneyi: istasyonu 15° yerine 25°'de bırakıp dikey ivmeyi
-# yükseltmek. Tutarsa 15°/25° ayrımı gereksizleşir.
-#
-# ── 2. DENEME DE GERİ ALINDI (2026-08-05 akşamı) ──
-# Ölçüm: aynı GPS_RANGE=11 ile vuruş %22 → %10, en yakın menzil medyanı
-# 1.11 → 2.04 m, istasyon aşımı −5.4 → −8.3 m. Beklenen kazanç TERS çıktı.
-# (Deney kirliydi: ISTASYON_ELEV_DEG de aynı anda 15° → 25° değişmişti.)
-#
-# ASIL ÇÖZÜM BAŞKA YERDE: aşımın kaynağı aracın frenleme yetkisi değil,
-# GÜDÜMÜN EMRETTİĞİ DİKEY HIZ. adapter_copter'da v_hedef = V_KAPANMA·u_dunya
-# olduğu için nişan 30° yukarıysa 12.5 m/s tırmanma emrediliyordu ve dikey
-# hıza ayrı tavan yoktu. 2026-08-05'te görsel faza YAKLAŞMA alt-fazı +
-# VZ_TERMINAL_MAX tavanı eklendi (guidance_core.Cfg) — sorun kaynağında
-# kesiliyor, aracı zorlamaya gerek kalmıyor.
-#
-# WP_ACC_Z tekrar denenecekse: yalnız başına, ISTASYON_ELEV_DEG sabitken.
-WP_ACC_Z 1
+# Yatay ivme: 45° eğim 9.8 m/s² veriyor; 8.0 tavanı tutum denetleyicisine
+# rezerv bırakır. (Önceki fiili değer 2.5 m/s² idi — dönüşlerdeki hantallığın
+# ve dönen hedefte yakınsayamamanın doğrudan sebebi.)
+WP_ACC 8                  # = WPNAV_ACCEL 800 cm/s²
+
+# Dikey hız: güdüm zaten 6 m/s komut ediyordu, fiilen 2.5/1.5 ile kırpılıyordu.
+# İniş tırmanmadan muhafazakâr: yere yaklaşma riski asimetrik.
+WP_SPD_UP 6               # = WPNAV_SPEED_UP 600 cm/s
+WP_SPD_DN 4               # = WPNAV_SPEED_DN 400 cm/s
+
+# Dikey ivme (B7 açık sorusu). Varsayılan 1.0 m/s² ile 6 m/s'den fren mesafesi
+# 18 m; hedefin dalıştan çıkışını takip etmeye yetmiyordu. 2.5 m/s² → 7.2 m.
+# Bu değer henüz uçuşta doğrulanmadı; karakterizasyon uçuşunda ölçülecek.
+WP_ACC_Z 2.5              # = WPNAV_ACCEL_Z 250 cm/s²
+
+# Jerk (m/s³). Varsayılan 1.0 ile 8 m/s²'ye ulaşmak 8 saniye sürer — ivme
+# tavanını açmak tek başına işe yaramaz, jerk onu boğar. 4.0 → ~2 s.
+# Agresif bir değişiklik; yalpalama görülürse ÖNCE bunu 2.0'a çekin.
+WP_JERK 4                 # = WPNAV_JERK 4 m/s³ (birim aynı)
+
+# Yatay hız denetleyici P kazancı (doğru ad; firmware varsayılanı da 2.0).
+PSC_NE_VEL_P 2.0          # = PSC_VELXY_P 2.0 (birim aynı)
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
@@ -159,18 +145,12 @@ WP_ACC_Z 1
 # Güdüm suçlu değil: aynı dilimde yaw KOMUTU tamamen sabit (0.00°/kare,
 # ortalamadan sapma 0.0°) iken gerçek heading 1.94°/kare oynuyor.
 #
-# ATC_RAT_YAW_* zaten ArduPilot varsayılanında (P 0.3, I 0.02, D 0.0) — kimse
-# ellememiş.
-#
 # ⚠ DENENDİ VE GERİ ALINDI — ATC_ANG_YAW_P 4.5 → 3.0 TEKRAR EKLEMEYİN.
-# Dış (açı) döngüsünü yumuşatmak mantıklı görünüyordu; ölçüm tersini söyledi:
-#   ATC_ANG_YAW_P 4.5 (varsayılan) : yaw takip hatası std 1.36°, seyirde
-#                                    net dönme ~0 °/s
+#   ATC_ANG_YAW_P 4.5 (varsayılan) : yaw takip hatası std 1.36°, net dönme ~0 °/s
 #   ATC_ANG_YAW_P 3.0              : std 4.94°, toplam 11.96 TUR dönme
-# Kazancı düşürmek aracın komut edilen başlığı yakalamasını yavaşlatıyor;
-# düzeltmeye çalıştığımız hatayı ~4 katına çıkardı. Satır yok = varsayılan 4.5.
-# Titreme hâlâ rahatsız ederse sıradaki deneme ATC_RAT_YAW_FLTE (2.5 Hz) —
-# açı döngüsü kazancı DEĞİL.
+# Kazancı düşürmek komut edilen başlığı yakalamayı yavaşlatıyor; düzeltmeye
+# çalıştığımız hatayı ~4 katına çıkardı. Satır yok = varsayılan 4.5.
+# Titreme hâlâ rahatsız ederse sıradaki deneme ATC_RAT_YAW_FLTE (2.5 Hz).
 
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
 FS_GCS_ENABLE 0

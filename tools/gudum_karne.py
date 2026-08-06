@@ -26,6 +26,14 @@ import statistics as st
 from collections import Counter
 
 _LOGS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+
+# İstasyonun LOS yükselişi — güdümden okunur, sabit yazılmaz (2026-08-06'da
+# 25° → 15° değişti ve buradaki sabit yanlış referans gösteriyordu).
+try:
+    from control.guidance.gps_guidance import Cfg as _GpsCfg
+    _ISTASYON_ELEV = float(_GpsCfg.ISTASYON_ELEV_DEG)
+except Exception:
+    _ISTASYON_ELEV = 15.0
 _AD = re.compile(r"(gps_guidance|visual_lead)_(\d{8})_(\d{6})\.csv$")
 
 
@@ -136,7 +144,7 @@ def _gps_metrik(dosyalar):
 
 def _vis_metrik(dosyalar):
     fazlar, yawlar, leadler = [], [], []
-    pose_k, temas_v, toplam = 0, False, 0
+    kalite_k, temas_v, toplam = 0, False, 0
     for p, rows in dosyalar:
         mg = [_f(r["menzil_gercek_m"]) for r in rows if _f(r.get("menzil_gercek_m")) is not None]
         durumlar = Counter(r.get("durum") for r in rows)
@@ -154,7 +162,9 @@ def _vis_metrik(dosyalar):
             "sonuc": sonuc, "durumlar": dict(durumlar),
         })
         toplam += len(rows)
-        pose_k += sum(1 for r in rows if r.get("kalite"))
+        # 2026-08-06: pose kaldırıldı; "kalite" artık kutu ölçeğinden gelen
+        # algı kalitesi (0..1). Metrik adı da ona göre: kalite oranı.
+        kalite_k += sum(1 for r in rows if r.get("kalite"))
         yawlar += [_f(r["yaw_hata_deg"]) for r in rows if _f(r.get("yaw_hata_deg")) is not None]
         # 2026-08-06: lead artık şekilden değil azimut oranından geliyor
         # (adapter_copter._yatay_pn). Sütun adı lead_deg → yatay_lead_deg.
@@ -164,7 +174,7 @@ def _vis_metrik(dosyalar):
         return None
     return {
         "faz_sayisi": len(fazlar), "fazlar": fazlar,
-        "pose_orani_%": 100.0 * pose_k / toplam if toplam else 0.0,
+        "kalite_orani_%": 100.0 * kalite_k / toplam if toplam else 0.0,
         "yaw_rms": math.sqrt(st.mean(v * v for v in yawlar)) if yawlar else None,
         "lead_ort": st.mean(leadler) if leadler else None,
         "en_yakin": min(f["min_menzil"] for f in fazlar if f["min_menzil"] is not None)
@@ -197,7 +207,8 @@ def yazdir(k):
         prof = "  ".join(f"{b}:{_fmt(v, '', 1)}" for b, v in sorted(g["kapanma"].items()))
         print(f"  kapanma m/s (band p90 — sıcak yaklaşma): {prof}")
         print(f"  kadraj @KILIT: yaw RMS {_fmt(g['kadraj_yaw_rms'], '°')}"
-              f"  elev ort {_fmt(g['kadraj_elev_ort'], '°')} (hedef 25°)")
+              f"  elev ort {_fmt(g['kadraj_elev_ort'], '°')}"
+              f" (istasyon {_ISTASYON_ELEV:.0f}°)")
         print(f"  dikey açık: max {_fmt(g['dikey_acik_max'], ' m')}"
               f"  son {_fmt(g['dikey_acik_son'], ' m')}"
               f"  | dikey öncelik %{_fmt(g['dikey_oncelik_%'], '', 0)}")
@@ -205,7 +216,7 @@ def yazdir(k):
         print("[GPS] veri yok")
     v = k["vis"]
     if v:
-        print(f"[GÖRSEL] {v['faz_sayisi']} faz | pose oranı {_fmt(v['pose_orani_%'], '%', 0)}"
+        print(f"[GÖRSEL] {v['faz_sayisi']} faz | kalite oranı {_fmt(v['kalite_orani_%'], '%', 0)}"
               f" | yaw RMS {_fmt(v['yaw_rms'], '°')} | lead ort {_fmt(v['lead_ort'], '°')}"
               f" | en yakın {_fmt(v['en_yakin'], ' m', 2)}"
               f" | {'VURULDU ✓' if v['vurus'] else 'vuruş yok'}")
@@ -235,7 +246,7 @@ def kiyasla(k1, k2):
     v1, v2 = k1["vis"], k2["vis"]
     if v1 and v2:
         satir("GÖRSEL faz sayısı", v1["faz_sayisi"], v2["faz_sayisi"], "", 0)
-        satir("GÖRSEL pose oranı %", v1["pose_orani_%"], v2["pose_orani_%"], "%", 0)
+        satir("GÖRSEL kalite oranı %", v1["kalite_orani_%"], v2["kalite_orani_%"], "%", 0)
         satir("GÖRSEL yaw RMS (°)", v1["yaw_rms"], v2["yaw_rms"])
         satir("GÖRSEL en yakın (m)", v1["en_yakin"], v2["en_yakin"], "", 2)
         satir("VURUŞ", 1.0 if v1["vurus"] else 0.0, 1.0 if v2["vurus"] else 0.0, "", 0)
