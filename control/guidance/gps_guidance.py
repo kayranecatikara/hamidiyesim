@@ -213,8 +213,19 @@ _LOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "logs")
 
+# ⚠ "menzil" ve "tgt_*" KESTİRİMDEN hesaplanır (EMA'lı est_x/y/z), HAM
+# telemetriden değil. Bu ayrım 2026-08-06'da kafa karışıklığı yarattı:
+# arayüz ham telemetriyi kullandığı için köşelerde CSV 15 m derken panel 21 m
+# gösteriyordu ve hangisinin doğru olduğu ayırt edilemiyordu.
+# Artık HAM konum ve ona olan mesafe de yazılıyor:
+#     tgt_ham_*  : get_plane()'in verdiği konum (EMA'dan ÖNCE)
+#     menzil_ham : drone → ham konum mesafesi  (panelin gördüğü sayı)
+#     kestirim_gecikme_m : |ham − kestirim|, yani filtrenin ne kadar geriden
+#                          geldiği. Manevrada bu büyür; köşe analizinin anahtarı.
 _CSV_ALANLAR = [
     "t", "dt", "durum", "d_h", "menzil",
+    "menzil_ham", "kestirim_gecikme_m",
+    "tgt_ham_x", "tgt_ham_y", "tgt_ham_z",
     "tgt_x", "tgt_y", "tgt_z", "tgt_vx", "tgt_vy", "tgt_vz",
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
@@ -463,6 +474,14 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             w.writerow({
                 "t": round(now, 3), "dt": round(dt, 4), "durum": durum,
                 "d_h": round(d_h, 2), "menzil": round(menzil, 2),
+                # HAM telemetri (EMA'dan önce) + ona olan mesafe + filtre gecikmesi
+                "tgt_ham_x": round(raw[0], 2), "tgt_ham_y": round(raw[1], 2),
+                "tgt_ham_z": round(raw[2], 2),
+                "menzil_ham": round(math.sqrt((raw[0] - ix) ** 2 + (raw[1] - iy) ** 2
+                                              + (raw[2] - iz) ** 2), 2),
+                "kestirim_gecikme_m": round(math.sqrt((raw[0] - est_x) ** 2
+                                                      + (raw[1] - est_y) ** 2
+                                                      + (raw[2] - est_z) ** 2), 2),
                 "tgt_x": round(est_x, 2), "tgt_y": round(est_y, 2), "tgt_z": round(est_z, 2),
                 "tgt_vx": round(vel_x, 2), "tgt_vy": round(vel_y, 2), "tgt_vz": round(vel_z, 2),
                 "iris_x": round(ix, 2), "iris_y": round(iy, 2), "iris_z": round(iz, 2),
