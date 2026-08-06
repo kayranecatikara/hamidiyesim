@@ -15,18 +15,25 @@ denetleyici (supervisor) geçiş yapar:
 
 ```
 GPS fazı (gps_guidance)          görsel faz (visual_lead)
-hedefin GPS telemetrisiyle   →   kameradan pose keypoint'leriyle
-istasyona oturur, kamerayı       menzilden bağımsız lead pursuit
+hedefin GPS telemetrisiyle   →   kameradan DETECTION KUTUSUYLA
+istasyona oturur, kamerayı       saf takip + azimut-oranı lead'i
 hedefe merkezler                 ile terminal hücum
         ↑                                  │
-        └──── temas koparsa geri ──────────┘
+        └── temas koparsa VEYA hedef ──────┘
+            geçilirse (B5 fly-past)
 ```
+
+**2026-08-06 — POSE MODELİ KALDIRILDI.** Görsel güdüm artık YOLO-pose'un 6
+keypoint'ini kullanmıyor, yalnız detection kutusunu (`cx, cy, w, h, conf`)
+okuyor. Pose'a ait tüm kod/model/araç/belge ve sökülmeden önceki güdüm hattının
+anlık görüntüsü: **[POSEA_GERI_DONMEK_ISTERSENIZ/](POSEA_GERI_DONMEK_ISTERSENIZ/README.md)**
 
 **Vuruş ölçütü:** Gazebo temas sensörü (fiziksel çarpışma). Yakınlık (1.5 m)
 yalnız temas kaynağı yoksa yedek. Bu bilinçli bir seçim — bkz. §4.
 
 **Güncel başarı (2026-08-05, en iyi dönem):** 30 görsel fazda 8 vuruş (%27),
-en yakın menzil medyanı 0.65 m.
+en yakın menzil medyanı 0.65 m. ⚠ Bu rakam POSE dönemine ait; bbox güdümüyle
+henüz uçulmadı, yeni taban ilk uçuşlarda ölçülecek.
 
 ---
 
@@ -42,13 +49,20 @@ en yakın menzil medyanı 0.65 m.
 | `V_MAX` | 18.0 m/s | `gps_guidance.Cfg` | GPS fazı yatay hız tavanı |
 | `VZ_MAX` / `MAX_ACCEL` | 6.0 / 12.0 | `gps_guidance.Cfg` | dikey hız / ivme tavanı |
 | `YAW_RATE_MAX` | 120 °/s | `gps_guidance.Cfg` | GPS fazı dönüş hızı |
-| `YAW_DOYGUN_N` | 15 kare | `gps_guidance.Cfg` | yaw kaçağı koruması eşiği |
-| `K_LEAD` | 0.5 | `guidance_core.Cfg` | ≈ hedef_hızı / bizim_hız |
+| `YAW_DOYGUN_N` | 15 kare | `gps_guidance.Cfg` | yaw susturma eşiği |
+| `YAW_SUS_N` | **40 kare (2 s)** | `gps_guidance.Cfg` | susma SÜRESİ — kilitlenmeyi keser (§3) |
+| `BBOX_L_ETKIN_M` | **1.687 m** | `guidance_core.Cfg` | kutu ölçeği kalibrasyonu (w ≈ fx·L/R) |
+| `OLCEK_KAPALI/TAM_PX` | **12.5 / 29.3** | `guidance_core.Cfg` | kalite rampası (≈ 22.5 m → 9.6 m) |
+| `PN_YATAY_SURE` | **0.6 s** | `guidance_core.Cfg` | azimut-oranı lead'i (şekil-lead'in yerine) |
+| `PN_YATAY_MAX_DEG` | **20°** | `guidance_core.Cfg` | yatay lead tavanı |
+| `YAW_SUS_N` | **60 kare (2 s)** | `guidance_core.Cfg` | görsel fazda yaw susma süresi |
+| `FLYPAST_MENZIL/BUYUME` | **8.0 / 1.5 m** | `guidance_core.Cfg` | B5 hedefi geçme tespiti |
 | `V_KAPANMA` | 25.0 m/s | `guidance_core.Cfg` | görsel faz sabit kapanma hızı |
+| `V_YAKLASMA` | 20.0 m/s | `guidance_core.Cfg` | yaklaşma alt-fazı yatay hızı (8-18 m) |
 | `IVME_TAVAN` | 4.0 / 10.0 | `guidance_core.Cfg` | yatay / dikey ivme tavanı |
 | `TERMINAL_MENZIL` | 8.0 m | `guidance_core.Cfg` | altında kör dalış mümkün |
 | `VURUS_MENZIL` | 1.5 m | `guidance_core.Cfg` | yalnız temas sensörü yoksa yedek |
-| `KILIT_N` / `KILIT_PENCERE` | 10 / 15 | `supervisor.SupCfg` | geçiş için pose kilidi |
+| `KILIT_N` / `KILIT_PENCERE` | 10 / 15 | `supervisor.SupCfg` | geçiş için görsel kilit (tespit güveni) |
 | `GATE_MENZIL` | 20.0 m | `supervisor.SupCfg` | geçiş için yatay menzil kapısı |
 
 ### ArduPilot parametreleri (`sim/ardupilot_params/avci_copter.parm`)
@@ -72,7 +86,6 @@ işi TODO.md madde 0'da bekliyor.
 
 | değişken | varsayılan | etkisi |
 |---|---|---|
-| `AVCI_POSE` | on | pose modeli yüklensin mi |
 | `AVCI_TRACKER` | **off** | HybridSORT takip (bkz. §5) |
 | `AVCI_GT_ROT` | off | GT teşhis modu (bkz. §3) |
 | `AVCI_GPS_RANGE` | 11.0 | `RANGE_SET` override |
@@ -82,7 +95,112 @@ işi TODO.md madde 0'da bekliyor.
 
 ## 3. Ölçülmüş gerçekler
 
-### Pose modeli ASLINDA İYİ (2026-08-05)
+### ⚑ YAW SUSTURMA KİLİDİ — "avcı neden düz gitmiyor" (2026-08-06)
+
+Kullanıcının gözlemi: *"Talon −19° başlıkla düz uçuyor, avcı −22°'de."*
+Ölçüldü ve **iki ayrı şey** çıktı:
+
+**(a) İyi geçişlerdeki 3°** — bu normal ve tasarım gereği. `YAW_DEADBAND = 3°`:
+hata 3°'nin altındaysa adım sıfırlanır ve komut aracın mevcut başlığına
+demirlenir, yani 3°'ye kadar artık hata **bilerek** kapatılmaz (sürekli küçük
+yaw komutu kamerayı titretirdi). Kararlı iki uçuşta ölçülen:
+kadraj azimut hatası medyanı **−0.25°**, karelerin %93'ü |·| < 3°, yaw adımı
+karelerin %89'unda tam 0. **Burun hedefte.** 11 m'de 3° = 0.58 m yanal.
+
+**(b) ASIL SORUN — susturma kapısı bir ÖLÜ KİLİTTİ.** Yaw doygunluk koruması
+(`YAW_DOYGUN_N`) hata kapanmıyorsa adımı 0 yapıyordu. Ama adım 0 → araç dönmez
+→ hata kapanmaz → kapı **hiç açılmaz**. Çıkış koşulu "hata tavanın altına
+insin"di; dönmeyen araçta hata kendiliğinden inmez.
+
+| ölçüm (124 346 GPS karesi, 08-05/08-06) | değer |
+|---|---|
+| burun >20° sapmış AMA yaw adımı tam 0 | **%7.8** |
+| en uzun kesintisiz susma | **1867 kare = 93 saniye** (log 142313) |
+| o uçuşta iris başlığı − hedef başlığı | 119°, yaw hızı p90 **0.0 °/s** |
+| tüm bandda \|kadraj_yaw\| medyanı | **52.4°** (LOS − hedef başlığı yalnız 1.33°) |
+
+Son satır kritik: **geometri doğruydu** (drone hedefin kuyruk hattındaydı,
+istasyona yanal hata medyanı 0.17 m) — bozuk olan tek şey burnun nereye
+baktığıydı.
+
+**Düzeltme:** susma artık KALICI değil SÜRELİ. `YAW_SUS_N` kare sonra yetki
+geri verilir; sorun gerçekse kapı yeniden tetiklenir. Net etki: sürekli dönme
+yerine oranı `YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N)` kadar kısılmış dönme.
+Kapalı çevrim testinde (bayat algı, 30 s) kaçak 7.5 tur → **1.5 tur**; kilit
+93 s → **2 s**. Testler: G13/G15 (GPS), T45/T45b (görsel).
+
+> Asıl koruma zaten **demirleme**: komut her karede aracın gerçek başlığından
+> üretilir (`cmd_yaw = iyaw + adim`), yani asla actual+adım'ı aşamaz. Doygunluk
+> kapısı ikinci kattır ve hiçbir zaman kalıcı olmamalıydı.
+
+### BBOX ÖLÇEĞİ pose ölçeğinden DAHA KARARLI (2026-08-06)
+
+Menzil vekili olarak hangi sinyal daha az saçılıyor (n=1917 `ok` karesi,
+`w·R/fx` = etkin uzunluk, p10-p90 yayılımı):
+
+| ölçüt | etkin L medyanı | yayılım |
+|---|---:|---:|
+| **bbox genişliği (w)** | **1.687 m** | **±%45** |
+| bbox hypot(w,h) | 1.936 m | ±%52 |
+| pose ölçeği (sökülen) | 1.343 m | ±%55 |
+| bbox sqrt(w·h) | 1.245 m | ±%58 |
+| bbox yüksekliği (h) | 0.904 m | ±%83 |
+
+Kutu genişliği seçildi (`BBOX_L_ETKIN_M = 1.687`). Kalite rampası aynı MENZİL
+bandını koruyacak şekilde yeniden ölçeklendi (12.5 px ≈ 22.5 m, 29.3 px ≈ 9.6 m).
+
+### LEAD KAYBOLMADI — kaynağı değişti (2026-08-06)
+
+Pose'un şekil-lead'i (yandanlık × K_LEAD) gitti; yerine `adapter_copter._yatay_pn`
+azimut-oranı lead'i geldi. Aynı 10 183 kare üzerinde yeniden oynatıldı:
+
+| | medyan | ort | p90 |
+|---|---:|---:|---:|
+| şekil-lead'i (pose) | 2.39° | 6.18° | 18.64° |
+| azimut-oranı lead'i | 1.09° | 6.08° | 20.00° |
+
+Ham azimut oranı çok gürültülü (|oran| medyan 15.8 °/s ama p90 187 °/s), o
+yüzden dikey kanalın yumuşatma zinciri (slew-kırpma → EMA → oran EMA) birebir
+uygulandı. Saf takibe dönüş: `AVCI_IBVS_PN_YATAY_SURE=0`.
+
+### ISKA SONRASI YAN UÇUŞ — B5'in gerekçesi (2026-08-06)
+
+Hız vektörü ile burun arasındaki açı:
+
+| | n | medyan | p90 | >60° oranı |
+|---|---:|---:|---:|---:|
+| ıska ÖNCESİ (yaklaşırken) | 4811 | 25.0° | 84.1° | %28 |
+| **ıska SONRASI (geçtikten sonra)** | 3269 | **54.4°** | **138.9°** | **%47** |
+
+Sebep yapısal: quad'da yaw ve hız bağımsız. Hedefi geçince nişan vektörü
+arkayı gösterir → drone geriye uçar, ama yaw tavanı 90 °/s olduğu için burun
+yetişemez. Kamera boşa bakar, tespit kopar, toparlaması 10-20 s sürer.
+**B5 uygulandı** (fly-past tespiti + faz sonu komut sıfırlama) — bkz. §2.
+
+### KALKIŞ AŞIMI hedefin tırmanışına bağlı (2026-08-06)
+
+61 taze kalkış (GPS logu iris yerdeyken başlıyor), ilk 25 s:
+
+| kovalamaya başlarken hedef nerede | aşım (drone hedefin kaç m üstüne çıkıyor) |
+|---|---|
+| hedef zaten seyirde (z < −12 m) | medyan ≈ **0 m**, çoğu negatif |
+| **hedef hâlâ pistte/tırmanışta (z > −7 m)** | **+7 ile +17.9 m** |
+
+Genel: medyan +0.9 m · ortalama +2.4 m · max **+17.9 m** · %39'u > 2 m.
+
+Yani sorun kalkışın kendisi değil, **hedef tırmanırken kovalamaya başlamak**.
+`_chase_thread` `plane_z`'yi BİR KEZ okuyup kalkış irtifası seçiyor; hedef
+sonra 15 m daha tırmanıyor, GPS fazı P kontrolüyle (`KP_Z=1.0`, `VZ_MAX=6`)
+peşinden gidiyor ve `WP_ACC_Z` rampası yüzünden zamanında duramayıp üstüne
+çıkıyor. İş TODO.md'de.
+
+---
+
+### Pose modeli ASLINDA İYİYDİ (2026-08-05) — TARİHSEL
+
+> ⚠ Aşağıdaki iki bölüm **pose dönemine** aittir ve artık canlı sistemi
+> anlatmaz (pose 2026-08-06'da kaldırıldı). Kararın gerekçesi olarak
+> saklanıyor. Araçlar: `POSEA_GERI_DONMEK_ISTERSENIZ/`
 
 Uzun süre "kötü pose modeli" varsayıldı. Ölçüldü — yanlış:
 
@@ -96,9 +214,9 @@ Uzun süre "kötü pose modeli" varsayıldı. Ölçüldü — yanlış:
 hedef kadrajı taşırıyor, nişan vektörü dikeye yaklaşıyor ve azimut
 tanımsızlaşıyor (`guidance_core` bunu `azimut_kalite` ile zaten söndürüyor).
 
-Grafik: `python3 tools/pose_vs_gt_viz.py`
+Grafik: `python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/pose_vs_gt_viz.py`
 
-### Algı darboğaz DEĞİL — ve GT modu neden daha kötü
+### Algı darboğaz DEĞİL — ve GT modu neden daha kötü (TARİHSEL)
 
 `AVCI_GT_ROT=on` güdümün algı girdisini Gazebo'nun gerçek pozuna çevirir
 (teşhis modu, gerçek donanımda uçurulamaz). Kusursuz algıyla isabet **artmadı**.

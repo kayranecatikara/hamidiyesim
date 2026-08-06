@@ -31,9 +31,9 @@ from pymavlink import mavutil
 import uvicorn
 
 # Cessna renk tabanlı tespit
-from vision.detection_state import (set_detection, set_pose_detection,
-                                    set_tracks, wait_new_pose, get_detection,
-                                    get_pose_detection)
+from vision.detection_state import (set_detection, set_frame_detection,
+                                    set_tracks, wait_new_frame, get_detection,
+                                    get_frame_detection)
 from control import carpisma_state       # A5 — gerçek temas, güdümle ortak durum
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
@@ -695,39 +695,38 @@ def get_guidance_mode():
 # ground-truth yan yana, fark = algı hatası).
 # Ayrıca GPS→görsel geçişinin İKİ kapısı da canlı gösteriliyor, çünkü asıl
 # sorulan soru bu: "neden hâlâ görsel faza geçmedi?"
-#   • pose kilidi : son KILIT_PENCERE karenin kaçında conf ≥ POSE_CONF_MIN
+#   • görsel kilit: son KILIT_PENCERE karenin kaçında tespit conf ≥ POSE_CONF_MIN
 #   • menzil kapısı: yatay mesafe d_h < GATE_MENZIL mi
 # Hangisinin bağlayıcı olduğu panelden tek bakışta görünür.
 
-def _gorus_menzil_kestirimi(pose, iris_att):
-    """Pose keypoint'lerinden ölçek tabanlı menzil (m) — guidance_core ile AYNI
-    formül (Adım 2-3). Kamera dışında hiçbir bilgi kullanmaz.
+def _gorus_menzil_kestirimi(det, iris_att):
+    """Detection kutusundan ölçek tabanlı menzil (m) — guidance_core ile AYNI
+    formül. Kamera dışında hiçbir bilgi kullanmaz.
+
+    2026-08-06: pose keypoint ölçeğinin (gövde+kanat projeksiyonu) yerini
+    kutunun GENİŞLİĞİ aldı; kalibrasyon sabiti Cfg.BBOX_L_ETKIN_M.
 
     iris_att verilirse yükselti düzeltmesi de uygulanır (hedef seviyeli uçuyor
     varsayımı); yoksa ham ölçek kullanılır ve değer bir miktar iyimser çıkar.
-    Dönüş: (menzil_m, kanat_gorunur_mu) veya (None, False).
+    Dönüş: (menzil_m, olcek_guvenilir_mi) veya (None, False).
     """
     try:
-        kpts = pose["kpts"]
-        burun, kuyruk = kpts[0], kpts[1]
-        solk, sagk = kpts[2], kpts[3]
-        a = math.hypot(burun[0] - kuyruk[0], burun[1] - kuyruk[1])
-        b = math.hypot(solk[0] - sagk[0], solk[1] - sagk[1])
-        olcek = math.sqrt(a * a + (_GOVDE_KANAT_ORANI * b) ** 2)
-        if olcek <= 1e-9:
+        olcek = float(det["w"])
+        if olcek < _LeadCfg.MIN_BBOX_PX:
             return None, False
         if iris_att is not None:
             # Kamera ışını → gövde → dünya: LOS yükselişi (eps) ile ölçek düzeltilir
-            u = np.array([(pose["cx"] - _geo.CX) / _geo.FX,
-                          (pose["cy"] - _geo.CY) / _geo.FY, 1.0])
+            u = np.array([(det["cx"] - _geo.CX) / _geo.FX,
+                          (det["cy"] - _geo.CY) / _geo.FY, 1.0])
             u = u / np.linalg.norm(u)
             u_g = _kamera_to_govde(u, math.radians(_LeadCfg.KAMERA_TILT_DEG))
             u_d = _govde_to_dunya(u_g, *iris_att)
             eps = math.asin(max(-1.0, min(1.0, -float(u_d[2]))))
             olcek = olcek / _yukselti_duzeltme(eps)
-        kanat_ok = (solk[2] >= _LeadCfg.KPT_CONF_MIN
-                    and sagk[2] >= _LeadCfg.KPT_CONF_MIN)
-        return _geo.FX * _GOVDE_BOYU_M / olcek, kanat_ok
+        # Kalite rampasının üstündeysek ölçek "güvenilir" sayılır (eski
+        # kanat_gorunur bayrağının halefi — panelde aynı yeri doldurur).
+        guvenilir = olcek >= _LeadCfg.OLCEK_KAPALI_PX
+        return _geo.FX * _LeadCfg.BBOX_L_ETKIN_M / olcek, guvenilir
     except Exception:
         return None, False
 
@@ -739,7 +738,6 @@ def pnp_telemetry():
     Buradaki hiçbir değer güdüme girmez; panel yalnız gözlem içindir.
     """
     det = get_detection()
-    pose = get_pose_detection()
     iris = telemetry_state["iris"]
     plane = telemetry_state["plane"]
 
@@ -748,10 +746,10 @@ def pnp_telemetry():
         iris_att = (iris.get("roll", 0.0), iris.get("pitch", 0.0),
                     iris.get("yaw", 0.0))
 
-    # ── Kameranın kendi menzil kestirimi (ölçek tabanlı) ──
-    gorus_menzil, kanat_ok = (None, False)
-    if pose is not None:
-        gorus_menzil, kanat_ok = _gorus_menzil_kestirimi(pose, iris_att)
+    # ── Kameranın kendi menzil kestirimi (bbox ölçeği tabanlı) ──
+    gorus_menzil, olcek_ok = (None, False)
+    if det is not None:
+        gorus_menzil, olcek_ok = _gorus_menzil_kestirimi(det, iris_att)
 
     # ── Ground-truth (SİM KOLAYLIĞI — gerçek harekâtta yok, etiketli göster) ──
     # Kaynak _gercek_menzil ile ortak: zaman hizalı gz önce, telemetri yedek.
@@ -773,24 +771,26 @@ def pnp_telemetry():
     if sup["faz"] != "GPS":
         engel = "—"
     elif not poz_kapi_ok and not menzil_kapi_ok:
-        engel = "POSE + MENZİL"
+        engel = "KİLİT + MENZİL"
     elif not poz_kapi_ok:
-        engel = "POSE KİLİDİ"
+        engel = "GÖRSEL KİLİT"
     elif not menzil_kapi_ok:
         engel = "MENZİL KAPISI"
     else:
         engel = "—"
 
     return {
-        "active": det is not None or pose is not None or telem_var,
+        "active": det is not None or telem_var,
         "faz": sup.get("faz", "GPS"),
         "gecis_sayisi": sup.get("gecis_sayisi", 0),
         # görüş hattı
         "tespit_var": det is not None,
         "tespit_conf": round(float(det["conf"]), 2) if det else None,
-        "pose_var": pose is not None,
-        "pose_conf": round(float(pose.get("conf", 0.0)), 2) if pose else None,
-        "kanat_gorunur": bool(kanat_ok),
+        # Panel sözleşmesi korunuyor (arayüz bu adları okuyor): pose modeli
+        # kalktıktan sonra "pose" alanları TESPİT kutusunu yansıtır.
+        "pose_var": det is not None,
+        "pose_conf": round(float(det["conf"]), 2) if det else None,
+        "kanat_gorunur": bool(olcek_ok),
         "gorus_menzil": round(gorus_menzil, 1) if gorus_menzil else None,
         # ground-truth (etiketli)
         "gercek_menzil": round(gercek_menzil, 1) if gercek_menzil else None,
@@ -969,20 +969,20 @@ def carpisma_debug():
 
 
 # ══════════════════════════════════════════════════════════
-#  GÖRSEL GÜDÜM (IBVS lead pursuit v2) — izole hat:
-#  pose keypoint'leri → menzil bağımsız lead → hız + yaw komutu.
+#  GÖRSEL GÜDÜM (BBOX IBVS) — izole hat:
+#  detection kutusu → saf takip + azimut-oranı lead → hız + yaw komutu.
 #  GPS chase'i BOZMAZ; ayrı endpoint. Döngü kameraya kilitli (olay güdümlü).
 # ══════════════════════════════════════════════════════════
 _visual_active = False
 _visual_stop_event = threading.Event()
 
 
-def _gt_rot_girdi():
-    """GT ROTASYON MODU (AVCI_GT_ROT=on) algı girdisi — pose modelinin YERİNE.
+def _gt_bbox_girdi():
+    """GT MODU (AVCI_GT_ROT=on) algı girdisi — YOLO detection'ın YERİNE.
 
     İki aracın Gazebo world (ENU) pozu TEK mesajdan (sim_truth.pozlar, zaman
-    hizalı) → geometry.rot_gt_goruntu ile nişan noktası + gövde ekseni yönü +
-    yandanlık. geometry.py ile aynı çerçeve/RPY sözleşmesini kullanır, dönüşüm
+    hizalı) → geometry.bbox_gt_goruntu ile nişan noktası + gerçek kutu boyutu +
+    menzil. geometry.py ile aynı çerçeve/RPY sözleşmesini kullanır, dönüşüm
     gerekmez. GT akışı bayat/kapalıysa None (güdüm 'tespit yok' gibi davranır).
 
     ⚠ Simülasyona özgü: gerçek harekâtta hedefin pozu bilinmez.
@@ -993,16 +993,11 @@ def _gt_rot_girdi():
     ir, hd = p["iris"], p["plane"]
     h_rpy = _geo.quat_to_rpy(*hd["quat"])
     i_rpy = _geo.quat_to_rpy(*ir["quat"])
-    r = _geo.rot_gt_goruntu(hd["pos"], h_rpy, ir["pos"], i_rpy)
+    r = _geo.bbox_gt_goruntu(hd["pos"], h_rpy, ir["pos"], i_rpy)
     if r is not None:
-        # Hedefin ve kendi aracımızın GERÇEK rpy'si — yalnız ÖLÇÜM için
-        # (visual_lead pose keypoint'lerinden PnP ile rotasyon çözüp bunlarla
-        # karşılaştırıyor; güdüm bu alanları okumaz).
+        # Yalnız ÖLÇÜM/teşhis için taşınır; güdüm bu alanları okumaz.
         r["hedef_rpy"] = h_rpy
         r["iris_rpy"] = i_rpy
-        # Keypoint kıyası için pozlar da gerekli: geometry.target_keypoints
-        # bunlardan GERÇEK piksel konumlarını üretiyor (visual_lead'de pose
-        # modelinin dediği konumlarla yan yana loglanıyor).
         r["hedef_pos"] = hd["pos"]
         r["iris_pos"] = ir["pos"]
     return r
@@ -1035,10 +1030,10 @@ def _visual_thread():
 
         _visual_stop_event.clear()
         sim_truth.temas_sifirla()
-        _run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event,
+        _run_visual_lead(conn, wait_new_frame, get_plane_truth, _visual_stop_event,
                          get_temas=sim_truth.temas,
                          get_menzil=sim_truth.menzil,
-                         get_gt=_gt_rot_girdi)
+                         get_gt=_gt_bbox_girdi)
 
     except Exception as e:
         import traceback
@@ -1099,26 +1094,26 @@ def _read_iris_telem_from_conn(conn):
 def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
     """GÖRSEL mod (UI seçimi): supervisor'suz tek-faz görsel güdüm.
 
-    Kilit oturana dek (KILIT_N ardışık güvenli pose — hibritteki sayaçla aynı)
+    Kilit oturana dek (KILIT_N ardışık güvenli tespit — hibritteki sayaçla aynı)
     araç hover'da bekler; sonra run_visual_lead koşar. Temas koparsa GPS'e
     DÖNÜLMEZ (kullanıcı kararı): araç hover'da durur, yeni görsel kilit bekler.
     Dönüş: vuruldu mu (bool)."""
     from control.guidance.common import send_velocity
     from control.guidance.supervisor import SupCfg
     while not stop_event.is_set():
-        # ── kilit bekleme: hover'da, pose akışını sayarak ──
+        # ── kilit bekleme: hover'da, tespit akışını sayarak ──
         _supervisor_mod.status.update(faz="VISUAL", son_sebep="kilit-bekleniyor")
         sayac, son_seq = 0, 0
         while not stop_event.is_set():
-            kayit = wait_new_pose(son_seq, timeout=0.5)
+            kayit = wait_new_frame(son_seq, timeout=0.5)
             _read_iris_telem_from_conn(conn)          # telemetri/UI taze kalsın
             send_velocity(conn, 0.0, 0.0, 0.0,
                           math.radians(telemetry_state["iris"]["yaw"]))
             if kayit is None:
                 continue
             son_seq = kayit["seq"]
-            pose = kayit["pose"]
-            if pose is not None and pose.get("conf", 0.0) >= SupCfg.POSE_CONF_MIN:
+            kdet = kayit["det"]
+            if kdet is not None and kdet.get("conf", 0.0) >= SupCfg.POSE_CONF_MIN:
                 sayac += 1
             else:
                 sayac = 0
@@ -1131,11 +1126,11 @@ def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
         _supervisor_mod.status["gecis_sayisi"] += 1
         print(f"[CHASE] ✓ GÖRSEL KİLİT — lead pursuit başlıyor "
               f"(geçiş #{_supervisor_mod.status['gecis_sayisi']}, GÖRSEL mod)")
-        sebep = _run_visual_lead(conn, wait_new_pose, get_plane_truth, stop_event,
+        sebep = _run_visual_lead(conn, wait_new_frame, get_plane_truth, stop_event,
                                  kayip_kare_esik=SupCfg.KAYIP_M,
                                  get_temas=sim_truth.temas,
                                  get_menzil=sim_truth.menzil,
-                                 get_gt=_gt_rot_girdi)   # GT modu (AVCI_GT_ROT=on)
+                                 get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
         _supervisor_mod.status["son_sebep"] = sebep
         if sebep == "vuruldu":
             _supervisor_mod.status["faz"] = "VURULDU"
@@ -1241,11 +1236,11 @@ def _chase_thread():
                 vuruldu = _gorsel_tek_faz(conn, get_plane_truth, mod_stop)
             else:
                 print("[CHASE] Güdüm modu: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
-                _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
+                _run_hybrid(conn, get_plane, get_iris, wait_new_frame,
                             get_plane_truth, mod_stop,
                             get_temas=sim_truth.temas,
                             get_menzil=sim_truth.menzil,
-                            get_gt=_gt_rot_girdi)   # GT modu (AVCI_GT_ROT=on)
+                            get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
                 vuruldu = (_supervisor_mod.status.get("faz") == "VURULDU")
             mod_stop.set()                 # izci thread'i sonlandır
 
@@ -1271,20 +1266,18 @@ latest_frames = {
 }
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
-_pose_detector = None   # startup'ta yüklenir (AVCI_POSE=on, varsayılan açık)
 _talon_tracker = None   # AVCI_TRACKER=on ile yüklenir, varsayılan KAPALI (HybridSORT)
 _target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=off kapatır; tracker açıksa)
 _tracker_mod   = None   # vision.tracker modülü (draw_tracks için)
 _tracker_err   = False  # tekrarlayan tracker hatasında log seli önlenir
 _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
-# Parazit modellere de uygulansın mı? 1 = tespit/pose/tracker PARAZİTLİ kareyi
+# Parazit modellere de uygulansın mı? 1 = tespit/tracker PARAZİTLİ kareyi
 # görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
 # yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
 _NOISE_PRE_DETECT = os.environ.get("AVCI_NOISE_PRE_DETECT", "0") == "1"
-# (GT rotasyon modu 2026-08-02 akşamı sökülmüştü; 2026-08-04'te AVCI_GT_ROT
-# bayrağı ardında GERİ AÇILDI — bkz. _gt_rot_girdi ve guidance_core.Cfg.GT_ROT.
-# Varsayılan KAPALI: bayrak kapalıyken güdüm eskisi gibi pose modelinden gelir.
-# Bayrak açıkken pose çıkarımı yine çalışır ama YALNIZ ekran/log içindir.)
+# (GT modu AVCI_GT_ROT bayrağı ardında; varsayılan KAPALI. Kapalıyken güdüm
+# algısı YOLO detection kutusudur; açıkken Gazebo'nun gerçek pozundan üretilen
+# kutu kullanılır — bkz. _gt_bbox_girdi ve guidance_core.Cfg.GT_ROT.)
 
 
 def _apply_video_noise(img, lvl):
@@ -1330,9 +1323,8 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     if _NOISE_PRE_DETECT and lvl > 0.001:
         img = _apply_video_noise(img, lvl)
     # ---- HEDEF TESPİT (YOLO) + OVERLAY ----
-    # İki model de overlay'siz kare üzerinde çıkarım yapar; overlay'ler sonra
-    # çizilir (detection kutusu çizilmiş kare pose'a girerse çıkarımı bozar).
-    det = pose = tracks = dets_all = det_raw = lock = None
+    # Çıkarım overlay'siz kare üzerinde yapılır; overlay'ler sonra çizilir.
+    det = tracks = dets_all = det_raw = lock = None
     if _yolo_detector is not None:
         try:
             if _talon_tracker is not None:
@@ -1391,28 +1383,12 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             else:
                 det = None                             # coast: nişan komutu yok
         set_detection(det)
-    # Pose, detection kutusunun kropunda çalışır; det yoksa ama kilit COAST'taysa
-    # Kalman tahmin kutusu krop olarak denenir (kısa kopmada pose akışı sürsün —
-    # pose kendi güven süzgeciyle korumalı, kropta hedef yoksa çıktı vermez).
-    if _pose_detector is not None:
-        try:
-            if det is not None:
-                pose = _pose_detector.detect_pose_in_bbox(img, det["bbox"])
-            elif lock is not None and lock["kaynak"] == "tahmin":
-                kb = tuple(int(v) for v in lock["bbox"])
-                pose = _pose_detector.detect_pose_in_bbox(img, kb)
-        except Exception as e:
-            print(f"[GCS] YOLO poz hatası: {e}")
-    # KARE AKIŞI POSE MODELİNDEN BAĞIMSIZ (2026-08-04): bu çağrı eskiden
-    # `if _pose_detector is not None` bloğunun içindeydi, yani AVCI_POSE=off
-    # yapılınca kare akışı tamamen duruyordu — güdüm döngüsü (wait_new_pose)
-    # kare beklediği için GT modu da çalışmıyordu. Artık her karede çağrılır
-    # (pose None olabilir); GT modu pose modeli KAPALIYKEN de uçabilir.
-    set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv, lock=lock)
+    # KARE KÖPRÜSÜ — güdüm döngüsünün saati. HER karede çağrılır (det None
+    # olsa bile): visual_lead kare bekler, çağrı atlanırsa döngü donar ve GT
+    # modu da çalışmaz (2026-08-04'te tam bu olmuştu).
+    set_frame_detection(det, stamp=stamp, wall_recv=wall_recv, lock=lock)
     if _yolo_detector is not None:
         img = _yolo_detector.draw_overlay(img, det)
-    if _pose_detector is not None:
-        img = _pose_detector.draw_overlay(img, pose)
     if tracks is not None and len(tracks) and _tracker_mod is not None:
         img = _tracker_mod.draw_tracks(img, tracks, line=1)
     if lock is not None and lock["kaynak"] == "tahmin":
@@ -1740,16 +1716,6 @@ async def startup_event():
             print("[GCS] YOLO detector hazır (avci_yolo.pt)")
         except Exception as e:
             print(f"[GCS] YOLO detector yüklenemedi ({e}) — tespit kapalı")
-    # YOLO-pose modelini yükle (detection'ın YANINDA çalışır; AVCI_POSE=off kapatır)
-    if os.environ.get("AVCI_POSE", "on").lower() not in ("off", "0"):
-        global _pose_detector
-        try:
-            from vision import pose_detector as _pdet
-            _pdet.load()                         # ağırlık + CUDA warmup
-            _pose_detector = _pdet
-            print("[GCS] YOLO pose hazır (avci_pose.pt)")
-        except Exception as e:
-            print(f"[GCS] YOLO pose yüklenemedi ({e}) — pose kapalı")
     # HybridSORT takipçi — detection üstüne kareler arası ID sürdürür
     # VARSAYILAN KAPALI (2026-08-04). Gerekçe: boxmot hiç kurulu olmadığı için
     # takipçi bugüne dek HİÇ çalışmadı — projedeki BÜTÜN uçuş ölçümleri

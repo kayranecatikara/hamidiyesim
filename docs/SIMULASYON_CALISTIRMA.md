@@ -12,8 +12,9 @@
 **Terminal B** — GCS
 
     cd ~/projects/hamidiyesim
-    bash scripts/gcs.sh              # GT rotasyon modu AÇIK (varsayılan)
-    bash scripts/gcs.sh pose         # pose modeli güdümde (eski davranış)
+    bash scripts/gcs.sh              # bbox güdümü (varsayılan, GERÇEK SİSTEM)
+    bash scripts/gcs.sh gt           # teşhis: algı girdisi Gazebo gerçek pozundan
+    bash scripts/gcs.sh takip        # bbox + HybridSORT + kilitli-ID
 
 `gcs.sh` ROS ortamını, `AVCI_GZ_CAMERA`/`AVCI_NO_BROWSER` değişkenlerini ve
 8000 portu temizliğini kendi yapar — elle `export` etmeye gerek yok.

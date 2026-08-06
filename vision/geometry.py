@@ -246,6 +246,38 @@ def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
             "yandanlik": min(1.0, yandanlik), "menzil": menzil}
 
 
+def bbox_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
+    """GT MODU algı girdisi — YOLO detection'ın yerine geçen gerçek kutu.
+
+    Görsel güdüm 2026-08-06'dan beri yalnız bbox kullanıyor; GT modunun da
+    aynı biçimde konuşması gerek. Dönüş:
+      uv     : hedef merkezinin piksel izdüşümü (u, v) — NİŞAN noktası
+      w, h   : hedefin gerçek 2D kutu boyutları (px) — ölçek/kalite için
+      menzil : kamera-hedef gerçek mesafe (m)
+    Hedef kameranın arkasındaysa None.
+
+    ⚠ uv KADRAJ DIŞINDA da döndürülür (kırpılmaz): güdüm piksel değil YÖN
+    kullanır, kadraj dışı hedef için de yön doğrudur. Bbox modunda böyle bir
+    kare zaten "tespit yok" olurdu — GT modunun kamerayı aşan kısmı budur.
+    w/h ise target_bbox'tan gelir ve O KIRPAR; kadraj dışında None dönebilir,
+    o durumda ölçek gerçek menzilden türetilir (guidance_core.process).
+    """
+    cam_pos, R_cam = camera_world_pose(iris_pos, iris_rpy)
+    hedef = np.asarray(hedef_pos, dtype=float)
+    u, v, valid = project_points(hedef.reshape(1, 3), cam_pos, R_cam)
+    if not bool(valid[0]):
+        return None
+    menzil = float(np.linalg.norm(hedef - cam_pos))
+    if menzil < 1e-6:
+        return None
+    bb = target_bbox(hedef_pos, hedef_rpy, iris_pos, iris_rpy)
+    w = h = None
+    if bb is not None:
+        w, h = float(bb[2] - bb[0]), float(bb[3] - bb[1])
+    return {"uv": (float(u[0]), float(v[0])), "w": w, "h": h,
+            "menzil": menzil, "bbox": bb}
+
+
 def pose_rpy_cozum(kpts, iris_rpy, kpt_conf_min=0.5):
     """Pose keypoint'lerinden hedefin DÜNYA roll/pitch/yaw'ı — PnP çözümü.
 

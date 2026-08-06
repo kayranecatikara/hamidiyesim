@@ -1,22 +1,17 @@
 """
-visual_lead.py — BBOX IBVS döngüsü (olay güdümlü, kameraya kilitli).
+visual_lead.py — IBVS lead pursuit döngüsü (olay güdümlü, kameraya kilitli).
 
 Sabit Hz'te DÖNMEZ: kamera 30 Hz, kare geldikçe işler (sabit döngü kare tekrarı
-ve bayat veri üretir). Her yeni kare kaydında:
+ve bayat veri üretir). Her yeni pose kaydında:
   bayat kare kapısı → GUIDED kontrolü → guidance_core.process → adaptör → CSV.
-
-── 2026-08-06: POSE MODELİ KALDIRILDI ──
-Döngü artık pose keypoint'lerini değil DETECTION KUTUSUNU tüketiyor
-(detection_state.wait_new_frame → {'det': ...}). Sökülen keypoint/PnP ölçüm
-sütunları ve pose'lu sürümün tamamı: POSEA_GERI_DONMEK_ISTERSENIZ/README.md
 
 Saat tasarımı (sim/duvar saati birbirine karıştırılmaz):
   dt        = ardışık kare header.stamp farkı (sim saati) — filtre/rampa bunu kullanır
   gecikme_s = time.time() - wall_recv (karenin gcs'e geliş duvar anı; komut anında)
   gecikme > GECIKME_TAVAN_S → kare atlanır, komut GÖNDERİLMEZ, son komut korunur.
 
-Kullanım (gcs_server): run_visual_lead(conn, wait_kare, get_plane_truth, stop_event)
-  wait_kare        : vision.detection_state.wait_new_frame
+Kullanım (gcs_server): run_visual_lead(conn, wait_pose, get_plane_truth, stop_event)
+  wait_pose        : vision.detection_state.wait_new_pose
   get_plane_truth  : hedefin GERÇEK NED pozu (çerçeve-ofset düzeltmeli) — SADECE
                      menzil_gercek/kapanma_hizi ve CEVAP ANAHTARI sütunları için,
                      güdüme girmez (bkz. _cevap_anahtari).
@@ -41,20 +36,16 @@ _LOG_DIR = os.path.join(
     "logs")
 
 _CSV_ALANLAR = [
-    "t_ros", "dt", "gecikme_s", "bbox", "bbox_w", "bbox_h",
-    "olcek_ham", "eps_deg", "duzeltme", "olcek", "kalite", "guven",
-    "u_nisan_x", "u_nisan_y", "u_nisan_z",
+    "t_ros", "dt", "gecikme_s", "bbox", "a", "b", "olcek_ham", "eps_deg",
+    "duzeltme", "olcek", "yandanlik_ham", "yandanlik_filtreli", "kalite",
+    "lead_deg", "u_nisan_x", "u_nisan_y", "u_nisan_z",
     "u_govde_x", "u_govde_y", "u_govde_z", "yaw_hata_deg", "pitch_hata_deg",
     "yatay_bilesen", "azimut_kalite", "yaw_adim_deg",
-    # YATAY (azimut-oranı) LEAD — pose şekil-lead'inin yerini alan terim.
-    # adapter_copter._yatay_pn üretir; lead_deg sütununun halefi.
-    "yatay_lead_deg", "az_rate_dps",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "v_doygun", "yaw_doygun",
-    "durum", "eksen_disi_deg", "govde_yukselti_deg",
+    "durum", "flip_sayaci", "eksen_disi_deg", "govde_yukselti_deg",
     "menzil_kestirim_m", "menzil_gercek_m", "menzil_ham_m", "menzil_red",
     "menzil_kaynak",   # "gz" (zaman hizalı) | "telem" (yedek) — bkz. _menzil_olc
     "alt_faz",         # "yaklasma" | "terminal" — görsel fazın alt-fazı
-    "en_yakin_m",      # bu görsel fazda görülen en yakın menzil (B5 fly-past ölçütü)
     "kapanma_hizi_ms", "mod",
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
@@ -62,13 +53,31 @@ _CSV_ALANLAR = [
     # ── CEVAP ANAHTARI (bkz. _cevap_anahtari) — ölçüm, güdüme GİRMEZ ──
     "gercek_yaw_deg", "gercek_elev_deg", "gercek_menzil_ham_m",
     "gercek_u_px", "gercek_v_px", "gercek_onde", "gercek_kadraj_ici",
-    "bbox_yaw_sapma_deg", "bbox_elev_sapma_deg", "bbox_menzil_sapma_m",
+    "pose_yaw_sapma_deg", "pose_elev_sapma_deg", "pose_menzil_sapma_m",
+    # ROTASYON cevap anahtarı — pose'un ölçtüğü yönelim vs GERÇEK yönelim.
+    # Her karede yazılır (GT modu kapalı olsa bile); güdüme GİRMEZ.
+    "gt_yandanlik", "gt_d_aci_deg", "pose_d_aci_deg",
+    "yandanlik_sapma", "d_aci_sapma_deg",
+    # Hedefin 3B ROTASYONU: gerçek (Gazebo) vs pose keypoint'lerinden PnP
+    # çözümü. Pose modeli rotasyonu DOĞRUDAN üretmez — 6 keypoint üretir;
+    # bu sütunlar "üretebileceği en iyi rotasyon ne kadar doğru" sorusunu
+    # ölçer (geometry.pose_rpy_cozum). Güdüme GİRMEZ.
+    "gt_roll_deg", "gt_pitch_deg", "gt_yaw_deg",
+    "pose_roll_deg", "pose_pitch_deg", "pose_yaw_deg",
+    "roll_sapma_deg", "pitch_sapma_deg", "yaw_rot_sapma_deg", "pnp_kpt",
+    # KEYPOINT KONUM KIYASI — hedefin gerçek pozundan projekte edilen piksel
+    # yeri vs pose modelinin dediği yer. Her keypoint için piksel hatası;
+    # ham konumlar "u|v;u|v;..." biçiminde (6 nokta, KEYPOINT_NAMES sırası,
+    # görünmeyen/tespit edilmeyen nokta boş). Yalnız ÖLÇÜM, güdüme GİRMEZ.
+    "kpt_hata_burun", "kpt_hata_kuyruk", "kpt_hata_solkanat",
+    "kpt_hata_sagkanat", "kpt_hata_solvtail", "kpt_hata_sagvtail",
+    "kpt_hata_ort", "kpt_gercek_px", "kpt_pose_px",
     # Hangi bayraklarla uçuldu — yalnız İLK satırda dolu (bkz. _yapilandirma).
     "yapilandirma",
 ]
 
-# durum kodları (CSV): ok / kutu_kucuk / tespit_yok / bayat / mod_hata /
-#                      attitude_yok / kor_dalis / gecildi / vuruldu
+# durum kodları (CSV): ok / cozumsuz / kanat_dusuk / kpt_dusuk / tespit_yok /
+#                      bayat / mod_hata / attitude_yok / kor_dalis / vuruldu
 
 
 class _ArasState:
@@ -118,9 +127,9 @@ def _cevap_anahtari(satir, hedef_ned, aras, res=None):
     kapıları, menzil kapısı) dayandıkları gürültü varsayımını kaybeder.
     Fonksiyon bu yüzden yalnız `satir` sözlüğüne yazar, hiçbir şey döndürmez.
 
-    Ne ölçer: bbox zincirinin hedef kestirimi (res["u_govde_hedef"] — saf takip
-    yönü, adaptör lead'i binmeden önce) ile saf geometrinin verdiği gerçek yön
-    yan yana → fark = ALGI hatası.
+    Ne ölçer: pose zincirinin LEAD'SİZ hedef kestirimi (res["u_govde_hedef"])
+    ile saf geometrinin verdiği gerçek yön yan yana → fark = ALGI hatası.
+    Lead'li nişan (u_govde) bilerek hedeften kaydırılmıştır, kıyas ona yapılmaz.
 
     Neden ayrıca piksel: gercek_kadraj_ici, hedefin o karede kameranın görüş
     alanında OLUP OLMADIĞINI söyler. "tespit_yok" satırlarında bu sütun,
@@ -148,15 +157,15 @@ def _cevap_anahtari(satir, hedef_ned, aras, res=None):
 
     if res is None:
         return                                 # tespit yok → kıyaslanacak kestirim yok
-    uh = res["u_govde_hedef"]                  # saf takip yönü (kamera zinciri)
+    uh = res["u_govde_hedef"]                  # LEAD'SİZ saf hedef yönü (kamera zinciri)
     kam_yaw = math.atan2(float(uh[1]), float(uh[0]))
     kam_elev = math.atan2(-float(uh[2]), math.hypot(float(uh[0]), float(uh[1])))
     # yaw farkı ±180°'e sarılır (±179° ile ∓179° arası 2°'dir, 358° değil)
     d_yaw = (kam_yaw - kad["yaw_hata"] + math.pi) % (2 * math.pi) - math.pi
-    satir["bbox_yaw_sapma_deg"] = round(math.degrees(d_yaw), 2)
-    satir["bbox_elev_sapma_deg"] = round(math.degrees(kam_elev - kad["elev"]), 2)
+    satir["pose_yaw_sapma_deg"] = round(math.degrees(d_yaw), 2)
+    satir["pose_elev_sapma_deg"] = round(math.degrees(kam_elev - kad["elev"]), 2)
     if kad["menzil"] > 1e-6:
-        satir["bbox_menzil_sapma_m"] = round(
+        satir["pose_menzil_sapma_m"] = round(
             res["menzil_kestirim_m"] - kad["menzil"], 2)
 
 
@@ -175,7 +184,7 @@ class _MenzilKapisi:
     kopmuşuzdur (ör. çerçeve ofseti yeniden kalibre oldu) — o zaman yeni değere
     SENKRONİZE ol, yoksa bayat bir değere sonsuza dek kilitleniriz.
 
-    Bu kapı SEMPTOMU keser; verinin neden zıpladığı ayrı bir iş (bkz. TODO.md,
+    Bu kapı SEMPTOMU keser; verinin neden zıpladığı ayrı bir iş (bkz. Görev 4,
     baş şüpheli gcs_server._frame_off dikey kalibrasyonu).
 
     ZAMAN NOTU: kapı GEÇEN SÜREYİ dışarıdan alır, saat tutmaz. Kare döngüsü sim
@@ -248,33 +257,32 @@ def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
     return False, ""
 
 
-def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
+def run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg,
                     kayip_kare_esik=None, get_temas=None, get_menzil=None,
                     get_gt=None):
-    """kayip_kare_esik verilirse (supervisor hibrit modu): temas kaybında
-    'kayip' döner (GPS'e dönülecek).
-    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı VEYA fly-past) |
-    'vuruldu' (GERÇEK fiziksel temas — bkz. _vurus_oldu; yakınlık yalnız temas
-    kaynağı yoksa yedek). Terminal: menzil < TERMINAL_MENZIL iken temas koparsa
-    GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör dalış).
+    """kayip_kare_esik verilirse (supervisor hibrit modu): bu kadar ARDIŞIK
+    pose'suz kare → 'kayip' döner (görsel temas kesildi, GPS'e dönülecek).
+    Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı) | 'vuruldu'
+    (GERÇEK fiziksel temas — bkz. _vurus_oldu; yakınlık yalnız temas kaynağı
+    yoksa yedek). Terminal: menzil < TERMINAL_MENZIL iken ve kapanırken temas
+    koparsa GPS'e DÖNMEZ, son nişan komutunu TERMINAL_SURE boyunca sürdürür (kör
+    dalış — hedef kadraj tepesinden çıkınca çarpışmayı tamamlamak için).
 
-    ⚠ HANGİ YOLDAN ÇIKILIRSA ÇIKILSIN araç KOMUTSUZ BIRAKILMAZ — bkz. _bitir.
-
-    get_gt: GT MODU kaynağı (geometry.bbox_gt_goruntu çıktısını döndüren
+    get_gt: GT ROTASYON MODU kaynağı (geometry.rot_gt_goruntu çıktısını döndüren
     çağrılabilir) — yalnız cfg.GT_ROT açıkken kullanılır. Açıkken güdümün algı
-    girdisi tamamen bu olur; YOLO komut yoluna girmez ve "görsel temas"ın anlamı
-    'kutu var mı' yerine 'GT akışı canlı mı'ya döner (GT her karede vardır, yani
-    tespit kaybı artık GPS'e döndürmez)."""
+    girdisi tamamen bu olur; pose komut yoluna girmez ve "görsel temas"ın anlamı
+    'pose var mı' yerine 'GT akışı canlı mı'ya döner (GT her karede vardır, yani
+    pose kaybı artık GPS'e döndürmez)."""
     core = LeadPursuitCore(cfg)
     adapter = CopterAdapter(cfg)          # yalnız copter platformu
     gt_modu = bool(getattr(cfg, "GT_ROT", False) and get_gt is not None)
     if gt_modu:
-        print("[LEAD] ⚠ GT MODU (AVCI_GT_ROT=on) — güdüm girdileri Gazebo "
-              "GERÇEK pozundan; YOLO komut yolunda DEĞİL. Bu mod simülasyona "
-              "özgüdür, gerçek donanımda uçurulamaz.")
+        print("[LEAD] ⚠ GT ROTASYON MODU (AVCI_GT_ROT=on) — güdüm girdileri "
+              "Gazebo GERÇEK pozundan; pose modeli komut yolunda DEĞİL. "
+              "Bu mod simülasyona özgüdür, gerçek donanımda uçurulamaz.")
     elif getattr(cfg, "GT_ROT", False) and get_gt is None:
         print("[LEAD] ⚠ AVCI_GT_ROT=on ama GT kaynağı verilmedi "
-              "(sim_truth kapalı/gz yok) — bbox moduyla devam ediliyor.")
+              "(sim_truth kapalı/gz yok) — pose moduyla devam ediliyor.")
 
     def _menzil_olc():
         """Menzil ölçümü — (metre|None, kaynak_adı).
@@ -311,13 +319,13 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         print("[LEAD] Vuruş kararı: FİZİKSEL TEMAS sensörü (menzil eşiği devre dışı)")
 
     aras = _ArasState()
-    son_seq = 0            # kare seq 0'dan başlar; ilk GERÇEK kareyi bekle
+    son_seq = 0            # _pose_seq 0'dan başlar; ilk GERÇEK kareyi bekle
     menzil_kapi = _MenzilKapisi(cfg)   # imkânsız menzil sıçramalarını eler
     menzil_onceki = None
     t_menzil_onceki = None
     t_terminal_menzil = None   # kör dalışta menzil örnekleri arası DUVAR saati
     bayat_sayaci = 0
-    kayip_sayaci = 0       # ardışık tespitsiz kare (yalnız log/gözlem)
+    kayip_sayaci = 0       # ardışık pose'suz kare (yalnız log/gözlem)
     temas_pencere = collections.deque(maxlen=cfg.KAYIP_PENCERE)   # kayan temas penceresi
     son_kayit_wall = time.time()
     son_v_cmd = None       # son gönderilen (vx,vy,vz,yaw) — kör dalışta sürdürülür
@@ -329,7 +337,6 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                                 # altına inince kilitli; ground-truth menzil gürültüsü
                                 # yukarı yanlılığı titretmesin)
     hedef_ned = None            # hedefin gerçek NED pozu — YALNIZ cevap anahtarı logu
-    en_yakin = None             # bu görsel fazda görülen en yakın menzil (B5)
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR,
@@ -342,24 +349,22 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
     # ve deney tekrarlanmak zorunda kaldı — takip açık/kapalı CSV'de hiçbir ize
     # bırakmıyordu. İlk satıra yazılır (sonraki satırlarda boş).
     _yapilandirma = ",".join([
-        f"ALGI=bbox",
         f"GT={'on' if getattr(cfg, 'GT_ROT', False) else 'off'}",
+        f"POSE={os.environ.get('AVCI_POSE', 'on')}",
         f"KILIT_BYPASS={os.environ.get('AVCI_GT_KILIT_BYPASS', 'off')}",
         f"TRACKER={os.environ.get('AVCI_TRACKER', 'off')}",
         f"LOCK={os.environ.get('AVCI_LOCK', 'on')}",
         f"V_KAPANMA={cfg.V_KAPANMA}",
-        f"V_YAKLASMA={cfg.V_YAKLASMA}",
-        f"PN_YATAY={cfg.PN_YATAY_SURE}",
+        f"K_LEAD={cfg.K_LEAD}",
         # GPS istasyon menzili: devir menzilini doğrudan belirliyor, karne
         # kıyaslarında en çok değiştirilen ayar. Damgada olmadığı için 08-05
         # analizinde istasyon geometrisinden geri hesaplamak gerekmişti.
         f"GPS_RANGE={os.environ.get('AVCI_GPS_RANGE', '11.0')}",
         f"IVME={cfg.IVME_TAVAN}/{cfg.IVME_TAVAN_DIKEY}",
-        f"FLYPAST={cfg.FLYPAST_MENZIL}/{cfg.FLYPAST_BUYUME_M}",
     ])
     _yapilandirma_yazildi = False
-    print(f"[LEAD] BBOX IBVS başladı (copter, V_KAPANMA={cfg.V_KAPANMA}) "
-          f"— log: {csv_yol}")
+    print(f"[LEAD] IBVS lead pursuit başladı (copter, "
+          f"K_LEAD={cfg.K_LEAD}, V_KAPANMA={cfg.V_KAPANMA}) — log: {csv_yol}")
     print(f"[LEAD] YAPILANDIRMA: {_yapilandirma}")
 
     def _satir(row, res=None):
@@ -370,41 +375,9 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         if not _yapilandirma_yazildi:
             row["yapilandirma"] = _yapilandirma
             _yapilandirma_yazildi = True
-        if en_yakin is not None:
-            row["en_yakin_m"] = round(en_yakin, 2)
         _cevap_anahtari(row, hedef_ned, aras, res)
         w.writerow(row)
         f.flush()
-
-    def _bitir(sebep):
-        """B5 — FAZ SONU KOMUT SIFIRLAMA. Görsel faz hangi yoldan biterse bitsin
-        araç KOMUTSUZ BIRAKILMAZ.
-
-        ⚠ MAVLink hız komutu KALICIDIR: SET_POSITION_TARGET_LOCAL_NED bir kez
-        gönderilince araç yeni komut gelene (ya da failsafe'e) kadar onu
-        uygulamaya DEVAM EDER. "Göndermeyi bırakmak" DUR demek değildir.
-
-        Ölçüldü (log 00000108): vuruş anından itibaren kesintisiz 14.57 TUR
-        dönüş (~350 °/s), irtifa 21.8 → 2.0 m. `DesYaw` aynı rampayı izliyordu,
-        yani komut hiç kesilmemişti — güdüm yalnız CSV'yi kapatmıştı.
-
-        Sıfır hız + MEVCUT başlık gönderilir (hedef başlık değil: dönüşü
-        durdurmak istiyoruz, yeni bir dönüş başlatmak değil). Tek mesaj UDP'de
-        düşebileceği için 3 kez tekrarlanır."""
-        yaw = None
-        if aras.attitude is not None:
-            yaw = aras.attitude[2]
-        elif son_v_cmd is not None:
-            yaw = son_v_cmd[3]
-        try:
-            for _ in range(3):
-                send_velocity(conn, 0.0, 0.0, 0.0, yaw or 0.0)
-                time.sleep(0.02)
-        except Exception as e:                    # bağlantı koptuysa yut
-            print(f"[LEAD WARN] faz sonu sıfır komutu gönderilemedi: {e}")
-        print(f"[LEAD] faz bitti ({sebep}) — hız komutu sıfırlandı "
-              f"(yaw {math.degrees(yaw or 0.0):.0f}° tutuluyor)")
-        return sebep
 
     def _terminal_giris_ok():
         """Kör dalışa GİRİŞ: hibrit modda, son komut var, menzil eşik altında.
@@ -414,36 +387,9 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                 and menzil_onceki is not None
                 and menzil_onceki < cfg.TERMINAL_MENZIL)
 
-    def _flypast(u_govde=None):
-        """B5 — HEDEFİ GEÇTİK Mİ? (sebep metni veya None)
-
-        İki bağımsız imza:
-          (a) MENZİL DÖNDÜ: bir kez FLYPAST_MENZIL bandına girdik ve en yakın
-              noktadan FLYPAST_BUYUME_M kadar UZAKLAŞTIK. Gürültüye dayanıklı,
-              çünkü ölçüt anlık işaret değil biriken mesafe.
-          (b) HEDEF ARKADA: nişan yönünün gövde ileri bileşeni negatif
-              (|yaw_hata| > 90°). Kutu hâlâ görülüyorken bile geçmiş olabiliriz.
-
-        NİYE GEREKLİ: drone hedefi geçince "hedefe uç" komutu YUKARI-GERİYİ
-        gösterir. Araç tırmanır, hedef kadrajdan çıkar, tespit kopar — ve
-        ölçüldü (08-06): ıska sonrası hız vektörü ile burun arasındaki açı
-        medyan 54.4°, p90 138.9° (ıska öncesi 25.0°). Yani araç yan/geri
-        uçuyor, kamera boşa bakıyor, toparlaması 10-20 s sürüyor.
-        """
-        if (en_yakin is not None and en_yakin < cfg.FLYPAST_MENZIL
-                and menzil_onceki is not None
-                and menzil_onceki > en_yakin + cfg.FLYPAST_BUYUME_M):
-            return (f"menzil döndü (en yakın {en_yakin:.2f} m → "
-                    f"{menzil_onceki:.2f} m)")
-        if (cfg.FLYPAST_ARKA and u_govde is not None
-                and float(u_govde[0]) < 0.0):
-            return "hedef gövde ARKASINDA (nişan geriyi gösteriyor)"
-        return None
-
     def _terminal_adim():
         """Kilitli kör dalış bir adımı. Dönüş: 'vuruldu'/'kayip'/None (sürüyor)."""
         nonlocal terminal_baslangic, terminal_latch, terminal_min, t_terminal_menzil
-        nonlocal en_yakin
         if not terminal_latch:
             terminal_latch = True
             terminal_baslangic = time.time()
@@ -462,58 +408,55 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         m, _kabul = menzil_kapi.ekle(_menzil_olc()[0], dt_t)
         if m is not None:
             terminal_min = min(terminal_min, m) if terminal_min is not None else m
-            en_yakin = min(en_yakin, m) if en_yakin is not None else m
         vuruldu, gerekce = _vurus_oldu(m, cfg)
         if vuruldu:
             print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
                   f"(menzil {_m_yaz(m)} m)")
             return "vuruldu"
-        # ── B5: KÖR DALIŞI ERKEN KES ──
-        # Kör dalış "hedef önümüzde, kadrajdan çıktı" varsayımıyla son komutu
-        # sürdürür. Menzil BÜYÜMEYE başladıysa varsayım çökmüştür: hedefi
-        # geçmişiz ve sürdürdüğümüz komut bizi ondan UZAKLAŞTIRIYOR (ve nişan
-        # yukarıyı gösterdiği için tırmandırıyor). Süreyi doldurmayı bekleme.
-        if (terminal_min is not None and m is not None
-                and m > terminal_min + cfg.FLYPAST_BUYUME_M):
-            print(f"[LEAD] ⤾ FLY-PAST (kör dalışta) — en yakın "
-                  f"{terminal_min:.2f} m → {m:.2f} m, komut kesiliyor")
-            return "kayip"
         if time.time() - terminal_baslangic > cfg.TERMINAL_SURE:
             vuruldu, gerekce = _vurus_oldu(terminal_min, cfg)
             if vuruldu:
                 print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
                       f"(en yakın {terminal_min:.2f} m)")
                 return "vuruldu"
-            en_y = f"{terminal_min:.2f}" if terminal_min is not None else "?"
-            print(f"[LEAD WARN] kör dalış bitti — en yakın {en_y} m, ISKA")
+            en_yakin = f"{terminal_min:.2f}" if terminal_min is not None else "?"
+            print(f"[LEAD WARN] kör dalış bitti — en yakın {en_yakin} m, ISKA")
             return "kayip"
         return None
 
     try:
         while not stop_event.is_set():
-            kayit = wait_kare(son_seq, timeout=0.5)
+            kayit = wait_pose(son_seq, timeout=0.5)
             if kayit is None:                 # yeni kare yok (timeout / akış durdu)
                 # Kilitli kör dalıştaysak veya girişe uygunsak son nişanı sürdür.
                 if terminal_latch or _terminal_giris_ok():
                     sonuc = _terminal_adim()
                     if sonuc:
-                        return _bitir(sonuc)
+                        return sonuc
                     time.sleep(0.02)
                     continue
                 if (kayip_kare_esik is not None
                         and time.time() - son_kayit_wall > 1.0):
                     print("[LEAD WARN] kare akışı kesildi (>1 s) — temas kaybı")
-                    return _bitir("kayip")
+                    return "kayip"
                 continue
             son_seq = kayit["seq"]
             son_kayit_wall = time.time()
-            det, stamp = kayit["det"], kayit["stamp"]
+            pose, stamp = kayit["pose"], kayit["stamp"]
             wall_recv = kayit["wall_recv"]
-            # GT modunda algı girdisi burada tazelenir; kutu artık okunmaz.
+            # GT modunda algı girdisi burada tazelenir; pose artık okunmaz.
             gt = get_gt() if gt_modu else None
+            # ROTASYON CEVAP ANAHTARI (2026-08-05): GT modu KAPALI olsa bile
+            # gerçek rotasyonu her karede hesapla ve logla. Böylece pose'un
+            # ürettiği rotasyon (yandanlık, gövde ekseni yönü) ile gerçeği AYNI
+            # KARE ÜZERİNDE karşılaştırılabiliyor. Bu sütunlar olmadan iki mod
+            # ancak ayrı uçuşların dağılımıyla kıyaslanabiliyordu.
+            # ⚠ Yalnız ÖLÇÜM — güdüme girmez (gt_modu kapalıysa `gt` None kalır).
+            gt_olcum = gt if gt is not None else (get_gt() if get_gt else None)
 
             aras.drenaj(conn)
-            satir = {"t_ros": stamp, "mod": aras.mode}
+            satir = {"t_ros": stamp, "flip_sayaci": core.flip_sayaci,
+                     "mod": aras.mode}
             hedef_ned = None      # her karede tazelenir; gelmezse sütun BOŞ kalır
                                   # (bayat ground-truth sessizce loglanmasın)
 
@@ -531,7 +474,7 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     satir["menzil_kaynak"] = _k
                 satir["durum"] = "vuruldu"
                 _satir(satir)
-                return _bitir("vuruldu")
+                return "vuruldu"
 
             # Cevap anahtarı sütunlarının kaynağı AYRI: hedefin NED pozu
             # telemetriden gelir (açı kıyasları o çerçevede yapılıyor).
@@ -564,7 +507,6 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     satir["kapanma_hizi_ms"] = round(
                         -(d - menzil_onceki) / (stamp - t_menzil_onceki), 2)
                 menzil_onceki, t_menzil_onceki = d, stamp
-                en_yakin = min(en_yakin, d) if en_yakin is not None else d
                 # VURUŞ: gerçek fiziksel temas (yakınlık yalnız yedek) — A5
                 vuruldu, gerekce = _vurus_oldu(d, cfg)
                 if vuruldu:
@@ -572,21 +514,10 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     _satir(satir)
                     print(f"[LEAD] ✓ VURULDU — {_VURUS_ETIKET[gerekce]} "
                           f"(menzil {_m_yaz(d)} m)")
-                    return _bitir("vuruldu")
+                    return "vuruldu"
 
-            # ── B5: FLY-PAST (menzil imzası) — nişandan ÖNCE bakılır ──
-            # Menzil döndüyse hedefi geçmişiz; bu karede yeni bir "hedefe uç"
-            # komutu üretmenin anlamı yok, üstelik zararlı (yukarı-geri).
-            sebep_fp = _flypast()
-            if sebep_fp:
-                satir["durum"] = "gecildi"
-                _satir(satir)
-                print(f"[LEAD] ⤾ FLY-PAST — {sebep_fp}; görsel faz bırakılıyor, "
-                      f"GPS istasyon geometrisine dönülüyor")
-                return _bitir("kayip")
-
-            # "Algı girdisi var mı": bbox modunda det, GT modunda GT akışı.
-            girdi_var = (gt is not None) if gt_modu else (det is not None)
+            # "Algı girdisi var mı": pose modunda pose, GT modunda GT akışı.
+            girdi_var = (gt is not None) if gt_modu else (pose is not None)
             if not girdi_var:                 # bu karede tespit yok
                 # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).
                 if terminal_latch or _terminal_giris_ok():
@@ -597,7 +528,7 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     _satir(satir)
                     sonuc = _terminal_adim()
                     if sonuc:
-                        return _bitir(sonuc)
+                        return sonuc
                     continue
                 satir["durum"] = "tespit_yok"
                 _satir(satir)
@@ -613,7 +544,7 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     print(f"[LEAD WARN] görsel temas kesildi (son "
                           f"{cfg.KAYIP_PENCERE} karede {sum(temas_pencere)} tespit "
                           f"< {cfg.KAYIP_MIN_ISABET})")
-                    return _bitir("kayip")
+                    return "kayip"
                 continue
             kayip_sayaci = 0                  # algı girdisi var → temas sürüyor
             temas_pencere.append(True)
@@ -624,8 +555,8 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
             # bayat kare kapısı (duvar saati — aynı saat cinsinden ölçüm)
             gecikme = (time.time() - wall_recv) if wall_recv else 0.0
             satir["gecikme_s"] = round(gecikme, 4)
-            if det is not None:               # GT modunda kutu olmayabilir
-                satir["bbox"] = "|".join(str(v) for v in det["bbox"])
+            if pose is not None:              # GT modunda pose olmayabilir
+                satir["bbox"] = "|".join(str(v) for v in pose["bbox"])
             if gecikme > cfg.GECIKME_TAVAN_S:
                 bayat_sayaci += 1
                 satir["durum"] = "bayat"
@@ -644,28 +575,98 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                 _satir(satir)
                 continue
 
-            res = core.process(det, stamp, aras.attitude, gt=gt)
+            res = core.process(pose, stamp, aras.attitude, gt=gt)
             for warntip in res["warn"]:
                 print(f"[LEAD WARN] {warntip} (kare t={stamp:.3f})")
 
-            # ── B5: FLY-PAST (yön imzası) — nişan geriyi gösteriyor mu ──
-            sebep_fp = _flypast(res["u_govde"])
-            if sebep_fp:
-                satir["durum"] = "gecildi"
-                _satir(satir, res)
-                print(f"[LEAD] ⤾ FLY-PAST — {sebep_fp}; görsel faz bırakılıyor, "
-                      f"GPS istasyon geometrisine dönülüyor")
-                return _bitir("kayip")
+            # ── KEYPOINT KONUM KIYASI: gerçek piksel yeri vs pose'un dediği ──
+            # Pose modelinin ASIL çıktısı bu 6 nokta; yandanlık/lead hepsi
+            # bundan türüyor. Gerçek konumlar hedefin Gazebo pozundan
+            # projekte ediliyor (geometry.target_keypoints) — aynı kare,
+            # aynı kamera modeli, dolayısıyla doğrudan kıyaslanabilir.
+            if (gt_olcum is not None and pose is not None
+                    and gt_olcum.get("hedef_pos") is not None):
+                try:
+                    gk = geo.target_keypoints(gt_olcum["hedef_pos"],
+                                              gt_olcum["hedef_rpy"],
+                                              gt_olcum["iris_pos"],
+                                              gt_olcum["iris_rpy"])
+                    pk = pose.get("kpts") or []
+                    adlar = ("burun", "kuyruk", "solkanat", "sagkanat",
+                             "solvtail", "sagvtail")
+                    g_str, p_str, hatalar = [], [], []
+                    for i, ad in enumerate(adlar):
+                        gu, gv, gvis = (float(gk[i][0]), float(gk[i][1]),
+                                        float(gk[i][2]))
+                        pu = pv = pc = None
+                        if i < len(pk):
+                            pu, pv, pc = (float(pk[i][0]), float(pk[i][1]),
+                                          float(pk[i][2]))
+                        # GERÇEKTE görünür + model de o noktayı verdiyse kıyasla
+                        var_g = gvis > 0
+                        var_p = (pu is not None and pc >= cfg.KPT_CONF_MIN
+                                 and not (pu == 0 and pv == 0))
+                        g_str.append(f"{gu:.0f}|{gv:.0f}" if var_g else "")
+                        p_str.append(f"{pu:.0f}|{pv:.0f}" if var_p else "")
+                        if var_g and var_p:
+                            h = math.hypot(pu - gu, pv - gv)
+                            hatalar.append(h)
+                            satir[f"kpt_hata_{ad}"] = round(h, 1)
+                    satir["kpt_gercek_px"] = ";".join(g_str)
+                    satir["kpt_pose_px"] = ";".join(p_str)
+                    if hatalar:
+                        satir["kpt_hata_ort"] = round(sum(hatalar) / len(hatalar), 1)
+                except Exception:
+                    pass          # ölçüm sütunu — güdümü asla düşürmesin
+
+            # ── 3B ROTASYON KIYASI: gerçek rpy vs pose'un PnP çözümü ──
+            if gt_olcum is not None and gt_olcum.get("hedef_rpy") is not None:
+                hr = gt_olcum["hedef_rpy"]
+                satir["gt_roll_deg"] = round(math.degrees(hr[0]), 2)
+                satir["gt_pitch_deg"] = round(math.degrees(hr[1]), 2)
+                satir["gt_yaw_deg"] = round(math.degrees(hr[2]), 2)
+                if pose is not None and gt_olcum.get("iris_rpy") is not None:
+                    kp = pose.get("kpts")
+                    gorunur = sum(1 for k in (kp or [])
+                                  if k[2] >= cfg.KPT_CONF_MIN and not (k[0] == 0 and k[1] == 0))
+                    satir["pnp_kpt"] = gorunur
+                    cz = geo.pose_rpy_cozum(kp, gt_olcum["iris_rpy"],
+                                            kpt_conf_min=cfg.KPT_CONF_MIN) if kp else None
+                    if cz is not None:
+                        satir["pose_roll_deg"] = round(math.degrees(cz[0]), 2)
+                        satir["pose_pitch_deg"] = round(math.degrees(cz[1]), 2)
+                        satir["pose_yaw_deg"] = round(math.degrees(cz[2]), 2)
+                        for ad, i in (("roll_sapma_deg", 0), ("pitch_sapma_deg", 1),
+                                      ("yaw_rot_sapma_deg", 2)):
+                            d = math.degrees(cz[i] - hr[i])
+                            satir[ad] = round((d + 180) % 360 - 180, 2)
+
+            # ── ROTASYON KIYASI (yalnız ölçüm) ──
+            if gt_olcum is not None:
+                satir["gt_yandanlik"] = round(float(gt_olcum["yandanlik"]), 4)
+                satir["yandanlik_sapma"] = round(
+                    res["yandanlik_ham"] - float(gt_olcum["yandanlik"]), 4)
+                gd = gt_olcum.get("d_birim")
+                if gd is not None:
+                    gt_aci = math.degrees(math.atan2(gd[1], gd[0]))
+                    pz_aci = math.degrees(math.atan2(float(res["d_birim"][1]),
+                                                     float(res["d_birim"][0])))
+                    satir["gt_d_aci_deg"] = round(gt_aci, 2)
+                    satir["pose_d_aci_deg"] = round(pz_aci, 2)
+                    # ±180 sarmalı: gövde ekseni yönü, 179° ile -179° arası 2°
+                    satir["d_aci_sapma_deg"] = round(
+                        (pz_aci - gt_aci + 180) % 360 - 180, 2)
 
             satir.update({
-                "dt": res["dt"],
-                "bbox_w": res["bbox_w"], "bbox_h": res["bbox_h"],
+                "dt": res["dt"], "a": round(res["a"], 2), "b": round(res["b"], 2),
                 "olcek_ham": round(res["olcek_ham"], 2),
                 "eps_deg": round(res["eps_deg"], 2),
                 "duzeltme": round(res["duzeltme"], 4),
                 "olcek": round(res["olcek"], 2),
+                "yandanlik_ham": round(res["yandanlik_ham"], 4),
+                "yandanlik_filtreli": round(res["yandanlik_f"], 4),
                 "kalite": round(res["kalite"], 3),
-                "guven": round(res["guven"], 3),
+                "lead_deg": round(res["lead_deg"], 2),
                 "u_nisan_x": round(float(res["u_nisan"][0]), 5),
                 "u_nisan_y": round(float(res["u_nisan"][1]), 5),
                 "u_nisan_z": round(float(res["u_nisan"][2]), 5),
@@ -676,7 +677,7 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                 "pitch_hata_deg": round(res["pitch_hata_deg"], 2),
                 "yatay_bilesen": round(res["yatay_bilesen"], 4),
                 "azimut_kalite": round(res["azimut_kalite"], 3),
-                "durum": res["durum"],
+                "durum": res["durum"], "flip_sayaci": res["flip_sayaci"],
                 "eksen_disi_deg": round(res["eksen_disi_deg"], 2),
                 "govde_yukselti_deg": round(res["pitch_hata_deg"], 2),
                 "menzil_kestirim_m": round(res["menzil_kestirim_m"], 2),
@@ -708,8 +709,6 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     "yaw_cmd_deg": round(math.degrees(cmd["yaw_cmd"]), 1),
                     "v_doygun": int(cmd["v_doygun"]),
                     "yaw_doygun": int(cmd["yaw_doygun"]),
-                    "yatay_lead_deg": round(cmd["yatay_lead_deg"], 2),
-                    "az_rate_dps": round(cmd["az_rate_dps"], 1),
                     "pn_dikey_deg": round(cmd["pn_dikey_deg"], 2),
                     "coalt_deg": round(cmd["coalt_deg"], 2),
                     "yaw_adim_deg": round(cmd["yaw_adim_deg"], 2),
@@ -733,8 +732,8 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
             else:
                 satir["durum"] = satir["durum"] if res["warn"] else "attitude_yok"
 
-            _satir(satir, res)     # res → bbox kestirimi ile gerçek yan yana
-        return _bitir("durduruldu")
+            _satir(satir, res)     # res → pose kestirimi ile gerçek yan yana
+        return "durduruldu"
     finally:
         f.close()
-        print(f"[LEAD] BBOX IBVS durdu — log kapatıldı: {csv_yol}")
+        print(f"[LEAD] IBVS lead pursuit durdu — log kapatıldı: {csv_yol}")

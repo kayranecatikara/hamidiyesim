@@ -244,6 +244,7 @@ def main():
         iyaw = 0.0
         cmd_list = []
         yaw_doygun_n = 0
+        yaw_sus_n = 0
         yaw_ref = None
         for _ in range(kare):
             yaw_err = _norm(hedef_yonu - iyaw)
@@ -263,6 +264,11 @@ def main():
                 yaw_ref = None
             if yaw_doygun_n > cfgY.YAW_DOYGUN_N:
                 adim = 0.0
+                yaw_sus_n += 1                  # SÜRELİ susma (bkz. G15)
+                if yaw_sus_n >= cfgY.YAW_SUS_N:
+                    yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
+            else:
+                yaw_sus_n = 0
             if abs(yaw_err) <= cfgY.YAW_DEADBAND:
                 adim = 0.0
             cmd = _norm(iyaw + adim)
@@ -286,12 +292,29 @@ def main():
     cmds = yaw_kosusu(600, arac_doner_mi=False)   # 30 s boyunca araç dönmüyor
     en_buyuk = max(abs(math.degrees(c)) for c in cmds)
     tavan_deg = math.degrees(gg.Cfg.YAW_RATE_MAX * 0.05)
-    # Susma gerçekten devreye girdi mi: son karelerde komut 0 (=iyaw) olmalı
-    sustu = abs(math.degrees(cmds[-1])) < 1e-9
+    sifir_kare = sum(1 for c in cmds if abs(math.degrees(c)) < 1e-9)
     kontrol("G13 araç komuta uymuyorsa yaw susar (kaçak biter)",
-            sustu and en_buyuk <= tavan_deg + 1e-9,
+            sifir_kare > len(cmds) * 0.5 and en_buyuk <= tavan_deg + 1e-9,
             f"30 s'de en büyük komut {en_buyuk:.1f}° (tek kare tavanı {tavan_deg:.1f}°), "
-            f"son komut {math.degrees(cmds[-1]):.2f}° — eski birikimli kodda sınırsız yürüyordu")
+            f"karelerin %{100*sifir_kare/len(cmds):.0f}'i susturulmuş "
+            f"— eski birikimli kodda sınırsız yürüyordu")
+
+    # ── G15: SUSMA KALICI DEĞİL SÜRELİ (2026-08-06 kilitlenme düzeltmesi) ──
+    # Doygunluk kapısı bir ölü kilitti: adım 0 → araç dönmez → hata kapanmaz →
+    # kapı hiç açılmaz. ÖLÇÜLDÜ (08-05/08-06, 124 346 GPS karesi): karelerin
+    # %7.8'inde burun hedeften >20° sapmışken yaw adımı tam 0; en uzun
+    # kesintisiz susma 1867 kare = 93 SANİYE (log 142313, araç 119° yan durdu).
+    # Sözleşme: susma en fazla YAW_SUS_N kare sürer, sonra yetki geri gelir.
+    en_uzun = mevcut = 0
+    for c in cmds:
+        mevcut = mevcut + 1 if abs(math.degrees(c)) < 1e-9 else 0
+        en_uzun = max(en_uzun, mevcut)
+    geri_geldi = any(abs(math.degrees(c)) > 1e-9 for c in cmds[-gg.Cfg.YAW_SUS_N:])
+    kontrol("G15 yaw susması SÜRELİ — kilitlenmez, yetki geri gelir",
+            en_uzun <= gg.Cfg.YAW_SUS_N and geri_geldi,
+            f"en uzun kesintisiz susma {en_uzun} kare "
+            f"({en_uzun*0.05:.1f} s, tavan {gg.Cfg.YAW_SUS_N} kare) — "
+            f"eski kodda 1867 kare (93 s) ölçülmüştü")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

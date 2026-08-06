@@ -156,7 +156,10 @@ def _vis_metrik(dosyalar):
         toplam += len(rows)
         pose_k += sum(1 for r in rows if r.get("kalite"))
         yawlar += [_f(r["yaw_hata_deg"]) for r in rows if _f(r.get("yaw_hata_deg")) is not None]
-        leadler += [_f(r["lead_deg"]) for r in rows if _f(r.get("lead_deg")) is not None]
+        # 2026-08-06: lead artık şekilden değil azimut oranından geliyor
+        # (adapter_copter._yatay_pn). Sütun adı lead_deg → yatay_lead_deg.
+        leadler += [_f(r["yatay_lead_deg"]) for r in rows
+                    if _f(r.get("yatay_lead_deg")) is not None]
     if not fazlar:
         return None
     return {

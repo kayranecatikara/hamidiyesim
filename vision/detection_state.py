@@ -1,6 +1,16 @@
 # vision/detection_state.py
-# Kamera thread'i ile güdüm döngüleri arasında tespit/pose sonuçlarını paylaşan
+# Kamera thread'i ile güdüm döngüleri arasında tespit sonuçlarını paylaşan
 # thread-safe köprü (gcs_server yazar; control.guidance okur).
+#
+# ── 2026-08-06: POSE KÖPRÜSÜ → KARE KÖPRÜSÜ ──
+# Eskiden olay güdümlü köprü YOLO-pose çıktısını taşıyordu (set_pose_detection /
+# wait_new_pose) ve güdüm keypoint'lerden lead açısı türetiyordu. Pose modeli
+# kullanımdan kaldırıldı (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/README.md); görsel
+# güdüm artık YALNIZ bbox ile çalışıyor. Köprü de aynı kareyi taşımaya devam
+# ediyor, yalnız yükü pose değil DETECTION sözlüğü:
+#     {cx, cy, w, h, conf, bbox, track_id?}
+# Fonksiyon adları bilerek değişti (set_frame_detection / wait_new_frame): eski
+# adlar kalsaydı pose taşıdıkları sanılırdı.
 import threading
 
 _lock = threading.Lock()
@@ -35,44 +45,44 @@ def get_tracks():
         return _last_tracks
 
 
-# ── Pose durumu: olay güdümlü tüketiciler (visual_lead) için seq + Condition ──
-_pose_cond = threading.Condition(_lock)
-_last_pose = None
-_pose_seq = 0
-_pose_stamp = None      # kare header.stamp (s) — dt bundan hesaplanır
-_pose_wall = None       # karenin geliş duvar anı (time.time) — gecikme ölçümü
-_pose_lock = None       # aynı karenin kilit durumu (TargetLock.step çıktısı | None)
+# ── KARE köprüsü: olay güdümlü tüketiciler (visual_lead) için seq + Condition ──
+_kare_cond = threading.Condition(_lock)
+_last_kare_det = None
+_kare_seq = 0
+_kare_stamp = None      # kare header.stamp (s) — dt bundan hesaplanır
+_kare_wall = None       # karenin geliş duvar anı (time.time) — gecikme ölçümü
+_kare_lock = None       # aynı karenin kilit durumu (TargetLock.step çıktısı | None)
 
 
-def set_pose_detection(pose, stamp=None, wall_recv=None, lock=None):
-    """Store the latest pose result (dict with 'kpts', or None) + kare zamanları
-    + o karenin kilit durumu (supervisor sayacı kimlik sürekliliğini görsün).
-    Her KARE için çağrılır (pose None olsa bile) — bekleyenler uyandırılır."""
-    global _last_pose, _pose_seq, _pose_stamp, _pose_wall, _pose_lock
-    with _pose_cond:
-        _last_pose = pose
-        _pose_stamp = stamp
-        _pose_wall = wall_recv
-        _pose_lock = lock
-        _pose_seq += 1
-        _pose_cond.notify_all()
+def set_frame_detection(det, stamp=None, wall_recv=None, lock=None):
+    """O KAREYE ait detection sonucunu (dict veya None) + kare zamanlarını +
+    kilit durumunu yayınla. Her KARE için çağrılır (det None olsa bile) —
+    bekleyenler uyandırılır, böylece güdüm döngüsü kareye kilitli kalır."""
+    global _last_kare_det, _kare_seq, _kare_stamp, _kare_wall, _kare_lock
+    with _kare_cond:
+        _last_kare_det = det
+        _kare_stamp = stamp
+        _kare_wall = wall_recv
+        _kare_lock = lock
+        _kare_seq += 1
+        _kare_cond.notify_all()
 
 
-def get_pose_detection():
-    """Retrieve the latest pose result (dict or None)."""
-    with _pose_cond:
-        return _last_pose
+def get_frame_detection():
+    """Son karenin detection sonucunu döndürür (dict veya None)."""
+    with _kare_cond:
+        return _last_kare_det
 
 
-def wait_new_pose(son_seq, timeout=0.5):
+def wait_new_frame(son_seq, timeout=0.5):
     """son_seq'ten YENİ bir kare kaydı gelene dek bekler (kareye kilitli döngü
     için — sabit Hz'te dönmek kare tekrarı/bayat veri üretir).
-    Dönüş: {'seq','pose','stamp','wall_recv','lock'} veya timeout'ta None."""
-    with _pose_cond:
-        if _pose_seq == son_seq:
-            _pose_cond.wait(timeout)
-        if _pose_seq == son_seq:
+    Dönüş: {'seq','det','stamp','wall_recv','lock'} veya timeout'ta None."""
+    with _kare_cond:
+        if _kare_seq == son_seq:
+            _kare_cond.wait(timeout)
+        if _kare_seq == son_seq:
             return None
-        return {"seq": _pose_seq, "pose": _last_pose,
-                "stamp": _pose_stamp, "wall_recv": _pose_wall,
-                "lock": _pose_lock}
+        return {"seq": _kare_seq, "det": _last_kare_det,
+                "stamp": _kare_stamp, "wall_recv": _kare_wall,
+                "lock": _kare_lock}

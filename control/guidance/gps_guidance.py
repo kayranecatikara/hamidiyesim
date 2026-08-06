@@ -2,7 +2,7 @@
 gps_guidance.py — GPS güdümü (sıfırdan yeniden inşa, görsel-temas odaklı).
 
 AMAÇ (başarı kriteri): Drone'u öyle konumlandır ki hedef sabit-kanatlı İHA
-kameranın TAM ORTASINDA, pose modelinin güvenilir çalıştığı menzil bandında
+kameranın TAM ORTASINDA, tespitin güvenilir çalıştığı menzil bandında
 (~10-11 m) ve KARARLI görünsün → supervisor görsel faza devretsin. (Vuruş DEĞİL;
 vuruş görsel fazın işi.)
 
@@ -15,7 +15,7 @@ KADEME 1 (bu sürüm): GEOMETRİK kadraj-noktası takibi. Hedefin hız yönünü
 D_BEHIND gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek)
 bir istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
 kilitlenince kararlı hold). Burun daima gerçek hedefe döner (yaw). Drone hedefin
-ALTINDA kalır → gökyüzü arka planı, pose kopmaz.
+ALTINDA kalır → gökyüzü arka planı, tespit kopmaz.
 (KADEME 2'de: gerçek attitude'la kadraj hatasını doğrudan kapatma eklenecek.)
 
 Arayüz (supervisor / gcs_server ile aynı sözleşme):
@@ -48,7 +48,7 @@ class Cfg:
                               # Hedefin kadrajın TAM MERKEZİNDE görünmesi için
                               # gereken LOS yükselişi. Ölçüm/tanı referansı;
                               # istasyon geometrisini ARTIK BELİRLEMİYOR.
-    RANGE_SET = _env_f("AVCI_GPS_RANGE", 11.0)   # m; slant menzil setpoint (pose tatlı nokta)
+    RANGE_SET = _env_f("AVCI_GPS_RANGE", 11.0)   # m; slant menzil setpoint (tespit tatlı noktası)
 
     # İSTASYONUN LOS yükselişi — kamera tilt'inden AYRILDI (2026-08-02).
     #
@@ -121,6 +121,22 @@ class Cfg:
     # "yaw kaçağı koruması"). adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe;
     # GPS fazı 20 Hz olduğu için 15 kare ≈ 0.75 s.
     YAW_DOYGUN_N = int(_env_f("AVCI_GPS_YAW_DOYGUN_N", 15))
+    # ── SUSMA SÜRESİ — KİLİTLENME DÜZELTMESİ (2026-08-06) ──
+    # Doygunluk kapısı bir KİLİT gibi davranıyordu ve asla açılmıyordu:
+    # kapı adım'ı 0 yapar → araç dönmez → yaw_err kapanmaz → kapı açık kalır.
+    # Çıkış koşulu "hata tavanın altına insin"di, ama dönmeyen araçta hata
+    # kendiliğinden inmez. Klasik ölü kilit.
+    #
+    # ÖLÇÜLDÜ (08-05/08-06, 124 346 GPS karesi): karelerin %7.8'inde burun
+    # hedeften >20° sapmış OLMASINA rağmen yaw adımı tam 0; en uzun kesintisiz
+    # susma 1867 kare = 93 SANİYE (log 142313 — o uçuşta araç 119° yan durup
+    # hiç dönmedi). Kullanıcının gördüğü "avcı düz gitmiyor" bu.
+    #
+    # Düzeltme: susma KALICI değil SÜRELİ. YAW_SUS_N kare sonra sayaç sıfırlanır
+    # ve dönüş yetkisi geri verilir. Sorun gerçekse kapı yeniden tetiklenir —
+    # sonuç sürekli dönme DEĞİL, oranı YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N)
+    # kadar kısılmış dönme (15/55 ≈ %27). Kaçak hâlâ sınırlı, kilit yok.
+    YAW_SUS_N = int(_env_f("AVCI_GPS_YAW_SUS_N", 40))    # 20 Hz → 2.0 s
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -170,6 +186,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
     yaw_doygun_n = 0        # ardışık "doygun ama hata kapanmıyor" kare sayısı
+    yaw_sus_n = 0           # kaç karedir SUSTURULMUŞ durumdayız (süreli susma)
     yaw_ref = None          # önceki karenin |yaw_err|'i (ilerleme ölçümü için)
     prev_time = None
     loop_count = 0
@@ -360,6 +377,14 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 yaw_ref = None
             if yaw_doygun_n > cfg.YAW_DOYGUN_N:
                 adim = 0.0                    # döngü kapanmıyor → yaw'ı sustur
+                # ⚠ SÜRELİ SUSMA (bkz. Cfg.YAW_SUS_N): süre dolunca yetki geri
+                # verilir. Yoksa kapı kendi kendini besleyen bir kilide dönüşür
+                # (dönmeyen araçta hata kapanmaz → kapı hiç açılmaz).
+                yaw_sus_n += 1
+                if yaw_sus_n >= cfg.YAW_SUS_N:
+                    yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
+            else:
+                yaw_sus_n = 0
 
             if abs(yaw_err) <= cfg.YAW_DEADBAND:
                 adim = 0.0

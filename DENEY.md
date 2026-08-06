@@ -1,24 +1,49 @@
-# DENEY — A2 / A3
+# DENEY — bbox güdümü
 
 ```bash
 GZ_HEADLESS=1 bash scripts/start_harmonic.sh    # Terminal A, ~50 s
-bash scripts/gcs.sh A2                          # Terminal B (veya A3)
+bash scripts/gcs.sh bbox                        # Terminal B
 python3 tools/gudum_karne.py
 ```
 
-| adım | GT poz | pose modeli | pose kilidi kapısı | HybridSORT | kilitli-ID |
-|---|---|---|---|---|---|
-| **A2** | açık | açık | açık | kapalı | kapalı |
-| **A3** | açık | açık | açık | **açık** | kapalı |
-| **A4** | açık | açık | açık | açık | **açık** |
-| **pose** | **kapalı** | açık | açık | kapalı | kapalı |
+**2026-08-06: POSE KALDIRILDI.** Eski A0-A4 adımları pose modelini açıp
+kapatmak üzerineydi ve artık anlamsız. Yeni modlar:
 
-Log ilk satırındaki `yapilandirma` sütunu hangi adım olduğunu yazar;
+| mod | algı girdisi | HybridSORT | kilitli-ID | ne için |
+|---|---|---|---|---|
+| **bbox** | YOLO detection kutusu | kapalı | kapalı | **gerçek sistem, taban** |
+| **gt** | Gazebo gerçek pozu | kapalı | kapalı | teşhis — güdüm yasasını algıdan yalıt |
+| **takip** | YOLO kutusu | **açık** | **açık** | takipçinin katkısını ölç |
+
+Log ilk satırındaki `yapilandirma` sütunu hangi modda uçulduğunu yazar
+(`ALGI=bbox`, `GT=on/off`, `PN_YATAY=…`, `FLYPAST=…`);
 `menzil_kaynak` sütunu `gz` olmalı.
+
+> Pose dönemindeki A0-A4 adımlarına dönmek isterseniz:
+> `POSEA_GERI_DONMEK_ISTERSENIZ/README.md`
 
 ---
 
-## Sonuç: A2 daha iyi
+## İLK İŞ: yeni tabanı ölç
+
+bbox güdümüyle henüz uçulmadı. Aşağıdaki tüm sonuçlar POSE dönemine ait ve
+yeni tabanla kıyaslanmadan karar verilmemeli.
+
+- [ ] `bash scripts/gcs.sh bbox` ile 10+ görsel faz uç, `gudum_karne.py` al.
+      *Kıyas noktası (pose, en iyi dönem):* 30 fazda 8 vuruş (%27), en yakın
+      menzil medyanı 0.65 m.
+- [ ] Aynı sayıda faz `gt` moduyla — algı mı yasa mı sorusu yeniden sorulmalı,
+      çünkü algı zinciri tamamen değişti.
+- [ ] `AVCI_IBVS_PN_YATAY_SURE=0` (saf takip) ile bir tur — yatay lead'in
+      katkısı böyle izole ölçülür.
+
+---
+
+## TARİHSEL — pose dönemi sonuçları
+
+---
+
+## Sonuç: A2 daha iyi (POSE dönemi)
 
 Eşit örneklem (17'şer faz, damgalı loglar):
 
@@ -35,7 +60,7 @@ varsayılan).
 
 ---
 
-## ASIL DARBOĞAZ: 10.6 m'de kilit beklemesi
+## ASIL DARBOĞAZ: 10.6 m'de kilit beklemesi (POSE dönemi)
 
 **Belirti:** drone hedefin ~11 m gerisinde asılı kalıyor, yaklaşmıyor. Kilit
 bir şekilde otururken yaklaşıp vurabiliyor — sorun güdümde değil, geçişin
@@ -46,7 +71,7 @@ tetiklenmemesinde.
 (`gps_guidance.py:141`). Drone oraya oturuyor ve KALIYOR:
 
 - **Menzil kapısı** (`GATE_MENZIL = 20 m`) çoktan sağlanmış.
-- **Pose kilidi kapısı** (son 15 karenin 10'unda conf ≥ 0.5) 10.6 m'de
+- **Görsel kilit kapısı** (son 15 karenin 10'unda conf ≥ 0.5) 10.6 m'de
   marjinal — bazen oturuyor, bazen hiç oturmuyor.
 
 GPS fazının "kilit gelmiyorsa daha yaklaş" davranışı yok. Yaklaşmak için
@@ -57,7 +82,7 @@ geçmek, geçmek için kilit gerekiyor.
 **1. İstasyonu yaklaştır (kod değişikliği YOK, önce bunu dene):**
 
 ```bash
-AVCI_GPS_RANGE=8 bash scripts/gcs.sh A2      # 6'yı da dene
+AVCI_GPS_RANGE=8 bash scripts/gcs.sh bbox    # 6'yı da dene
 ```
 
 Kutu büyür → pose güveni artar → kilit kendiliğinden oturur. Tarihteki en iyi
@@ -67,7 +92,7 @@ bugünkü A2 6.0 m'de giriyor. Bu yön doğru görünüyor.
 **2. Kilit çıtasını düşür:**
 
 ```bash
-AVCI_HYBRID_KILIT_N=6 bash scripts/gcs.sh A2
+AVCI_HYBRID_KILIT_N=6 bash scripts/gcs.sh bbox
 ```
 
 ⚠ `KILIT_N` 10 → 7 daha önce denenip geri alınmıştı (`supervisor.py` SupCfg
@@ -115,7 +140,7 @@ Yan kanıt: `kalite` ortalaması pose modunda 1.000, GT modunda 0.553 —
 kalite ölçekten (dolayısıyla menzilden) türüyor, yani GT modu sürekli
 "kalitesiz" bandda çalışıyor.
 
-**Sonuç:** `bash scripts/gcs.sh pose` yeniden ölçülmeli. GT modu bir teşhis
+**Sonuç:** `bash scripts/gcs.sh bbox` yeniden ölçülmeli. GT modu bir teşhis
 aracı olarak kalsın; taban ölçüm pose modu olmalı.
 
 ---
