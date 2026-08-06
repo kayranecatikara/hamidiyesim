@@ -1,24 +1,14 @@
 """
-guidance_core.py — BBOX IBVS çekirdeği (PLATFORMDAN BAĞIMSIZ).
+guidance_core.py — IBVS lead pursuit çekirdeği (PLATFORMDAN BAĞIMSIZ, Adım 1-8).
 
-Girdi YALNIZCA detection kutusudur: {cx, cy, w, h, conf, bbox}. Kutunun
-merkezinden nişan YÖNÜ, kutunun genişliğinden ÖLÇEK (→ kalite + menzil
-kestirimi) çıkar. Çıktı bir YÖNDÜR: u_govde (FRD birim vektör) ve ondan türeyen
-yaw_hata / pitch_hata. Bu geometri platformdan bağımsızdır — platforma bağlı
-komut üretimi adaptördedir (adapter_copter).
+Pose modelinin 6 keypoint'inden (burun, kuyruk, kanat uçları) hedefin görünür
+yönelimini çıkarır ve saf takip yönünün üstüne MENZİLDEN BAĞIMSIZ bir öne nişan
+(lead) kaydırması bindirir. Hedefin hızı ve mesafesi ÖLÇÜLMEZ; tek ayar K_LEAD
+(≈ hedef_hızı / bizim_hız).
 
-── 2026-08-06: POSE MODELİ KALDIRILDI ──
-Eskiden YOLO-pose'un 6 keypoint'inden (burun, kuyruk, kanat/vtail uçları)
-hedefin görünür yönelimi (yandanlık + gövde ekseni yönü) çıkarılıp saf takip
-yönünün üstüne bir ŞEKİL-LEAD'i bindiriliyordu (tek ayar K_LEAD). Bu daldan
-vazgeçildi; sökülen kodun tamamı ve geri dönüş yolu:
-    POSEA_GERI_DONMEK_ISTERSENIZ/README.md
-
-Lead kayboldu mu? HAYIR, KAYNAĞI DEĞİŞTİ. Şekil-lead'inin yerini adaptördeki
-AZİMUT-ORANI LEAD'İ aldı (adapter_copter._yatay_pn) — dikey kanalda zaten
-çalışan PN'in yatay eşi. Ölçüldü (08-06, 10 183 `ok` karesi, aynı yumuşatma
-sabitleriyle): şekil-lead'i medyan 2.39° / ort 6.18° / p90 18.64°;
-azimut-oranı lead'i medyan 1.09° / ort 6.08° / p90 20.0°. Aynı büyüklük bandı.
+Çıktı bir YÖNDÜR: u_govde (FRD birim vektör) ve ondan türeyen yaw_hata /
+pitch_hata. Bu geometri platformdan bağımsızdır — platforma bağlı komut üretimi
+adaptördedir (adapter_copter).
 
 Kritik tasarım kuralları (master spec):
   - Kaydırma PİKSEL uzayında DEĞİL, yön vektörü uzayında yapılır (FOV 125°
@@ -26,12 +16,12 @@ Kritik tasarım kuralları (master spec):
   - Kamera açıları doğrudan komut olmaz; önce gövde çerçevesine çevrilir
     (25° yukarı montaj tilt'i — atlanırsa sürekli 25° sabit hata).
   - dt daima kare header.stamp farkından gelir, duvar saatinden DEĞİL.
-  - Menzil kestirimi güdüme bağlanmaz; menzil_kestirim_m SADECE log.
+  - PnP/menzil kestirimi güdüme bağlanmaz; menzil_kestirim_m SADECE log.
 
-GT MODU (AVCI_GT_ROT=on): process() bir `gt` sözlüğü alırsa ölçümler kameradan
-değil Gazebo'nun gerçek pozundan türetilir (bkz. Cfg.GT_ROT). Geri kalan
-geometri değişmez — böylece iki mod aynı yasayı, farklı algı ile çalıştırır ve
-CSV sütunları birebir kıyaslanabilir. Bu mod SİMÜLASYONA ÖZGÜDÜR.
+GT ROTASYON MODU (AVCI_GT_ROT=on): process() bir `gt` sözlüğü alırsa Adım 1-2
+ölçümleri kameradan değil Gazebo'nun gerçek pozundan türetilir (bkz. Cfg.GT_ROT).
+Adım 3-8 geometrisi değişmez — böylece iki mod aynı yasayı, farklı algı ile
+çalıştırır ve CSV sütunları birebir kıyaslanabilir. Bu mod SİMÜLASYONA ÖZGÜDÜR.
 """
 
 import math
@@ -43,9 +33,6 @@ from vision import geometry as geo
 
 # ══ Talon fiziksel boyutları (Gazebo collision mesh'ten ölçülmüş, doğrulanmış;
 #    fabrika X-UAV Mini Talon ile uyumlu) ══
-# NOT: güdüm bu sayıları ARTIK KULLANMIYOR — bbox ölçeği Cfg.BBOX_L_ETKIN_M
-# kalibrasyon sabitiyle çalışır (YOLO kutusu gövdeye tam oturmadığı için gerçek
-# uzunluklar doğrudan kullanılamaz). Burada referans/araçlar için duruyorlar.
 GOVDE_BOYU_M = 0.81        # X ekseni
 KANAT_ACIKLIGI_M = 1.28    # Y ekseni
 GOVDE_KANAT_ORANI = 0.633  # 0.81 / 1.28
@@ -61,35 +48,28 @@ def _env_b(name, default=False):
 
 
 class Cfg:
-    """BBOX IBVS ayarları. Kritikler AVCI_IBVS_* env ile override edilir."""
-    # ── ÖLÇEK: bbox GENİŞLİĞİ ──
-    # Kutunun görünen genişliği w ≈ fx · L_ETKIN / R. L_ETKIN gerçek bir uzunluk
-    # değil, YOLO kutusunun kalibrasyon sabitidir (kutu gövdeye tam oturmaz).
-    # 2026-08-06'da ölçüldü: bugünkü tüm `ok` karelerinde (n=1917) w·R/fx
-    # medyanı 1.687 m, p10-p90 yayılımı ±%45. Kıyas — sökülen pose ölçeğinin
-    # aynı verideki yayılımı ±%55'ti, yani BBOX DAHA KARARLI bir menzil vekili.
-    # Denenen alternatifler: h (±%83), sqrt(w·h) (±%58), hypot(w,h) (±%52).
-    BBOX_L_ETKIN_M = _env_f("AVCI_IBVS_BBOX_L", 1.687)
-    # Kalite rampası bbox pikseline göre yeniden ölçeklendi. Eski eşikler pose
-    # ölçeğine (fx·0.81/R) göreydi: 6 px ≈ 22.5 m, 14 px ≈ 9.6 m. Aynı MENZİL
-    # bandını bbox genişliğinde tutmak için: fx·1.687/22.5 = 12.5 px ve
-    # fx·1.687/9.6 = 29.3 px. Böylece kalite kapısı menzil olarak AYNI yerde.
-    OLCEK_KAPALI_PX = _env_f("AVCI_IBVS_OLCEK_KAPALI", 12.5)   # ≈ R 22.5 m (kalite 0)
-    OLCEK_TAM_PX = _env_f("AVCI_IBVS_OLCEK_TAM", 29.3)         # ≈ R  9.6 m (kalite 1)
-    MIN_BBOX_PX = 2.0        # bundan küçük kutu ölçek olarak kullanılmaz
+    """IBVS lead pursuit ayarları. Kritikler AVCI_IBVS_* env ile override edilir."""
+    # ── çekirdek ──
+    K_LEAD = _env_f("AVCI_IBVS_K_LEAD", 0.5)      # ≈ hedef_hızı/bizim_hız, tarama 0.0-1.0
+    MAX_LEAD_DEG = 35.0
+    OLCEK_KAPALI_PX = 6.0    # olcek_px = fx·0.81/R = 134.9/R → 6 px ≈ R 22.5 m (lead yok)
+    OLCEK_TAM_PX = 14.0      #                                → 14 px ≈ R 9.6 m (tam lead)
+    FILTRE_TAU_S = 0.12      # 30 Hz'te ~3.6 kare; pencere dar, uzun tutma
+    MIN_GOVDE_PX = 2.0
+    FLIP_DT_TAVAN_S = 0.20   # 30 Hz'te 6 kare
     GECIKME_TAVAN_S = 0.12   # bundan bayat kare atlanır (döngü kullanır)
-    YUKSELTI_DUZELT = True   # LOS yükselti düzeltmesi (alttan yaklaşma)
+    YUKSELTI_DUZELT = True   # Adım 3: LOS yükselti düzeltmesi (alttan yaklaşma)
     KAMERA_TILT_DEG = 25.0   # sabit montaj; gimbal gelirse dinamik okunacak
     UNDISTORT_AKTIF = False  # simde distorsiyon yok; gerçek donanımda True + katsayılar
     DIST_KATSAYILARI = None  # cv2.undistortPoints için (k1,k2,p1,p2,k3), simde None
-    # ── GT MODU (AVCI_GT_ROT=on, varsayılan KAPALI) ──
-    # Açıkken güdümün TÜM algı girdileri (nişan noktası, kutu ölçeği) Gazebo'nun
-    # gerçek pozundan gelir; YOLO komut yoluna hiç girmez (ekran/log için
-    # çalışmaya devam eder).
+    KPT_CONF_MIN = _env_f("AVCI_POSE_KPT_CONF", 0.5)
+    # ── GT ROTASYON MODU (AVCI_GT_ROT=on, varsayılan KAPALI) ──
+    # Açıkken güdümün TÜM algı girdileri (nişan noktası, gövde ekseni yönü,
+    # yandanlık, ölçek) Gazebo'nun gerçek pozundan gelir; pose modeli komut
+    # yoluna hiç girmez (ekran/log için çalışmaya devam eder).
     # ⚠ SİMÜLASYONA ÖZGÜ: gerçek donanımda hedefin pozu bilinmez, bu mod
     # uçurulamaz. Amacı güdüm YASASINI algı hatasından yalıtarak test etmek:
-    # GT modunda ıska varsa suç yasada, bbox modunda varsa suç algıdadır.
-    # (Env adı AVCI_GT_ROT tarihsel — pose döneminde "GT rotasyon modu"ydu.)
+    # GT modunda ıska varsa suç yasada, pose modunda varsa suç algıdadır.
     GT_ROT = _env_b("AVCI_GT_ROT", False)
     # ── copter adaptörü ──
     # Kapanma hızı hedefin (~15 m/s) ÇOK üstünde olmalı (kullanıcı kararı):
@@ -144,13 +124,6 @@ class Cfg:
     # hatalı), dönmeye devam etmek yalnız aracı çevirir. 15 kare @30 Hz = 0.5 s
     # → kaçak en fazla ~45° ile sınırlanır (ölçülen: 33.6 TUR).
     YAW_DOYGUN_N = int(_env_f("AVCI_IBVS_YAW_DOYGUN_N", 15))
-    # Susturma KALICI DEĞİL SÜRELİ (2026-08-06 kilitlenme düzeltmesi). Kapı
-    # adımı 0 yapınca araç dönmez, dönmeyen araçta hata kapanmaz, kapı hiç
-    # açılmaz — ölü kilit. GPS fazında ölçüldü: karelerin %7.8'inde burun >20°
-    # sapmışken adım tam 0; en uzun kesintisiz susma 1867 kare = 93 saniye.
-    # YAW_SUS_N kare sonra yetki geri verilir; sorun gerçekse kapı yeniden
-    # tetiklenir ve dönme oranı 15/(15+60) ≈ %20'ye kısılır (kaçak yine sınırlı).
-    YAW_SUS_N = int(_env_f("AVCI_IBVS_YAW_SUS_N", 60))    # 30 Hz → 2.0 s
     # İVME TAVANI YATAY/DİKEY AYRILDI (2026-07-31 — dikey ıska düzeltmesi).
     # Tek 3B tavan, kameranın YATAY kısıtını dikeye de dayatıyordu:
     #   YATAY ivme burun eğimi gerektirir → kamera (+25° sabit) aşağı bakar.
@@ -251,28 +224,6 @@ class Cfg:
     PN_LEAD_SURE      = _env_f("AVCI_IBVS_PN_SURE", 0.6)   # s
     PN_DIKEY_MAX_DEG  = _env_f("AVCI_IBVS_PN_MAX_DEG", 30.0)
     PN_RATE_EMA       = 0.45
-
-    # ── YATAY (AZİMUT-ORANI) LEAD — pose şekil-lead'inin YERİNE (2026-08-06) ──
-    # Pose kaldırılınca yandanlıktan türeyen lead de gitti. Yerine dikey kanalda
-    # zaten çalışan PN'in yatay eşi kondu: LOS azimutunun DEĞİŞİM ORANIYLA
-    # orantılı öne nişan. Hedef yanlamasına geçiyorsa azimut döner → nişan öne
-    # kayar; hedef tam önümüzde/arkamızdaysa oran ~0 → saf takip. Bu, şekil-lead'i
-    # ile aynı FİZİĞİ farklı bir sinyalden okur ve keypoint gerektirmez.
-    #
-    # SABİTLER DİKEY KANALDAN ALINDI (aynı yumuşatma zinciri: slew-kırpma → EMA →
-    # oran EMA). Ölçüm (08-06, 10 183 `ok` karesi, log üstünde yeniden oynatıldı):
-    #     şekil-lead'i (pose)   : medyan 2.39°  ort 6.18°  p90 18.64°
-    #     azimut-oranı (bu yasa): medyan 1.09°  ort 6.08°  p90 20.00°
-    # yani lead bütçesi korunuyor. ⚠ Ölçüm cevap anahtarı azimutuyla yapıldı;
-    # canlıda sinyal bbox merkezinden gelir ve daha gürültülüdür — yumuşatma
-    # zinciri bu yüzden dikeyle BİREBİR aynı tutuldu.
-    #
-    # PN_YATAY_SURE=0 → yatay lead kapanır, davranış SAF TAKİP olur (geri dönüş
-    # yolu tek env değişkeni).
-    PN_YATAY_SURE     = _env_f("AVCI_IBVS_PN_YATAY_SURE", 0.6)   # s
-    PN_YATAY_MAX_DEG  = _env_f("AVCI_IBVS_PN_YATAY_MAX", 20.0)   # ° (eski MAX_LEAD_DEG 35'ti)
-    AZ_STEP_MAX_DEG   = 10.0   # tek-karede azimut slew kırpması (ELEV_STEP_MAX_DEG eşi)
-    AZ_EMA            = 0.4    # azimut yumuşatma (ELEV_EMA eşi)
     # ── KADRAJ TUTMA: "metre altta kal" DEĞİL, "AÇI altta kal" (2026-07-31) ──
     # Dikey ıskanın kökü: GPS fazı hedefin SABİT 4.65 m altında istasyon tutuyor
     # (RANGE_SET·sin(25°)). Sabit METRE, kapanan menzilde sabit AÇI değildir —
@@ -304,26 +255,6 @@ class Cfg:
     # kaybedince yine bırakır.
     KAYIP_PENCERE    = 40   # kare (~1.3 s @30 Hz)
     KAYIP_MIN_ISABET = 4    # bu pencerede bu kadar tespit varsa temas sürüyor
-
-    # ── B5: FLY-PAST (hedefi geçme) TESPİTİ — 2026-08-06 ──
-    # Drone hedefi geçince "hedefe uç" komutu YUKARI-GERİYİ gösterir: araç
-    # tırmanır, hedef kadrajdan çıkar, tespit kopar. Ölçüldü (08-06): ıska
-    # sonrası hız vektörü ile burun arasındaki açı medyan 54.4° / p90 138.9°
-    # (ıska ÖNCESİ 25.0° / 84.1°) — yani araç yan yan uçuyor ve kamera boşa
-    # bakıyor. Toparlaması 10-20 s, o sürede hedef kaçıyor.
-    #
-    # Ölçüt İŞARET DEĞİL BİRİKEN MESAFE: "menzil şu an büyüyor mu" gürültüde
-    # her kare titrer. Bunun yerine bu görsel fazın EN YAKIN noktası tutulur ve
-    # ondan FLYPAST_BUYUME_M kadar uzaklaşınca geçmiş sayılırız.
-    FLYPAST_MENZIL   = _env_f("AVCI_IBVS_FLYPAST_MENZIL", 8.0)   # m; bu bandın
-                                # altına inmeden fly-past aranmaz (uzakta menzil
-                                # büyümesi normal bir manevra olabilir)
-    FLYPAST_BUYUME_M = _env_f("AVCI_IBVS_FLYPAST_BUYUME", 1.5)   # m; en yakın
-                                # noktadan bu kadar uzaklaşırsak GEÇTİK
-    # İkinci, bağımsız imza: nişan yönünün gövde ileri bileşeni negatif
-    # (|yaw_hata| > 90°) → hedef arkamızda. Kutu hâlâ görülüyorken bile
-    # geçmiş olabiliriz; menzil imzası gecikirse bu yakalar.
-    FLYPAST_ARKA     = _env_b("AVCI_IBVS_FLYPAST_ARKA", True)
 
     TERMINAL_COALT_DEG    = 10.0   # terminalde sabit yukarı nişan yanlılığı
     TERMINAL_COALT_MENZIL = _env_f("AVCI_IBVS_COALT_MENZIL", 12.0)  # m; altında co-altitude (kilitli)
@@ -414,18 +345,20 @@ def yukselti_duzeltme(eps_rad):
 
 
 class LeadPursuitCore:
-    """bbox → nişan yönü. Saf hesap — IO/MAVLink yok, birim test edilir.
+    """Adım 1-8 + sağlamlık. Saf hesap — IO/MAVLink yok, birim test edilir.
 
     process() her KABUL EDİLEN karede çağrılır; bayat kare/mod kapıları
-    döngünün (visual_lead) işidir.
-
-    Sınıf adı tarihsel: lead artık BURADA üretilmiyor, adaptörün azimut-oranı
-    kanalında üretiliyor (adapter_copter._yatay_pn). Bu çekirdek SAF TAKİP
-    yönünü ve ölçek/kalite sinyallerini verir."""
+    döngünün (visual_lead) işidir."""
 
     def __init__(self, cfg=Cfg):
         self.cfg = cfg
+        self.yandanlik_f = None       # EMA durumu
+        self.d_birim_onceki = None    # flip koruması
         self.t_onceki = None          # header.stamp (s)
+        self.flip_sayaci = 0
+
+    # keypoint indeksleri (vision/geometry.KEYPOINT_NAMES sırası)
+    _I_BURUN, _I_KUYRUK, _I_SOLK, _I_SAGK = 0, 1, 2, 3
 
     def _undistort(self, pts):
         """UNDISTORT kancası: gerçek donanımda cv2.undistortPoints; simde işlemsiz."""
@@ -438,16 +371,16 @@ class LeadPursuitCore:
         und = cv2.undistortPoints(p, K, dist, P=K)
         return und.reshape(-1, 2)
 
-    def process(self, det, stamp, attitude, gt=None):
+    def process(self, pose, stamp, attitude, gt=None):
         """
-        det      : detection çıktısı {cx, cy, w, h, conf} (tam kare px).
+        pose     : pose_detector çıktısı {cx, cy, conf, kpts: 6×(u,v,conf)} (tam kare px).
                    GT modunda (gt verilirse) KULLANILMAZ, None olabilir.
         stamp    : karenin header.stamp'i (s) — dt BUNDAN hesaplanır
         attitude : (roll, pitch, yaw) radyan (kendi aracımız) veya None
-        gt       : GT MODU girdisi — geometry.bbox_gt_goruntu() çıktısı
-                   {uv, w, h, menzil} veya None (normal bbox modu). Verilirse
-                   ölçümler kameradan DEĞİL Gazebo gerçek pozundan gelir;
-                   geri kalan geometri ikisinde de aynıdır.
+        gt       : GT ROTASYON MODU girdisi — geometry.rot_gt_goruntu() çıktısı
+                   {uv, d_birim, yandanlik, menzil} veya None (normal pose modu).
+                   Verilirse Adım 1-2 ölçümleri kameradan DEĞİL Gazebo gerçek
+                   pozundan gelir; Adım 3-8 geometrisi ikisinde de aynıdır.
         Dönüş: tüm ara değerler + u_govde / yaw_hata / pitch_hata + durum + warn listesi.
         """
         cfg = self.cfg
@@ -459,38 +392,74 @@ class LeadPursuitCore:
         self.t_onceki = stamp
 
         if gt is not None:
-            # ══ GT MODU — ölçüm yerine GERÇEK pozdan türetme ══
-            # Kamera hiç okunmaz: nişan noktası hedefin izdüşümü, kutu ölçeği
-            # gerçek menzilden gelir.
+            # ══ GT MODU — Adım 1-2 ölçüm yerine GERÇEK pozdan türetme ══
+            # Kamera hiç okunmaz: nişan noktası hedefin izdüşümü, gövde ekseni
+            # yönü ve yandanlık gerçek yönelimden gelir.
             bbox_cx, bbox_cy = gt["uv"]
             guven = 1.0                       # ölçüm değil gerçek → tam güven
+            kpt_govde_ok = kanat_ok = True    # keypoint güven kapıları anlamsız
             menzil_gt = max(float(gt["menzil"]), 1e-6)
-            # Ölçek ÖLÇÜLMEZ, gerçek menzilden türetilir: olcek = fx·L/R. Bbox
+            # Ölçek ÖLÇÜLMEZ, gerçek menzilden türetilir: olcek = fx·L/R. Pose
             # modundaki ölçekle AYNI birimde çıkar (px), böylece kalite rampası
-            # (OLCEK_KAPALI_PX / OLCEK_TAM_PX) iki modda da aynı eşiklerle
-            # çalışır — modlar kıyaslanabilir kalır.
-            olcek_ham = geo.FX * cfg.BBOX_L_ETKIN_M / menzil_gt
-            bbox_w, bbox_h = gt.get("w"), gt.get("h")
+            # (OLCEK_KAPALI_PX / OLCEK_TAM_PX) ve MIN_GOVDE_PX deadband'i iki
+            # modda da aynı eşiklerle çalışır — modlar kıyaslanabilir kalır.
+            olcek_ham = geo.FX * GOVDE_BOYU_M / menzil_gt
+            yandanlik_gt = float(gt["yandanlik"])
+            a = yandanlik_gt * olcek_ham
+            # b yalnız log tutarlılığı için geri çözülür (olcek_ham tanımından):
+            # olcek² = a² + (ORAN·b)² → b = olcek·√(1−yandanlik²)/ORAN
+            b = (olcek_ham * math.sqrt(max(0.0, 1.0 - yandanlik_gt ** 2))
+                 / GOVDE_KANAT_ORANI)
+            gt_d = gt.get("d_birim")
+            d_birim_ham = np.array(gt_d, float) if gt_d is not None else None
         else:
-            pts = self._undistort([(det["cx"], det["cy"])])
-            bbox_cx, bbox_cy = pts[0]
-            guven = float(det.get("conf", 1.0))
-            bbox_w = float(det["w"])
-            bbox_h = float(det["h"])
-            # ── ÖLÇEK: kutunun GENİŞLİĞİ (bkz. Cfg.BBOX_L_ETKIN_M) ──
-            olcek_ham = bbox_w
-            if olcek_ham < cfg.MIN_BBOX_PX:
-                durum = "kutu_kucuk"          # ölçek güvenilmez → kalite sönecek
-                warn.append("kutu_kucuk")
+            kpts = pose["kpts"]
+            pts = self._undistort([(k[0], k[1]) for k in kpts]
+                                  + [(pose["cx"], pose["cy"])])
+            burun, kuyruk = np.array(pts[self._I_BURUN]), np.array(pts[self._I_KUYRUK])
+            solk, sagk = np.array(pts[self._I_SOLK]), np.array(pts[self._I_SAGK])
+            bbox_cx, bbox_cy = pts[-1]
+            guven = float(pose["conf"])
 
-        # ── Saf takip yönü u (kamera çerçevesi) ──
+            # ── Adım 1: ham ölçümler ──
+            d = burun - kuyruk                    # 2D gövde ekseni vektörü (px)
+            a = float(np.hypot(d[0], d[1]))       # gövde projeksiyonu
+            b = float(np.hypot(*(solk - sagk)))   # kanat projeksiyonu — SADECE uzunluk
+
+            # ── Adım 2: ham ölçek ──
+            olcek_ham = math.sqrt(a * a + (GOVDE_KANAT_ORANI * b) ** 2)
+
+            d_birim_ham = (d / a) if a > 1e-9 else None
+            # kanat ucu güveni düşükse b'ye güvenilmez; burun/kuyruk düşükse d yönü
+            kanat_ok = (kpts[self._I_SOLK][2] >= cfg.KPT_CONF_MIN
+                        and kpts[self._I_SAGK][2] >= cfg.KPT_CONF_MIN)
+            kpt_govde_ok = (kpts[self._I_BURUN][2] >= cfg.KPT_CONF_MIN
+                            and kpts[self._I_KUYRUK][2] >= cfg.KPT_CONF_MIN)
+
+        # d_birim + flip koruması (burun/kuyruk takası lead'i TERS çevirir)
+        if d_birim_ham is not None:
+            d_birim = d_birim_ham
+        else:
+            d_birim = self.d_birim_onceki if self.d_birim_onceki is not None \
+                else np.array([1.0, 0.0])
+        if (self.d_birim_onceki is not None and dt is not None
+                and dt < cfg.FLIP_DT_TAVAN_S
+                and float(np.dot(d_birim, self.d_birim_onceki)) < -0.5):
+            d_birim = self.d_birim_onceki     # yön korunur
+            self.flip_sayaci += 1
+            warn.append("flip")               # sessizce düzeltme YOK — her seferinde logla
+        # dt büyükse kontrol ATLANIR: düşük kare hızında gerçek aspect değişimi
+        # tek karede olabilir, yanlış alarm üretir.
+        self.d_birim_onceki = d_birim.copy()
+
+        # ── Adım 6 ön hazırlık: saf takip yönü u (kamera çerçevesi) ──
         u = np.array([(bbox_cx - geo.CX) / geo.FX,
                       (bbox_cy - geo.CY) / geo.FY, 1.0])
         u = u / np.linalg.norm(u)
 
-        # ── Yükselti düzeltmesi (alttan yaklaşma; hedef ~seviyeli varsayımı) ──
+        # ── Adım 3: yükselti düzeltmesi (alttan yaklaşma; hedef ~seviyeli varsayımı) ──
         tilt = math.radians(cfg.KAMERA_TILT_DEG)
-        u_govde_hedef = kamera_to_govde(u, tilt)     # saf takip yönü, gövde FRD
+        u_govde_hedef = kamera_to_govde(u, tilt)     # lead'siz yön, gövde FRD
         eps_deg, duzeltme = 0.0, 1.0
         if cfg.YUKSELTI_DUZELT:
             if attitude is not None:
@@ -506,21 +475,49 @@ class LeadPursuitCore:
                 warn.append("attitude_yok")          # sağlamlık #6: düzeltmesiz devam
         olcek = olcek_ham / duzeltme
 
-        # ── Kalite: ölçek rampası (yalnız dikey/yatay PN kazancını söndürür) ──
+        # ── Adım 4: yandanlık, kalite, filtre ──
+        yandanlik = (a / olcek) if olcek > 1e-9 else 0.0
         kalite = max(0.0, min(1.0, (olcek - cfg.OLCEK_KAPALI_PX)
                               / (cfg.OLCEK_TAM_PX - cfg.OLCEK_KAPALI_PX)))
-        if durum == "kutu_kucuk":
+        # kanat ucu güveni düşükse b'yi bbox'tan UYDURMA — kaliteyi söndür
+        # (GT modunda kanat_ok/kpt_govde_ok daima True: ölçüm güveni diye bir şey yok)
+        if not kanat_ok:
             kalite = 0.0
+            durum = "kanat_dusuk"
 
-        # SAF TAKİP: nişan = bakış yönü. Öne kaydırmayı adaptörün azimut-oranı
-        # kanalı yapar (u_nisan burada bilerek u'ya EŞİT bırakılır ki çekirdek
-        # "hedef nerede" sorusundan başka bir şey cevaplamasın).
-        u_nisan = u.copy()
+        if self.yandanlik_f is None or dt is None:
+            self.yandanlik_f = yandanlik
+        else:
+            alpha = 1.0 - math.exp(-dt / cfg.FILTRE_TAU_S)   # dt'den türetilir, sabit DEĞİL
+            self.yandanlik_f = alpha * yandanlik + (1.0 - alpha) * self.yandanlik_f
 
-        # ── Kamera → gövde (aynı fonksiyon, ikinci çağrı) ──
+        # ── Adım 5: lead açısı ──
+        carpim = cfg.K_LEAD * guven * kalite * self.yandanlik_f
+        if carpim > 0.95:
+            durum = "cozumsuz"       # kesme çözümü olmayabilir (hedef bizden hızlı,
+            warn.append("cozumsuz")  # tam yandan) — güdüm DURMAZ, sadece işaretlenir
+        lead = math.atan(carpim)
+        lead = min(lead, math.radians(cfg.MAX_LEAD_DEG))
+        if a < cfg.MIN_GOVDE_PX or not kpt_govde_ok:
+            lead = 0.0               # deadband: saf takibe düş
+            if not kpt_govde_ok:
+                durum = "kpt_dusuk"
+
+        # ── Adım 6: yön vektörü uzayında kaydırma (PİKSEL UZAYINDA DEĞİL) ──
+        e = np.array([d_birim[0] / geo.FX, d_birim[1] / geo.FY, 0.0])
+        e = e - float(np.dot(e, u)) * u
+        e_n = np.linalg.norm(e)
+        if e_n > 1e-12:
+            e = e / e_n
+            u_nisan = math.cos(lead) * u + math.sin(lead) * e
+            u_nisan = u_nisan / np.linalg.norm(u_nisan)
+        else:
+            u_nisan = u.copy()       # gövde ekseni bakış yönüyle çakışık — kaydırma tanımsız
+
+        # ── Adım 7: kamera → gövde (aynı fonksiyon, ikinci çağrı) ──
         u_govde = kamera_to_govde(u_nisan, tilt)
 
-        # ── Hata açıları (gövde FRD) ──
+        # ── Adım 8: hata açıları (gövde FRD) ──
         # u_govde birim → yatay = cos(yükseliş). Nişan dikeye yaklaştıkça yatay→0
         # ve azimut tanımsızlaşır; azimut_kalite bunu 1→0 arası sürekli ölçer.
         # yaw_hata HAM bırakılır (log dürüst kalsın), sönümlemeyi adaptör yapar.
@@ -532,15 +529,16 @@ class LeadPursuitCore:
         azimut_kalite = max(0.0, min(1.0, (yatay - _y_tekil) / (_y_tam - _y_tekil))) \
             if _y_tam > _y_tekil else 1.0
         if azimut_kalite <= 0.0:
-            warn.append("azimut_tekil")   # durum'a dokunma: bu kutu kalitesi değil,
+            warn.append("azimut_tekil")   # durum'a dokunma: bu poz kalitesi değil,
                                           # geometri — görünürlük azimut_kalite'de
 
         return {
             "durum": durum, "warn": warn, "dt": dt,
-            "bbox_w": bbox_w, "bbox_h": bbox_h, "olcek_ham": olcek_ham,
+            "a": a, "b": b, "olcek_ham": olcek_ham,
             "eps_deg": eps_deg, "duzeltme": duzeltme, "olcek": olcek,
-            "kalite": kalite, "guven": guven,
-            "u": u, "u_nisan": u_nisan, "u_govde": u_govde,
+            "yandanlik_ham": yandanlik, "yandanlik_f": self.yandanlik_f,
+            "kalite": kalite, "guven": guven, "lead_deg": math.degrees(lead),
+            "d_birim": d_birim, "u": u, "u_nisan": u_nisan, "u_govde": u_govde,
             "u_govde_hedef": u_govde_hedef,
             "yaw_hata": yaw_hata, "pitch_hata": pitch_hata,
             "yatay_bilesen": yatay, "azimut_kalite": azimut_kalite,
@@ -551,7 +549,7 @@ class LeadPursuitCore:
             # SADECE LOG — güdüm hesabında KULLANILMAZ:
             # (GT modunda olcek gerçek menzilden türetildiği için bu sütun
             #  menzil_gercek_m'i AYNEN yansıtır; algı sapması ölçülemez.)
-            "menzil_kestirim_m": ((geo.FX * cfg.BBOX_L_ETKIN_M / olcek)
-                                  if olcek > 1e-9 else 0.0),
+            "menzil_kestirim_m": (geo.FX * GOVDE_BOYU_M / olcek) if olcek > 1e-9 else 0.0,
+            "flip_sayaci": self.flip_sayaci,
             "gt_modu": gt is not None,
         }

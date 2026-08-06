@@ -53,64 +53,6 @@ class CopterAdapter:
         # tavanda OLUP hata kapanmıyor, ve kıyas için son |yaw_hata|.
         self._yaw_doygun_n = 0
         self._yaw_hata_ref = None
-        self._yaw_sus_n = 0           # kaç karedir SUSTURULMUŞ (süreli susma)
-        # Yatay (azimut-oranı) lead durumu — bkz. _yatay_pn
-        self.az_f = None              # yumuşatılmış LOS azimutu (rad)
-        self.az_onceki = None         # önceki azimut (kare-arası Δaz için)
-        self.az_rate_f = 0.0          # EMA'lı azimut oranı (rad/s)
-        self.yatay_lead = 0.0         # son uygulanan yatay lead (rad, log)
-
-    def _yatay_pn(self, u_dunya, dt, kalite):
-        """AZİMUT-ORANI LEAD — pose şekil-lead'inin yerine (2026-08-06).
-
-        Nişan yönünü YATAY düzlemde, LOS azimutunun değişim oranıyla orantılı
-        kadar öne döndürür. Yükseliş açısına DOKUNMAZ (dikey kanal ayrı).
-        Dönüş: (u_dunya_yeni, lead_rad).
-
-        NEDEN BU SİNYAL: pose kaldırılınca yandanlıktan türeyen lead de gitti.
-        Hedefin yanlamasına geçişi LOS azimutunu döndürür; o dönüşün oranı
-        "hedef ne kadar hızlı yanımızdan geçiyor"un doğrudan ölçüsüdür ve
-        keypoint gerektirmez. Saf takip + bu terim = lead pursuit.
-
-        YUMUŞATMA ZİNCİRİ DİKEY KANALLA BİREBİR AYNI (slew-kırpma → EMA → oran
-        EMA) ve bu bilinçli: ham azimut oranı çok gürültülü (08-06 ölçümü,
-        n=10 183: |oran| medyan 15.8 °/s ama p90 187 °/s — kuyruk tamamen
-        gürültü). Zincir uygulandığında lead dağılımı sökülen şekil-lead'iyle
-        aynı banda oturuyor (ort 6.08° vs 6.18°).
-
-        AZİMUT DAİRESELDİR: farklar normalize_angle'dan geçirilir, yoksa
-        ±180° geçişinde tek karede sahte 360°/dt oranı üretilir.
-        """
-        cfg = self.cfg
-        elev = math.asin(max(-1.0, min(1.0, -float(u_dunya[2]))))
-        az_ham = math.atan2(float(u_dunya[1]), float(u_dunya[0]))
-
-        if self.az_f is None:
-            self.az_f = az_ham
-        else:
-            step = clamp(normalize_angle(az_ham - self.az_f),
-                         -math.radians(cfg.AZ_STEP_MAX_DEG),
-                         math.radians(cfg.AZ_STEP_MAX_DEG))
-            self.az_f = normalize_angle(self.az_f + cfg.AZ_EMA * step)
-        az = self.az_f
-
-        lead = 0.0
-        if (cfg.PN_YATAY_SURE > 0.0 and dt is not None and 0.0 < dt <= 0.2
-                and self.az_onceki is not None):
-            rate = normalize_angle(az - self.az_onceki) / dt
-            self.az_rate_f = (cfg.PN_RATE_EMA * rate
-                              + (1.0 - cfg.PN_RATE_EMA) * self.az_rate_f)
-            lead = clamp(
-                cfg.PN_YATAY_SURE * self.az_rate_f * max(0.0, min(1.0, kalite)),
-                -math.radians(cfg.PN_YATAY_MAX_DEG),
-                math.radians(cfg.PN_YATAY_MAX_DEG))
-        self.az_onceki = az
-        self.yatay_lead = lead
-
-        az_yeni = normalize_angle(az + lead)
-        ce = math.cos(elev)
-        return (np.array([ce * math.cos(az_yeni), ce * math.sin(az_yeni),
-                          -math.sin(elev)]), lead)
 
     def _dikey_pn(self, u_dunya, dt, kalite, terminal, kadraj_elev=None):
         """Aim yönünü dikey düzlemde yukarı döndür. Sıra:
@@ -209,10 +151,6 @@ class CopterAdapter:
 
         u_dunya = govde_to_dunya(u_govde, *attitude)
         u_dunya = u_dunya / np.linalg.norm(u_dunya)
-        # SIRA ÖNEMLİ: yatay kanal yükselişe dokunmaz, dikey kanal azimuta
-        # dokunmaz — ama dikey kanal azimutu yeniden okuduğu için yatay lead
-        # ÖNCE uygulanmalı, yoksa dikey adım lead'siz azimutu geri yazar.
-        u_dunya, yatay_lead = self._yatay_pn(u_dunya, dt, kalite)
         u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal,
                                                  kadraj_elev=kadraj_elev)
         # ── YAKLAŞMA ALT-FAZI (2026-08-05) ──
@@ -335,20 +273,6 @@ class CopterAdapter:
             self._yaw_hata_ref = None
         if self._yaw_doygun_n > cfg.YAW_DOYGUN_N:
             adim = 0.0            # ölçüm loop'u kapatmıyor → yaw'ı sustur
-            # ⚠ SÜRELİ SUSMA (2026-08-06) — gps_guidance ile aynı kilit burada
-            # da vardı: kapı adımı 0 yapar → araç dönmez → hata kapanmaz →
-            # kapı hiç açılmaz. GPS fazında ölçüldü: karelerin %7.8'inde burun
-            # >20° sapmışken adım tam 0, en uzun kesintisiz susma 93 SANİYE.
-            # Susma artık süreli: YAW_SUS_N kare sonra yetki geri verilir.
-            # Sorun gerçekse kapı yeniden tetiklenir → dönme oranı
-            # YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N) kadar kısılır, kilit olmaz.
-            self._yaw_sus_n += 1
-            if self._yaw_sus_n >= cfg.YAW_SUS_N:
-                self._yaw_doygun_n = 0
-                self._yaw_hata_ref = None
-                self._yaw_sus_n = 0
-        else:
-            self._yaw_sus_n = 0
 
         # ±π'ye sarmala: mevcut_yaw+adim aksi halde ±3.8 rad'a çıkabiliyordu
         yaw_cmd = normalize_angle(mevcut_yaw + adim)
@@ -356,8 +280,6 @@ class CopterAdapter:
         return {"v_cmd": v_cmd, "yaw_cmd": yaw_cmd, "u_dunya": u_dunya,
                 "v_doygun": v_doygun, "yaw_doygun": yaw_doygun,
                 "alt_faz": alt_faz,
-                "yatay_lead_deg": math.degrees(yatay_lead),
-                "az_rate_dps": math.degrees(self.az_rate_f),
                 "pn_dikey_deg": math.degrees(pn_lead),
                 "coalt_deg": math.degrees(coalt),
                 "yaw_adim_deg": math.degrees(adim),

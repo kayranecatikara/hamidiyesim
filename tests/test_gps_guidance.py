@@ -16,6 +16,7 @@ import time
 
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance import gps_guidance as gg
+from control.guidance.guidance_core import Cfg as LC
 from control.guidance.common import normalize_angle as _norm
 
 # Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
@@ -193,21 +194,32 @@ def main():
     # (veya RANGE_SET küçültülürse) burada yakalanır.
     # ── 2026-08-05: A_DIKEY 1.0 → 3.0 ──
     # Bu sabit ARACIN gerçek yeteneği; testin keyfi bir varsayımı değil.
-    # avci_copter.parm'da WP_ACC_Z 1 → 3 yapıldı (SITL dökümüyle doğrulanır:
-    # `grep -i "^WP_ACC_Z" ~/ardupilot/mav_5_1.parm`). Bütçe 3× büyüdüğü için
-    # istasyon 25°'ye geri döndürülebildi — testin işlevi aynı: geometri
-    # aracın dikey ivme bütçesini AŞARSA burada yakalanır.
-    # ⚠ WP_ACC_Z geri alınırsa BU SAYI DA geri alınmalı, yoksa test 25°'lik
-    # geometriyi yanlışlıkla onaylar ve dikey ıska sessizce geri döner.
-    A_DIKEY = 3.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
+    # ── 2026-08-05: BÜTÇE İKİ PARÇAYA AYRILDI ──
+    # Eski varsayım: dikey farkın TAMAMI terminal fazda kapatılacak. Görsel faza
+    # YAKLAŞMA alt-fazı eklenince bu değişti (adapter_copter.compute): devirden
+    # TERMINAL_MENZIL'e kadar drone yavaşlar (V_YAKLASMA) ve dikey farkı
+    # VZ_YAKLASMA tavanıyla ÖNCEDEN kapatır. Terminale artık seviyeye yakın
+    # giriliyor, kalan fark aracın ivme rampasına bırakılıyor.
+    # Testin işlevi aynı: geometri TOPLAM bütçeyi aşarsa burada yakalanır.
+    A_DIKEY = 1.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
     V_YATAY = 4.3        # m/s; ÖLÇÜLEN en hızlı terminal yatay kapanma (kötü hal)
     t_var = d_behind / V_YATAY
-    tirmanilabilir = 0.5 * A_DIKEY * t_var ** 2
-    kontrol("G11 terminal dikey bütçesi: istasyonun altı ivme sınırında kapanabilir",
+    terminal_pay = 0.5 * A_DIKEY * t_var ** 2
+
+    # Yaklaşma payı — EN KÖTÜ HAL: devir tam menzil kapısında olur (GATE_MENZIL),
+    # yani yaklaşma için en kısa yol. Pratikte devir daha yakında oluyor
+    # (ölçülen medyan ~6 m pose modunda) ama test kötü hale göre kurulur.
+    from control.guidance.supervisor import SupCfg as _S
+    yaklasma_yolu = max(0.0, _S.GATE_MENZIL - LC.TERMINAL_MENZIL)
+    yaklasma_pay = (LC.VZ_YAKLASMA * (yaklasma_yolu / LC.V_YAKLASMA)
+                    if LC.V_YAKLASMA > 0 else 0.0)
+    tirmanilabilir = terminal_pay + yaklasma_pay
+    kontrol("G11 dikey bütçe: yaklaşma + terminal payı istasyonun altını kapatmalı",
             tirmanilabilir > d_below,
-            f"kapatılacak {d_below:.2f} m, {t_var:.2f} s var → {tirmanilabilir:.2f} m "
-            f"tırmanılabilir (pay {tirmanilabilir - d_below:+.2f} m); "
-            f"25°'de kapatılacak {C.RANGE_SET*math.sin(math.radians(25)):.2f} m olurdu")
+            f"kapatılacak {d_below:.2f} m → yaklaşma {yaklasma_pay:.2f} m "
+            f"({yaklasma_yolu:.0f} m yol / {LC.V_YAKLASMA:.0f} m/s) + terminal "
+            f"{terminal_pay:.2f} m = {tirmanilabilir:.2f} m "
+            f"(pay {tirmanilabilir - d_below:+.2f} m)")
 
     eski_4m = _eski_elev(4.0)
     kontrol("G10b eski sabit-metre davranışı 4 m'de kadrajı taşırırdı",
@@ -232,6 +244,7 @@ def main():
         iyaw = 0.0
         cmd_list = []
         yaw_doygun_n = 0
+        yaw_sus_n = 0
         yaw_ref = None
         for _ in range(kare):
             yaw_err = _norm(hedef_yonu - iyaw)
@@ -251,6 +264,11 @@ def main():
                 yaw_ref = None
             if yaw_doygun_n > cfgY.YAW_DOYGUN_N:
                 adim = 0.0
+                yaw_sus_n += 1                  # SÜRELİ susma (bkz. G15)
+                if yaw_sus_n >= cfgY.YAW_SUS_N:
+                    yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
+            else:
+                yaw_sus_n = 0
             if abs(yaw_err) <= cfgY.YAW_DEADBAND:
                 adim = 0.0
             cmd = _norm(iyaw + adim)
@@ -274,12 +292,96 @@ def main():
     cmds = yaw_kosusu(600, arac_doner_mi=False)   # 30 s boyunca araç dönmüyor
     en_buyuk = max(abs(math.degrees(c)) for c in cmds)
     tavan_deg = math.degrees(gg.Cfg.YAW_RATE_MAX * 0.05)
-    # Susma gerçekten devreye girdi mi: son karelerde komut 0 (=iyaw) olmalı
-    sustu = abs(math.degrees(cmds[-1])) < 1e-9
+    sifir_kare = sum(1 for c in cmds if abs(math.degrees(c)) < 1e-9)
     kontrol("G13 araç komuta uymuyorsa yaw susar (kaçak biter)",
-            sustu and en_buyuk <= tavan_deg + 1e-9,
+            sifir_kare > len(cmds) * 0.5 and en_buyuk <= tavan_deg + 1e-9,
             f"30 s'de en büyük komut {en_buyuk:.1f}° (tek kare tavanı {tavan_deg:.1f}°), "
-            f"son komut {math.degrees(cmds[-1]):.2f}° — eski birikimli kodda sınırsız yürüyordu")
+            f"karelerin %{100*sifir_kare/len(cmds):.0f}'i susturulmuş "
+            f"— eski birikimli kodda sınırsız yürüyordu")
+
+    # ── G15: SUSMA KALICI DEĞİL SÜRELİ (2026-08-06 kilitlenme düzeltmesi) ──
+    # Doygunluk kapısı bir ölü kilitti: adım 0 → araç dönmez → hata kapanmaz →
+    # kapı hiç açılmaz. ÖLÇÜLDÜ (08-05/08-06, 124 346 GPS karesi): karelerin
+    # %7.8'inde burun hedeften >20° sapmışken yaw adımı tam 0; en uzun
+    # kesintisiz susma 1867 kare = 93 SANİYE (log 142313, araç 119° yan durdu).
+    # Sözleşme: susma en fazla YAW_SUS_N kare sürer, sonra yetki geri gelir.
+    en_uzun = mevcut = 0
+    for c in cmds:
+        mevcut = mevcut + 1 if abs(math.degrees(c)) < 1e-9 else 0
+        en_uzun = max(en_uzun, mevcut)
+    geri_geldi = any(abs(math.degrees(c)) > 1e-9 for c in cmds[-gg.Cfg.YAW_SUS_N:])
+    kontrol("G15 yaw susması SÜRELİ — kilitlenmez, yetki geri gelir",
+            en_uzun <= gg.Cfg.YAW_SUS_N and geri_geldi,
+            f"en uzun kesintisiz susma {en_uzun} kare "
+            f"({en_uzun*0.05:.1f} s, tavan {gg.Cfg.YAW_SUS_N} kare) — "
+            f"eski kodda 1867 kare (93 s) ölçülmüştü")
+
+    # ── G16: İÇ DAİRE NİŞANI — ölçülmüş varsayılan, yön doğru, düzde sıfır ──
+    # (gps_kararli_hal dalından alındı; orada G11/G12 idi, çakışmasın diye
+    #  G16/G17'ye numaralandı.)
+    # 2026-08-05 uçuş ölçümü: kayma 0→8→14 m ile menzil 34.1→22.8→9.8 m.
+    # Bu değer bir tahmin değil, üç koşuluk kontrollü deneyin sonucudur.
+    kontrol("G16a iç daire nişanı ölçülmüş varsayılanda (14 m)",
+            C.IC_KAYMA == 14.0, f"IC_KAYMA={C.IC_KAYMA}")
+    kontrol("G16a2 lead kazancı ölçülmüş varsayılanda (0.60)",
+            C.KD_H == 0.60, f"KD_H={C.KD_H}  (0.20 → 34.3 m, 0.60 → 29.4 m)")
+
+    # Kayma yönü: hız vektörünün dönüş yönünde 90°'si = dönüş merkezi.
+    # Sentetik daire (R=38) üzerinde üç noktada kontrol.
+    R, vh = 38.0, 14.6
+    w = vh / R
+    en_kotu = 0.0
+    for tt in (0.0, math.pi / (2 * w), math.pi / w):
+        px, py = R * math.cos(w * tt), R * math.sin(w * tt)
+        vx_, vy_ = -vh * math.sin(w * tt), vh * math.cos(w * tt)
+        sp = math.hypot(vx_, vy_)
+        vhx, vhy = vx_ / sp, vy_ / sp
+        # omega > 0 (başlık artıyor) → merkez (-v̂y, +v̂x) yönünde
+        cx, cy = -vhy, vhx
+        gx, gy = -px / R, -py / R          # gerçek merkez yönü
+        en_kotu = max(en_kotu, math.degrees(
+            math.acos(max(-1.0, min(1.0, cx * gx + cy * gy)))))
+    kontrol("G16b kayma yönü tam dönüş merkezine bakıyor",
+            en_kotu < 1e-6, f"en kötü sapma {en_kotu:.2e}°")
+
+    # Düz uçuşta (açısal hız ~0) kayma ölçeği sıfıra gitmeli — düz kovalama
+    # senaryosunda regresyon olmasın diye kritik.
+    olcek_duz = min(1.0, 0.0 / C.IC_OMEGA_REF)
+    olcek_daire = min(1.0, 0.384 / C.IC_OMEGA_REF)
+    kontrol("G16c düz uçuşta kayma 0, dairede tam",
+            olcek_duz == 0.0 and olcek_daire == 1.0,
+            f"düz={olcek_duz:.2f}  daire(ω=0.384)={olcek_daire:.2f}")
+
+    # ── G17: YARIÇAP-ORANLI KAYMA ──
+    def _oranli(Rr, vv, oran=0.27):
+        ww = vv / Rr
+        olc = min(1.0, abs(ww) / C.IC_OMEGA_REF)
+        if Rr < C.IC_R_MIN:
+            return 0.0
+        return min(oran * Rr, C.IC_KAYMA_MAX) * olc
+
+    kontrol("G17a varsayılan KAPALI — sabit metre geçerli (regresyon koruması)",
+            C.IC_ORAN == 0.0, f"IC_ORAN={C.IC_ORAN}")
+
+    # Katsayı ölçümden geldi: 2026-08-05'te 14 m kayma, hedefin 52.2 m
+    # yarıçapının 0.268'iydi. Yani oranlı sürüm O SENARYODA sabit sürümle
+    # aynı kaymayı üretmeli — fark yalnız yarıçap değişince doğmalı.
+    k52 = _oranli(52.2, 14.5)
+    kontrol("G17b ölçüm senaryosunda sabit sürümle AYNI kayma",
+            abs(k52 - 14.0) < 0.5, f"R=52.2 m → {k52:.1f} m (sabit sürüm 14.0 m)")
+
+    k24, k80 = _oranli(24.0, 14.5), _oranli(80.0, 15.0)
+    kontrol("G17c dar dairede daha az, geniş dairede daha çok kayma",
+            k24 < 14.0 < k80,
+            f"R=24 m → {k24:.1f} m   |   R=80 m → {k80:.1f} m   (sabit: hep 14.0)")
+
+    kontrol("G17d aşırı geniş yarıçapta tavan bağlıyor",
+            _oranli(200.0, 15.0) <= C.IC_KAYMA_MAX + 1e-9,
+            f"R=200 m → {_oranli(200.0, 15.0):.1f} m ≤ tavan {C.IC_KAYMA_MAX}")
+
+    kontrol("G17e güvenilmez dar yarıçapta kayma kapanıyor",
+            _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
+            f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

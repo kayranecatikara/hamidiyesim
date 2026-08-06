@@ -3,11 +3,12 @@ control.guidance — Avcı drone güdüm hatları.
 
 İki fazlı hibrit müdahale (GPS kadraj merkezleme → görsel IBVS), supervisor
 geçişli:
-  - gps_guidance.py  : GPS fazı — hedefi kamera kadrajının MERKEZİNE ve pose
+  - gps_guidance.py  : GPS fazı — hedefi kamera kadrajının MERKEZİNE ve tespit
                        modelinin güvenilir çalıştığı menzil bandına oturtur
                        (geometrik kadraj noktası + PD hız + hedef-hızı feedforward)
   - guidance_core.py : IBVS lead pursuit çekirdeği (platformdan bağımsız:
-                       pose keypoint → menzil bağımsız lead → u_govde/hata açıları)
+                       bbox merkezi → saf takip; lead adaptörün azimut-oranı
+                       kanalında (adapter_copter._yatay_pn) üretilir)
   - adapter_copter.py: copter komut adaptörü (u_govde → NED hız + yaw;
                        dikey yumuşatma/PN/co-altitude)
   - visual_lead.py   : IBVS döngüsü (olay güdümlü, kameraya kilitli, CSV log,

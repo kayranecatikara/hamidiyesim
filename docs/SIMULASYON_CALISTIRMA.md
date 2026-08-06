@@ -12,8 +12,9 @@
 **Terminal B** — GCS
 
     cd ~/projects/hamidiyesim
-    bash scripts/gcs.sh              # GT rotasyon modu AÇIK (varsayılan)
-    bash scripts/gcs.sh pose         # pose modeli güdümde (eski davranış)
+    bash scripts/gcs.sh              # bbox güdümü (varsayılan, GERÇEK SİSTEM)
+    bash scripts/gcs.sh gt           # teşhis: algı girdisi Gazebo gerçek pozundan
+    bash scripts/gcs.sh takip        # bbox + HybridSORT + kilitli-ID
 
 `gcs.sh` ROS ortamını, `AVCI_GZ_CAMERA`/`AVCI_NO_BROWSER` değişkenlerini ve
 8000 portu temizliğini kendi yapar — elle `export` etmeye gerek yok.
@@ -52,15 +53,18 @@ Arayüz: <http://localhost:8000>
 Terminal B'de bu satırları görün:
 
     [GCS] YOLO detector hazır (avci_yolo.pt)
-    [GCS] YOLO pose hazır (avci_pose.pt)
-    [GCS] HybridSORT takip hazır
     [GCS] ✓ Iris kamerasından ilk görüntü!
     [GCS] ✓ Talon (hedef İHA) kamerasından ilk görüntü!
+    [GCS] gz-transport kamera dinleniyor (/iris_cam/image, Harmonic) — en-son-kare-kazanır
+
+Kamera hattı 10 s'de bir sağlık satırı basar; **düşme oranı sürekli yüksekse**
+işleme kameraya yetişmiyordur (gecikme birikmez ama kare kaybedilir):
+
+    [GZ-CAM] 30.0 kare/s geldi, 28.4 işlendi, 16 düştü (%5) — gecikme birikmiyor
 
 GT modunda ayrıca (görev başlatınca):
 
-    [LEAD] ⚠ GT ROTASYON MODU (AVCI_GT_ROT=on) — güdüm girdileri Gazebo GERÇEK pozundan
-    [SUPERVISOR] GT modu — POSE KİLİDİ DEVRE DIŞI; geçiş kapısı yalnız menzil/DROPOUT
+    [LEAD] ⚠ GT MODU (AVCI_GT_ROT=on) — güdüm girdileri Gazebo GERÇEK kutusundan
 
 Kamera satırları gelmiyorsa render edilmiyordur — Sorun giderme'ye bakın.
 (`--headless-rendering` pencereyi kapatır ama kameraları render etmeye devam
