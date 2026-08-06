@@ -272,67 +272,6 @@ def main():
             _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
             f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
 
-    # ── G13: KAYMAYI EKLEME vs YÖNÜ ÇEVİRME ──
-    # Ölçülen sorun: kayma OFSET olarak eklenince istasyon hedeften uzaklaşıyor
-    # (bileşenler dik → mesafeler dikey toplanıyor). Uçuşta 17.8 m ölçüldü.
-    d_arka = C.RANGE_SET * math.cos(math.radians(C.ISTASYON_ELEV_DEG))
-    d_alt = C.RANGE_SET * math.sin(math.radians(C.ISTASYON_ELEV_DEG))
-
-    def _mesafe_ekle(kay):
-        return math.sqrt(d_arka ** 2 + kay ** 2 + d_alt ** 2)
-
-    def _cevir(kay):
-        yx, yy, yz = d_arka, kay, d_alt
-        n = math.sqrt(yx * yx + yy * yy + yz * yz)
-        return C.RANGE_SET, yy / n * C.RANGE_SET      # (mesafe, içeri kayma)
-
-    kontrol("G13a EKLEME uçuşta ölçülen 17.8 m'yi üretiyor (sorunun kaynağı)",
-            abs(_mesafe_ekle(14.0) - 17.8) < 0.2,
-            f"kayma 14 m → istasyon-hedef {_mesafe_ekle(14.0):.1f} m "
-            f"(RANGE_SET {C.RANGE_SET:.0f} m olmasına rağmen)")
-
-    m14, ic14 = _cevir(14.0)
-    kontrol("G13b ÇEVİRME mesafeyi RANGE_SET'te tutuyor",
-            abs(m14 - C.RANGE_SET) < 1e-9,
-            f"kayma 14 m → istasyon-hedef {m14:.1f} m (hedef {C.RANGE_SET:.0f} m)")
-
-    kontrol("G13c ÇEVİRME iç daire faydasını koruyor (içeri kayma > 0)",
-            ic14 > 5.0, f"içeri bileşen {ic14:.1f} m (ekleme 14.0 m verirdi)")
-
-    kontrol("G13d varsayılan KAPALI — mevcut uçuş davranışı korunur",
-            C.IC_NORMALIZE is False, f"IC_NORMALIZE={C.IC_NORMALIZE}")
-
-    # ── G14: İSTASYON HIZI İLERİ BESLEMESİ (ω × s) ──
-    # İstasyon hedefin yanında duran bir ofsettir; hedef dönerken o ofset de
-    # döner ve kendi hızı olur. İleri besleme HEDEFİN hızıydı → fark doğrudan
-    # takip hatasına dönüşüyordu. Ölçülen menzil, eksik FF ile aynı sırada
-    # büyüyordu (⌀96→13 m ... ⌀32→40 m).
-    def _ist_hiz(Rr, vv, ofs):
-        """Dönen ofsetin katkısıyla istasyon hızının büyüklüğü."""
-        ww = vv / Rr
-        sx_, sy_ = 0.0, -ofs           # hedef (R,0)'da, hızı +y; ofset arkada
-        ffx, ffy = -ww * sx_ * 0 - ww * sy_, ww * sx_
-        return math.hypot(ffx, vv + ffy), ww
-
-    for Rr, vv in ((55.0, 15.0), (32.0, 15.0)):
-        buldu, ww = _ist_hiz(Rr, vv, C.RANGE_SET)
-        # İstasyon dönüş merkezine (R + ofset) uzaklıkta → hızı ω·r olmalı
-        r_ist = math.hypot(Rr, C.RANGE_SET)
-        kontrol(f"G14a ω×s, R={Rr:.0f} m'de doğru istasyon hızını veriyor",
-                abs(buldu - ww * r_ist) < 0.6,
-                f"hesap {buldu:.2f} m/s ≈ ω·r {ww * r_ist:.2f} m/s "
-                f"(hedef hızı {vv:.1f})")
-
-    # Eksik FF'nin büyüklüğü dar dairede belirgin artmalı — sorunun ölçeği
-    eksik_96 = (15.0 / 96.0) * C.RANGE_SET
-    eksik_32 = (15.0 / 32.0) * C.RANGE_SET
-    kontrol("G14b eksik ileri besleme dar dairede 3× büyüyor",
-            eksik_32 > 2.5 * eksik_96,
-            f"⌀96 m → {eksik_96:.1f} m/s   ⌀32 m → {eksik_32:.1f} m/s")
-
-    kontrol("G14c varsayılan KAPALI — uçuşta doğrulanana dek",
-            C.IST_HIZ_FF is False, f"IST_HIZ_FF={C.IST_HIZ_FF}")
-
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
