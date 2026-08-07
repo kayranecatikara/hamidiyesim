@@ -1286,7 +1286,7 @@ latest_frames = {
 }
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
-_talon_tracker = None   # AVCI_TRACKER=on ile yüklenir, varsayılan KAPALI (HybridSORT)
+_talon_tracker = None   # startup'ta yüklenir (AVCI_TRACKER=off kapatır; HybridSORT)
 _target_lock   = None   # kilitli-ID politikası (AVCI_LOCK=off kapatır; tracker açıksa)
 _tracker_mod   = None   # vision.tracker modülü (draw_tracks için)
 _tracker_err   = False  # tekrarlayan tracker hatasında log seli önlenir
@@ -1855,11 +1855,15 @@ async def startup_event():
         except Exception as e:
             print(f"[GCS] YOLO detector yüklenemedi ({e}) — tespit kapalı")
     # HybridSORT takipçi — detection üstüne kareler arası ID sürdürür
-    # VARSAYILAN KAPALI (2026-08-04). Gerekçe: boxmot hiç kurulu olmadığı için
-    # takipçi bugüne dek HİÇ çalışmadı — projedeki BÜTÜN uçuş ölçümleri
-    # takipçisiz alındı. boxmot kurulunca sessizce devreye girmesi, ölçüm
-    # tabanını haber vermeden değiştirmek olurdu. Açmak: AVCI_TRACKER=on.
-    if os.environ.get("AVCI_TRACKER", "off").lower() in ("on", "1", "true"):
+    # VARSAYILAN AÇIK (2026-08-07, kullanıcı kararı: "takip kararlı branch'teki
+    # gibi olsun"). Kararlı dal ve ortak ata da açıktı; 08-04'te bu dalda
+    # kapatılmıştı çünkü boxmot kurulu değildi ve takipçi hiç çalışmıyordu —
+    # sessizce devreye girip ölçüm tabanını değiştirmesin diye. O gerekçe artık
+    # geçersiz: boxmot 18.0.0 KURULU ve TalonTracker sorunsuz kuruluyor.
+    # ⚠ Bu yüzden takipçi bu daldaki ölçümlerde İLK KEZ etkin olacak —
+    # merge sonrası taban ölçümü (TODO §0) artık takipçili taban demektir.
+    # Kapatmak: AVCI_TRACKER=off.
+    if os.environ.get("AVCI_TRACKER", "on").lower() not in ("off", "0"):
         global _talon_tracker, _tracker_mod, _target_lock
         if _yolo_detector is None:
             print("[GCS] HybridSORT atlandı (YOLO detector kapalı)")
