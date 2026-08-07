@@ -13,12 +13,13 @@ GPS güdümünün kararlı referans hâli → **[KARARLI_HAL.md](KARARLI_HAL.md)
 
 | # | iş | neden şimdi |
 |---|---|---|
-| **0** | [GPS entegrasyonunu UÇUR ve ölç](#0--acil-yeni-gps-tabanını-ölç) | kod geldi, **hiç uçmadı** |
-| **1** | [B10 — kalkışta hedefin üstüne çıkma](#b10--kalkışta-hedefin-üstüne-çıkma) | **her uçuşun başında bozuluyor** (max +17.9 m) |
-| **2** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
-| **3** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | son metrede 25 m/s = kare başına 0.81 m |
-| **4** | [B8 — frenleme eğrisi](#b8--frenleme-eğrisi-mesafeye-bağlı-hız-tavanı) | "18 m/s çok yavaş" — **kullanıcı şimdilik erteledi** |
-| 5+ | aşağıdaki diğer maddeler | |
+| **0** | [`gps_kararli_hal` TAM merge](#0--gps_kararli_hal-tam-merge-kullanıcı-kararı) | kullanıcı kararı — seçmeli entegrasyon yetmedi |
+| **1** | [LOS kayması — görsel fazın asıl kusuru](#1--los-kayması-görsel-fazın-asıl-kusuru) | **ölçüldü: ıskaların ortak imzası** |
+| **2** | [B10 — kalkışta hedefin üstüne çıkma](#b10--kalkışta-hedefin-üstüne-çıkma) | **her uçuşun başında bozuluyor** (max +17.9 m) |
+| **3** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
+| **4** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | son metrede 25 m/s = kare başına 0.81 m |
+| **5** | [B8 — frenleme eğrisi](#b8--frenleme-eğrisi-mesafeye-bağlı-hız-tavanı) | "18 m/s çok yavaş" — **kullanıcı şimdilik erteledi** |
+| 6+ | aşağıdaki diğer maddeler | |
 
 ### ✅ 2026-08-06'da BİTENLER (ölçümleri DURUM.md §3'te)
 
@@ -31,14 +32,60 @@ GPS güdümünün kararlı referans hâli → **[KARARLI_HAL.md](KARARLI_HAL.md)
 
 ---
 
-## 0 — ACİL: yeni GPS tabanını ölç
+## 0 — `gps_kararli_hal` TAM merge (kullanıcı kararı)
 
-`gps_kararli_hal` dalının GPS güdümü entegre edildi (2026-08-06). Kod geldi,
-testler geçiyor, ama **bu dalda hiç uçmadı**. Aynı anda birden çok şey değişti
-— o yüzden ilk iş tek bir taban ölçümü, ayarlama değil.
+**Karar (2026-08-07, kullanıcı):** seçmeli entegrasyon yeterli olmadı; dal
+bütün olarak çekilip bu branch'le birleştirilecek. Düzgün çalışmazsa
+[§1'deki PN deneyleri](#1--los-kayması-görsel-fazın-asıl-kusuru) yedek plan.
 
-**Bu entegrasyonla değişenler** (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md),
-DURUM.md §3):
+**Şu an ne var:** commit `c6869f2` ile **yalnız GPS güdümü** alındı
+(`gps_guidance.py`, FRPN paketi kapalı, senaryo çapları, kamera/telemetri
+gecikme düzeltmesi, `avci_copter.parm`). Görsel faz, arayüz ve
+`guidance_core.py` bu daldaki hâlinde kaldı.
+
+**Tam merge'ün ek olarak getireceği** (`git diff --stat HEAD origin/gps_kararli_hal`,
+toplam 55 dosya / +4252 −8993):
+
+| dosya | fark | ne demek |
+|---|---|---|
+| `guidance_core.py` | 457 satır | ortak güdüm çekirdeği baştan farklı |
+| `visual_lead.py` | 335 satır (çoğu silme) | görsel faz **pose'lu** sürüme döner |
+| `gcs_ui/script.js` + `style.css` + `index.html` | ~3700 satır | arayüz tamamen değişir |
+| `supervisor.py` | 84 satır | `get_gercek` dahil faz hakemliği |
+| `vision/geometry.py`, `detection_state.py` | 180 satır | pose geometrisi geri gelir |
+| `tests/test_visual_lead.py` | 745 satır | testler pose sürümüne göre |
+| `tools/los_kayma.py`, `gudum_rapor.py` | −760 | **bu daldaki ölçüm araçları silinir** |
+
+**⚠ Merge'de kaybedilmemesi gerekenler** (kararlı dalda karşılığı YOK):
+
+1. **Yaw çıpalama + süreli susma (`YAW_SUS_N=40`).** Kararlı dal hâlâ eski
+   kendini-biriktiren `cmd_yaw`'u kullanıyor. Merge sırasında üzerine
+   yazılırsa 08-06'da düzeltilen burun sapması geri gelir.
+2. **`tools/los_kayma.py`** — §1'in ölçütü. Silinmesin.
+3. **`avci_copter.parm` ad şeması.** Kararlı dal `WPNAV_*`/`ANGLE_MAX`/
+   `PSC_VELXY_P` kullanıyor; bu makinenin firmware'inde bu adlar YOK
+   (ArduPilot bilinmeyen adı sessizce yutar). Bu daldaki SI adları
+   (`WP_SPD`, `WP_ACC`, `ATC_ANGLE_MAX`, `PSC_NE_VEL_P`…) korunmalı —
+   değerler zaten aynı.
+4. **Pose kaldırma kararı.** Kararlı dal pose'lu; `AVCI_POSE_KAYNAK=gercek`
+   ve "görsel faz kapalı" ayarlarının bu dalda karşılığı yok. Merge sonrası
+   pose geri gelecek mi, yoksa yine bbox'ta mı kalınacak — **merge'e
+   başlamadan karar ver**, yoksa iki sistem yarı yarıya karışır.
+
+**Sıra:**
+
+- [ ] Merge öncesi bu dalı etiketle: `git tag merge_oncesi_$(date +%Y%m%d)`
+      → kötü giderse tek komutla dönülür. *Sonuç:*
+- [ ] `git merge origin/gps_kararli_hal` — çakışmaları yukarıdaki 4 maddeye
+      göre çöz. *Sonuç:*
+- [ ] `python3 -m pytest tests/ -q` — iki dalın testleri birlikte geçiyor mu.
+      *Sonuç:*
+- [ ] Aşağıdaki taban ölçümünü tekrarla. *Sonuç:*
+
+### Merge sonrası taban ölçümü
+
+Aynı anda çok şey değiştiği için ilk iş **tek bir taban ölçümü**, ayarlama
+değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3):
 
 | ne | eski | yeni |
 |---|---|---|
@@ -82,6 +129,51 @@ DURUM.md §3):
 > **Ders (08-05'ten):** iki değişken aynı anda değiştirildi, hangisinin suçlu
 > olduğu ayrılamadı. Bu entegrasyonda da çok şey birden değişti — bu yüzden
 > önce TEK bir taban ölçülür, sonra tek tek ayrılır.
+
+---
+
+## 1 — LOS kayması: görsel fazın asıl kusuru
+
+**Yedek plan.** Önce [§0'daki tam merge](#0--gps_kararli_hal-tam-merge-kullanıcı-kararı)
+denenecek; düzelmezse buradaki deneyler sırayla açılır.
+
+### Ölçülen gerçek (2026-08-07)
+
+Çarpışma rotasının tanımı: **menzil kapanırken görüş hattı (LOS) açısı
+DEĞİŞMEZ.** Açı dönüyorsa çarpma olmaz — ne kadar yaklaştığın önemsiz.
+`tools/los_kayma.py` bunu 12 m → 2 m bandında ölçüyor.
+
+| yapılandırma | kilitli (<5°) | kayma medyanı | vuruş |
+|---|---|---|---|
+| varsayılan (`PN_SURE=0.6`, `PN_MAX=30`) | %9 | 12.2° | 1/32 |
+| `PN_SURE=0` | %25 | 8.5° | 1/16 |
+
+Vuran fazlar 0.8° kayıyor, ıskalayanlar 8.5°. **En yakın menzil ikisinde de
+0.3-0.9 m — o sayı ayırt etmiyor, bu ayırt ediyor.**
+
+> **Çürütülen fikir:** "terminal dikey PN patlaması ıskalara sebep oluyor,
+> `PN_SURE=0` düzeltir." Kullanıcı uçurdu, düzelmedi (`pn_dikey` her yerde
+> max 0.0, yine 1/19). PN=0 geometriyi **iyileştirdi** (%9 → %25) ama vuruşa
+> dönüşmedi.
+
+> **Açık uyarı:** kilitli geometri **gerekli ama yeterli değil** — 3 faz
+> kilitliydi (3.0°, 2.6°, 4.4°) ve yine ıskaladı. Son 0.3 m'de başka bir şey
+> daha var (bkz. [terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi)).
+
+### Deney matrisi
+
+Her uçuştan sonra: `python3 tools/los_kayma.py --son 15`
+
+- [ ] `AVCI_IBVS_PN_SURE=0.6 AVCI_IBVS_PN_MAX_DEG=5 bash scripts/gcs.sh`
+      *Sonuç:*
+- [ ] `AVCI_IBVS_PN_SURE=2.5 AVCI_IBVS_PN_MAX_DEG=5 bash scripts/gcs.sh`
+      ← **asıl aday** (PN erken ve yumuşak: açıyı geç patlatmadan durdurur)
+      *Sonuç:*
+- [ ] `AVCI_IBVS_PN_SURE=4.0 AVCI_IBVS_PN_MAX_DEG=5 bash scripts/gcs.sh`
+      *Sonuç:*
+
+**Karar kuralı:** "kilitli" oranı %25'in üstüne çıkıyorsa yön doğru, aynı
+eksende devam et. Vuruş sayısına bakma — örneklem küçük, gürültülü.
 
 ---
 
