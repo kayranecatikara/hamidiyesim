@@ -26,7 +26,6 @@ from enum import Enum
 from typing import Callable, Optional
 
 from config.kilit_sabitler import SARTNAME, AYAR
-from control.kilit_sure import KilitSure
 from vision.tespit_dogrulama import TespitDogrulama
 
 
@@ -48,6 +47,11 @@ class Girdi:
     t: float
     tespit_var: bool
     anlik_kilit: bool
+    # Kilit SÜRELERİ TEK KAYNAKTAN (KilitTakip) — FSM'in kendi ayrı sayacı YOK.
+    # Böylece UI/hakem paketi ile FSM'in ENGAGE/STRIKE kapıları BİREBİR aynı olur
+    # (2026-08-07 saha bulgusu: iki ayrı KilitSure farklı sıfırlanıp ayrışıyordu).
+    kumulatif_sn: float = 0.0       # 10 sn pencerede kümülatif kilit süresi
+    kesintisiz_sn: float = 0.0      # anlık kesintisiz kilit süresi
     menzil: Optional[float] = None
     # Salt-gözlem (loglama için; karara girmez):
     ah_oran: float = 0.0            # max(bbox_w/W, bbox_h/H)
@@ -104,8 +108,8 @@ class GorevFSM:
 
     def reset(self):
         self.state = State.SEARCH
-        self._sure = KilitSure()
-        self._dogrula = TespitDogrulama()
+        # Süre sayacı FSM'de YOK — kümülatif/kesintisiz Girdi'den (KilitTakip) gelir.
+        self._dogrula = TespitDogrulama()   # yalnız çok-kareli tespit doğrulama (6.1.1)
         self._son_kilit_t = None       # en son anlik_kilit True olan an
         self._son_tespit_t = None      # en son tespit_var True olan an
         self._gecis_sayisi = 0
@@ -140,8 +144,13 @@ class GorevFSM:
                            ("kumulatif_5s", State.ENGAGE)],
         State.ENGAGE:     [("kilit_tamamen_kayip", State.TRACK_LOST),
                            ("kesintisiz_3s", State.STRIKE)],
-        State.STRIKE:     [("kilit_tamamen_kayip", State.TRACK_LOST),
-                           ("kesintisiz_koptu", State.ENGAGE)],
+        # STRIKE bir kez tetiklendi mi COMMIT — dalış temasa dek sürdürülür.
+        # Yakın mesafede hedef kareyi doldurup merkez AV'den çıkınca kilit
+        # titrer (CLAUDE.md 6.1.3: ANGAJMAN'da merkez/%5 aranmaz), ama dalış
+        # İPTAL EDİLMEZ. İptal edilebilirlik ENGAGE'deki 3 sn birikimde kalır
+        # (orada kilit koparsa STRIKE hiç tetiklenmez). Yalnız TAM kayıp (kilit
+        # > X sn yok = tamamen kaçtı/geçtik) STRIKE'ı bozar.
+        State.STRIKE:     [("kilit_tamamen_kayip", State.TRACK_LOST)],
         State.TRACK_LOST: [("yeniden_tespit", State.APPROACH)],
     }
 
@@ -150,8 +159,9 @@ class GorevFSM:
 
     def step(self, girdi: Girdi) -> State:
         t = girdi.t
-        # 1) Zaman muhasebesini besle (state'ten bağımsız — kilit ölçümü sürekli).
-        sd = self._sure.guncelle(t, girdi.anlik_kilit)
+        # 1) Kilit süreleri TEK KAYNAK (KilitTakip → girdi); FSM sayaç TUTMAZ.
+        pencere_ok = girdi.kumulatif_sn >= self.sart.KUMULATIF_KILIT_SN
+        kesintisiz_ok = girdi.kesintisiz_sn >= self.sart.KESINTISIZ_SN
         dogrulandi = self._dogrula.guncelle(t, girdi.tespit_var)
         if girdi.anlik_kilit:
             self._son_kilit_t = t
@@ -161,17 +171,18 @@ class GorevFSM:
 
         # 2) ENGAGE'de kesintisiz sayaç sıfırlanışını EK logla (V_MAX_ENGAGE ayarı).
         if (self.state is State.ENGAGE and self._prev_kesintisiz > 0.0
-                and sd.kesintisiz_sn == 0.0):
+                and girdi.kesintisiz_sn == 0.0):
             self._log_fn(
                 f"[FSM] t={t:.3f} ENGAGE kesintisiz sifirlandi: "
                 f"kesintisiz={self._prev_kesintisiz:.2f}s "
                 f"kapanma={girdi.kapanma_hizi:.2f}m/s ah_oran={girdi.ah_oran:.3f} "
                 f"sapma=({girdi.merkez_sapma_x:.2f},{girdi.merkez_sapma_y:.2f})")
-        self._prev_kesintisiz = sd.kesintisiz_sn
+        self._prev_kesintisiz = girdi.kesintisiz_sn
 
         # 3) guard bağlamı
         ctx = {
-            "girdi": girdi, "sd": sd, "dogrulandi": dogrulandi,
+            "girdi": girdi, "pencere_ok": pencere_ok,
+            "kesintisiz_ok": kesintisiz_ok, "dogrulandi": dogrulandi,
             "kayip_sure": kayip_sure,
         }
 
@@ -179,7 +190,7 @@ class GorevFSM:
         yapildi = False
         for guard_adi, hedef in self._TABLO[self.state]:
             if self._guard(guard_adi, ctx):
-                self._gecis(guard_adi, hedef, t, girdi, sd)
+                self._gecis(guard_adi, hedef, t, girdi)
                 yapildi = True
                 break
             elif guard_adi in self._ILERLEME_GUARD:
@@ -189,8 +200,8 @@ class GorevFSM:
         # 5) Durumu güncelle/yayınla
         self._son = FSMDurum(
             state=self.state,
-            kumulatif_sn=sd.kumulatif_sn, kesintisiz_sn=sd.kesintisiz_sn,
-            pencere_ok=sd.pencere_ok, kesintisiz_ok=sd.kesintisiz_ok,
+            kumulatif_sn=girdi.kumulatif_sn, kesintisiz_sn=girdi.kesintisiz_sn,
+            pencere_ok=pencere_ok, kesintisiz_ok=kesintisiz_ok,
             tespit_dogrulandi=dogrulandi,
             kilit_kayip_sn=(0.0 if kayip_sure == float("inf") else kayip_sure),
             gecis_sayisi=self._gecis_sayisi,
@@ -204,7 +215,6 @@ class GorevFSM:
     # ── guard'lar (her biri bool döndürür; komut ÜRETMEZ) ──
     def _guard(self, adi, ctx):
         g = ctx["girdi"]
-        sd = ctx["sd"]
         kayip = ctx["kayip_sure"]
         if adi == "hedef_ilk_tespit":
             return g.tespit_var
@@ -215,11 +225,11 @@ class GorevFSM:
         if adi == "tespit_dogrulandi":
             return ctx["dogrulandi"] and g.anlik_kilit
         if adi == "kumulatif_5s":
-            return sd.pencere_ok
+            return ctx["pencere_ok"]
         if adi == "kesintisiz_3s":
-            return sd.kesintisiz_ok
+            return ctx["kesintisiz_ok"]
         if adi == "kesintisiz_koptu":
-            return not sd.kesintisiz_ok
+            return not ctx["kesintisiz_ok"]
         if adi == "kilit_tamamen_kayip":
             return kayip > self.cfg.KILIT_KAYIP_SN
         if adi == "tespit_kayip":
@@ -228,38 +238,37 @@ class GorevFSM:
             return g.tespit_var
         raise KeyError(f"bilinmeyen guard: {adi}")
 
-    def _gecis(self, guard_adi, hedef, t, girdi, sd):
+    def _gecis(self, guard_adi, hedef, t, girdi):
         eski = self.state
         self.state = hedef
         self._gecis_sayisi += 1
-        # Aşama-başına zamanlayıcı sıfırlamaları:
+        # Aşama-başına sıfırlamalar. NOT: kilit SÜRESİ (kümülatif/kesintisiz)
+        # KilitTakip'te tutulur — FSM burada onu sıfırlamaz (tek kaynak). Kayan
+        # pencere zaten doğal olarak düşürür; uzun kayıpta KilitTakip kendi sıfırlar.
         if hedef is State.TRACK_LOST:
-            # Kilit kaybı: taze başla (kümülatif + doğrulama yeniden birikir).
-            self._sure.reset()
-            self._dogrula.reset()
+            self._dogrula.reset()          # doğrulama yeniden birikir
             self._son_kilit_t = None
             self._prev_kesintisiz = 0.0
         elif hedef is State.DETECT and eski is State.APPROACH:
             # DETECT gerçek kapı: N-kareli doğrulama DETECT içinde ölçülsün.
             self._dogrula.reset()
         self._son_reject_sebep = None      # yeni state → reddi sıfırla
-        self._log_gecis(t, eski, hedef, guard_adi, sd, girdi)
+        self._log_gecis(t, eski, hedef, guard_adi, girdi)
 
-    def _log_gecis(self, t, eski, yeni, guard, sd, girdi):
+    def _log_gecis(self, t, eski, yeni, guard, girdi):
         self._log_fn(
             f"[FSM] t={t:.3f} {eski.value}->{yeni.value} guard={guard} "
-            f"kumulatif={sd.kumulatif_sn:.2f}s kesintisiz={sd.kesintisiz_sn:.2f}s "
+            f"kumulatif={girdi.kumulatif_sn:.2f}s kesintisiz={girdi.kesintisiz_sn:.2f}s "
             f"ah_oran={girdi.ah_oran:.3f}")
 
     def _reddi_logla(self, guard_adi, ctx, t, girdi):
-        sd = ctx["sd"]
         if guard_adi == "tespit_dogrulandi":
             sebep = "tespit dogrulanmadi"
         elif guard_adi == "kumulatif_5s":
-            sebep = (f"kumulatif {sd.kumulatif_sn:.2f}s "
+            sebep = (f"kumulatif {girdi.kumulatif_sn:.2f}s "
                      f"< {self.sart.KUMULATIF_KILIT_SN:.2f}s")
         elif guard_adi == "kesintisiz_3s":
-            sebep = (f"kesintisiz {sd.kesintisiz_sn:.2f}s "
+            sebep = (f"kesintisiz {girdi.kesintisiz_sn:.2f}s "
                      f"< {self.sart.KESINTISIZ_SN:.2f}s")
         else:
             return

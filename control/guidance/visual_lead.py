@@ -60,6 +60,13 @@ _CSV_ALANLAR = [
     "alt_faz",         # "yaklasma" | "terminal" — görsel fazın alt-fazı
     "en_yakin_m",      # bu görsel fazda görülen en yakın menzil (B5 fly-past ölçütü)
     "kapanma_hizi_ms", "mod",
+    # ── BAĞIL KAPANMA KLEMBİ gözlemi (2026-08-07) ──
+    "gorev_faz",       # FSM durumu (DETECT/TRACK_LOCK/ENGAGE/STRIKE)
+    "aktif_klemp",     # "kapanma" | "mutlak_tavan" | "mutlak(yedek)" | "yok"
+    "menzil_rate_ms",  # görsel Ṙ (m/s; + uzaklaşıyor)
+    "kapanma_bileseni_ms",  # net kapanma bileşeni (m/s)
+    "vhk_x", "vhk_y", "vhk_z",  # v_hedef_kestirimi (hedef hızı ileri-besleme)
+    "lead_aktif",      # lead terimi açık mı
     "pitch_body_deg", "kamera_dunya_pitch_deg", "pn_dikey_deg", "coalt_deg",
     "los_elev_deg", "los_elev_rate_dps", "gama_deg",
     "kadraj_hata_deg", "kadraj_duz_deg",
@@ -82,6 +89,8 @@ class _ArasState:
         self.attitude = None      # (roll, pitch, yaw) rad
         self.mode = None          # HEARTBEAT custom_mode
         self.pos = None           # (x, y, z) NED, iris çerçevesi
+        self.vel = None           # (vx, vy, vz) NED — DRONE'un KENDİ hızı (GPS'i
+                                  # jam'li DEĞİL; hedef hızı ileri-beslemesi bundan)
 
     def drenaj(self, conn):
         while True:
@@ -97,6 +106,8 @@ class _ArasState:
                 self.mode = msg.custom_mode
             elif t == "LOCAL_POSITION_NED":
                 self.pos = (msg.x, msg.y, msg.z)
+                self.vel = (getattr(msg, "vx", 0.0), getattr(msg, "vy", 0.0),
+                            getattr(msg, "vz", 0.0))
 
 
 def _menzil_hesapla(get_plane_truth, iris_pos):
@@ -420,21 +431,18 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
 
     def _faz_klemp():
         """Görev FSM durumunun TÜREVİ: (v_kapanma_max, lead_izin, strike_mi).
-        get_gorev_state yoksa (bağımsız çalışma/test) tam davranış — eski hâl.
-          ENGAGE            → kapanma <= V_MAX_ENGAGE, lead kapalı.
-          STRIKE / None     → sınırsız kapanma, lead açık (tam lead-pursuit).
-          DETECT/TRACK_LOCK → kapanma 0 (yalnız açısal hizalama). NOT: hibrit
-            modda bu iki durumda GÜDÜM GPS istasyon-tutmadadır (hareketli hedefte
-            mesafeyi doğru korur); buraya yalnız BAĞIMSIZ görsel modda düşülür,
-            burada sıfır hız hedefi tutamaz (GPS/target-hız yok — mod sınırı)."""
+        v_kapanma_max artık KAPANMA (bağıl) hız tavanı (mutlak değil):
+          DETECT/TRACK_LOCK → 0 (mesafe koru, hedef hızını eşle — hibritte GPS'te).
+          ENGAGE            → V_KAPANMA_MAX_ENGAGE (net kapanma), lead kapalı.
+          STRIKE / None     → V_KAPANMA (tam kapanma, bağıl), lead açık.
+        Mutlak emniyet tavanı (V_MUTLAK_MAX) her koşulda adapter'de uygulanır."""
         if get_gorev_state is None:
-            return None, True, True
+            return cfg.V_KAPANMA, True, True
         st = get_gorev_state()
         if st is None or st == _State.STRIKE:
-            return None, True, (st == _State.STRIKE)
+            return cfg.V_KAPANMA, True, (st == _State.STRIKE)
         if st == _State.ENGAGE:
-            return AYAR.V_MAX_ENGAGE, False, False
-        # DETECT / TRACK_LOCK / (TRACK_LOST/APPROACH — görsel çalışmıyor ama güvenli)
+            return AYAR.V_KAPANMA_MAX_ENGAGE, False, False
         return 0.0, False, False
 
     def _flypast(u_govde=None):
@@ -517,6 +525,7 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
     try:
         while not stop_event.is_set():
             # ── GÖREV FSM KLEMBİ (her kare) — güdüm modu FSM durumunun türevi ──
+            gorev_state = get_gorev_state() if get_gorev_state is not None else None
             v_kapanma_max, lead_izin, strike_mi = _faz_klemp()
             # Kör dalış (terminal blind-dive) YALNIZ STRIKE'ta geçerli. STRIKE'tan
             # çıkılırsa (kesintisiz koptu → ENGAGE, ya da TRACK_LOST) latch SERBEST
@@ -744,10 +753,12 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                                       # menzil > TERMINAL_MENZIL iken yavaşla ve
                                       # hedefle irtifayı eşitle.
                                       menzil=menzil_onceki,
-                                      # GÖREV FSM KLEMBİ: DETECT/TRACK_LOCK=0,
-                                      # ENGAGE<=V_MAX_ENGAGE, STRIKE=sınırsız.
+                                      # BAĞIL KAPANMA KLEMBİ: kapanma tavanı +
+                                      # drone'un KENDİ hızı (hedef hızı ileri-
+                                      # beslemesi; hedef GPS'i jam'li olsa da).
                                       v_kapanma_max=v_kapanma_max,
-                                      lead_izin=lead_izin)
+                                      lead_izin=lead_izin,
+                                      v_drone=aras.vel)
                 # kör dalışta sürdürülecek son nişan komutu
                 son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
                              cmd["yaw_cmd"])
@@ -772,6 +783,16 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     "kadraj_hata_deg": round(cmd["kadraj_hata_deg"], 2),
                     "kadraj_duz_deg": round(cmd["kadraj_duz_deg"], 2),
                     "alt_faz": cmd.get("alt_faz"),
+                    # ── Bağıl kapanma klembi gözlemi (Madde 3) ──
+                    "gorev_faz": (gorev_state.value if gorev_state is not None
+                                  else "bagimsiz"),
+                    "aktif_klemp": cmd.get("aktif_klemp"),
+                    "menzil_rate_ms": round(cmd.get("menzil_rate", 0.0), 2),
+                    "kapanma_bileseni_ms": round(cmd.get("kapanma_bileseni", 0.0), 2),
+                    "vhk_x": round(cmd.get("v_hedef_kest", (0, 0, 0))[0], 2),
+                    "vhk_y": round(cmd.get("v_hedef_kest", (0, 0, 0))[1], 2),
+                    "vhk_z": round(cmd.get("v_hedef_kest", (0, 0, 0))[2], 2),
+                    "lead_aktif": int(lead_izin),
                 })
                 # quad'a özgü izleme: burun eğimi + kameranın DÜNYAYA göre bakışı
                 # (ivme tavanı aşılırsa kamera yere bakmaya başlar — Cfg.IVME_TAVAN)

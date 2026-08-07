@@ -36,6 +36,7 @@ import numpy as np
 from control.guidance.common import (
     clamp, limit_acceleration_split, normalize_angle, send_velocity)
 from control.guidance.guidance_core import Cfg, govde_to_dunya
+from config.kilit_sabitler import AYAR as _AYAR   # V_MUTLAK_MAX (mutlak emniyet tavanı)
 
 
 class CopterAdapter:
@@ -59,6 +60,20 @@ class CopterAdapter:
         self.az_onceki = None         # önceki azimut (kare-arası Δaz için)
         self.az_rate_f = 0.0          # EMA'lı azimut oranı (rad/s)
         self.yatay_lead = 0.0         # son uygulanan yatay lead (rad, log)
+        # Görsel menzil-değişim hızı (Ṙ) — hedef hızı radyal kestirimi için.
+        self._menzil_prev = None
+        self._menzil_rate_ema = 0.0
+
+    def _menzil_rate(self, menzil, dt):
+        """Ṙ = d(menzil)/dt (m/s). + = uzaklaşıyor, − = kapanıyor. EMA yumuşatma
+        + gürültü kırpma. menzil bbox ölçeğinden gelir (görsel; GPS'siz)."""
+        r = 0.0
+        if menzil is not None and self._menzil_prev is not None and dt and dt > 0:
+            r = clamp((menzil - self._menzil_prev) / dt, -30.0, 30.0)
+            self._menzil_rate_ema = 0.5 * self._menzil_rate_ema + 0.5 * r
+        if menzil is not None:
+            self._menzil_prev = menzil
+        return self._menzil_rate_ema
 
     def _yatay_pn(self, u_dunya, dt, kalite):
         """AZİMUT-ORANI LEAD — pose şekil-lead'inin yerine (2026-08-06).
@@ -190,7 +205,7 @@ class CopterAdapter:
 
     def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
                 kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None,
-                v_kapanma_max=None, lead_izin=True):
+                v_kapanma_max=None, lead_izin=True, v_drone=None):
         """Saf hesap (test edilir; göndermez).
 
         v_kapanma_max: kapanma hızı ÜST SINIRI (m/s) — görev FSM durumunun
@@ -281,18 +296,47 @@ class CopterAdapter:
                 v_hedef = np.array([v_hedef[0], v_hedef[1],
                                     math.copysign(cfg.VZ_TERMINAL_MAX, v_hedef[2])])
 
-        # ── GÖREV FSM KAPANMA KLEMBİ (2026-08-07) — güdüm modu = FSM türevi ──
-        # DETECT/TRACK_LOCK: v_kapanma_max=0 → hız sıfır, mesafe korunur, yalnız
-        #   yaw ile açısal hizalama. ENGAGE: V_MAX_ENGAGE ile kırpılır. STRIKE:
-        #   v_kapanma_max=None → sınırsız (eski davranış). Yön korunur, büyüklük
-        #   kırpılır; yaw komutu (aşağıda) klempten ETKİLENMEZ (hizalama sürer).
-        if v_kapanma_max is not None:
+        # ── BAĞIL KAPANMA KLEMBİ (2026-08-07) — klemp MUTLAK değil KAPANMA hızına ──
+        # Hareketli hedefte mutlak tavan yetişemiyordu (5 m/s < 14 m/s hedef →
+        # drone geride kalıyordu). Artık:
+        #   v_cmd = v_hedef_kestirimi + kapanma·û ,  v_hedef_kestirimi = v_drone + Ṙ·û
+        # v_drone: drone'un KENDİ hızı (GPS'i jam'li DEĞİL). Ṙ: görsel menzil-
+        # değişim hızı (bbox). Klemp yalnız ÜSTÜNE binen kapanma bileşenine.
+        #   v_kapanma_max = 0  → mesafe koru (kapanma yok, hedef hızını eşle)
+        #   v_kapanma_max = 4  → ENGAGE net kapanma
+        #   v_kapanma_max = 25 → STRIKE tam kapanma
+        #   None (bağımsız mod / v_drone yok) → eski MUTLAK klemp (yedek)
+        menzil_rate = self._menzil_rate(menzil, dt)
+        v_hedef_kestirimi = np.zeros(3)
+        kapanma_bileseni = 0.0
+        aktif_klemp = "yok"
+        if v_drone is not None and v_kapanma_max is not None:
+            vd = np.asarray(v_drone, dtype=float)
+            # Hedef hızı (radyal) ≈ v_drone + Ṙ·û  (û = drone→hedef, u_dunya)
+            v_hedef_kestirimi = vd + menzil_rate * u_dunya
+            kapanma_bileseni = max(0.0, v_kapanma_max)
+            v_hedef = v_hedef_kestirimi + kapanma_bileseni * u_dunya
+            aktif_klemp = "kapanma"
+        elif v_kapanma_max is not None:           # v_drone yok → eski mutlak (yedek)
             if v_kapanma_max <= 0.0:
                 v_hedef = np.zeros(3)
             else:
                 hiz = float(np.linalg.norm(v_hedef))
                 if hiz > v_kapanma_max:
                     v_hedef = v_hedef * (v_kapanma_max / hiz)
+            aktif_klemp = "mutlak(yedek)"
+        # Terminal dikey tavan bağıl modda da uygulansın (kamera dikeye kaçmasın).
+        if cfg.VZ_TERMINAL_MAX > 0 and abs(v_hedef[2]) > cfg.VZ_TERMINAL_MAX:
+            v_hedef = np.array([v_hedef[0], v_hedef[1],
+                                math.copysign(cfg.VZ_TERMINAL_MAX, v_hedef[2])])
+        # ── MUTLAK EMNİYET TAVANI — görev fazlarında (v_kapanma_max var) HER
+        # KOŞULDA altında. Saf guidance-yasası testleri (v_kapanma_max=None,
+        # görevsiz) etkilenmez; gerçek uçuşta _faz_klemp hep değer verir. ──
+        if v_kapanma_max is not None:
+            hiz = float(np.linalg.norm(v_hedef))
+            if hiz > _AYAR.V_MUTLAK_MAX and hiz > 1e-6:
+                v_hedef = v_hedef * (_AYAR.V_MUTLAK_MAX / hiz)
+                aktif_klemp = "mutlak_tavan"
 
         # LİMİT dt'si: ham dt kare boşluğunda şişiyor (tespit kesilince
         # process() çağrılmıyor, boşluğun tamamı tek dt'ye biniyor). Hız/ivme
@@ -382,6 +426,13 @@ class CopterAdapter:
         return {"v_cmd": v_cmd, "yaw_cmd": yaw_cmd, "u_dunya": u_dunya,
                 "v_doygun": v_doygun, "yaw_doygun": yaw_doygun,
                 "alt_faz": alt_faz,
+                # Bağıl klemp gözlemi (loglama için)
+                "aktif_klemp": aktif_klemp,
+                "menzil_rate": menzil_rate,
+                "kapanma_bileseni": kapanma_bileseni,
+                "v_hedef_kest": (float(v_hedef_kestirimi[0]),
+                                 float(v_hedef_kestirimi[1]),
+                                 float(v_hedef_kestirimi[2])),
                 "yatay_lead_deg": math.degrees(yatay_lead),
                 "az_rate_dps": math.degrees(self.az_rate_f),
                 "pn_dikey_deg": math.degrees(pn_lead),
@@ -400,13 +451,15 @@ class CopterAdapter:
 
     def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
                 kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None,
-                v_kapanma_max=None, lead_izin=True):
+                v_kapanma_max=None, lead_izin=True, v_drone=None):
         """Hesapla + gönder. Dönen dict CSV loguna girer.
-        v_kapanma_max / lead_izin: görev FSM durumu klempi (bkz. compute)."""
+        v_kapanma_max: KAPANMA (bağıl) hız tavanı. v_drone: drone'un kendi hızı
+        (hedef hızı ileri-beslemesi). Bkz. compute."""
         out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw,
                             kalite=kalite, terminal=terminal,
                             azimut_kalite=azimut_kalite, menzil=menzil,
-                            v_kapanma_max=v_kapanma_max, lead_izin=lead_izin)
+                            v_kapanma_max=v_kapanma_max, lead_izin=lead_izin,
+                            v_drone=v_drone)
         send_velocity(conn, out["v_cmd"][0], out["v_cmd"][1], out["v_cmd"][2],
                       out["yaw_cmd"])
         return out

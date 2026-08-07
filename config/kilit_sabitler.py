@@ -97,6 +97,11 @@ class AyarSabit:
     KUTU_OLU_BOLGE_PX: float = _envf("AVCI_KUTU_OLU_BOLGE", 2.0)  # px
     # STRIKE kapanma hızı — yalnız STRIKE'ta aktif, mevcut değer korunur.
     V_KAPANMA: float = _envf("AVCI_IBVS_V_KAPANMA", 25.0)
+    # ── Bağıl kapanma klempi (hareketli hedef): klemp MUTLAK hıza değil KAPANMA
+    # (bağıl) hızına biner. v_cmd = v_hedef_kestirimi(=v_drone+Ṙ·û) + kapanma·û. ──
+    V_KAPANMA_MAX_ENGAGE: float = _envf("AVCI_V_KAPANMA_MAX_ENGAGE", 4.0)  # m/s net
+    # Mutlak emniyet tavanı — nihai komut her koşulda bunun altında (platform ~25).
+    V_MUTLAK_MAX: float = _envf("AVCI_V_MUTLAK_MAX", 20.0)      # m/s
     # İki kilit örneği arası dt bunu aşarsa aralık kilitli SAYILMAZ (donma/atlama
     # koruması; nominal kare ~35 ms olduğundan tetiklemez).
     ORNEK_TAVAN_SN: float = _envf("AVCI_ORNEK_TAVAN_SN", 0.2)

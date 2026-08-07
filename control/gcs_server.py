@@ -1568,8 +1568,12 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             _sy = abs((_ahk[1] + _ahk[3]) / 2.0 - _kilit_takip.img_h / 2.0) / (_bh / 2.0)
         _gorev_fsm.step(_FSMGirdi(
             t=stamp, tespit_var=bool(_kdurum.get("tespit_var")),
-            anlik_kilit=_anlik, ah_oran=_ah_oran,
-            merkez_sapma_x=_sx, merkez_sapma_y=_sy,
+            anlik_kilit=_anlik,
+            # Kilit SÜRELERİ KilitTakip'ten (TEK KAYNAK) — FSM'in ENGAGE/STRIKE
+            # kapıları UI/paket ile birebir aynı sürede tetiklenir.
+            kumulatif_sn=_kdurum.get("kumulatif_s", 0.0),
+            kesintisiz_sn=_kdurum.get("kesintisiz_s", 0.0),
+            ah_oran=_ah_oran, merkez_sapma_x=_sx, merkez_sapma_y=_sy,
             kapanma_hizi=get_son_kapanma()))
         set_gorev_durum(_gorev_fsm.durum)
 
