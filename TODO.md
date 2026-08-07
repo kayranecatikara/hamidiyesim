@@ -72,15 +72,77 @@ toplam 55 dosya / +4252 −8993):
    pose geri gelecek mi, yoksa yine bbox'ta mı kalınacak — **merge'e
    başlamadan karar ver**, yoksa iki sistem yarı yarıya karışır.
 
+**⚠ Yukarıdaki tablo YANILTICI (2026-08-07'de merge sırasında anlaşıldı).**
+`git diff --stat HEAD origin/gps_kararli_hal` bir İKİ-NOKTA farkıdır, merge
+önizlemesi değil: orada "silinecek" görünen satırların çoğu aslında **bu dalın
+kendi eklemeleri**. Gerçek gelen yük çok küçük — kararlı dal ortak atadan
+(`5bc5f8d`) bu yana yalnız **22 dosya** değiştirmiş ve `c6869f2` onların
+çoğunu (frpn, hedef_kestirim, zarf_olc, run_plane_scenario, testler) zaten
+almıştı. Fiilî çakışma: **12 dosya / 57 hunk**.
+
 **Sıra:**
 
-- [ ] Merge öncesi bu dalı etiketle: `git tag merge_oncesi_$(date +%Y%m%d)`
-      → kötü giderse tek komutla dönülür. *Sonuç:*
-- [ ] `git merge origin/gps_kararli_hal` — çakışmaları yukarıdaki 4 maddeye
-      göre çöz. *Sonuç:*
-- [ ] `python3 -m pytest tests/ -q` — iki dalın testleri birlikte geçiyor mu.
-      *Sonuç:*
-- [ ] Aşağıdaki taban ölçümünü tekrarla. *Sonuç:*
+- [x] Merge öncesi bu dalı etiketle. *Sonuç:* `merge_oncesi_20260807`
+      → dönüş: `git reset --hard merge_oncesi_20260807`
+- [x] `git merge origin/gps_kararli_hal` — çakışmalar çözüldü.
+      *Sonuç:* aşağıdaki "Merge nasıl çözüldü" tablosu.
+- [x] Testler. *Sonuç:* **HEPSİ GEÇTİ** — `pytest tests/ -q` 17/17; ayrıca
+      dosyaların kendi koşucuları (pytest bunları ÇALIŞTIRMIYOR, ayrı
+      çağrılmalı: `PYTHONPATH=. python3 tests/test_*.py`):
+      visual_lead 66/66 · gps_guidance 24/24 · frpn 26/26 ·
+      frpn_guidance 15/15 · hedef_kestirim 13/13.
+- [ ] Aşağıdaki taban ölçümünü yap (SITL gerekiyor — **yapılmadı**). *Sonuç:*
+
+### Merge nasıl çözüldü (2026-08-07)
+
+**Pose kararı (kullanıcı, merge öncesi):** pose **kesin olarak çıkarıldı**,
+takip bbox ile. Dolayısıyla görsel yığın bu dalın hâlinde kaldı; GPS tarafı
+kararlı daldan geldi.
+
+| dosya | karar |
+|---|---|
+| `visual_lead.py`, `guidance_core.py`, `supervisor.py` | **bizim** (bbox/GT) |
+| `gps_guidance.py` | **kararlı dal** — farkı yalnız yorum + yeni CSV sütunları (`tgt_ham_*`, `kestirim_gecikme_m`); davranış aynı. `IC_KAYMA` varsayılanı 14 olduğu için "varsayılan 0" diyen yorumda bizimki tutuldu |
+| `avci_copter.parm` | **bizim ad şeması** (SI). Değerler zaten aynıydı |
+| `gcs_server.py`, arayüz | **bizim** |
+| testler | **bizim** (G16/G17 numaralandırması çakışmayı önlüyor) |
+| `KARARLI_HAL.md` | §3b **kararlı daldan alındı** — aşağıya bak |
+
+**⚠ TODO'nun 4 maddesi eksikti — merge'ün SESSİZ tuzakları:**
+
+Git yalnız "iki tarafın da değiştirdiği" yeri çakışma sayar. Bir dosyayı
+**yalnız karşı taraf** değiştirmişse (veya silmişse) merge onu sessizce
+uygular. Bu merge'de üç yerde oldu:
+
+1. **`guidance_core.py`'ye pose aygıtı çakışmasız sızdı** — `gercek_geometri`,
+   `_quat_dcm`, `_process_gercek` ve `process()` içine `if gercek is not
+   None:` sevki. Bizim imzada `gercek`/`pose` diye değişken yok → çalışma
+   anında `NameError`. Söküldü.
+2. **`visual_lead.py:334`** — `kaynak_ad = "gercek" if get_gercek ...`
+   aynı şekilde sızmıştı. **`pytest` bunu YAKALAMADI** (17 test geçti);
+   dosyanın kendi koşucusu yakaladı. Söküldü.
+3. **`gcs_server.py`'de iki DAVRANIŞ GERİ ALMASI** — ortak atada olan,
+   bu dalın koruduğu, kararlı dalın SİLDİĞİ kod merge'de siliniyordu:
+   - manuel modun yerden **ARM + TAKEOFF**'u ve irtifaya göre FBWA→FBWB
+     geçişi (08-01'de "manuel mod yerdeki uçağı hiç kaldıramıyor" diye
+     düzeltilmişti) — geri gelirdi.
+   - **`_GORSEL_ACIK = off`** — kararlı dalın "görsel fazı tamamen kapat"
+     kararı. Bu dalın bütün yönüne aykırı (hibrit güdüm, B5, §1).
+   Dosya bu dalın hâline döndürüldü; kararlı dalın `gcs_server`'a katacağı
+   şey (kamera/telemetri kuyruk düzeltmesi) `c6869f2`'de zaten alınmıştı.
+
+**Boşuna korkulan:** `tools/los_kayma.py` ve `gudum_rapor.py` **silinmedi**
+(uyarı #2 gereksizmiş) — ortak atada yoklardı, yalnız bu dal eklemişti, merge
+korudu. `YAW_SUS_N=40` de otomatik korundu: `adapter_copter.py`'yi yalnız bu
+dal değiştirmiş, çakışma bile olmadı (`gps_guidance.py`'deki eşi doğrulandı,
+test G15 geçiyor).
+
+**Merge'de KAZANILANLAR:**
+
+- `KARARLI_HAL.md` **§3b** — iç daire kayması neden SABİT: oranlı sürüm dört
+  çapta (⌀96/71/55/41) ölçülüp **elendi**; sabit 14 m her yerde kazandı.
+  ⇒ aşağıdaki "`IC_ORAN=0.27` A/B" maddesi **artık gereksiz**, cevabı bu.
+- **Daire çapı butonları arayüze eklendi** (`#cap`) — eskiden yalnız curl'dü.
 
 ### Merge sonrası taban ölçümü
 
@@ -113,10 +175,15 @@ değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3)
 
 ### Sonra ayrılacak değişkenler
 
-- [ ] `IC_ORAN=0.27` (yarıçap-oranlı kayma) — `circle_s` (⌀41) ve `circle_xl`
-      (⌀96) senaryolarında sabit-metreyle A/B. *Sonuç:*
-      > Daire çapı varyantlarının arayüzde butonu YOK (arayüz bu dalda baştan
-      > yazıldı, dokunulmadı). Çağırma:
+- [x] ~~`IC_ORAN=0.27` (yarıçap-oranlı kayma) A/B~~ — **merge'de cevaplandı,
+      yapmaya gerek yok.** Kararlı dal bunu dört çapta ölçmüş ve oranlı sürümü
+      elemiş (KARARLI_HAL.md §3b): sabit 14 m ⌀96/71/55/41'in hepsinde kazandı;
+      oranlı sürüm ⌀96'da fazla (25 m), ⌀41'de az (11 m) kaydırıyor. Kod duruyor
+      ama kapalı (`AVCI_GPS_IC_ORAN=0.27` ile açılır).
+      *Sonuç:* **sabit 14 m kalıyor.** Açık kalan: 35 m'den dar daireler hiç
+      denenmedi — orada 14 m yarıçapın %40'ı olur, radyal bedel baskın olabilir.
+      > Daire çapı butonları artık arayüzde (Hedef İHA → **Daire Çapı**).
+      > curl karşılığı hâlâ geçerli:
       > `curl -X POST localhost:8000/api/command/plane/scenario/circle_s`
       > Çaplar: `circle_xl` ⌀96 · `circle_l` ⌀71 · `circle` ⌀55 · `circle_s` ⌀41
 - [ ] `WP_ACC_Z` 2.5 vs 1 — 08-05'te 3 denenip kötüleşmişti ama

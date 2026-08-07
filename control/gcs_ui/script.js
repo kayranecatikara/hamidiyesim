@@ -50,7 +50,11 @@ const st = {
   faz: null,                 // GPS | VISUAL | VURULDU | DURDU
   imha: false,
 };
-const SCN_LBL = { square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
+const SCN_LBL = {
+  square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF',
+  // Daire çapı varyantları (run_plane_scenario.DAIRE_CAPLARI)
+  circle_xl: 'DAİRE ⌀96', circle_l: 'DAİRE ⌀71', circle_s: 'DAİRE ⌀41',
+};
 
 // ══ KAMERA ─ MJPEG akışı ═══════════════════════════════════════════════
 // MJPEG multipart bağlantısı süresiz açık kalır; src değiştirmek eski
@@ -410,13 +414,17 @@ function drawScene(){
 }
 
 // ══ SENARYOLAR (kare / daire / agresif) ════════════════════════════════
-const scnBtns = [...document.querySelectorAll('#scn [data-scn]')];
+// #cap = daire çapı varyantları; aynı senaryo API'sini kullanırlar, o yüzden
+// aynı listede toplanırlar. Etiketler HTML'den BİR KEZ okunur: sabit bir ad
+// haritası varyantlar eklendiğinde sessizce undefined üretiyordu.
+const scnBtns = [...document.querySelectorAll('#scn [data-scn], #cap [data-scn]')];
+scnBtns.forEach(b => { b.dataset.base = b.querySelector('span').textContent; });
 function markScenario(){
   scnBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scn === st.scenario)));
   const lbl = st.scenario ? SCN_LBL[st.scenario] : null;
   scnBtns.forEach(b => {
     const span = b.querySelector('span');
-    const base = { square: 'Kare Çiz', circle: 'Daire Çiz', aggressive: 'Agresif Uçuş' }[b.dataset.scn];
+    const base = b.dataset.base;
     span.textContent = (b.dataset.scn === st.scenario) ? 'Durdur — ' + base : base;
   });
   $('oMode').textContent = st.manual ? 'MANUEL' : (lbl || 'BEKLEME');

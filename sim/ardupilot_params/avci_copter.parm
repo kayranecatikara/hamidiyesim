@@ -5,9 +5,12 @@
 # yüklenir. Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
 #
 # ═══════════════════════════════════════════════════════════════════════
-#  ⚠⚠ 2026-08-06 — BU DOSYADAKİ 8 SATIR BU MAKİNEDE UYGULANMIYOR ⚠⚠
+#  2026-08-07 — AD ŞEMASI: SI adları geçerli (TAM MERGE'de korundu)
 # ═══════════════════════════════════════════════════════════════════════
-# Bu dosya gps_kararli_hal dalından OLDUĞU GİBİ alındı (kullanıcı kararı).
+# gps_kararli_hal TAM merge'ünde bu dosya çakıştı: kararlı dal WPNAV_* /
+# ANGLE_MAX / PSC_VELXY_P kullanıyor, bu dal SI adlarını. DEĞERLER AYNI,
+# yalnız adlar farklı → çakışma SI adları lehine çözüldü.
+#
 # Aşağıdaki 08-04 notu WPNAV_* / ANGLE_MAX / PSC_VELXY_P adlarının geçerli
 # olduğunu söylüyor. BU MAKİNEDE DEĞİL — ölçüldü, tahmin değil:
 #
@@ -22,11 +25,11 @@
 #           WPNAV_ACCEL_Z  WPNAV_JERK  ANGLE_MAX  PSC_VELXY_P
 #   Doğrulama aracı da aynısını diyor: tools/parm_denetle.py → 3/11 uygulandı.
 #
-# SONUÇ: bu dosya şu hâliyle bırakılırsa araç firmware varsayılanlarıyla
-# (10 m/s, 2.5 m/s², 30° eğim) uçar — önceki ayardan (15 m/s, 5 m/s², 45°)
-# DAHA KÖTÜ. Kararlı daldaki menzil sonuçları bu zarfla tekrarlanmaz.
+# SONUÇ: WPNAV_* adlarıyla bırakılsaydı araç firmware varsayılanlarıyla
+# (10 m/s, 2.5 m/s², 30° eğim) uçardı — önceki ayardan (15 m/s, 5 m/s², 45°)
+# DAHA KÖTÜ; kararlı daldaki menzil sonuçları o zarfla tekrarlanmazdı.
 #
-# DÜZELTMEK İÇİN aşağıdaki SI karşılıklarına geçin (davranış aynı, ad farklı):
+# UYGULANAN KARŞILIKLAR (davranış aynı, ad farklı) — aşağıda yürürlükte:
 #     ANGLE_MAX      4500  →  ATC_ANGLE_MAX  45
 #     WPNAV_SPEED    2500  →  WP_SPD         25
 #     WPNAV_ACCEL     800  →  WP_ACC          8

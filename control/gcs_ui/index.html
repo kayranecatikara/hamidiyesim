@@ -47,6 +47,18 @@
                 <button class="aggr" data-scn="aggressive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M13 3 L6 13 H11 L10 21 L18 10 H12 Z" stroke-width="2" stroke-linejoin="round"/></svg><span>Agresif Uçuş</span></button>
                 <button class="manuel" id="manBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="10" rx="4" stroke-width="2"/><path d="M8 13h-3M6.5 11.5v3M15 12h.01M18 14h.01" stroke-width="2" stroke-linecap="round"/></svg><span id="manLbl">Manuel Mod</span></button>
               </div>
+              <!-- Daire ÇAPI varyantları (gps_kararli_hal merge'ünde geldi).
+                   Yarıçap yatış açısıyla belirlenir (R = v²/g·tanθ); adlar ve
+                   değerler run_plane_scenario.DAIRE_CAPLARI ile aynı. İç daire
+                   nişanını farklı yarıçaplarda sınamak için — TODO §0'daki
+                   IC_ORAN A/B'si bunu gerektiriyor (eskiden yalnız curl'dü). -->
+              <span class="label">Daire Çapı</span>
+              <div class="cap" id="cap">
+                <button data-scn="circle_xl" aria-pressed="false"><span>⌀ 96 m</span></button>
+                <button data-scn="circle_l" aria-pressed="false"><span>⌀ 71 m</span></button>
+                <button data-scn="circle" aria-pressed="false"><span>⌀ 55 m</span></button>
+                <button data-scn="circle_s" aria-pressed="false"><span>⌀ 41 m</span></button>
+              </div>
             </div>
 
             <!-- Manuel kumanda: yalnız manuel modda görünür -->

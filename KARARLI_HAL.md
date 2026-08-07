@@ -3,19 +3,20 @@
 > Bu dosya, GPS güdümünün **uçuşta doğrulanmış en iyi hâlini** kayda geçirir.
 > Bir şey bozulursa dönülecek nokta burasıdır: `git checkout kararli-gps-gudumu`
 
-> ### ⚠ BU DALA TAŞINIRKEN NELER FARKLI (2026-08-06)
+> ### ⚠ TAM MERGE SONRASI NELER FARKLI (2026-08-07)
 >
-> Bu belge `gps_kararli_hal` dalında yazıldı. O dalın GPS'e ait değişiklikleri
-> buraya alındı, GPS dışındakiler ALINMADI. Aşağıyı okurken:
+> Bu belge `gps_kararli_hal` dalında yazıldı. O dal 2026-08-07'de bu dala
+> **bütün olarak** merge edildi (TODO.md §0). GPS tarafı birebir geldi; görsel
+> taraf bu dalın hâlinde bırakıldı. Aşağıyı okurken:
 >
 > | belgede yazan | bu dalda gerçek |
 > |---|---|
-> | `ISTASYON_ELEV_DEG 15°`, `KD_H 0.60`, `IC_KAYMA 14` | ✅ aynı — alındı |
-> | araç parametreleri (`WPNAV_*`, `ANGLE_MAX`) | ⚠ dosya alındı ama **bu makinede uygulanmıyor** — bkz. DURUM.md §2 |
+> | `ISTASYON_ELEV_DEG 15°`, `KD_H 0.60`, `IC_KAYMA 14` | ✅ aynı |
+> | araç parametreleri | ✅ değerler aynı (25 m/s, 8 m/s², 2.5 m/s², 45°), **adlar SI şemasında** — bu firmware `WPNAV_*`/`ANGLE_MAX` tanımıyor, bkz. `avci_copter.parm` başlığı |
 > | "Görsel faz kapalı" | ❌ bu dalda görsel faz **açık** (hibrit güdüm) |
-> | "Truth modu açık, pose devre dışı" | ❌ pose tamamen **kaldırıldı**; görsel faz bbox ile çalışıyor, GT varsayılan KAPALI |
+> | "Truth modu açık, pose devre dışı" | ❌ pose **kaldırıldı** (2026-08-07 kullanıcı kararı, kesin). Görsel faz bbox ile çalışıyor; `AVCI_POSE_KAYNAK` / `gercek_geometri` / `_process_gercek` merge'de sökülmüştür. GT modu (`AVCI_GT_ROT`) varsayılan KAPALI |
 > | "Panel 8 m yalan söylüyordu" | ✅ bu dalın arayüzü baştan yazıldı, o hata yok |
-> | menzil sonuçları (13-16 m) | ⚠ o zarfla ölçüldü; bu dalda **henüz uçulmadı** — TODO.md madde 0 |
+> | menzil sonuçları (13-16 m) | ⚠ o zarfla ölçüldü; bu dalda **henüz uçulmadı** — TODO.md §0 taban ölçümü |
 
 ---
 
@@ -129,6 +130,42 @@ az hızla aynı açısal hızı tutturur.
 
 Kayma hedefin açısal hızıyla ölçekleniyor, yani **düz uçuşta tam sıfır** —
 düz kovalama davranışı hiç bozulmuyor.
+
+### 3b. İç daire kayması neden SABİT, neden oranlı değil
+
+Sezgi "sabit bir sayı yalnız belli bir çapta doğru olur, yarıçapla orantılı
+olmalı" diyordu. **Ölçüm bunu çürüttü.** Üç yapılandırma, dört daire çapı:
+
+| | ⌀96 | ⌀71 | ⌀55 | ⌀41 |
+|---|---|---|---|---|
+| **sabit 14 m** | **14-15** | **15-16** | **15-16** | **16-17** |
+| oranlı 0.27·R | 17-18 | 15-16 | 16-17 | 22-23 |
+| sabit 20 m | 18-19 | 18-19 | 17-18 | 17-18 + **düşüş** |
+
+Sabit 14, 35-96 m yarıçap aralığında (2.7 kat) **her yerde** kazandı.
+
+**Mekanizma** — mesafe iki bileşenden oluşuyor (drone hedefin çemberinin
+içinde uçtuğu için):
+
+| Kayma | Radyal (içeride olma bedeli) | Teğetsel (geri kalma) | Toplam |
+|---|---|---|---|
+| 0 m | 0 m | 34.1 m | 34.1 m |
+| **14 m** | 7 m | **13.9 m** | **15.6 m** |
+| 20 m | 12 m | 13.8 m | 18.3 m |
+
+Kaymanın işi teğetsel gecikmeyi düşürmek (34 → 14 m). Ama **14'te doyuyor**:
+20'ye çıkınca teğetsel 13.9 → 13.8 (kazanç yok), radyal 7 → 12 (saf bedel).
+
+Doyma noktasını **dairenin büyüklüğü değil, drone'un kendi dinamiği**
+belirliyor — açısal olarak yetişebilmek için ne kadar "yükten kurtulması"
+gerekiyorsa o kadar. Bu miktar yarıçapla ölçeklenmediği için sabit bir sayı,
+orantılı kuraldan iyi.
+
+Oranlı sürüm her iki uçtan da kaybetti: ⌀96'da 25 m kaydırıyor (fazla),
+⌀41'de 11 m (az). Kod duruyor ama kapalı (`AVCI_GPS_IC_ORAN=0.27`).
+
+> **Açık:** 35 m'den dar daireler test edilmedi (⌀32 senaryosu kaldırıldı).
+> Orada 14 m, yarıçapın %40'ı olur ve radyal bedel baskın hale gelebilir.
 
 ### 4. Gecikme birikmesi — üç ayrı hatta aynı hata
 

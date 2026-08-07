@@ -105,8 +105,7 @@ class Cfg:
     # --- HIZ KONTROLÜ ---
     KP_H = _env_f("AVCI_GPS_KP", 0.8)   # yatay konum hatası → hız (1/s)
 
-    # KD_H — bu terim SÖNÜMLEME DEĞİL, LEAD'in kendisidir (2026-08-05 bulgusu,
-    # gps_kararli_hal dalından alındı).
+    # KD_H — bu terim SÖNÜMLEME DEĞİL, LEAD'in kendisidir (2026-08-05 bulgusu).
     # de[] istasyon hatasının türevidir, yani ≈ göreli hız Δv. Yasa açılınca:
     #     v_cmd = v_hedef + KP_H·Δp + KD_H·Δv
     # FRPN'in hız formu da aynı üç terimli yapıda; oradaki karşılığı K_ZEM.
@@ -123,7 +122,7 @@ class Cfg:
     # değil. Eskisine dönmek için: AVCI_GPS_KD=0.2
     KD_H = _env_f("AVCI_GPS_KD", 0.60)
 
-    # ── İÇ DAİRE NİŞANI (2026-08-05, gps_kararli_hal) ──
+    # ── İÇ DAİRE NİŞANI (2026-08-05) ──
     # SORUN: istasyon "hedefin hız yönünün gerisi"ne konuyor. Hedef daire
     # çizerken o nokta hedefin KENDİ ÇEMBERİNİN ÜZERİNDEDİR. Drone onu
     # kovaladığı sürece aynı yarıçapta uçmak zorunda, dolayısıyla aynı hıza
@@ -134,7 +133,7 @@ class Cfg:
     # Hedefin açısal hızı sabit olduğuna göre drone'u HIZLANDIRMAK çemberini
     # BÜYÜTÜR. Bu deneyle doğrulandı: V_MAX 18→24 yapılınca drone yarıçapı
     # 38→43 m'ye çıktı ve menzil 29→35-41 m'ye AÇILDI. Yani güç eklemek
-    # ters tepti.
+    # ters teptik.
     #
     # ÇÖZÜM: istasyonu dönüşün İÇİNE kaydır. Drone daha küçük yarıçapta,
     # DAHA AZ hızla aynı açısal hızı tutturur ve hedefe yaklaşır:
@@ -154,9 +153,11 @@ class Cfg:
     #      14 m        9.8 m         3.2 m       −11 m  (İÇERİDE)
     # Mekanizma doğrulandı: drone artık hedefin çemberinin İÇİNDE uçuyor.
     # 34.1 → 9.8 m; GPS fazının hedefi (görsel faza devredilebilir konum)
-    # fazlasıyla tutturuldu.
+    # fazlasıyla tutturuldu. Kayma başına kazanç 8→14 aralığında artıyor
+    # (1.41 → 2.17 m/m), yani eğri henüz doymamış; 14 yeter görüldüğü için
+    # daha ileri gidilmedi — GPS fazının işi çarpmak değil devretmek.
     # ⚠ Bu SABİT METRE bir kaymadır. Çok dar dairede (uçağın yapabileceği en
-    # dar ~24 m yarıçap) fazla içeri iter. Yarıçap-oranlı sürüm aşağıda.
+    # dar ~24 m yarıçap) fazla içeri iter. Yarıçap-oranlı sürüm sıradaki iş.
     #
     # DÜZ UÇUŞ REGRESYON TESTİ YAPILDI: kare deseninde düz kenarlarda davranış
     # bozulmadı — ölçekleme (ω→0 ⇒ kayma→0) uçuşta da doğrulandı.
@@ -165,26 +166,32 @@ class Cfg:
     IC_OMEGA_REF = 0.15                        # rad/s; bu dönüş hızında tam kayma
     IC_OMEGA_EMA = 0.15                        # açısal hız kestirimi yumuşatması
 
-    # ── YARIÇAP-ORANLI KAYMA (sabit-metre sürümünün devamı) ──
+    # ── YARIÇAP-ORANLI KAYMA (2026-08-05, sabit-metre sürümünün devamı) ──
     # SABİT METRENİN AÇIĞI: 14 m, bu senaryonun dairesi (hedef R ≈ 52 m) için
     # ölçülmüş doğru değer. Ama hedef DAR bir daire çizerse (uçağın yapabileceği
-    # en dar ~24 m yarıçap) aynı 14 m nişanı merkeze fazla yaklaştırır.
+    # en dar ~24 m yarıçap) aynı 14 m nişanı merkeze fazla yaklaştırır: drone
+    # gereğinden içeride uçar, hedefe 14 m kalır — oysa oranlı olsa ~6 m olurdu.
+    # Tehlikeli değil ama performans kaybı; ve dar daire yarışmada olası.
     #
-    # ÇÖZÜM: kaymayı hedefin DÖNÜŞ YARIÇAPININ oranı yap. R = |v_hedef| / |ω|.
+    # ÇÖZÜM: kaymayı hedefin DÖNÜŞ YARIÇAPININ oranı yap. Yarıçap zaten
+    # elimizde: R = |v_hedef| / |ω|  (ikisini de ölçüyoruz).
     #     kayma = IC_ORAN × R,  IC_KAYMA_MAX ile tavanlı
     #
     # KATSAYI ÖLÇÜMDEN: 2026-08-05 uçuşunda 14 m kayma, hedefin 52.2 m'lik
-    # yarıçapının 0.268'iydi → IC_ORAN = 0.27. Böylece bu senaryoda oranlı
-    # sürüm sabit sürümle AYNI kaymayı üretir; fark yalnız yarıçap değişince
-    # ortaya çıkar — istenen davranış bu.
+    # yarıçabının 0.268'iydi → IC_ORAN = 0.27. Böylece bu senaryoda oranlı
+    # sürüm sabit sürümle AYNI kaymayı üretir (14.1 m); fark yalnız yarıçap
+    # değişince ortaya çıkar — istenen davranış bu.
     #
-    # ⚠ TEORİK TAHMİN TUTMADI, ölçüme uyuldu. Katsayı teoriden değil uçuştan.
+    # ⚠ TEORİK TAHMİN TUTMADI, ölçüme uyuldu. Geometrik beklenti
+    # (1 − v_drone/v_hedef ≈ 0.06) gerçeğin dörtte biriydi; çünkü drone hedefin
+    # çemberini birebir izlemiyor ve istasyonun 10.6 m'lik "arka" bileşeni de
+    # menzile katkı veriyor. Katsayı teoriden değil uçuştan alınmıştır.
+    #
     # VARSAYILAN 0.0 = KAPALI (sabit metre kullanılır). Denemek için:
     #     AVCI_GPS_IC_ORAN=0.27
     IC_ORAN = _env_f("AVCI_GPS_IC_ORAN", 0.0)  # 0 = kapalı, sabit IC_KAYMA geçerli
     IC_KAYMA_MAX = _env_f("AVCI_GPS_IC_MAX", 25.0)   # m; oranlı kaymanın tavanı
     IC_R_MIN = 15.0            # m; bundan dar yarıçap kestirimi güvenilmez sayılır
-
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
@@ -243,8 +250,19 @@ _LOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "logs")
 
+# ⚠ "menzil" ve "tgt_*" KESTİRİMDEN hesaplanır (EMA'lı est_x/y/z), HAM
+# telemetriden değil. Bu ayrım 2026-08-06'da kafa karışıklığı yarattı:
+# arayüz ham telemetriyi kullandığı için köşelerde CSV 15 m derken panel 21 m
+# gösteriyordu ve hangisinin doğru olduğu ayırt edilemiyordu.
+# Artık HAM konum ve ona olan mesafe de yazılıyor:
+#     tgt_ham_*  : get_plane()'in verdiği konum (EMA'dan ÖNCE)
+#     menzil_ham : drone → ham konum mesafesi  (panelin gördüğü sayı)
+#     kestirim_gecikme_m : |ham − kestirim|, yani filtrenin ne kadar geriden
+#                          geldiği. Manevrada bu büyür; köşe analizinin anahtarı.
 _CSV_ALANLAR = [
     "t", "dt", "durum", "d_h", "menzil",
+    "menzil_ham", "kestirim_gecikme_m",
+    "tgt_ham_x", "tgt_ham_y", "tgt_ham_z",
     "tgt_x", "tgt_y", "tgt_z", "tgt_vx", "tgt_vy", "tgt_vz",
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
@@ -446,7 +464,6 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                     cx_, cy_ = -vhy * isaret, vhx * isaret     # merkeze doğru
                     st_x += cx_ * ic_kayma
                     st_y += cy_ * ic_kayma
-
             if -st_z < cfg.LOOKUP_MIN_ALT:                        # yere çakılma koruması
                 st_z = -cfg.LOOKUP_MIN_ALT
 
@@ -543,6 +560,14 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             w.writerow({
                 "t": round(now, 3), "dt": round(dt, 4), "durum": durum,
                 "d_h": round(d_h, 2), "menzil": round(menzil, 2),
+                # HAM telemetri (EMA'dan önce) + ona olan mesafe + filtre gecikmesi
+                "tgt_ham_x": round(raw[0], 2), "tgt_ham_y": round(raw[1], 2),
+                "tgt_ham_z": round(raw[2], 2),
+                "menzil_ham": round(math.sqrt((raw[0] - ix) ** 2 + (raw[1] - iy) ** 2
+                                              + (raw[2] - iz) ** 2), 2),
+                "kestirim_gecikme_m": round(math.sqrt((raw[0] - est_x) ** 2
+                                                      + (raw[1] - est_y) ** 2
+                                                      + (raw[2] - est_z) ** 2), 2),
                 "tgt_x": round(est_x, 2), "tgt_y": round(est_y, 2), "tgt_z": round(est_z, 2),
                 "tgt_vx": round(vel_x, 2), "tgt_vy": round(vel_y, 2), "tgt_vz": round(vel_z, 2),
                 "iris_x": round(ix, 2), "iris_y": round(iy, 2), "iris_z": round(iz, 2),
