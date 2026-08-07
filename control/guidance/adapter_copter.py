@@ -189,8 +189,17 @@ class CopterAdapter:
         return u_yeni, pn_lead, coalt
 
     def compute(self, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None):
+                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None,
+                v_kapanma_max=None, lead_izin=True):
         """Saf hesap (test edilir; göndermez).
+
+        v_kapanma_max: kapanma hızı ÜST SINIRI (m/s) — görev FSM durumunun
+          türevi. None → sınır yok (STRIKE, eski davranış birebir). 0 → hız
+          vektörü sıfırlanır (DETECT/TRACK_LOCK: yalnız açısal hizalama, mesafe
+          korunur). Ara değer (ENGAGE: V_MAX_ENGAGE) → hız büyüklüğü kırpılır.
+        lead_izin: False → yatay azimut-oranı lead terimi UYGULANMAZ (filtre
+          durumu yine ısıtılır ki STRIKE'a geçince sıçrama olmasın). STRIKE'ta
+          True.
         attitude: (roll, pitch, yaw) radyan. dt: kare aralığı (s).
         kalite: pose kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
         (co-altitude yanlılığı aktif). azimut_kalite: 0..1, nişan dikeye yaklaşınca
@@ -212,7 +221,11 @@ class CopterAdapter:
         # SIRA ÖNEMLİ: yatay kanal yükselişe dokunmaz, dikey kanal azimuta
         # dokunmaz — ama dikey kanal azimutu yeniden okuduğu için yatay lead
         # ÖNCE uygulanmalı, yoksa dikey adım lead'siz azimutu geri yazar.
-        u_dunya, yatay_lead = self._yatay_pn(u_dunya, dt, kalite)
+        u_dunya_leadli, yatay_lead = self._yatay_pn(u_dunya, dt, kalite)
+        if lead_izin:
+            u_dunya = u_dunya_leadli      # lead uygulanır (STRIKE)
+        else:
+            yatay_lead = 0.0              # lead kapalı; _yatay_pn state'i yine ısındı
         u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal,
                                                  kadraj_elev=kadraj_elev)
         # ── YAKLAŞMA ALT-FAZI (2026-08-05) ──
@@ -267,6 +280,19 @@ class CopterAdapter:
             if cfg.VZ_TERMINAL_MAX > 0 and abs(v_hedef[2]) > cfg.VZ_TERMINAL_MAX:
                 v_hedef = np.array([v_hedef[0], v_hedef[1],
                                     math.copysign(cfg.VZ_TERMINAL_MAX, v_hedef[2])])
+
+        # ── GÖREV FSM KAPANMA KLEMBİ (2026-08-07) — güdüm modu = FSM türevi ──
+        # DETECT/TRACK_LOCK: v_kapanma_max=0 → hız sıfır, mesafe korunur, yalnız
+        #   yaw ile açısal hizalama. ENGAGE: V_MAX_ENGAGE ile kırpılır. STRIKE:
+        #   v_kapanma_max=None → sınırsız (eski davranış). Yön korunur, büyüklük
+        #   kırpılır; yaw komutu (aşağıda) klempten ETKİLENMEZ (hizalama sürer).
+        if v_kapanma_max is not None:
+            if v_kapanma_max <= 0.0:
+                v_hedef = np.zeros(3)
+            else:
+                hiz = float(np.linalg.norm(v_hedef))
+                if hiz > v_kapanma_max:
+                    v_hedef = v_hedef * (v_kapanma_max / hiz)
 
         # LİMİT dt'si: ham dt kare boşluğunda şişiyor (tespit kesilince
         # process() çağrılmıyor, boşluğun tamamı tek dt'ye biniyor). Hız/ivme
@@ -373,11 +399,14 @@ class CopterAdapter:
                 "kadraj_duz_deg": math.degrees(self.kadraj_duz)}
 
     def command(self, conn, u_govde, yaw_hata, attitude, dt, mevcut_yaw,
-                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None):
-        """Hesapla + gönder. Dönen dict CSV loguna girer."""
+                kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None,
+                v_kapanma_max=None, lead_izin=True):
+        """Hesapla + gönder. Dönen dict CSV loguna girer.
+        v_kapanma_max / lead_izin: görev FSM durumu klempi (bkz. compute)."""
         out = self.compute(u_govde, yaw_hata, attitude, dt, mevcut_yaw,
                             kalite=kalite, terminal=terminal,
-                            azimut_kalite=azimut_kalite, menzil=menzil)
+                            azimut_kalite=azimut_kalite, menzil=menzil,
+                            v_kapanma_max=v_kapanma_max, lead_izin=lead_izin)
         send_velocity(conn, out["v_cmd"][0], out["v_cmd"][1], out["v_cmd"][2],
                       out["yaw_cmd"])
         return out

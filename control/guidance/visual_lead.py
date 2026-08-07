@@ -33,6 +33,9 @@ from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
 from vision.detection_state import set_angajman_dalis  # ANGAJMAN faz hizası (yalnız etiket)
+from vision.detection_state import set_son_kapanma as _pub_kapanma  # FSM ENGAGE-reset logu
+from control.mission_fsm import State as _State        # görev FSM durumu (klemp türevi)
+from config.kilit_sabitler import AYAR                 # V_MAX_ENGAGE (ENGAGE kapanma tavanı)
 from control.guidance.guidance_core import (Cfg, LeadPursuitCore, govde_to_dunya,
                                             hedef_kadraj_hatasi)
 from vision import geometry as geo
@@ -251,7 +254,7 @@ def _vurus_oldu(menzil, cfg, temas_kaynagi=carpisma_state):
 
 def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                     kayip_kare_esik=None, get_temas=None, get_menzil=None,
-                    get_gt=None):
+                    get_gt=None, get_gorev_state=None):
     """kayip_kare_esik verilirse (supervisor hibrit modu): temas kaybında
     'kayip' döner (GPS'e dönülecek).
     Dönüş: 'durduruldu' (stop_event) | 'kayip' (temas kaybı VEYA fly-past) |
@@ -415,6 +418,25 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                 and menzil_onceki is not None
                 and menzil_onceki < cfg.TERMINAL_MENZIL)
 
+    def _faz_klemp():
+        """Görev FSM durumunun TÜREVİ: (v_kapanma_max, lead_izin, strike_mi).
+        get_gorev_state yoksa (bağımsız çalışma/test) tam davranış — eski hâl.
+          ENGAGE            → kapanma <= V_MAX_ENGAGE, lead kapalı.
+          STRIKE / None     → sınırsız kapanma, lead açık (tam lead-pursuit).
+          DETECT/TRACK_LOCK → kapanma 0 (yalnız açısal hizalama). NOT: hibrit
+            modda bu iki durumda GÜDÜM GPS istasyon-tutmadadır (hareketli hedefte
+            mesafeyi doğru korur); buraya yalnız BAĞIMSIZ görsel modda düşülür,
+            burada sıfır hız hedefi tutamaz (GPS/target-hız yok — mod sınırı)."""
+        if get_gorev_state is None:
+            return None, True, True
+        st = get_gorev_state()
+        if st is None or st == _State.STRIKE:
+            return None, True, (st == _State.STRIKE)
+        if st == _State.ENGAGE:
+            return AYAR.V_MAX_ENGAGE, False, False
+        # DETECT / TRACK_LOCK / (TRACK_LOST/APPROACH — görsel çalışmıyor ama güvenli)
+        return 0.0, False, False
+
     def _flypast(u_govde=None):
         """B5 — HEDEFİ GEÇTİK Mİ? (sebep metni veya None)
 
@@ -491,12 +513,32 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
             return "kayip"
         return None
 
+    onceki_klemp = None
     try:
         while not stop_event.is_set():
+            # ── GÖREV FSM KLEMBİ (her kare) — güdüm modu FSM durumunun türevi ──
+            v_kapanma_max, lead_izin, strike_mi = _faz_klemp()
+            # Kör dalış (terminal blind-dive) YALNIZ STRIKE'ta geçerli. STRIKE'tan
+            # çıkılırsa (kesintisiz koptu → ENGAGE, ya da TRACK_LOST) latch SERBEST
+            # bırakılır; araç kör dalışa kilitli kalmaz (Ek-1).
+            if not strike_mi and terminal_latch:
+                terminal_latch = False
+                terminal_baslangic = None
+                set_angajman_dalis(False)
+                print("[LEAD] ⟲ KÖR DALIŞ İPTAL — görev durumu STRIKE değil "
+                      "(latch serbest, faz klempine dönüldü)")
+            klemp = (round(v_kapanma_max, 2) if v_kapanma_max is not None else None,
+                     lead_izin)
+            if klemp != onceki_klemp:
+                print(f"[LEAD] faz klemp: kapanma_max="
+                      f"{'∞' if v_kapanma_max is None else f'{v_kapanma_max:.1f}'} m/s "
+                      f"lead={'açık' if lead_izin else 'kapalı'} "
+                      f"(strike={strike_mi})")
+                onceki_klemp = klemp
             kayit = wait_kare(son_seq, timeout=0.5)
             if kayit is None:                 # yeni kare yok (timeout / akış durdu)
                 # Kilitli kör dalıştaysak veya girişe uygunsak son nişanı sürdür.
-                if terminal_latch or _terminal_giris_ok():
+                if strike_mi and (terminal_latch or _terminal_giris_ok()):
                     sonuc = _terminal_adim()
                     if sonuc:
                         return _bitir(sonuc)
@@ -590,8 +632,10 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
             # "Algı girdisi var mı": bbox modunda det, GT modunda GT akışı.
             girdi_var = (gt is not None) if gt_modu else (det is not None)
             if not girdi_var:                 # bu karede tespit yok
-                # Kilitli kör dalış: son nişanı sürdür, GPS'e DÖNME (kayip sayma).
-                if terminal_latch or _terminal_giris_ok():
+                # Kilitli kör dalış YALNIZ STRIKE'ta: son nişanı sürdür, GPS'e
+                # DÖNME. STRIKE değilse kör dalışa girilmez (Ek-1) → aşağıdaki
+                # normal 'tespit yok' yolu işler (faz klempi mesafeyi korur).
+                if strike_mi and (terminal_latch or _terminal_giris_ok()):
                     satir["durum"] = "kor_dalis"
                     (satir["vx_cmd"], satir["vy_cmd"],
                      satir["vz_cmd"], yaw_r) = son_v_cmd
@@ -699,10 +743,17 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                                       # YAKLAŞMA alt-fazı için (bkz. adapter):
                                       # menzil > TERMINAL_MENZIL iken yavaşla ve
                                       # hedefle irtifayı eşitle.
-                                      menzil=menzil_onceki)
+                                      menzil=menzil_onceki,
+                                      # GÖREV FSM KLEMBİ: DETECT/TRACK_LOCK=0,
+                                      # ENGAGE<=V_MAX_ENGAGE, STRIKE=sınırsız.
+                                      v_kapanma_max=v_kapanma_max,
+                                      lead_izin=lead_izin)
                 # kör dalışta sürdürülecek son nişan komutu
                 son_v_cmd = (cmd["v_cmd"][0], cmd["v_cmd"][1], cmd["v_cmd"][2],
                              cmd["yaw_cmd"])
+                # Kapanma hızını (yatay büyüklük) yayınla: FSM'in kamera
+                # thread'indeki ENGAGE kesintisiz-reset logu bunu okur.
+                _pub_kapanma(math.hypot(cmd["v_cmd"][0], cmd["v_cmd"][1]))
                 satir.update({
                     "vx_cmd": round(cmd["v_cmd"][0], 2),
                     "vy_cmd": round(cmd["v_cmd"][1], 2),

@@ -226,61 +226,73 @@ def main():
     kontrol("T20 ivme tavanı", ivme <= cfg.IVME_TAVAN * (1 + 1e-9),
             f"uygulanan={ivme:.2f} m/s² tavan={cfg.IVME_TAVAN}")
 
-    # ── T22: supervisor geçiş zinciri GPS→VISUAL→(kayıp)→GPS→VISUAL→durdur ──
+    # ── T22: FSM-güdümlü dispatch zinciri GPS→VISUAL→(kayıp)→GPS→VISUAL→durdur ──
+    # Supervisor artık devir kapısı değil, görev FSM durumunu (get_gorev_state)
+    # okuyor. Test FSM durumunu set_gorev_durum ile sürer: SEARCH→GPS, DETECT→
+    # görsel. fake_gps "hedef edinildi"yi (FSM DETECT) simüle eder.
     import threading
     import time as _t
     import control.guidance.supervisor as sup
+    from control.mission_fsm import State as _St, FSMDurum as _FD
+    from vision.detection_state import set_gorev_durum as _setst
     olaylar = []
     _orij_gps, _orij_vis = sup.run_gps_guidance, sup.run_visual_lead
 
     def fake_gps(conn, gp, gi, stop_event):
         olaylar.append("gps")
-        stop_event.wait(5.0)          # izci görsel kilitle tetikleyene kadar
+        _setst(_FD(_St.ENGAGE))       # kilit tamam → FSM görsel kümeye (ENGAGE)
+        stop_event.wait(5.0)          # gps_izci ENGAGE'i görüp faz_stop'u kırar
 
     def fake_visual(conn, wait_kare, gpt, stop_event, cfg=None, kayip_kare_esik=None,
-                    **kw):                                # get_temas/get_menzil uyumu
+                    **kw):                                # get_temas/get_menzil/state uyumu
         olaylar.append("visual")
-        return "kayip" if olaylar.count("visual") == 1 else "durduruldu"
+        if olaylar.count("visual") == 1:
+            _setst(_FD(_St.TRACK_LOST))   # kilit kaybı → GPS kümesine dön
+            return "kayip"
+        return "durduruldu"
 
-    sayac = {"seq": 0}
     def fake_wait(son_seq, timeout=0.5):
         _t.sleep(0.002)
-        sayac["seq"] += 1
-        return {"seq": sayac["seq"], "det": {"conf": 0.9},
-                "stamp": sayac["seq"] / 30.0, "wall_recv": _t.time()}
+        return None
 
     try:
         sup.run_gps_guidance, sup.run_visual_lead = fake_gps, fake_visual
-        sup._ga.status["d_h"] = 10.0          # menzil kapısı açık
+        _setst(_FD(_St.SEARCH))               # başlangıç: GPS kümesi
         stop = threading.Event()
         th = threading.Thread(
             target=sup.run_hybrid,
             args=(None, None, None, fake_wait, None, stop), daemon=True)
         th.start()
+        # İkinci görsele girince (gecis=2) görevi durdur → zincir kapansın.
+        for _ in range(500):
+            if olaylar.count("visual") >= 2:
+                stop.set(); break
+            _t.sleep(0.01)
         th.join(10.0)
         kontrol("T22 supervisor geçiş zinciri",
-                olaylar == ["gps", "visual", "gps", "visual"]
+                olaylar[:4] == ["gps", "visual", "gps", "visual"]
                 and sup.status["faz"] == "DURDU" and sup.status["gecis_sayisi"] == 2,
                 f"olaylar={olaylar} faz={sup.status['faz']} "
                 f"geçiş={sup.status['gecis_sayisi']}")
     finally:
         sup.run_gps_guidance, sup.run_visual_lead = _orij_gps, _orij_vis
-        sup._ga.status["d_h"] = None
+        _setst(None)
 
     # ── T23: supervisor 'vuruldu' → görev biter, faz=VURULDU ──
     olaylar2 = []
     _og, _ov = sup.run_gps_guidance, sup.run_visual_lead
 
     def fake_gps2(conn, gp, gi, stop_event):
-        olaylar2.append("gps"); stop_event.wait(5.0)
+        olaylar2.append("gps")
+        _setst(_FD(_St.ENGAGE)); stop_event.wait(5.0)
 
     def fake_visual_vurus(conn, wp, gpt, stop_event, cfg=None, kayip_kare_esik=None,
-                          **kw):                          # get_temas/get_menzil uyumu
+                          **kw):                          # get_temas/get_menzil/state uyumu
         olaylar2.append("visual"); return "vuruldu"
 
     try:
         sup.run_gps_guidance, sup.run_visual_lead = fake_gps2, fake_visual_vurus
-        sup._ga.status["d_h"] = 10.0
+        _setst(_FD(_St.SEARCH))
         stop = threading.Event()
         th = threading.Thread(target=sup.run_hybrid,
                               args=(None, None, None, fake_wait, None, stop),
@@ -291,7 +303,7 @@ def main():
                 f"olaylar={olaylar2} faz={sup.status['faz']}")
     finally:
         sup.run_gps_guidance, sup.run_visual_lead = _og, _ov
-        sup._ga.status["d_h"] = None
+        _setst(None)
 
     # ── T24/T25: visual_lead terminal (kör dalış → vuruş / süre dolunca ıska) ──
     import control.guidance.visual_lead as vlmod

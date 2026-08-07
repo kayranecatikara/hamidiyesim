@@ -15,10 +15,13 @@ import threading
 import time
 
 _ALANLAR = [
-    "t_sim", "faz", "gorev_faz",
+    "t_sim", "faz", "gorev_faz", "gorev_state",
     "x1", "y1", "x2", "y2",
     "marj", "kumulatif_s", "kesintisiz_s", "kilit", "kilit_isteri_ok",
     "tespit_dogrulandi", "menzil", "menzil_ref",
+    # ── Oran regülasyonu gözlem alanları (yaklasma_kontrol) ──
+    "yatay_oran", "dikey_oran", "baglayici_eksen", "L_olculen",
+    "oran_ham", "oran_ema", "oran_hatasi", "yaklasma_komut", "yaklasma_sebep",
     "vx", "vy", "vz", "yaw",
     "los_x", "los_y", "los_z",
 ]

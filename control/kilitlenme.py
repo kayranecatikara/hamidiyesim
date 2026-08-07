@@ -31,8 +31,10 @@ panel için durum üretir (gösterge/skorlama katmanı). Güdüm/uçuş davranı
   BEKLE        : Henüz tespit yok / uzun süre temas kaybı.
 """
 
-import collections
 import os
+
+from config.kilit_sabitler import SARTNAME, AYAR
+from control.kilit_sure import KilitSure
 
 
 def _envf(ad, varsayilan):
@@ -43,19 +45,19 @@ def _envf(ad, varsayilan):
 
 
 class KilitCfg:
-    """Ayarlar (env ile geçilebilir)."""
-    # AV (sarı kutu) kenar boşlukları — Şekil 2: yatay %25, dikey %10
-    YATAY_BOSLUK = _envf("AVCI_KILIT_AV_YATAY", 0.25)
-    DIKEY_BOSLUK = _envf("AVCI_KILIT_AV_DIKEY", 0.10)
-    # Boyut şartı: kadrajın en az bu oranı (Şekil 2: %5). Paket eşiği için %6 tavsiye.
-    BOYUT_ESIK = _envf("AVCI_KILIT_BOYUT", 0.05)
-    # Değerlendirme penceresi ve gereken kümülatif kilit süresi (sn)
-    PENCERE_S = _envf("AVCI_KILIT_PENCERE", 10.0)
-    HEDEF_S = _envf("AVCI_KILIT_HEDEF", 5.0)
-    # Bu süre boyunca hiç tespit yoksa fazlar/kilit sıfırlanır (görev kaybı)
+    """Ayarlar. Şartname (6.1.4) değerleri BLOK A'dan (frozen) gelir — override
+    EDİLMEZ. Yalnız şartname-dışı SIFIRLA_S ayarlanabilir kalır."""
+    # AV (sarı kutu) kenar boşlukları — Şekil 2: yatay %25, dikey %10 (BLOK A)
+    YATAY_BOSLUK = 0.25
+    DIKEY_BOSLUK = 0.10
+    # Boyut şartı: kadrajın en az bu oranı — 6.1.4 resmi %5 (BLOK A, frozen)
+    BOYUT_ESIK = SARTNAME.AH_EKRAN_ORAN_MIN
+    # Değerlendirme penceresi + kümülatif kilit süresi — 6.1.2/6.1.4 (BLOK A)
+    PENCERE_S = SARTNAME.PENCERE_SN
+    HEDEF_S = SARTNAME.KUMULATIF_KILIT_SN
+    # Bu süre boyunca hiç tespit yoksa fazlar/kilit sıfırlanır (görev kaybı).
+    # Şartname değeri DEĞİL (gösterge katmanı sıfırlaması) → ayarlanabilir.
     SIFIRLA_S = _envf("AVCI_KILIT_SIFIRLA", 3.0)
-    # İki kare arası boşluk bundan büyükse kümülatife katkı sayılmaz (donma/atlama koruması)
-    MAKS_DT = _envf("AVCI_KILIT_MAKS_DT", 0.5)
 
 
 class KilitTakip:
@@ -77,11 +79,14 @@ class KilitTakip:
 
     def sifirla(self):
         """Görev başlangıcı/bitişinde çağrılır: fazları ve kümülatif pencereyi sıfırlar."""
-        self._pencere = collections.deque()   # (t, kilitli_sure_s) katkıları
+        # Zaman muhasebesi tek kaynak: KilitSure (6.1.4 uyumlu %5 boşluk köprüsü,
+        # kümülatif + kesintisiz + beyan_araligi). Eski _pencere/_kumulatif kaldırıldı.
+        self._sure = KilitSure()
         self._son_t = None
         self._son_tespit_t = None
         self._takip_latch = False              # boyut şartı bir kez sağlandı mı?
         self._terminal_latch = False           # kilit isteri (≥5 sn) bir kez sağlandı mı?
+        self._kilit_onceki = False             # anlık kilit histerezisi (giriş/çıkış eşiği)
         self._son_durum = self._bos_durum("BEKLE")
 
     # ── yardımcılar ──
@@ -97,19 +102,19 @@ class KilitTakip:
             "boyut_ok": False,
             "merkez_av_icinde": False,
             "kumulatif_s": 0.0,
+            "kesintisiz_s": 0.0,
             "kilit_isteri_ok": False,
             "pencere_s": self.cfg.PENCERE_S,
             "hedef_s": self.cfg.HEDEF_S,
         }
 
-    def _pencere_temizle(self, now):
-        alt = now - self.cfg.PENCERE_S
-        p = self._pencere
-        while p and p[0][0] < alt:
-            p.popleft()
-
-    def _kumulatif(self):
-        return sum(sure for _, sure in self._pencere)
+    def beyan_araligi(self, now, pencere_sn=None):
+        """8B bildirim beyan aralığı — KilitSure'a passthrough (salt-okur).
+        Dönüş: (baslangic, bitis, kumulatif) | None. Gerçek kilitli örnekle
+        başlar/biter; beyanın tamamı şartı sağlar (6.1.4)."""
+        if pencere_sn is None:
+            return self._sure.beyan_araligi(now)
+        return self._sure.beyan_araligi(now, pencere_sn)
 
     def guncelle(self, bbox, now):
         """Bir kareyi işle.
@@ -131,7 +136,7 @@ class KilitTakip:
         # Uzun temas kaybı → görev sıfırlaması (fazlar ve pencere temizlenir)
         if (self._son_tespit_t is None or
                 now - self._son_tespit_t > cfg.SIFIRLA_S):
-            self._pencere.clear()
+            self._sure.reset()
             self._takip_latch = False
             self._terminal_latch = False
 
@@ -147,7 +152,11 @@ class KilitTakip:
             cy = (y1 + y2) / 2.0
             kap_x = w / self.img_w
             kap_y = h / self.img_h
-            boyut_ok = (kap_x >= cfg.BOYUT_ESIK) or (kap_y >= cfg.BOYUT_ESIK)
+            # Boyut şartı HİSTEREZİSLİ (girişte %6, çıkışta %5.2) — iç karar/
+            # bildirim eşiği (CLAUDE.md). Sınırda anlık kilidin yanıp sönmesini
+            # önler; FSM ve UI aynı anlık kilidi kullanır (tek kaynak).
+            esik = AYAR.AH_ORAN_CIKIS if self._kilit_onceki else AYAR.AH_ORAN_GIRIS
+            boyut_ok = (kap_x >= esik) or (kap_y >= esik)
             ax1, ay1, ax2, ay2 = self.av
             merkez_ic = (ax1 <= cx <= ax2) and (ay1 <= cy <= ay2)
             anlik_kilit = boyut_ok and merkez_ic
@@ -161,16 +170,18 @@ class KilitTakip:
             if boyut_ok:
                 self._takip_latch = True
 
-        # Kümülatif kilit penceresi: bu karede kilitliyse geçen süreyi ekle
-        if anlik_kilit and 0.0 < dt <= cfg.MAKS_DT:
-            self._pencere.append((now, dt))
-        self._pencere_temizle(now)
-        kumulatif = self._kumulatif()
-        if kumulatif >= cfg.HEDEF_S:
+        # Kümülatif + kesintisiz kilit muhasebesi tek kaynaktan (KilitSure):
+        # her kareyi (now, anlik_kilit) ile besle; %5 boşluk köprüsü, kayan
+        # pencere ve segment mantığı orada (6.1.4). dt burada ayrıca kullanılmaz.
+        sure_durum = self._sure.guncelle(now, anlik_kilit)
+        kumulatif = sure_durum.kumulatif_sn
+        if sure_durum.pencere_ok:
             self._terminal_latch = True
 
+        self._kilit_onceki = anlik_kilit       # histerezis durumu (sonraki kare)
         durum["anlik_kilit"] = anlik_kilit
         durum["kumulatif_s"] = kumulatif
+        durum["kesintisiz_s"] = sure_durum.kesintisiz_sn
         durum["kilit_isteri_ok"] = self._terminal_latch
 
         # ── Faz kararı (ileri-kilitlemeli) ──

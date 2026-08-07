@@ -1143,9 +1143,11 @@ function renderStatus(){
     setk('kpDogr', kd.tespit_dogrulandi ? 'EVET' : 'hayır', kd.tespit_dogrulandi ? 'ok' : 'no');
     setk('kpRef', mt.menzil_ref != null ? mt.menzil_ref.toFixed(1) + ' m' : '-- m');
 
-    // ── VİDEO ÜSTÜ KİLİT KUTULARI (SVG, 640x480 koordinatı; img ile ölçeklenir) ──
-    // SARI AV çerçevesi: config oranlarından sunucuda hesaplanan av_kutu (her karede).
-    // KIRMIZI kilit dörtgeni: ah_kutu VE anlik_kilit true iken.
+    // ── VİDEO ÜSTÜ SARI AV ÇERÇEVESİ (SVG) ──
+    // SARI AV: sabit kutu (config oranları) → poll gecikmesinde bile titremez.
+    // KIRMIZI kilit dörtgeni ARTIK SUNUCUDA videoya çiziliyor (30 Hz senkron,
+    // titremez; 6.1.4 hakem videosu için doğru) — bkz. vision/kilit_overlay.py.
+    // Buradaki lockRect kaldırıldı (çift çizim olmasın).
     const rect = (el, box) => {
       const e = $(el); if (!e) return;
       if (box){ e.setAttribute('x', box[0]); e.setAttribute('y', box[1]);
@@ -1154,7 +1156,6 @@ function renderStatus(){
       else e.setAttribute('visibility', 'hidden');
     };
     rect('avRect', kd.av_kutu);
-    rect('lockRect', (kd.anlik_kilit && kd.ah_kutu) ? kd.ah_kutu : null);
   } else {
     yaz('pBlock', 'API YOK', 'red');
   }

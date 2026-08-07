@@ -41,6 +41,11 @@ set -u
 
 export AVCI_GZ_CAMERA=1        # Harmonic kamerası gz-transport'tan okunur
 export AVCI_NO_BROWSER=1       # otomatik tarayıcı açma (MESA takılmasını önler)
+# GPS istasyon menzili: kilit dörtgeni %6 (AH_ORAN_GIRIS) oranına ~7.3 m'de
+# ulaşıyor; eski 11 m'de oran %4 kalıp DETECT hiç tetiklenmiyordu. 6.5 m eğik
+# menzil → oran ~%6.8 (giriş + histerezis çıkışı %5.2'nin üstünde). gps_guidance
+# bu env'i import anında okur; gps_guidance.py'ye DOKUNULMAZ.
+export AVCI_GPS_RANGE=6.5
 
 fuser -k 8000/tcp 2>/dev/null   # "Address already in use" olmasın
 sleep 0.3

@@ -46,6 +46,64 @@ def get_kilit_durum():
         return _last_kilit_durum
 
 
+# ── Görev FSM durumu (kamera thread'i yazar; güdüm dispatch + visual_lead okur) ──
+# control.mission_fsm.GorevFSM her karede günceller; güdüm modu bunun TÜREVİDİR.
+# Yalnız durum ADI/telemetrisi taşınır — komut üretimi tüketicide (state klempi).
+_last_gorev = None          # FSMDurum | None
+
+
+def set_gorev_durum(durum):
+    """Son görev FSM durumunu sakla (mission_fsm.FSMDurum | None)."""
+    global _last_gorev
+    with _lock:
+        _last_gorev = durum
+
+
+def get_gorev_durum():
+    """Son görev FSM durumunu döndür (FSMDurum | None)."""
+    with _lock:
+        return _last_gorev
+
+
+def get_gorev_state():
+    """Yalnız State enum'ını döndür (yoksa None). Güdüm klempi bunu okur."""
+    with _lock:
+        return _last_gorev.state if _last_gorev is not None else None
+
+
+# ── Son kapanma hızı (visual_lead yazar; FSM'in ENGAGE-reset logu okur) ──
+# Guidance thread'i son komut vektörünün YATAY büyüklüğünü yayınlar; kamera
+# thread'indeki FSM, kesintisiz-reset olayını bu hızla loglar (V_MAX_ENGAGE ayarı).
+_son_kapanma_hizi = 0.0
+
+
+def set_son_kapanma(v_ms):
+    global _son_kapanma_hizi
+    with _lock:
+        _son_kapanma_hizi = float(v_ms)
+
+
+def get_son_kapanma():
+    with _lock:
+        return _son_kapanma_hizi
+
+
+# ── Yaklaşma regülasyon kararı (supervisor thread'i yazar; kilit_log okur) ──
+# Oran regülatörünün son YaklasmaKarar'ı (oran_ema, komut, sebep…) — log için.
+_son_yaklasma_karar = None
+
+
+def set_yaklasma_karar(karar):
+    global _son_yaklasma_karar
+    with _lock:
+        _son_yaklasma_karar = karar
+
+
+def get_yaklasma_karar():
+    with _lock:
+        return _son_yaklasma_karar
+
+
 # ── Terminal kör-dalış bayrağı (visual_lead yazar; ANGAJMAN monitörü okur) ──
 # visual_lead terminal_latch anını yayınlar; dalış matematiğine dokunulmaz.
 _angajman_dalis = False

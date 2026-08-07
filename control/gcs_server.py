@@ -37,8 +37,12 @@ import uvicorn
 from vision.detection_state import (set_detection, set_frame_detection,
                                     set_tracks, wait_new_frame, get_detection,
                                     get_frame_detection, set_kilit_durum,
-                                    get_kilit_durum)
+                                    get_kilit_durum, set_gorev_durum,
+                                    get_gorev_state, get_son_kapanma,
+                                    get_yaklasma_karar)
 from control.kilitlenme import KilitTakip  # 6.1.4 kilitlenme gösterge/skor katmanı
+from control.mission_fsm import GorevFSM, Girdi as _FSMGirdi   # merkezî görev FSM
+from vision.kutu_yumusatici import KutuYumusatici   # AH kutusu zamansal yumuşatma
 from vision import kilit_overlay as _kilit_overlay   # Adım 8 overlay (salt-okur)
 from control import kilit_log as _kilit_log          # Adım 8 CSV hakem logu
 from control import komut_kaydi as _komut_kaydi      # Adım 8 komut vektörü yakalama
@@ -1010,6 +1014,24 @@ _visual_active = False
 _visual_stop_event = threading.Event()
 
 
+def _gorev_fsm_sifirla():
+    """Görev başında (chase/visual) merkezî FSM'i SEARCH'e sıfırla — önceki
+    görevden kalan durum/kilit muhasebesi yeni göreve taşınmasın."""
+    if _gorev_fsm is not None:
+        _gorev_fsm.reset()
+    set_gorev_durum(None)
+
+
+def _gorsel_yurut(conn, get_plane_truth, stop_event, **extra):
+    """TEK GİRİŞ NOKTASI — görsel lead-pursuit (STRIKE komutu dahil) YALNIZ
+    buradan üretilir (Ek-4: üç ayrı yol tekleştirildi). get_gorev_state HER
+    ZAMAN bağlanır: kapanma/lead klempi görev FSM durumunun türevidir, hangi
+    moddan (hybrid/visual/standalone) çağrılırsa çağrılsın kaçak dalış olmaz.
+    supervisor.run_hybrid da aynı klempi kendi çağrısında geçirir."""
+    return _run_visual_lead(conn, wait_new_frame, get_plane_truth, stop_event,
+                            get_gorev_state=get_gorev_state, **extra)
+
+
 def _gt_bbox_girdi():
     """GT MODU (AVCI_GT_ROT=on) algı girdisi — YOLO detection'ın YERİNE.
 
@@ -1063,10 +1085,11 @@ def _visual_thread():
 
         _visual_stop_event.clear()
         sim_truth.temas_sifirla()
-        _run_visual_lead(conn, wait_new_frame, get_plane_truth, _visual_stop_event,
-                         get_temas=sim_truth.temas,
-                         get_menzil=sim_truth.menzil,
-                         get_gt=_gt_bbox_girdi)
+        _gorev_fsm_sifirla()               # görev başı: FSM SEARCH'ten başlasın
+        _gorsel_yurut(conn, get_plane_truth, _visual_stop_event,
+                      get_temas=sim_truth.temas,
+                      get_menzil=sim_truth.menzil,
+                      get_gt=_gt_bbox_girdi)
 
     except Exception as e:
         import traceback
@@ -1159,11 +1182,11 @@ def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
         _supervisor_mod.status["gecis_sayisi"] += 1
         print(f"[CHASE] ✓ GÖRSEL KİLİT — lead pursuit başlıyor "
               f"(geçiş #{_supervisor_mod.status['gecis_sayisi']}, GÖRSEL mod)")
-        sebep = _run_visual_lead(conn, wait_new_frame, get_plane_truth, stop_event,
-                                 kayip_kare_esik=SupCfg.KAYIP_M,
-                                 get_temas=sim_truth.temas,
-                                 get_menzil=sim_truth.menzil,
-                                 get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
+        sebep = _gorsel_yurut(conn, get_plane_truth, stop_event,
+                              kayip_kare_esik=SupCfg.KAYIP_M,
+                              get_temas=sim_truth.temas,
+                              get_menzil=sim_truth.menzil,
+                              get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
         _supervisor_mod.status["son_sebep"] = sebep
         if sebep == "vuruldu":
             _supervisor_mod.status["faz"] = "VURULDU"
@@ -1243,6 +1266,7 @@ def _chase_thread():
             return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
         sim_truth.temas_sifirla()          # temas latch'i görev başına taze
+        _gorev_fsm_sifirla()               # görev başı: merkezî FSM SEARCH'ten
         vuruldu = False
         while not chase_stop.is_set() and not vuruldu:
             mod = _guidance_mode
@@ -1313,6 +1337,9 @@ _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
 _kilit_takip   = None   # KilitTakip örneği (ilk karede gerçek W,H ile kurulur)
 _bildirici     = None   # KilitBildirici (Adım 8B; startup'ta kurulur)
 _bildirim_onceki = False  # kilit_isteri_ok yükselen kenar tespiti için önceki değer
+_gorev_fsm     = None   # GorevFSM (tek merkezî görev durum makinesi; ilk karede kurulur)
+_kutu_yumusatici = KutuYumusatici()  # AH kutusu zamansal yumuşatma (kaynakta)
+_kutu_onceki_t = None   # kutu yumuşatma dt'si için önceki kare damgası
 # Parazit modellere de uygulansın mı? 1 = tespit/tracker PARAZİTLİ kareyi
 # görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
 # yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
@@ -1352,10 +1379,12 @@ def _apply_video_noise(img, lvl):
         img = np.clip(img.astype(np.float32) * darken, 0, 255).astype(np.uint8)
     return img
 
-def _kilit_log_row(kdurum, t_sim):
+def _kilit_log_row(kdurum, t_sim, yk=None, gorev_durum=None):
     """Hakem CSV satırını kur (Adım 8). SALT-OKUR: karar mantığına dokunmaz.
     LOS telemetry_state'ten (iris→plane), menzil gps_guidance'tan, menzil_ref
-    tutucudan, komut vektörü komut_kaydı sarmalayıcısından gelir."""
+    tutucudan, komut vektörü komut_kaydı sarmalayıcısından gelir.
+    yk: YaklasmaKarar (kapalı çevrim APPROACH gözlemi) veya None.
+    gorev_durum: FSMDurum (tespit_dogrulandi kaynağı) veya None."""
     kd = kdurum or {}
     ah = kd.get("ah_kutu")
     x1, y1, x2, y2 = ah if ah else ("", "", "", "")
@@ -1366,19 +1395,40 @@ def _kilit_log_row(kdurum, t_sim):
         lx, ly, lz = lx / n, ly / n, lz / n
     komut = _komut_kaydi.get_son_komut()
     vx, vy, vz, yaw = komut if komut else ("", "", "", "")
+    menzil = _gps_guidance_mod.status.get("menzil")
+    # ── Oran regülasyonu gözlemi + geri-hesaplanan etkin boyut ──
+    kx, ky = kd.get("kaplama_x"), kd.get("kaplama_y")
+    baglayici = ("" if kx is None else ("yatay" if kx >= (ky or 0.0) else "dikey"))
+    oran_ham = max(kx, ky) if (kx is not None and ky is not None) else None
+    # L_olculen = oran · R · W / FX (yatay eksende etkin genişlik; 1.687 doğrulaması)
+    L_olc = ""
+    if kx is not None and menzil:
+        L_olc = round(kx * menzil * _geo.IMG_W / _geo.FX, 3)
+    dogrulandi = (gorev_durum.tespit_dogrulandi if gorev_durum is not None
+                  else kd.get("tespit_dogrulandi"))
     return {
         "t_sim": round(t_sim, 4),
         "faz": kd.get("faz"),
         "gorev_faz": _supervisor_mod.status.get("faz"),
+        "gorev_state": gorev_durum.state.value if gorev_durum is not None else "",
         "x1": x1, "y1": y1, "x2": x2, "y2": y2,
         "marj": round(kd.get("marj", 0.0), 4),
         "kumulatif_s": round(kd.get("kumulatif_s", 0.0), 4),
         "kesintisiz_s": round(kd.get("kesintisiz_s", 0.0), 4),
         "kilit": int(bool(kd.get("anlik_kilit"))),
         "kilit_isteri_ok": int(bool(kd.get("kilit_isteri_ok"))),
-        "tespit_dogrulandi": int(bool(kd.get("tespit_dogrulandi"))),
-        "menzil": _gps_guidance_mod.status.get("menzil"),
+        "tespit_dogrulandi": int(bool(dogrulandi)),
+        "menzil": menzil,
         "menzil_ref": _menzil_tutucu_mod.status.get("menzil_ref"),
+        "yatay_oran": round(kx, 4) if kx is not None else "",
+        "dikey_oran": round(ky, 4) if ky is not None else "",
+        "baglayici_eksen": baglayici,
+        "L_olculen": L_olc,
+        "oran_ham": round(oran_ham, 4) if oran_ham is not None else "",
+        "oran_ema": round(yk.oran_ema, 4) if (yk is not None and yk.oran_ema is not None) else "",
+        "oran_hatasi": round(yk.oran_hatasi, 4) if (yk is not None and yk.oran_hatasi is not None) else "",
+        "yaklasma_komut": (yk.komut if yk is not None else ""),
+        "yaklasma_sebep": (yk.sebep if yk is not None else ""),
         "vx": vx, "vy": vy, "vz": vz, "yaw": yaw,
         "los_x": round(lx, 4), "los_y": round(ly, 4), "los_z": round(lz, 4),
     }
@@ -1459,8 +1509,14 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         set_detection(det)
 
     # ── 6.1.4 KİLİTLENME GÖSTERGE/SKOR KATMANI (güdüme GİRMEZ) ──
-    # Her karede KilitTakip'i besle: bbox = nişan kutusu (coast'ta None → tespit yok),
-    # t_sim = kare header.stamp (wall clock DEĞİL). Çözünürlük kareden okunur; sabit yok.
+    # Kilit KARARI + kilitlenme dörtgeni (AH, videoya çizilen) hedefin GERÇEK
+    # tespit konumuna bağlıdır — güdümün filtrelenmiş nişan/coast kutusuna DEĞİL
+    # (2026-08-07, #3). Böylece HAKEM'e giden kilit paketi (KilitTakip.beyan_araligi
+    # + kilit_isteri_ok) ile videodaki kırmızı dörtgen (ah_kutu) TEK KAYNAKTAN gelir
+    # ve birbiriyle uyuşur. Kaynak seçimi: tracker modu → det_raw (ham en iyi tespit);
+    # bbox modu → det (detect_talon, zaten ham). Güdüm nişan/filtreli kutuyu (det,
+    # set_detection) kullanmaya DEVAM eder — yalnız kilit karar/çizim hattı ayrıştı.
+    # AV sabit; merkez-AV-içinde şartı KilitTakip'te aynen durur.
     global _kilit_takip
     _kdurum = None
     if stamp is not None:
@@ -1471,7 +1527,14 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             print(f"[GCS] Çözünürlük değişti {_kilit_takip.img_w}x{_kilit_takip.img_h}"
                   f" → {W}x{H}; KilitTakip yeniden kuruluyor.")
             _kilit_takip = KilitTakip(W, H)
-        _kbbox = det["bbox"] if det is not None else None
+        _gercek_det = det_raw if _talon_tracker is not None else det
+        _kbbox = _gercek_det["bbox"] if _gercek_det is not None else None
+        # Zamansal yumuşatma (kaynakta): kırmızı dörtgen titremesin + sahte dev
+        # kutu reddi. Kriter+çizim+paket aynı yumuşatılmış kutudan (#3 korunur).
+        global _kutu_onceki_t
+        _kutu_dt = (stamp - _kutu_onceki_t) if _kutu_onceki_t else 0.0
+        _kutu_onceki_t = stamp
+        _kbbox = _kutu_yumusatici.yumusat(_kbbox, max(0.0, _kutu_dt))
         _kdurum = _kilit_takip.guncelle(_kbbox, stamp)
         set_kilit_durum(_kdurum)
         # ── 8B: kilit isteri (pencere_ok latch) YÜKSELEN KENARINDA bildir ──
@@ -1484,6 +1547,36 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
             if _ar is not None:
                 _bildirici.bildir(*_ar)
         _bildirim_onceki = _simdi_ok
+
+        # ── MERKEZÎ GÖREV FSM (tek karar kaynağı; güdüm modu bunun TÜREVİ) ──
+        # Anlık kilit KilitTakip'ten okunur (TEK KAYNAK): UI göstergesi, hakem
+        # paketi ve FSM AYNI anlık kilidi (merkez AV + %6/%5.2 histerezisli boyut)
+        # kullanır. Böylece UI'daki kesintisiz/kümülatif ile FSM'in ENGAGE/STRIKE
+        # kapıları BİREBİR aynı olur (eskiden ayrı eşiklerdi → UI 3 s gösterse de
+        # STRIKE tetiklenmiyordu). Süre kapıları FSM içinde (kendi KilitSure'u
+        # aynı anlık kilitle beslenir → aynı süre). Bildirim yolu ayrı (Ek-3).
+        global _gorev_fsm
+        if _gorev_fsm is None:
+            _gorev_fsm = GorevFSM()
+        _anlik = bool(_kdurum.get("anlik_kilit"))
+        _ah_oran = max(_kdurum.get("kaplama_x", 0.0), _kdurum.get("kaplama_y", 0.0))
+        _sx = _sy = 0.0
+        _ahk = _kdurum.get("ah_kutu")
+        if _ahk is not None:
+            _bw = max(1.0, _ahk[2] - _ahk[0]); _bh = max(1.0, _ahk[3] - _ahk[1])
+            _sx = abs((_ahk[0] + _ahk[2]) / 2.0 - _kilit_takip.img_w / 2.0) / (_bw / 2.0)
+            _sy = abs((_ahk[1] + _ahk[3]) / 2.0 - _kilit_takip.img_h / 2.0) / (_bh / 2.0)
+        _gorev_fsm.step(_FSMGirdi(
+            t=stamp, tespit_var=bool(_kdurum.get("tespit_var")),
+            anlik_kilit=_anlik, ah_oran=_ah_oran,
+            merkez_sapma_x=_sx, merkez_sapma_y=_sy,
+            kapanma_hizi=get_son_kapanma()))
+        set_gorev_durum(_gorev_fsm.durum)
+
+        # ── Oran regülasyon kararı (üretimi supervisor._oran_regulasyon
+        # thread'inde — conn'lu; geri-çekilme send_velocity oradan). Burada
+        # yalnız LOG için son karar okunur. ──
+        _yk_karar = get_yaklasma_karar()
     # KARE KÖPRÜSÜ — güdüm döngüsünün saati. HER karede çağrılır (det None
     # olsa bile): visual_lead kare bekler, çağrı atlanırsa döngü donar ve GT
     # modu da çalışmaz (2026-08-04'te tam bu olmuştu).
@@ -1505,7 +1598,9 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     # ── KİLİTLENME OVERLAY + HAKEM LOGU (mevcut overlay'lerin ÜSTÜNE) ──
     img = _kilit_overlay.ciz(img, _kdurum, stamp)
     if stamp is not None:                         # tespitsiz karede de satır (bbox boş)
-        _kilit_log.kaydet(_kilit_log_row(_kdurum, stamp))
+        # _yk_karar + _gorev_fsm aynı stamp-not-None bloğunda tanımlandı → burada var.
+        _kilit_log.kaydet(_kilit_log_row(
+            _kdurum, stamp, yk=_yk_karar, gorev_durum=_gorev_fsm.durum))
 
     # ---- VIDEO PARAZİT (yayın) + MJPEG KODLAMA ----
     if not _NOISE_PRE_DETECT and lvl > 0.001:

@@ -22,17 +22,36 @@ GT modunda pose kilidini atlamak MÜMKÜNDÜR (`AVCI_GT_KILIT_BYPASS=on`) ama
 VARSAYILAN KAPALIDIR — ölçümle çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS.
 """
 
-import collections
+import math
 import os
 import threading
+import time
 
 from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
+from control.guidance.common import send_velocity
 from control import menzil_tutucu as _tutucu
-from vision.detection_state import (get_kilit_durum, get_angajman_dalis,
-                                    set_angajman_dalis)
+from control.mission_fsm import State
+from control.yaklasma_kontrol import YaklasmaKontrol
+from vision.detection_state import (get_kilit_durum, get_gorev_state,
+                                    set_yaklasma_karar)
+
+# ── Güdüm YÜRÜTÜCÜSÜ = görev FSM durumunun türevi (tek karar kaynağı) ──
+# GPS yürütücüsü: SEARCH/APPROACH + DETECT/TRACK_LOCK + TRACK_LOST.
+#   DETECT/TRACK_LOCK neden GPS? "Mesafeyi koru" HAREKETLİ hedefte SIFIR HIZ
+#   DEĞİL, hedefin hızıyla eşleşen (bağıl kapanma=0) hızdır. GPS istasyon-tutma
+#   hedefin pozunu/hızını bilir → sabit menzili (~10-11 m) korur ve hedefi kadraj
+#   merkezine oturtur (açısal hizalama). visual_lead'in kapanma=0 klempi hız
+#   vektörünü tamamen sıfırlayıp aracı durduruyordu → hedef uzaklaşıp kilit
+#   birikemiyordu (bkz. 2026-08-07 saha bulgusu). Kümülatif/kesintisiz kilit
+#   kamera thread'inde birikmeye devam eder; güdüm GPS'te kalır.
+# Görsel yürütücü: YALNIZ ENGAGE (kapanma <= V_MAX_ENGAGE) ve STRIKE (tam
+#   lead-pursuit) — kapanma klempi visual_lead içinde FSM durumuna göre.
+_GPS_SET = frozenset({State.SEARCH, State.APPROACH, State.DETECT,
+                      State.TRACK_LOCK, State.TRACK_LOST})
+_GORSEL_SET = frozenset({State.ENGAGE, State.STRIKE})
 
 
 class SupCfg:
@@ -124,6 +143,51 @@ def _kopru(parent_event, child_event):
     threading.Thread(target=izle, daemon=True).start()
 
 
+def _geri_cek(conn, get_plane, get_iris, hiz):
+    """Hedeften UZAĞA yatay geri-çekilme (NED), yaw hedefe dönük (kamera hedefi
+    görmeye devam etsin). gps_guidance'a DOKUNMAZ — ayrı send_velocity.
+    r_eff=min(menzil,RANGE_SET) RANGE_SET ile uzaklaştıramadığı için gereklidir."""
+    p, i = get_plane(), get_iris()
+    if p is None or i is None:
+        return
+    dx, dy = i["x"] - p["x"], i["y"] - p["y"]        # hedef→drone (uzaklaşma yönü)
+    n = math.hypot(dx, dy)
+    if n < 1e-6:
+        return
+    yaw = math.atan2(p["y"] - i["y"], p["x"] - i["x"])   # drone→hedef (kamera dönük)
+    send_velocity(conn, hiz * dx / n, hiz * dy / n, 0.0, yaw)
+
+
+def _oran_regulasyon(conn, get_plane, get_iris, regul_stop, hz=20.0):
+    """APPROACH/TRACK_LOCK'ta hedefin karedeki ORANINI ORAN_SETPOINT'e regüle
+    eder (menzil değil oran). Yaklaşma: gps_guidance.Cfg.RANGE_SET'i düşürür
+    (gps kapanır). Geri çekilme: _geri_cek (sarmalayıcı send_velocity). Oran
+    HAM'ın EMA'sından ölçülür (kilit hattı ham kalır; bkz. #2/#3). Kararı log
+    için yayınlar. gps_guidance ile eşzamanlı koşar; geri çekilirken RANGE_SET
+    büyütülür → gps ~0 tutar, geri komut baskın olur."""
+    yk = YaklasmaKontrol()
+    periyot = 1.0 / hz
+    son_t = time.time()
+    while not regul_stop.is_set():
+        simdi = time.time()
+        dt, son_t = simdi - son_t, simdi
+        st = get_gorev_state()
+        aktif = st in (State.APPROACH, State.TRACK_LOCK)
+        kd = get_kilit_durum() or {}
+        kx, ky = kd.get("kaplama_x"), kd.get("kaplama_y")
+        bbox_var = (kd.get("ah_kutu") is not None) and (kx is not None)
+        oran_ham = max(kx or 0.0, ky or 0.0) if bbox_var else None
+        karar = yk.adim(oran_ham, bbox_var, _ga.status.get("menzil"),
+                        _ga.Cfg.RANGE_SET, dt, aktif=aktif)
+        if aktif:
+            _ga.Cfg.RANGE_SET = karar.range_set          # setattr — dosyaya dokunmaz
+            if karar.komut == "geri" and karar.geri_hiz > 0.0:
+                _geri_cek(conn, get_plane, get_iris, karar.geri_hiz)
+        set_yaklasma_karar(karar)
+        regul_stop.wait(periyot)
+    set_yaklasma_karar(None)
+
+
 def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg, get_temas=None,
                get_menzil=None, get_gt=None):
@@ -141,98 +205,80 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         get_range=lambda: _ga.Cfg.RANGE_SET,
         set_range=lambda r: setattr(_ga.Cfg, "RANGE_SET", r),
     )
-    # Kilit sinyali GT akışına devredilsin mi (varsayılan HAYIR — ölçümle
-    # çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS).
-    gt_modu = bool(getattr(lead_cfg, "GT_ROT", False) and get_gt is not None
-                   and sup_cfg.GT_KILIT_BYPASS)
-    if gt_modu:
-        print("[SUPERVISOR] ⚠ GÖRSEL KİLİT ATLANIYOR (AVCI_GT_KILIT_BYPASS=on) — "
-              "geçiş yalnız menzil/DROPOUT kapısına kalır. ÖLÇÜMDE KÖTÜLEŞTİRDİ: "
-              "devir 6.6→19.6 m, en yakın 0.68→2.41 m, 13/13 faz kayıp.")
-
+    # ── FSM-GÜDÜMLÜ DİSPATCH (2026-08-07) ──
+    # Eski devir kapısı (KILIT_N ardışık/kayan pencere + menzil) KALDIRILDI:
+    # "hedefi ilk gördüğü anda dalıyor" hatasının kaynağı buydu — kapı yalnız
+    # "gördüm + yakınım"a bakıyor, kümülatif/kesintisiz kilidi BEKLEMİYORDU.
+    # Artık YÜRÜTÜCÜ görev FSM durumunun türevi: FSM SEARCH/APPROACH/TRACK_LOST
+    # iken GPS yaklaşma; DETECT'ten itibaren görsel (kapanma klempi visual_lead
+    # içinde FSM durumuna göre). GATE_KILIT/KILIT_N/GT_KILIT_BYPASS artık kullanılmaz.
     while not stop_event.is_set():
-        # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
-        status["faz"] = "GPS"
-        faz_stop = threading.Event()
-        _kopru(stop_event, faz_stop)
-        tetik = {"gorsel": False}
+        st = get_gorev_state()
 
-        def izci():
-            pencere = collections.deque(maxlen=sup_cfg.KILIT_PENCERE)
-            son_seq = 0
-            while not faz_stop.is_set():
-                kayit = wait_kare(son_seq, timeout=0.5)
-                if kayit is None:
-                    continue
-                son_seq = kayit["seq"]
-                det = kayit["det"]
-                # GT modunda kilit sinyali tespit DEĞİL, GT akışının canlılığıdır.
-                if gt_modu:
-                    pencere.append(get_gt() is not None)
-                else:
-                    pencere.append(det is not None
-                                   and det.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
-                sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
-                status["kilit_sayac"] = sayac
-                if sayac >= sup_cfg.KILIT_N:
-                    d_h = _ga.status.get("d_h")
-                    yakin = (d_h is not None and d_h < sup_cfg.GATE_MENZIL)
-                    dropout = _ga.status.get("durum") == "DROPOUT"  # jamming fallback
-                    kapi = (not sup_cfg.GATE_KILIT) or yakin or dropout
-                    if kapi:
-                        tetik["gorsel"] = True
-                        faz_stop.set()          # gps_guidance döngüsünü kır
+        # ══ GPS YÜRÜTÜCÜSÜ ══ (FSM SEARCH/APPROACH/TRACK_LOST veya durum yok) ══
+        if st is None or st in _GPS_SET:
+            status["faz"] = "GPS"
+            faz_stop = threading.Event()
+            _kopru(stop_event, faz_stop)
+            # Oran regülasyonu gps ile EŞZAMANLI koşar (APPROACH/TRACK_LOCK'ta
+            # aktif): oranı ORAN_SETPOINT'e getirene dek yaklaş/geri çekil.
+            regul_stop = threading.Event()
+            _kopru(stop_event, regul_stop)
+            threading.Thread(target=_oran_regulasyon,
+                             args=(conn, get_plane, get_iris, regul_stop),
+                             daemon=True).start()
+
+            def gps_izci():
+                # FSM görsel kümeye (ENGAGE/STRIKE) girince GPS döngüsünü kır.
+                while not faz_stop.is_set():
+                    s = get_gorev_state()
+                    status["kilit_sayac"] = 0
+                    if s in _GORSEL_SET:
+                        faz_stop.set()
                         return
+                    faz_stop.wait(0.05)
 
-        threading.Thread(target=izci, daemon=True).start()
-        print(f"[SUPERVISOR] GPS fazı "
-              f"({'GT akışı' if gt_modu else 'görsel kilit'}: "
-              f"{sup_cfg.KILIT_N}/{sup_cfg.KILIT_PENCERE} kare"
-              f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
-        run_gps_guidance(conn, get_plane, get_iris, faz_stop)
+            threading.Thread(target=gps_izci, daemon=True).start()
+            print(f"[SUPERVISOR] GPS yürütücüsü (FSM: {st.value if st else 'SEARCH'})"
+                  f" — oran regülasyonu aktif; görsel faza ENGAGE'de geçilir")
+            run_gps_guidance(conn, get_plane, get_iris, faz_stop)
+            regul_stop.set()               # oran regülasyon thread'ini durdur
+            if stop_event.is_set():
+                break
+            continue
 
-        if stop_event.is_set() or not tetik["gorsel"]:
-            break
-
-        # ══ GÖRSEL FAZ ══ (temas kesilene ya da stop'a kadar)
+        # ══ GÖRSEL YÜRÜTÜCÜ ══ (FSM DETECT/TRACK_LOCK/ENGAGE/STRIKE) ══
         status["faz"] = "VISUAL"
         status["gecis_sayisi"] += 1
-        print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
-              f"(geçiş #{status['gecis_sayisi']})")
-        # ── ANGAJMAN alt-fazı monitörü (TEK ATIŞ, yalnız FAZ ETİKETİ) ──
-        # KilitTakip TERMINAL'e geçince (pencere_ok latch) VEYA visual_lead kör-dalış
-        # latch'i yayınlanınca status["faz"]="ANGAJMAN" yazar ve KAPANIR (başka hiçbir
-        # duruma yazmaz — yarış koşulu yok). Geri düşme davranışsal değildir; VISUAL→GPS
-        # yalnız sebep=="kayip" ile (aşağıda) yaşanır.
-        set_angajman_dalis(False)                # bu VISUAL fazı için taze başla
-        angajman_stop = threading.Event()
+        print(f"[SUPERVISOR] ✓ GÖRSEL YÜRÜTÜCÜ (FSM: {st.value}) — kapanma klempi "
+              f"FSM türevi (geçiş #{status['gecis_sayisi']})")
+        gorsel_stop = threading.Event()
+        _kopru(stop_event, gorsel_stop)
 
-        def _angajman_izle():
-            while not angajman_stop.is_set():
-                kd = get_kilit_durum()
-                if (kd is not None and kd.get("kilit_isteri_ok")) or get_angajman_dalis():
-                    status["faz"] = "ANGAJMAN"   # TEK ATIŞ
+        def gorsel_izci():
+            # FSM GPS kümesine düşerse (TRACK_LOST vb.) görsel yürütücüyü durdur.
+            while not gorsel_stop.is_set():
+                s = get_gorev_state()
+                if s is not None and s in _GPS_SET:
+                    gorsel_stop.set()
                     return
-                angajman_stop.wait(0.1)
+                gorsel_stop.wait(0.05)
 
-        threading.Thread(target=_angajman_izle, daemon=True).start()
-        # wait_pose → wait_kare (merge, kubra_masaustu): pose modeli kaldırıldı,
-        # run_visual_lead artık ham kare akışını bekliyor. Angajman monitörü
-        # pose'a bağlı değildi (kilit_isteri_ok + kör-dalış latch'i), aynen kaldı.
-        sebep = run_visual_lead(conn, wait_kare, get_plane_truth, stop_event,
+        threading.Thread(target=gorsel_izci, daemon=True).start()
+        sebep = run_visual_lead(conn, wait_kare, get_plane_truth, gorsel_stop,
                                 cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
                                 get_temas=get_temas, get_menzil=get_menzil,
-                                get_gt=get_gt)
-        angajman_stop.set()                      # monitörü durdur (faz'a yazmaz)
+                                get_gt=get_gt, get_gorev_state=get_gorev_state)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"
             print("[SUPERVISOR] ✓✓ HEDEF VURULDU — görev tamamlandı.")
             return
-        if sebep == "kayip":
-            print("[SUPERVISOR] Görsel temas kesildi → GPS fazına dönülüyor")
-            continue
-        break                                    # durduruldu
+        if stop_event.is_set():
+            break
+        # kayip/durduruldu → FSM durumuna göre yeniden değerlendir (TRACK_LOST→GPS).
+        print(f"[SUPERVISOR] görsel yürütücü bitti (sebep={sebep}) → FSM'e göre devam")
+        time.sleep(0.05)                          # thrash önleme (aynı karede yeniden girme)
 
     status["faz"] = "DURDU"
     print("[SUPERVISOR] Hibrit güdüm sonlandı.")
