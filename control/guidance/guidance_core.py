@@ -163,6 +163,25 @@ class Cfg:
     # derken v_doygun %93-99 idi — komut rampada yok oluyor, drone hedefin ~2 m
     # altından geçiyordu. 25 m/s'te hız vektörünün dönme hızı = ivme/hız:
     # 4 m/s² → 9.2°/s (2 sn'de 18°), 10 m/s² → 23°/s (2 sn'de 46°).
+    # ── ⚠ "KAMERA YERE BAKAR" GEREKÇESİ ÖLÇÜMLE ZAYIFLADI (2026-08-08) ──
+    # Yukarıdaki 4 m/s² tavanının dayanağı bir TAHMİNDİ: "8 m/s² → eğim 39° →
+    # kamera −14° → gökyüzü kayıp, tespit bozulur". Mevcut uçuş loglarıyla
+    # sınandı (7830 'ok' karesi, kamera_dunya_pitch_deg ↔ guven), menzil
+    # karıştırıcısı da çıkarıldı:
+    #     menzil 0-8 m  : kamera <0° → güven 0.89 (n=172) | >10° → 0.86 (n=793)
+    #     menzil 8-15 m : kamera <0° → güven 0.88 (n=53)  | >10° → 0.78 (n=1823)
+    # Kamera dünyada −25°'ye kadar aşağı bakmış, tespit BOZULMAMIŞ (o bantta
+    # güven en yüksek). 8 m/s²'nin gerektirdiği −14° bölgesinde 211 kare var,
+    # güven medyanı 0.86.
+    # ⚠ Çekince: aşağı bakan kare azınlıkta (259/7830) ve >15 m'de yok — iddia
+    # görsel fazın çalıştığı 8-15 m bandında çürüdü, uzakta denenmedi.
+    #
+    # NEDEN ÖNEMLİ: 08-08 teşhisi görsel fazın dönüşte çökmesini bu tavana
+    # bağladı. Nişanın dönme hızı 8-20 m'de 19.2 °/s; hız vektörü ivme/hız
+    # kadar dönebiliyor: 4 m/s²'de 10.4 °/s (YETMİYOR), 8 m/s²'de 20.8 °/s
+    # (YETER). ArduPilot tarafı engel değil: ATC_ANGLE_MAX 45° → 9.8 m/s².
+    # GPS fazı zaten MAX_ACCEL=12 ile uçuyor (o dosya Kayra'nın alanı).
+    # Uçuşta sınanacak: AVCI_IBVS_IVME_TAVAN=8
     IVME_TAVAN = _env_f("AVCI_IBVS_IVME_TAVAN", 4.0)             # m/s² — YATAY
     IVME_TAVAN_DIKEY = _env_f("AVCI_IBVS_IVME_TAVAN_DIKEY", 10.0)  # m/s² — DİKEY
 

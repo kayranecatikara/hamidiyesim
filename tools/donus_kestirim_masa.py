@@ -205,11 +205,37 @@ def _f(r, k):
         return None
 
 
+def _omega_serisi(rows, ema=0.15):
+    """Hedefin açısal hızı (°/s, işaretli) — tgt_vx/tgt_vy başlık türevinden.
+
+    ⚠ GPS CSV'sine sütun EKLENMEZ (iş bölümü: gps_guidance Kayra'nın alanı).
+    Bu büyüklük gerekiyorsa MEVCUT sütunlardan türetilir; `tgt_omega_dps`
+    eklemek GPS'e dokunmak demektir.
+    """
+    out = [None] * len(rows)
+    ph = pt = None
+    w = 0.0
+    for i, r in enumerate(rows):
+        t = _f(r, "t")
+        vx, vy = _f(r, "tgt_vx"), _f(r, "tgt_vy")
+        if None in (t, vx, vy) or math.hypot(vx, vy) < 3.0:
+            out[i] = math.degrees(w)
+            continue
+        h = math.atan2(vy, vx)
+        if ph is not None and 0 < t - pt < 0.5:
+            d = (h - ph + math.pi) % (2 * math.pi) - math.pi
+            w = ema * (d / (t - pt)) + (1 - ema) * w
+        ph, pt = h, t
+        out[i] = math.degrees(w)
+    return out
+
+
 def kos(yol, rng, tau=1.5):
     rows = list(csv.DictReader(open(yol)))
     if len(rows) < 400:
         return None
 
+    om_ger = _omega_serisi(rows)
     kf = DonusKestirimi()
     hatalar_w = []      # ω hatası (°/s)
     hatalar_R = []      # yarıçap bağıl hatası
@@ -221,7 +247,7 @@ def kos(yol, rng, tau=1.5):
     onceki_t = None
     bekleyen = []       # (t, gercek_gelecek_konum) için
 
-    for r in rows:
+    for _i, r in enumerate(rows):
         t = _f(r, "t")
         ix, iy = _f(r, "iris_x"), _f(r, "iris_y")
         tx, ty = _f(r, "tgt_ham_x"), _f(r, "tgt_ham_y")
@@ -249,7 +275,9 @@ def kos(yol, rng, tau=1.5):
         # cevap anahtarı: son 3 s'ye çember oturt
         if len(gecmis) > 40:
             cd = gercek_daire([g[1] for g in gecmis], [g[2] for g in gecmis])
-            w_ger = _f(r, "tgt_omega_dps")
+            # ⚠ GPS CSV'sine sütun EKLEMİYORUZ (iş bölümü: gps_guidance Kayra'da).
+            # Hedefin açısal hızı mevcut tgt_vx/tgt_vy'den TÜRETİLİR.
+            w_ger = om_ger[_i]
             if cd and w_ger is not None and abs(w_ger) > 5.0 and cd[2] < 200:
                 n_kullanilan += 1
                 hatalar_w.append(abs(kf.omega_dps()) - abs(w_ger))

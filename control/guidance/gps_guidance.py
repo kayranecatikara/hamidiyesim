@@ -305,22 +305,6 @@ class Cfg:
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(120.0)
-    # ── YAW KAÇAĞI KORUMASI (kubra_masaustu, 2026-08-05/06) ──
-    # ⚠ Bu blok kayramin_super_gudumu'nda YOK; merge'de (2026-08-08) oradaki
-    # GPS güdümü taban alındı ama bu koruma ÜSTÜNE taşındı. Kayra'nın dalına da
-    # gitmeli — orada hâlâ kendini-biriktiren cmd_yaw var.
-    #
-    # Kaç kare ardışık "doygun ama hata kapanmıyor" hoş görülür.
-    # adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe; GPS 20 Hz → 15 ≈ 0.75 s.
-    YAW_DOYGUN_N = int(_env_f("AVCI_GPS_YAW_DOYGUN_N", 15))
-    # SUSMA SÜRELİ, KALICI DEĞİL (kilitlenme düzeltmesi 2026-08-06). Kapı adımı
-    # 0 yapınca araç dönmez, dönmeyen araçta hata kapanmaz, kapı hiç açılmaz —
-    # ölü kilit. ÖLÇÜLDÜ (124 346 kare): karelerin %7.8'inde burun >20° sapmış
-    # olmasına rağmen adım tam 0; en uzun susma 1867 kare = 93 SANİYE (araç 119°
-    # yan durup hiç dönmedi). "Avcı düz gitmiyor" şikâyetinin kaynağı buydu.
-    # Süre dolunca yetki geri verilir; sorun gerçekse kapı yeniden tetiklenir →
-    # dönme oranı YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N) ≈ %27'ye kısılır.
-    YAW_SUS_N = int(_env_f("AVCI_GPS_YAW_SUS_N", 40))    # 20 Hz → 2.0 s
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -361,10 +345,6 @@ _CSV_ALANLAR = [
     "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
     "ff_donus_mps",   # dönüş ileri beslemesi |ω×r| (düzde 0)
     "d_arka_m",       # istasyonun etkin arka bileşeni (dönüşte erir)
-    # ── iç daire nişanı teşhisi (kubra_masaustu) — güdüme GİRMEZ, yalnız ölçüm.
-    # 08-08 görsel faz analizinin girdisi (tools/donus_kestirim_masa.py,
-    # tools/ucus_analiz.py rejim ayrımı). Merge'de bilerek korundu.
-    "tgt_omega_dps", "ic_kayma_m", "ic_yaricap_m",
 ]
 
 
@@ -389,9 +369,6 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
-    yaw_doygun_n = 0        # ardışık "doygun ama hata kapanmıyor" kare sayısı
-    yaw_sus_n = 0           # kaç karedir SUSTURULMUŞ durumdayız (süreli susma)
-    yaw_ref = None          # önceki karenin |yaw_err|'i (ilerleme ölçümü için)
     prev_time = None
     loop_count = 0
     pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
@@ -631,46 +608,12 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
             # ── 7) YAW: burun GERÇEK hedefe ──
             bearing = math.atan2(ey, ex)
-            # ── YAW KAÇAĞI KORUMASI (bkz. Cfg.YAW_DOYGUN_N / YAW_SUS_N) ──
-            # ESKİ HÂLİ (kayramin_super_gudumu'nda HÂLÂ BÖYLE):
-            #     yaw_err = bearing - cmd_yaw ;  cmd_yaw += clamp(yaw_err)
-            # Aracın GERÇEK başlığına hiç bakmıyor. Araç komuta yetişemezse
-            # cmd_yaw yürümeye devam ediyor, hata kapanmıyor, komut kaçıyor.
-            # ÖLÇÜM (08-05): yaw hızı 28 → 90 → 402 → 710 → 1237 °/s ıraksadı
-            # (komut yalnız 240 °/s'ydi). Araç fırıldak gibi dönüp itkiyi yana
-            # çeviriyor ve düşüyordu — 5/22 faz YERDE bitti.
-            #
-            # DÜZELTME 1 — DEMİRLEME: komut her karede aracın GERÇEK başlığından
-            # (iyaw) üretilir; komut asla actual+adım'dan öne geçemez.
-            yaw_err = normalize_angle(bearing - iyaw)
-            adim_ham = yaw_err
-            tavan = cfg.YAW_RATE_MAX * dt
-            adim = clamp(adim_ham, -tavan, tavan)
-            yaw_doygun = abs(adim_ham) > tavan
-
-            # DÜZELTME 2 — SÜREKLİ DOYGUNLUK KAPISI. Ölçüt doygunluk DEĞİL,
-            # hatanın kapanmaması: büyük ama meşru bir dönüş de doygundur.
-            if yaw_doygun:
-                ilerleme = (None if yaw_ref is None else yaw_ref - abs(yaw_err))
-                if ilerleme is not None and ilerleme > 0.25 * abs(adim):
-                    yaw_doygun_n = 0          # hata kapanıyor → yetki tam
-                else:
-                    yaw_doygun_n += 1
-                yaw_ref = abs(yaw_err)
-            else:
-                yaw_doygun_n = 0
-                yaw_ref = None
-            if yaw_doygun_n > cfg.YAW_DOYGUN_N:
-                adim = 0.0                    # döngü kapanmıyor → yaw'ı sustur
-                yaw_sus_n += 1                # ⚠ SÜRELİ: süre dolunca yetki geri
-                if yaw_sus_n >= cfg.YAW_SUS_N:
-                    yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
-            else:
-                yaw_sus_n = 0
-
-            if abs(yaw_err) <= cfg.YAW_DEADBAND:
-                adim = 0.0
-            cmd_yaw = normalize_angle(iyaw + adim)
+            if cmd_yaw is None:
+                cmd_yaw = bearing
+            yaw_err = normalize_angle(bearing - cmd_yaw)
+            if abs(yaw_err) > cfg.YAW_DEADBAND:
+                step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
+                cmd_yaw = normalize_angle(cmd_yaw + step)
 
             # ── 8) İVME SINIRI + GÖNDER ──
             vx, vy, vz = limit_acceleration(
@@ -716,10 +659,6 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "ist_elev_deg": round(math.degrees(ist_elev), 2),
                 "ff_donus_mps": round(ff_donus_mps, 2),
                 "d_arka_m": round(d_arka, 2),
-                "tgt_omega_dps": round(math.degrees(tgt_omega), 2),
-                "ic_kayma_m": round(ic_kayma, 2),
-                "ic_yaricap_m": (round(ic_yaricap, 1)
-                                 if ic_yaricap is not None else ""),
             })
             f.flush()
 
