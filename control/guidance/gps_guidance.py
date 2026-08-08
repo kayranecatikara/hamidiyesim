@@ -630,7 +630,19 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # ── 7) YAW: burun GERÇEK hedefe ──
             bearing = math.atan2(ey, ex)
             if cmd_yaw is None:
-                cmd_yaw = bearing
+                # ⚠ FAZ GİRİŞİNDE ARACIN MEVCUT YÖNÜNDEN BAŞLA (2026-08-08).
+                # Eskiden doğrudan `bearing` atanıyordu; görsel fazdan sonra
+                # GPS'e dönüldüğünde hedef genelde ARKADA kalıyor ve bu, tek
+                # karede 100-160°'lik bir yaw KOMUT SIÇRAMASI demek oluyordu.
+                # Ölçüldü: 12 faz girişinin 6'sında sıçrama >60° (en büyük 160°).
+                # Araç bu adımı yakalamak için yaw'ı doyuruyor, motorlar yaw
+                # torkuna gidince roll/pitch yetkisi kalmıyor ve TAKLA atıyor
+                # (8 koşuluk veri: takla YAŞANMAYAN 2 koşunun İKİSİ de ilk
+                # denemede vurdu; takla yaşanan 3 koşuda 1 vuruş).
+                # Mevcut yaw'dan başlayınca YAW_RATE_MAX (120°/s) devreye
+                # girer ve komut hedefe yumuşak yürür. Normal takipte fark
+                # YOK: burun zaten hedefteyken mevcut yaw ≈ bearing.
+                cmd_yaw = iyaw
             yaw_err = normalize_angle(bearing - cmd_yaw)
             if abs(yaw_err) > cfg.YAW_DEADBAND:
                 step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)

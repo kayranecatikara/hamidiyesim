@@ -113,10 +113,32 @@ def main():
                 kalan = 0.1 - (time.time() - t)
                 if kalan > 0:
                     time.sleep(kalan)
+        # ── SONUÇ SINIFLANDIRMASI ──
+        # ⚠ 2026-08-08: bir koşuda hedef, mesafe 2.7 m'ye indikten hemen sonra
+        # 56 m'den düştü ama TEMAS KAYDI YOKTU. "Iska" demek yanıltıcı olur —
+        # ayrı sınıf olarak işaretlenir ve incelenir.
+        rows = list(csv.DictReader(open(yol)))
+        alt_son = None
+        en_yakin = None
+        for r in rows:
+            if r["plane_z"] not in ("", "None"):
+                alt_son = -float(r["plane_z"])
+            if r["mesafe"] not in ("", "None"):
+                m = float(r["mesafe"])
+                en_yakin = m if en_yakin is None else min(en_yakin, m)
+        hedef_dustu = (not vuruldu) and (alt_son is not None and alt_son < 10)
         ozet.append({"kosu": k, "vuruldu": vuruldu, "gecersiz": False,
+                     "hedef_dustu": hedef_dustu,
+                     "en_yakin": round(en_yakin, 2) if en_yakin else None,
                      "sure": round(time.time() - t0, 1)})
-        if not vuruldu:
-            print(f"  ✗ süre doldu ({kosu_suresi:.0f} s), vuruş yok", flush=True)
+        if vuruldu:
+            pass
+        elif hedef_dustu:
+            print(f"  ⚠ HEDEF DÜŞTÜ ama temas kaydı YOK (en yakın "
+                  f"{en_yakin:.2f} m) — kayıtsız çarpışma şüphesi", flush=True)
+        else:
+            print(f"  ✗ ıska ({kosu_suresi:.0f} s), en yakın {en_yakin:.2f} m",
+                  flush=True)
 
     gonder("/api/command/iris/stop_chase")
     gonder("/api/command/plane/stop_scenario")
@@ -126,8 +148,12 @@ def main():
           f"({len(ozet) - len(gecerli)} geçersiz) ═══", flush=True)
     for o in ozet:
         durum = ("GEÇERSİZ" if o.get("gecersiz")
-                 else ("VURULDU" if o["vuruldu"] else "ıska"))
-        print(f"  koşu {o['kosu']}: {durum} ({o['sure']:.0f} s)", flush=True)
+                 else ("VURULDU" if o["vuruldu"]
+                       else ("HEDEF DÜŞTÜ (temas kaydı yok)"
+                             if o.get("hedef_dustu") else "ıska")))
+        ey = o.get("en_yakin")
+        print(f"  koşu {o['kosu']}: {durum} ({o['sure']:.0f} s"
+              + (f", en yakın {ey:.2f} m" if ey else "") + ")", flush=True)
     with open(os.path.join(cikti, "ozet.json"), "w") as g:
         json.dump(ozet, g, indent=2)
 
