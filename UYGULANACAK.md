@@ -69,6 +69,29 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   irtifadan bağımsız çıktı (⌀41: 9.5 @300-388 m vs 10.4 @175-263 m) ama
   KÖK NEDEN backlog'da: senaryo pitch trimi irtifa tutacak şekilde ayarlanmalı.
 
+### D — Görsel faza devir: BAĞLAYICI tasarım kararları (2026-08-08)
+
+Kullanıcı kararları (yeni görsel faz inşasında uyulacak):
+
+1. **Pose devir denkleminden ÇIKTI.** Yeni görsel güdüm yalnız bbox
+   verisiyle IBVS. `supervisor.py`'deki pose-kare sayacı (KILIT_N) yeni
+   fazla birlikte bbox-kararlılık sayacına dönüşecek; pose şartı hiçbir
+   geçiş koşulunda kullanılmayacak.
+2. **Yandan devir YASAK (gimbalsız dönem).** Korkulan mod birebir doğru:
+   yandan devirde IBVS "hedef merkezde" deyip İLERİ verir, hedef yana
+   kaydığı için kadrajdan çıkar. Sayısal: 6 m'de yan geçiş hızı 14.5 m/s →
+   LOS dönüşü 2.4 rad/s = 139°/s — yaw tavanının (120°/s) ve her türlü
+   görsel takibin üstünde. Bkz. docs/YANDAN_ESKORT_VE_GIMBAL.md.
+3. **Devir kapısı GEOMETRİK olacak (pose'suz):** |ω_hedef| < ~0.05 rad/s
+   VE bakış kuyruktan < 30-40° VE bbox kararlı VE menzil bandı. Hepsi
+   GPS+tespit verisinden; dönüşte GPS yakın eskort eder, devir hedef
+   düzelince (arka bileşen ω→0'da kendiliğinden geri büyür → drone kuyruğa
+   kayar → kapı doğal olarak açılır).
+4. **IBVS'e GPS hız ileri beslemesi (hibrit) önerisi:** görsel fazda bile
+   taşıyıcı hız komutu GPS hedef-hız kestirimi olsun, IBVS görüntü hatasıyla
+   onun üstüne düzeltme yazsın. "Ekran ortasında → ileri" yanılsamasını
+   kökten keser; devir anındaki hız sürekliliğini de bedava verir.
+
 ### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
 
 Kullanıcı fikri: kamera gövdeye vidalı → gövde duruşu değişince sabit açılı
