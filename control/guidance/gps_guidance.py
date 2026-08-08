@@ -276,8 +276,17 @@ class Cfg:
     # Ölçek iç kaymayla AYNI ω rampasında (IC_OMEGA_REF): düz uçuşta arka
     # bileşen TAM kalır (en iyi bilinen düz davranış değişmez), tam dönüşte
     # ARKA_KISALT oranında erir (1.0 = tamamen).
-    # Kapatmak için: AVCI_GPS_ARKA_KISALT=0
-    ARKA_KISALT = _env_f("AVCI_GPS_ARKA_KISALT", 1.0)   # 0..1; tam dönüşte eriyen pay
+    #
+    # ❗ YARIŞMA HATTINDA VARSAYILAN 0 = KAPALI (2026-08-08, kullanıcı kararı
+    # + D0 kuralı, bkz. UYGULANACAK.md): yakın yandan eskort (1.0 → daire
+    # 5.7 m, log 141740) tespit sürekliliği başlatır ve kural bizi görsel
+    # faza ZORLAR; 6 m'de yandan giriş saf bbox takibi için ölümcül (LOS
+    # dönüşü 139°/s > yaw tavanı 120°/s). 0 ile dönüş davranışı kararlı
+    # profildir: daire 13.3 m, kuyruktan 66° (log 131611) — oradan görsel
+    # devir yaşanabilir (~50-60°/s, pure pursuit kuyruğa süzülür).
+    # Teknik gimball_gudum branch'inde TAM haliyle arşivli; gimbal takılınca
+    # 1.0'a döner (docs/YANDAN_ESKORT_VE_GIMBAL.md).
+    ARKA_KISALT = _env_f("AVCI_GPS_ARKA_KISALT", 0.0)   # 0..1; tam dönüşte eriyen pay
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
