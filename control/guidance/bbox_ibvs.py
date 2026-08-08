@@ -56,6 +56,7 @@ import os
 import time
 
 from vision import geometry as geo
+from control.guidance.guidance_core import Cfg as GeoCfg
 from control.guidance.common import (
     clamp, normalize_angle, send_velocity, limit_acceleration,
 )
@@ -145,6 +146,36 @@ class Cfg:
     # 'kayip' dönmedi. Kör hücum çarpışmayı TAMAMLAMAK içindir; bu süre
     # içinde temas gelmezse ıska sayılır ve GPS fazına dönülür.
     TERMINAL_SURE = _env_f("AVCI_IBVS_TERM_SURE", 2.0)   # s
+
+    # ── TERMİNAL NİŞANI: KESİŞİM + LEAD (2026-08-08, kullanıcı "2. madde") ──
+    #
+    # ÖLÇÜM (term25 uçuşu, en yakın anlar; ıska hedef çerçevesinde ayrıştırıldı):
+    #     mesafe 0.9 m → yanal +0.5, DİKEY +0.5
+    #     mesafe 0.8 m → yanal  0.0, DİKEY −0.2
+    #     mesafe 1.9 m → yanal −0.1, DİKEY −0.8
+    # Talon'un çarpışma gövdesi KANATLAR DAHİL (fuselage+left_wing+right_wing),
+    # yani 0.8 m'de değmeliydi. Iskanın baskın bileşeni DİKEY.
+    #
+    # KÖK NEDEN: terminalde bile dikey kanal "TUTUŞ" yasasıydı — hedefi
+    # CY_NISAN'da (≈5° yukarıda) tutmaya çalışıyor, yani ALTINDAN geçiyoruz.
+    # Kesişim için hız vektörünün hedefe DOĞRU bakması gerekir, hedefi sabit
+    # bir açıda tutması değil.
+    #
+    # ÇÖZÜM (yalnız TERMİNALDE; tutuş davranışı değişmez):
+    #   1) KESİŞİM: vz = −v_los·tan(elev_hedef). elev, pikselden ve gövde
+    #      pitch'inden çıkar (kamera 25° yukarı tilt'li).
+    #   2) LEAD: nişan, ATALET çerçevesindeki LOS DÖNÜŞ HIZIYLA öne alınır
+    #      (klasik lead pursuit / PN mantığı):
+    #          los_azimut = iris_yaw + eps_yaw      → türevi = LOS hızı
+    #          nişan = los + LEAD_SURE · los_hızı
+    #      ⚠ Piksel hızı DEĞİL atalet LOS hızı kullanılır: yaw kontrolcüsü
+    #      kutuyu merkeze çektiği için piksel hızı kendi düzeltmemizi de
+    #      içerir; ona lead vermek düzeltmeyle kavga etmek olurdu.
+    #   Düz kuyruk takibinde LOS hızı ≈ 0 → lead ≈ 0, yalnız kesişim kalır.
+    LEAD_SURE = _env_f("AVCI_IBVS_LEAD", 0.4)    # s; nişanın öne alınma süresi
+    LEAD_EMA = 0.25                              # LOS hızı yumuşatması
+    LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
+    VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
     # ── KUTU GEÇERLİLİĞİ ──
@@ -159,12 +190,26 @@ _LOG_DIR = os.path.join(
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los",
+    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
 
-def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False):
+def piksel_elev(cy, cfg=Cfg):
+    """Kutunun dikey pikselinden GÖVDE çerçevesinde LOS yükselişi (rad, yukarı+).
+
+    Kamera gövdeye KAMERA_TILT (25°) yukarı tilt'li. cy=CY (kadraj merkezi)
+    → boresight → yükseliş = +25°. cy büyüdükçe (kadrajda aşağı) yükseliş azalır.
+    Doğrulama: cy = CY + FY·tan(25°) ≈ 318 → yükseliş ≈ 0 (seviye hedef).
+    """
+    tilt = math.radians(GeoCfg.KAMERA_TILT_DEG)
+    b = (cy - geo.CY) / geo.FY
+    return math.atan2(math.sin(tilt) - math.cos(tilt) * b,
+                      math.cos(tilt) + math.sin(tilt) * b)
+
+
+def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
+          los_hiz=(0.0, 0.0), iris_pitch=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -181,7 +226,13 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False):
 
     # YAW: yatay açı hatası → burun hedefe
     eps_yaw = math.atan((cx - cfg.CX_NISAN) / geo.FX)
-    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw)
+    lead_az = 0.0
+    if terminal:
+        # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE)
+        lead_az = clamp(cfg.LEAD_SURE * los_hiz[0],
+                        -math.radians(cfg.LEAD_MAX_DEG),
+                        math.radians(cfg.LEAD_MAX_DEG))
+    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
 
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
@@ -195,12 +246,25 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False):
     vx_ned = v_los * math.cos(yaw_cmd)
     vy_ned = v_los * math.sin(yaw_cmd)
 
-    # DİKEY: elev hatası → tırman/alçal
     eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
-    vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
+    if terminal:
+        # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
+        # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
+        elev_atalet = piksel_elev(cy, cfg) + iris_pitch
+        lead_el = clamp(cfg.LEAD_SURE * los_hiz[1],
+                        -math.radians(cfg.LEAD_MAX_DEG),
+                        math.radians(cfg.LEAD_MAX_DEG))
+        nisan_elev = clamp(elev_atalet + lead_el,
+                           -math.radians(60.0), math.radians(60.0))
+        vz = clamp(-v_los * math.tan(nisan_elev),
+                   -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+    else:
+        # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
+        vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
-            "hata": hata, "v_los": v_los, "terminal": terminal}
+            "hata": hata, "v_los": v_los, "terminal": terminal,
+            "lead_az": lead_az}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
@@ -266,6 +330,9 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     prev_time = None
     cmd_yaw = None
     kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
+    # LOS (atalet) açıları ve hızları — lead nişanı için
+    los_az_onceki = los_el_onceki = None
+    los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
 
     def _vuruldu():
         if get_temas is None:
@@ -375,6 +442,21 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             kayip_sayac = 0
             kor_baslangic = None       # kutu geri geldi → kör sayaç sıfırlanır
             cx, cy, bw, bh, conf = kutu
+
+            # ── ATALET LOS AÇILARI + HIZLARI (lead nişanı girdisi) ──
+            # Piksel hızı DEĞİL: yaw kontrolcüsü kutuyu merkeze çektiği için
+            # piksel hızı kendi düzeltmemizi içerir. Atalet açısı = gövde
+            # açısı + aracın kendi duruşu → gerçek LOS dönüşü kalır.
+            ipitch = iris.get("pitch", 0.0)
+            los_az = normalize_angle(iyaw + math.atan((cx - cfg.CX_NISAN) / geo.FX))
+            los_el = piksel_elev(cy, cfg) + ipitch
+            if los_az_onceki is not None and 1e-3 < dt < 0.5:
+                a_ = cfg.LEAD_EMA
+                los_hiz[0] = (a_ * (normalize_angle(los_az - los_az_onceki) / dt)
+                              + (1 - a_) * los_hiz[0])
+                los_hiz[1] = (a_ * ((los_el - los_el_onceki) / dt)
+                              + (1 - a_) * los_hiz[1])
+            los_az_onceki, los_el_onceki = los_az, los_el
             # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt, geri dönüş yok
             if not terminal_mandal and math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT:
                 terminal_mandal = True
@@ -382,7 +464,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                       f"≥ {cfg.TERMINAL_BOYUT:.0f}) — fren yok, tam taahhüt")
             vx, vy, vz, yaw_cmd, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                      hiz_I, dt, cfg,
-                                                     terminal_mandal)
+                                                     terminal_mandal,
+                                                     tuple(los_hiz), ipitch)
             cmd_yaw = yaw_cmd
 
             # ivme sınırı (komut hızı sıçramasın)
@@ -403,6 +486,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
+                "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
+                "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),

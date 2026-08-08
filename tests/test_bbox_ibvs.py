@@ -264,6 +264,46 @@ def main():
     kontrol("B16 kör hücum süre dolunca ISKA → 'kayip' (sonsuz kör YOK)",
             son5["r"] == "kayip", f"dönüş={son5['r']} (thread canlı mı: {th5.is_alive()})")
 
+    # ── B17: piksel → LOS yükselişi geometrisi (25° tilt) ──
+    e_bore = math.degrees(ib.piksel_elev(geo.CY, C))
+    e_seviye = math.degrees(ib.piksel_elev(geo.CY + geo.FY * math.tan(math.radians(25)), C))
+    kontrol("B17 kadraj merkezi → +25° (boresight), seviye hedef pikseli → 0°",
+            abs(e_bore - 25.0) < 0.2 and abs(e_seviye) < 0.3,
+            f"cy=240 → {e_bore:+.1f}°   cy=318 → {e_seviye:+.1f}°")
+
+    # ── B18: TERMİNAL KESİŞİM — hız vektörü hedefe DOĞRU bakar ──
+    # 2026-08-08 ölçümü: ıskanın baskın bileşeni DİKEYDİ (0.5-1.1 m). Sebep:
+    # terminalde bile dikey kanal "tutuş" yasasıydı → hedefin altından geçiyorduk.
+    cy_ust = geo.CY + geo.FY * math.tan(math.radians(15))   # hedef 10° yukarıda
+    _, _, vz_tut, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
+                                     False, (0.0, 0.0), 0.0)
+    _, _, vz_ter, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
+                                     True, (0.0, 0.0), 0.0)
+    # hedef 10° yukarıda → kesişim için TIRMANMALI (vz<0, NED)
+    kontrol("B18 terminalde hedef yukarıdayken TIRMANIR (tutuş modu tırmanmıyordu)",
+            vz_ter < -0.5 and vz_ter < vz_tut,
+            f"tutuş vz={vz_tut:+.2f}  →  terminal vz={vz_ter:+.2f} m/s")
+
+    # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken ──
+    _, _, _, yaw_ldsz, _, t_ldsz = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+                                            0.05, C, True, (0.0, 0.0), 0.0)
+    _, _, _, yaw_ld, _, t_ld = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+                                        0.05, C, True, (0.5, 0.0), 0.0)
+    _, _, _, _, _, t_tut2 = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+                                     0.05, C, False, (0.5, 0.0), 0.0)
+    kontrol("B19 lead: LOS dönerken terminalde nişan öne alınır, tutuşta ALINMAZ",
+            abs(t_ldsz["lead_az"]) < 1e-9 and t_ld["lead_az"] > 0.1
+            and abs(t_tut2["lead_az"]) < 1e-9,
+            f"LOS=0 → {math.degrees(t_ldsz['lead_az']):.1f}°  "
+            f"LOS=0.5 rad/s → {math.degrees(t_ld['lead_az']):.1f}°  "
+            f"tutuş → {math.degrees(t_tut2['lead_az']):.1f}°")
+
+    kontrol("B20 lead açısı tavanla sınırlı (gürültülü LOS savurmasın)",
+            abs(ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+                         (50.0, 0.0), 0.0)[5]["lead_az"])
+            <= math.radians(C.LEAD_MAX_DEG) + 1e-9,
+            f"LOS=50 rad/s → tavan {C.LEAD_MAX_DEG:.0f}°")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
