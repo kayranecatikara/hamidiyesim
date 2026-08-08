@@ -71,6 +71,13 @@ istasyon yerinin her milimetresi davranışa yansıyor.
 
 ### D — Görsel faza devir: BAĞLAYICI tasarım kararları (2026-08-08)
 
+**D0 — YARIŞMA KURALI (her şeyin üstündeki kısıt, kullanıcı aktarımı):**
+Görsel temas sağlandığı anda (detection hedefi tespit edince) GPS verisiyle
+güdüm YASAK — yalnız bbox'a dayalı görsel güdüm. Temas kesilirse GPS yeniden
+serbest. Temas tanımı tek kare değil, ~10 kare süreklilik gibisinden
+(⚠ kesin sayı şartnameden doğrulanacak). SONUÇ: faz geçişi bizim seçimimiz
+değil, kuralın sonucu; aşağıdaki 3-4 buna göre REVİZE edildi.
+
 Kullanıcı kararları (yeni görsel faz inşasında uyulacak):
 
 1. **Pose devir denkleminden ÇIKTI.** Yeni görsel güdüm yalnız bbox
@@ -82,15 +89,18 @@ Kullanıcı kararları (yeni görsel faz inşasında uyulacak):
    kaydığı için kadrajdan çıkar. Sayısal: 6 m'de yan geçiş hızı 14.5 m/s →
    LOS dönüşü 2.4 rad/s = 139°/s — yaw tavanının (120°/s) ve her türlü
    görsel takibin üstünde. Bkz. docs/YANDAN_ESKORT_VE_GIMBAL.md.
-3. **Devir kapısı GEOMETRİK olacak (pose'suz):** |ω_hedef| < ~0.05 rad/s
-   VE bakış kuyruktan < 30-40° VE bbox kararlı VE menzil bandı. Hepsi
-   GPS+tespit verisinden; dönüşte GPS yakın eskort eder, devir hedef
-   düzelince (arka bileşen ω→0'da kendiliğinden geri büyür → drone kuyruğa
-   kayar → kapı doğal olarak açılır).
-4. **IBVS'e GPS hız ileri beslemesi (hibrit) önerisi:** görsel fazda bile
-   taşıyıcı hız komutu GPS hedef-hız kestirimi olsun, IBVS görüntü hatasıyla
-   onun üstüne düzeltme yazsın. "Ekran ortasında → ileri" yanılsamasını
-   kökten keser; devir anındaki hız sürekliliğini de bedava verir.
+3. ~~Devir kapısı geometrik olacak~~ **D0 ile REVİZE:** geçişi geometri
+   kapısı değil, KURAL belirler (tespit sürekliliği → görsel; kayıp → GPS).
+   Geometri kapısının yerine geçen ilke: **GPS, tespit sürekliliğinin
+   başlayacağı anda geometriyi görsel-yaşanabilir tutmalı** — kuyruk-benzeri
+   yaklaşma, aşırı yakın-yandan eskort YOK (o `gimball_gudum` arşivinde).
+   Eski supervisor iskeleti (KILIT_N ardışık kare → devir, KAYIP_M kayıp →
+   GPS'e dön) kurala yapı olarak birebir uyar; pose penceresi yerine
+   bbox penceresi sayılır.
+4. ~~IBVS'e GPS hız ileri beslemesi (hibrit)~~ **İPTAL — D0 kural ihlali:**
+   görsel temas varken GPS verisi güdümde kullanılamaz. Görsel faz SAF bbox
+   olacak; hız sürekliliği için yalnız devir ANINDAKİ son komut yumuşak
+   başlangıç değeri olarak taşınabilir (o andan sonra GPS verisi akmaz).
 
 ### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
 
