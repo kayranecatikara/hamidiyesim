@@ -79,8 +79,25 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   2. DÖNÜŞte devir — kritik: 66° kuyruk girişinden pure-pursuit kuyruğa
      süzülebiliyor mu?
   3. Kayıp → GPS → yeniden devir döngüsü.
-- Kalibrasyon açık uçları (uçuş sonrası): BOYUT_REF (70px kaba), K_FWD,
-  CY_NISAN (210), K_VZ. Piksel-boyut↔menzil eşlemesi uçuş logundan çıkacak.
+- ✅ **ÇALIŞTI (2026-08-08, log 184748 / video ucus_20260808_gorsel_faz.mp4):**
+  düz uçuşta TEK devir, **160 s kesintisiz görsel faz**, kutu kaybı %0.4.
+  Truth MESAFE med **7.2 m** (p10 5.3, min 4.8, temas yok). Kutu 14 px,
+  conf 0.86, cy 300 ≈ nişan 301 (dikey kanal oturmuş).
+- Üç düzeltme birlikte çalıştı:
+  1. **Dikey nişan** 210 → ≈300 (25° tilt geometrisi; 210 "8 m alta dal"dı).
+  2. **DONDURULMUŞ TAŞIYICI** — devir anındaki son GPS hız kestirimi sayı
+     olarak görsel faza geçilir, faz boyunca güncellenmez. Kutu boyutu
+     MENZİL vekilidir HIZ vekili değil; taşıyıcısız yasa 8 m/s üretip
+     15 m/s hedefin gerisinde kalıyordu. Ölçüldü: ff=(10.0,-10.5,-0.3),
+     kapanma med +3.8 m/s → toplam ~18 m/s.
+  3. **İvme sınırlayıcı drone'un gerçek hızından başlatıldı** (0'dan değil) —
+     devirde 1.25 s'lik sahte fren kalktı.
+- ⚠ **MENZİL KAPISI KALDIRILDI (kural düzeltmesi):** kapı, görsel temas
+  varken GPS güdümünü sürdürerek D0'ı ihlal ediyordu; 20→12 m çekmek ihlali
+  BÜYÜTÜYORDU (kullanıcı yakaladı). Artık tek şart tespit sürekliliği.
+  Devir 34 m'de gerçekleşti ve görsel faz oradan 5 m'ye kadar taşıdı.
+- Sıradaki: (2) dönüşte devir, (3) kayıp→GPS→yeniden devir döngüsü.
+  Açık kalibrasyon: BOYUT_REF=25px (≈6 m denge), K_FWD, V_KAPANMA_MAX.
 
 ### D — Görsel faza devir: BAĞLAYICI tasarım kararları (2026-08-08)
 

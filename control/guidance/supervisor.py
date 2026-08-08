@@ -71,11 +71,22 @@ class SupCfg:
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
     POSE_CONF_MIN = 0.5
-    GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
-    # Devir menzili: GPS handoff bayrağı 40 m'de açılıyor ama orada kutu ~7 px,
-    # pose güvenilmez (uzakta devralınca hedef hemen kaçtı — 2026-07-24 log).
-    # 20 m'de kutu ~7 px hâlâ küçük; pose asıl 10-12 m'de sağlam. GPS istasyonu
-    # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
+
+    # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
+    #
+    # Kural: görsel temas kurulunca (tespit sürekliliği) GPS ile güdüm YASAK.
+    # Menzil kapısı tam bunu ihlal ediyordu: 30 m'de hedef kesintisiz
+    # görülürken kapı "henüz 20 m değil" deyip GPS güdümünü SÜRDÜRÜYORDU.
+    # Kapıyı 20 → 12 m'ye çekmek ihlali BÜYÜTÜR (GPS'te daha uzun kalınır);
+    # 2026-08-08'de bunu yaptım, kullanıcı yakaladı — yanlış refleksti.
+    #
+    # DOĞRU ÇÖZÜM: kapıyı kaldır, görsel fazı uzak menzilde de ÇALIŞIR yap.
+    # Uzakta çalışamamasının kök nedeni kapı değil HIZDI: saf kutu-boyutu
+    # modeli 8 m/s üretiyordu, hedef 15 m/s. Dondurulmuş taşıyıcı (bkz.
+    # bbox_ibvs) bunu kapatıyor → devir artık her menzilde yaşanabilir.
+    #
+    # Geri açmak (deney amaçlı): AVCI_HYBRID_GATE=1
+    GATE_KILIT = os.environ.get("AVCI_HYBRID_GATE", "0") == "1"
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
 
 
@@ -144,10 +155,21 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
               f"(geçiş #{status['gecis_sayisi']}, yasa={_GORSEL_YASA.upper()})")
         if _GORSEL_YASA == "bbox":
-            # SAF bbox IBVS — GPS/hedef verisi girmez (yarışma kuralı D0).
+            # bbox IBVS — CANLI GPS girmez (yarışma kuralı D0).
             # get_plane_truth/get_menzil/get_gercek KASITEN geçilmez.
+            #
+            # DONDURULMUŞ TAŞIYICI: hedefin son GPS hız kestirimi BURADA, yani
+            # görsel faz BAŞLAMADAN önce bir kez okunur ve sayı olarak geçilir.
+            # Görsel döngü canlı GPS'e erişemez (callback değil, üçlü sayı).
+            ff = (_ga.status.get("tgt_vx") or 0.0,
+                  _ga.status.get("tgt_vy") or 0.0,
+                  _ga.status.get("tgt_vz") or 0.0)
+            print(f"[SUPERVISOR] taşıyıcı donduruldu: "
+                  f"({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
+                  f"— görsel faz boyunca GPS'e bir daha bakılmayacak")
             sebep = run_bbox_ibvs(conn, get_iris, wait_pose, stop_event,
-                                  cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M)
+                                  cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                  ff_hiz=ff)
         else:
             sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
                                     cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,

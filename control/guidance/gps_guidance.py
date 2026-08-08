@@ -316,9 +316,15 @@ class Cfg:
 
 
 # Telemetri/arayüz için son durum (gcs_server + supervisor.izci okur; salt gözlem)
+#
+# tgt_vx/vy/vz (2026-08-08): hedefin GPS'ten kestirilen hız vektörü. Supervisor
+# bunu DEVİR ANINDA bir kez okuyup görsel faza DONDURULMUŞ taşıyıcı olarak verir
+# (bkz. bbox_ibvs.Cfg / D0 yarışma kuralı). Görsel faz boyunca bu değer bir daha
+# okunmaz — görsel döngüye canlı GPS erişimi YOKTUR (yapısal garanti).
 status = {
     "durum": "WARMUP", "d_h": None, "menzil": None,
     "kadraj_yaw_deg": None, "kadraj_elev_deg": None, "none_count": 0,
+    "tgt_vx": None, "tgt_vy": None, "tgt_vz": None,
 }
 
 _LOG_DIR = os.path.join(
@@ -629,7 +635,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             durum = "KILIT" if d_h < cfg.HANDOFF_RANGE else "ARAMA"
             status.update(durum=durum, d_h=round(d_h, 1), menzil=round(menzil, 1),
                           kadraj_yaw_deg=round(math.degrees(kad["yaw_hata"]), 1),
-                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1))
+                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1),
+                          tgt_vx=round(vel_x, 2), tgt_vy=round(vel_y, 2),
+                          tgt_vz=round(vel_z, 2))
 
             w.writerow({
                 "t": round(now, 3), "dt": round(dt, 4), "durum": durum,

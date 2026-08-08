@@ -4,11 +4,16 @@ tests/test_bbox_ibvs.py — SAF bbox IBVS görsel güdüm kabul kriterleri.
 Gazebo'suz, saf mantık. Kullanım: python3 -m tests.test_bbox_ibvs
 
 Kapsam:
-  B1-B4  komut yasası: merkez, sağ/sol yaw, yakın/uzak ileri, alt/üst dikey
-  B5     GPS BAĞIMSIZLIĞI: yasa yalnız (cx,cy,w,h,yaw) — hedef GPS'i girmiyor
+  B1-B4  komut yasası: merkez, sağ/sol yaw, yakın/uzak kapanma, alt/üst dikey
+  B5     ⚠ D0 KURAL UYUMU (yapısal): görsel döngünün CANLI GPS'e erişimi YOK —
+         taşıyıcı sayı üçlüsü olarak geçilir, callback değil
   B6-B7  kutu geçerliliği: düşük conf / küçük kutu elenir
   B8     döngü duman testi (fake conn): kutu akışında komut üretir
   B9     kayıp: kayip_kare_esik ardışık kutusuz → 'kayip'
+  B10    DONDURULMUŞ TAŞIYICI: hedefin seyir hızını üstlenir (uçuş dersi:
+         taşıyıcısız 8 m/s üretiyordu, hedef 15 → kutu kaybı)
+  B11    toplam hız tavanı bağlar
+  B12    kutu yokken taşıyıcı SÜRER (kısa boşluk kalıcı kayba dönmesin)
 """
 
 import math
@@ -34,45 +39,55 @@ def main():
 
     # ── B1: MERKEZDE nişan — yaw ≈ mevcut, dikey ≈ 0 ──
     # cx=CX (yatay merkez), cy=CY_NISAN (dikey nişan) → sapma yok.
-    vx, vy, vz, yaw, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, C)
+    vx, vy, vz, yaw, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, cfg=C)
     kontrol("B1  nişan noktasında: yaw≈0, vz≈0",
             abs(math.degrees(yaw)) < 0.5 and abs(vz) < 0.05,
             f"yaw={math.degrees(yaw):.2f}° vz={vz:.3f}")
 
     # ── B2: hedef SAĞDA (cx>CX) → yaw komutu POZİTİF (sağa dön) ──
-    vx, vy, vz, yaw_sag, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, C)
-    _, _, _, yaw_sol, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, C)
+    vx, vy, vz, yaw_sag, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, cfg=C)
+    _, _, _, yaw_sol, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, cfg=C)
     kontrol("B2  hedef sağda → yaw>0, solda → yaw<0",
             yaw_sag > 0.05 and yaw_sol < -0.05,
             f"sağ yaw={math.degrees(yaw_sag):+.1f}° sol yaw={math.degrees(yaw_sol):+.1f}°")
 
-    # ── B3: İLERİ — küçük kutu (uzak) hızlı, büyük kutu (yakın) yavaş/geri ──
-    _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 20, 20, 0.0, C)
-    _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 200, 200, 0.0, C)
-    kontrol("B3  uzak kutu ileri hızlı, yakın kutu geri/yavaş",
-            t_uzak["v_fwd"] > 5.0 and t_yakin["v_fwd"] < t_uzak["v_fwd"],
-            f"uzak(20px) v_fwd={t_uzak['v_fwd']:.1f}  yakın(200px) v_fwd={t_yakin['v_fwd']:.1f}")
+    # ── B3: KAPANMA — küçük kutu (uzak) tam kapanma, büyük kutu (yakın) geri ──
+    _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, cfg=C)
+    _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, cfg=C)
+    _, _, _, _, t_denge = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
+                                   0.0, cfg=C)
+    kontrol("B3  uzak kutu tam kapanma, REF'te 0, yakın kutu geri",
+            t_uzak["v_kapanma"] > 4.0 and abs(t_denge["v_kapanma"]) < 1e-6
+            and t_yakin["v_kapanma"] < 0,
+            f"5px→{t_uzak['v_kapanma']:+.1f}  REF({C.BOYUT_REF:.0f}px)→"
+            f"{t_denge['v_kapanma']:+.1f}  60px→{t_yakin['v_kapanma']:+.1f} m/s")
 
     # ── B4: DİKEY — hedef kadrajda AŞAĞIDA (cy>nişan) → ALÇAL (vz>0, NED down+) ──
-    _, _, vz_asa, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, C)
-    _, _, vz_yuk, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, C)
+    _, _, vz_asa, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, cfg=C)
+    _, _, vz_yuk, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, cfg=C)
     kontrol("B4  hedef altta → vz>0 (alçal), üstte → vz<0 (tırman)",
             vz_asa > 0.1 and vz_yuk < -0.1,
             f"altta vz={vz_asa:+.2f}  üstte vz={vz_yuk:+.2f}")
 
-    # ── B5: GPS BAĞIMSIZLIĞI — yasa imzası yalnız piksel+yaw; GPS argümanı YOK ──
-    # komut(cx, cy, w, h, iris_yaw, cfg) — hedef konumu/hızı/menzili parametre
-    # DEĞİL. İki farklı "dünya"da aynı kutu aynı komutu üretir (yasa görüntüye
-    # bakar, sahneye değil).
+    # ── B5: ⚠ D0 KURAL UYUMU — YAPISAL GARANTİ ──
+    # Kural: görsel temas varken CANLI GPS güdümde kullanılamaz. Bu testin
+    # iddiası "kullanmıyoruz" değil, "KULLANAMAYIZ": görsel döngü hedefe dair
+    # tek bilgiyi devirde bir kez, SAYI olarak alır. Callable (canlı kaynak)
+    # geçilirse burada patlar.
     import inspect
-    parametreler = list(inspect.signature(ib.komut).parameters)
-    yasak = [p for p in parametreler if any(
-        k in p.lower() for k in ("gps", "ned", "menzil", "hedef_", "plane", "tgt"))]
-    r1 = ib.komut(CX + 50, CY, 60, 40, 1.2, C)
-    r2 = ib.komut(CX + 50, CY, 60, 40, 1.2, C)
-    kontrol("B5  yasa GPS'siz: imzada hedef konum/menzil yok, deterministik",
-            not yasak and r1[:4] == r2[:4],
-            f"parametreler={parametreler}")
+    kp = list(inspect.signature(ib.komut).parameters)
+    dp = inspect.signature(ib.run_bbox_ibvs).parameters
+    # döngüde hedef verisi taşıyabilecek tek parametre ff_hiz; o da sayı üçlüsü
+    hedef_param = [p for p in dp if any(
+        k in p.lower() for k in ("plane", "truth", "menzil", "gercek", "tgt", "gps"))]
+    ff_default = dp["ff_hiz"].default
+    ff_sayi = (isinstance(ff_default, tuple) and len(ff_default) == 3
+               and all(isinstance(v, (int, float)) for v in ff_default))
+    r1 = ib.komut(CX + 50, CY, 60, 40, 1.2, (5.0, 1.0, 0.0), C)
+    r2 = ib.komut(CX + 50, CY, 60, 40, 1.2, (5.0, 1.0, 0.0), C)
+    kontrol("B5  D0: döngüde canlı hedef kaynağı YOK, taşıyıcı sayı üçlüsü",
+            not hedef_param and ff_sayi and r1[:4] == r2[:4],
+            f"run parametreleri={list(dp)}  ff varsayılan={ff_default}")
 
     # ── B6: düşük conf kutusu elenir ──
     dusuk = ib._kutu_gecerli({"bbox": (300, 220, 340, 260), "conf": 0.1}, C)
@@ -138,6 +153,41 @@ def main():
     stop2.set()
     kontrol("B9  N ardışık kutusuz kare → 'kayip' (GPS'e dönüş sinyali)",
             sonuc["r"] == "kayip", f"dönüş={sonuc['r']}")
+
+    # ── B10: DONDURULMUŞ TAŞIYICI — hedefin seyrini üstlenir ──
+    # 2026-08-08 uçuş dersi: taşıyıcısız yasa 12 m'de (kutu 12px) yalnız
+    # ~8 m/s üretiyordu; hedef 15 m/s → drone geride kaldı, faz 3.5 s'de koptu.
+    # Taşıyıcıyla toplam hız hedefin hızını AŞMALI (aksi halde asla kapanmaz).
+    HEDEF_V = 15.0
+    vx0, vy0, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, (0.0, 0.0, 0.0), C)
+    vx1, vy1, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, (HEDEF_V, 0.0, 0.0), C)
+    kontrol("B10 taşıyıcısız hedefin altında, taşıyıcıyla ÜSTÜNDE",
+            math.hypot(vx0, vy0) < HEDEF_V and math.hypot(vx1, vy1) > HEDEF_V,
+            f"taşıyıcısız {math.hypot(vx0, vy0):.1f} m/s  |  "
+            f"taşıyıcılı {math.hypot(vx1, vy1):.1f} m/s  (hedef {HEDEF_V:.0f})")
+
+    # ── B11: toplam yatay hız tavanı bağlar ──
+    vx2, vy2, _, _, _ = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, (17.0, 0.0, 0.0), C)
+    kontrol("B11 toplam hız V_TOPLAM_MAX ile tavanlı",
+            math.hypot(vx2, vy2) <= C.V_TOPLAM_MAX + 1e-6,
+            f"17+kapanma → {math.hypot(vx2, vy2):.2f} ≤ {C.V_TOPLAM_MAX}")
+
+    # ── B12: kutu yokken TAŞIYICI SÜRER (sıfır komut kalıcı kayıp yapar) ──
+    conn3 = _FakeConn()
+    st3 = {"seq": 0}
+    def wait_pose_bos2(son_seq, timeout=0.5):
+        st3["seq"] += 1
+        return {"seq": st3["seq"], "pose": None,
+                "stamp": None, "wall_recv": None, "lock": None}
+    stop3 = threading.Event()
+    th3 = threading.Thread(
+        target=ib.run_bbox_ibvs,
+        args=(conn3, get_iris, wait_pose_bos2, stop3, ib.Cfg, 50, (14.0, 3.0, 0.0)),
+        daemon=True)
+    th3.start(); time.sleep(0.3); s3 = conn3.mav.last; stop3.set(); th3.join(2.0)
+    kontrol("B12 kutu yokken taşıyıcı sürüyor (0 komut verilmiyor)",
+            s3 is not None and abs(s3[8] - 14.0) < 0.01 and abs(s3[9] - 3.0) < 0.01,
+            f"komut vx={s3[8] if s3 else None} vy={s3[9] if s3 else None} (taşıyıcı 14.0, 3.0)")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

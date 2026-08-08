@@ -2,23 +2,33 @@
 bbox_ibvs.py — SAF görüntü tabanlı görsel güdüm (IBVS), yalnız bbox.
 
 YARIŞMA KURALI (üstün kısıt, bkz. UYGULANACAK.md D0): görsel temas varken
-hedefin GPS'i güdümde KULLANILAMAZ. Bu modül yalnız tespit kutusunu (cx, cy,
-w, h, conf) ve drone'un KENDİ attitude'unu (yaw — gövde→NED dönüşümü için)
-kullanır. Hedef GPS'i, hedef hızı, menzil kestirimi HİÇBİRİ girmez.
+hedefin GPS'i güdümde KULLANILAMAZ — canlı GPS akışı yasak.
 
-Kontrol yasası (üç kanal, hepsi piksel uzayından):
+Bu modül iki girdiyle çalışır:
+  1. Tespit kutusu (cx, cy, w, h, conf) — her kare, tek canlı kaynak.
+  2. Drone'un KENDİ durumu (yaw, kendi hızı) — kendi sensörü, kural serbest.
+  3. DONDURULMUŞ TAŞIYICI (ff_hiz): devir ANINDA, yani görsel temas kurulmadan
+     ÖNCEKİ son GPS kestiriminden alınan hedef hız vektörü. Görsel faz boyunca
+     BİR DAHA OKUNMAZ.
+     ⚠ YAPISAL GARANTİ: bu bir SAYI ÜÇLÜSÜ olarak geçilir, callback değil —
+     döngünün canlı GPS'e erişimi FİZİKSEL OLARAK YOKTUR. Kural ihlali
+     "yapmamayı seçmek"le değil, yapamamakla güvence altında.
+
+Kontrol yasası:
   YAW     : yatay piksel hatası (cx − CX) → burun hedefe döner.
-  DİKEY   : dikey piksel hatası (cy − CY_NISAN) → tırman/alçal (vz, NED down+).
-  İLERİ   : kutu büyüklüğü menzil vekili — büyük kutu = yakın = yavaşla.
-            Kutu küçükse (uzak) tam yaklaşma hızı; büyüdükçe azalır, tabanlı.
+  DİKEY   : ff_vz + dikey piksel hatası (cy − CY_NISAN) → tırman/alçal.
+  YATAY   : v = ff_taşıyıcı + v_kapanma · û_LOS
+            ff_taşıyıcı hedefin seyir hızını üstlenir (drone geride kalmaz);
+            kutu boyutundan gelen v_kapanma yalnız ARADAKİ FARKI kapatır.
 
-Neden saf: "ekran ortasında → ileri ver" yanılsaması ancak hedef gerçekten
-önümüzdeyken doğrudur; kuyruk-benzeri girişte (yarışma hattı, GPS fazı 66°
-kuyruktan devrediyor) bu güvenli. Yandan girişte değil — o yüzden GPS fazı
-devri yalnız kuyruğa yakınken açar (supervisor kapısı).
+NEDEN TAŞIYICI ŞART (2026-08-08 uçuş dersi): saf kutu-boyutu modeli 12 m'de
+yalnız 8 m/s üretiyordu; hedef 15 m/s gidiyor → drone geride kalıp kutuyu
+kaybediyor, faz 3.5 s'de kopuyordu. Kutu boyutu MENZİL vekilidir, HIZ vekili
+değil: küçük kutu "uzak" demek zorunda değil, hedef zaten küçük.
 
 Arayüz (supervisor.run_hybrid ile uyumlu):
-  run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg, kayip_kare_esik)
+  run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg, kayip_kare_esik,
+                ff_hiz=(vx,vy,vz))
     get_iris() -> {..., "yaw": rad, "vx","vy","vz": m/s}  (drone KENDİ durumu)
     wait_pose(son_seq, timeout) -> {"seq","pose",...}  (pose = bbox kaydı | None)
   Dönüş: 'durduruldu' (stop_event) | 'kayip' (kayip_kare_esik ardışık kutusuz).
@@ -74,16 +84,22 @@ class Cfg:
     VZ_MAX = 3.0                    # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
-    # ── İLERİ (kutu büyüklüğü = menzil vekili) ──
-    # boyut = sqrt(w·h). Büyük kutu = yakın. İleri hız boyut REF'e yaklaştıkça
-    # azalır: v = clamp(K_FWD·(REF − boyut), V_GERI, V_ILERI). Kutu kaybolursa
-    # (küçük/None) döngü kayıp sayar; burada değil.
-    # REF: terminal-öncesi tutulmak istenen görünür boyut. ~8-10 m'de kutu
-    # tarafına göre ~60-90 px; REF=70 kaba başlangıç, uçuşla kalibre edilecek.
-    BOYUT_REF = _env_f("AVCI_IBVS_REF", 70.0)   # px; sqrt(w·h) hedef boyut
-    K_FWD = _env_f("AVCI_IBVS_KFWD", 0.14)      # (m/s)/px
-    V_ILERI_MAX = _env_f("AVCI_IBVS_VMAX", 16.0)  # m/s
-    V_GERI_MAX = 3.0               # m/s; çok yaklaşınca hafif geri (tavan)
+    # ── KAPANMA (kutu büyüklüğü = MENZİL vekili; taşıyıcının ÜSTÜNE eklenir) ──
+    # boyut = sqrt(w·h). Büyük kutu = yakın. Kapanma hızı boyut REF'e
+    # yaklaştıkça azalır, REF'i aşınca NEGATİF olur (geri çekil):
+    #     v_kap = clamp(K_FWD·(REF − boyut), −V_KAPANMA_GERI, V_KAPANMA_MAX)
+    # Bu hız LOS yönünde (burun yönü) uygulanır; taşıyıcı zaten hedefin seyrini
+    # üstlendiği için kapanmanın işi YALNIZ aradaki farkı yemek.
+    #
+    # REF ölçümden (2026-08-08 uçuş logu): 12 m'de kutu ≈ 12 px → boyut ~1/menzil.
+    # 6 m hedef tutuş için REF ≈ 25 px. Profil:
+    #     30 m (5px) → +6.0 (tavan)   12 m (12px) → +4.6   8 m (18px) → +2.5
+    #      6 m (25px) → 0 (denge)      4 m (37px) → −2.0 (tavan, geri)
+    BOYUT_REF = _env_f("AVCI_IBVS_REF", 25.0)   # px; sqrt(w·h) denge boyutu
+    K_FWD = _env_f("AVCI_IBVS_KFWD", 0.35)      # (m/s)/px
+    V_KAPANMA_MAX = _env_f("AVCI_IBVS_VKAP", 6.0)   # m/s; taşıyıcı üstü kapanma
+    V_KAPANMA_GERI = 2.0           # m/s; çok yaklaşınca geri çekilme tavanı
+    V_TOPLAM_MAX = _env_f("AVCI_IBVS_VMAX", 18.0)   # m/s; yatay toplam tavan
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
     # ── KUTU GEÇERLİLİĞİ ──
@@ -98,15 +114,20 @@ _LOG_DIR = os.path.join(
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
-    "v_fwd", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+    "v_kapanma", "ff_vx", "ff_vy", "ff_vz",
+    "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
 
-def komut(cx, cy, w, h, iris_yaw, cfg=Cfg):
-    """SAF IBVS kontrol yasası (MAVLink yok, GPS yok). Test edilebilir.
+def komut(cx, cy, w, h, iris_yaw, ff_hiz=(0.0, 0.0, 0.0), cfg=Cfg):
+    """IBVS kontrol yasası (MAVLink yok, CANLI GPS yok). Test edilebilir.
 
-    Girdi: kutu merkezi (cx,cy) px, kutu boyu (w,h) px, drone yaw (rad).
-    Çıktı: (vx_ned, vy_ned, vz, yaw_cmd, tani)  — tani = ara değerler dict'i.
+    Girdi:
+      (cx,cy,w,h) : tespit kutusu — TEK canlı kaynak
+      iris_yaw    : drone kendi yaw'ı (rad) — kendi sensörü
+      ff_hiz      : DONDURULMUŞ taşıyıcı (vx,vy,vz) NED — devir anında bir kez
+                    alınmış sabit üçlü; bu fonksiyon onu yalnız TOPLAR.
+    Çıktı: (vx_ned, vy_ned, vz, yaw_cmd, tani)
     """
     boyut = math.sqrt(max(w, 0.0) * max(h, 0.0))
 
@@ -114,20 +135,26 @@ def komut(cx, cy, w, h, iris_yaw, cfg=Cfg):
     eps_yaw = math.atan((cx - cfg.CX_NISAN) / geo.FX)
     yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw)
 
-    # İLERİ: kutu boyutu menzil vekili
-    v_fwd = clamp(cfg.K_FWD * (cfg.BOYUT_REF - boyut),
-                  -cfg.V_GERI_MAX, cfg.V_ILERI_MAX)
+    # KAPANMA: kutu boyutu menzil vekili → LOS yönünde ek hız
+    v_kap = clamp(cfg.K_FWD * (cfg.BOYUT_REF - boyut),
+                  -cfg.V_KAPANMA_GERI, cfg.V_KAPANMA_MAX)
 
-    # Gövde ileri → NED (burun yönü = yaw_cmd)
-    vx_ned = v_fwd * math.cos(yaw_cmd)
-    vy_ned = v_fwd * math.sin(yaw_cmd)
+    # TAŞIYICI + KAPANMA (kapanma burun/LOS yönünde)
+    vx_ned = ff_hiz[0] + v_kap * math.cos(yaw_cmd)
+    vy_ned = ff_hiz[1] + v_kap * math.sin(yaw_cmd)
+    vmag = math.hypot(vx_ned, vy_ned)
+    if vmag > cfg.V_TOPLAM_MAX and vmag > 1e-6:
+        s = cfg.V_TOPLAM_MAX / vmag
+        vx_ned *= s
+        vy_ned *= s
 
-    # DİKEY: elev hatası → tırman/alçal
+    # DİKEY: taşıyıcı dikey + elev hatası → tırman/alçal
     eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
-    vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
+    vz = clamp(ff_hiz[2] + cfg.K_VZ * cfg.V_NOM * eps_elev,
+               -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
-            "v_fwd": v_fwd}
+            "v_kapanma": v_kap}
     return vx_ned, vy_ned, vz, yaw_cmd, tani
 
 
@@ -155,8 +182,12 @@ def _kutu_gecerli(pose, cfg):
 
 
 def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
-                  kayip_kare_esik=20):
-    """SAF bbox IBVS görsel güdüm döngüsü. Kutu akışına kilitli (wait_pose).
+                  kayip_kare_esik=20, ff_hiz=(0.0, 0.0, 0.0)):
+    """bbox IBVS görsel güdüm döngüsü. Kutu akışına kilitli (wait_pose).
+
+    ff_hiz: DONDURULMUŞ taşıyıcı (vx,vy,vz) NED — devir anında supervisor'ın
+    okuduğu son GPS hız kestirimi. ⚠ SAYI ÜÇLÜSÜ, callback DEĞİL: döngünün
+    görsel faz boyunca canlı GPS'e erişimi yoktur (D0 kuralı yapısal garanti).
 
     kayip_kare_esik ardışık geçersiz-kutu karesi → 'kayip' döner (görsel temas
     kesildi; supervisor GPS fazına döner). stop_event → 'durduruldu'.
@@ -164,7 +195,14 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     loop_period = 1.0 / cfg.LOOP_HZ
     son_seq = 0
     kayip_sayac = 0
-    vx_p = vy_p = vz_p = 0.0
+    ff = (float(ff_hiz[0]), float(ff_hiz[1]), float(ff_hiz[2]))
+    # İvme sınırlayıcı drone'un GERÇEK hızından başlar (kendi sensörü).
+    # Sıfırdan başlarsa devir anında 15 m/s'lik seyir "frenlenmiş" gibi
+    # rampalanır (12 m/s² ile 1.25 s) — hedef o sırada kaçar.
+    _i0 = get_iris()
+    vx_p = float(_i0.get("vx", 0.0) or 0.0)
+    vy_p = float(_i0.get("vy", 0.0) or 0.0)
+    vz_p = float(_i0.get("vz", 0.0) or 0.0)
     prev_time = None
     cmd_yaw = None
 
@@ -173,9 +211,11 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     f = open(csv_yol, "w", newline="")
     w_csv = csv.DictWriter(f, fieldnames=_CSV_ALANLAR, extrasaction="ignore")
     w_csv.writeheader()
-    print(f"[IBVS] SAF bbox görsel güdüm başladı (GPS YOK — yarışma kuralı) — "
-          f"REF={cfg.BOYUT_REF:.0f}px, CY_nişan={cfg.CY_NISAN:.0f}, "
-          f"kayıp eşiği={kayip_kare_esik} kare — log: {csv_yol}")
+    print(f"[IBVS] bbox görsel güdüm başladı (CANLI GPS YOK — yarışma kuralı) — "
+          f"dondurulmuş taşıyıcı=({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
+          f"|{math.hypot(ff[0], ff[1]):.1f}|, REF={cfg.BOYUT_REF:.0f}px, "
+          f"CY_nişan={cfg.CY_NISAN:.0f}, kayıp eşiği={kayip_kare_esik} kare "
+          f"— log: {csv_yol}")
 
     try:
         while not stop_event.is_set():
@@ -203,8 +243,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 if kayip_sayac >= kayip_kare_esik:
                     print(f"[IBVS] {kayip_kare_esik} ardışık kutusuz kare → 'kayip'")
                     return "kayip"
-                # kutu yok: son yaw'ı koru, ileri kes (kör ilerleme yok)
-                send_velocity(conn, 0.0, 0.0, 0.0, cmd_yaw or iyaw)
+                # Kutu yok: kapanma kesilir ama TAŞIYICI sürer — hedefin seyri
+                # bir karede değişmez; sıfır komut vermek 15 m/s'lik farkı
+                # açar ve kısa bir tespit boşluğunu kalıcı kayba çevirir.
+                send_velocity(conn, ff[0], ff[1], ff[2], cmd_yaw or iyaw)
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KUTU_YOK", "kayip_sayac": kayip_sayac,
                                 "iris_yaw_deg": round(math.degrees(iyaw), 1)})
@@ -213,7 +255,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
 
             kayip_sayac = 0
             cx, cy, bw, bh, conf = kutu
-            vx, vy, vz, yaw_cmd, tani = komut(cx, cy, bw, bh, iyaw, cfg)
+            vx, vy, vz, yaw_cmd, tani = komut(cx, cy, bw, bh, iyaw, ff, cfg)
             cmd_yaw = yaw_cmd
 
             # ivme sınırı (komut hızı sıçramasın)
@@ -230,7 +272,9 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "eps_yaw_deg": round(math.degrees(tani["eps_yaw"]), 1),
                 "eps_elev_deg": round(math.degrees(tani["eps_elev"]), 1),
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
-                "v_fwd": round(tani["v_fwd"], 2),
+                "v_kapanma": round(tani["v_kapanma"], 2),
+                "ff_vx": round(ff[0], 2), "ff_vy": round(ff[1], 2),
+                "ff_vz": round(ff[2], 2),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
