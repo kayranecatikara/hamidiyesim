@@ -43,11 +43,17 @@ class Cfg:
     LOOP_HZ = 20.0
 
     # ── KADRAJ NİŞAN NOKTASI ──
-    # Kamera gövdeye 25° YUKARI tilt'li. Kuyruktan yaklaşırken hedefi kadrajın
-    # biraz ÜSTÜNDE tutmak isteriz: gökyüzü arka planı korunur, terminalde
-    # hedefe alttan girilir (co-altitude'a çıkış). CY=240 merkez; nişanı biraz
-    # yukarı (küçük v) alıyoruz → drone hedefin hafif altında kalır.
-    CY_NISAN = _env_f("AVCI_IBVS_CY", 210.0)   # px; hedefin tutulacağı dikey konum
+    # ⚠ GEOMETRİ (2026-08-08 uçuş dersi): kamera gövdeye 25° YUKARI tilt'li.
+    # SEVİYE (co-altitude) bir hedef kadrajda merkezde DEĞİL, AŞAĞIDA görünür:
+    #     cy_seviye = CY + FY·tan(25°) = 240 + 166.6·0.466 ≈ 318 px
+    # İlk sürümde nişan 210 (üst) alınmıştı — bu "hedefin ~8 m ALTINA dal"
+    # demekti: drone vz'yi tavana (+4) yapıştırıp sürekli alçaldı, hedef
+    # kadrajın altından (cy→390→dışarı) kaçtı, faz 3.1 s'de koptu.
+    # DÜZELTME: nişanı seviye-hedef konumunun hafif ÜSTÜNE al (drone hedefin
+    # az altında kalsın — gökyüzü arka planı + terminal pop-up). tan(20°) ile
+    # ~10° altı: cy ≈ 240 + FY·tan(20°) ≈ 300.
+    _CY_SEVIYE = geo.CY + geo.FY * math.tan(math.radians(20.0))
+    CY_NISAN = _env_f("AVCI_IBVS_CY", round(_CY_SEVIYE, 0))  # ≈300 px
     CX_NISAN = geo.CX                           # px; yatay merkez (320)
 
     # ── YAW ──
@@ -61,8 +67,11 @@ class Cfg:
     # cy büyük (hedef kadrajda AŞAĞIDA) → hedef boresight'ın altında → ALÇAL
     # (vz>0, NED down+). Nominal hızla ölçekli: hızlı giderken dik açı daha çok
     # dikey hız ister (irtifayı korumak için).
-    K_VZ = _env_f("AVCI_IBVS_KVZ", 1.2)
-    VZ_MAX = 4.0                    # m/s; dikey hız tavanı
+    # K_VZ 1.2 → 0.5, VZ_MAX 4 → 3 (2026-08-08): ilk sürüm dikey hızı çok
+    # agresifti (10° hata → 2.5 m/s) ve tavana yapışıp salındı. Nişan doğru
+    # yere gelince (≈300) hata küçük kalır; yumuşak kazanç yeter.
+    K_VZ = _env_f("AVCI_IBVS_KVZ", 0.5)
+    VZ_MAX = 3.0                    # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ── İLERİ (kutu büyüklüğü = menzil vekili) ──

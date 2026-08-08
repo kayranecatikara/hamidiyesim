@@ -69,6 +69,19 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   irtifadan bağımsız çıktı (⌀41: 9.5 @300-388 m vs 10.4 @175-263 m) ama
   KÖK NEDEN backlog'da: senaryo pitch trimi irtifa tutacak şekilde ayarlanmalı.
 
+### E — bbox-IBVS görsel faz İNŞA (2026-08-08, devam ediyor)
+
+- `control/guidance/bbox_ibvs.py` yazıldı: saf görüntü, GPS'siz (D0 uyumlu).
+  komut(cx,cy,w,h,iris_yaw): yaw←yatay px, vz←dikey px, ileri←kutu boyutu.
+  9 birim test (test_bbox_ibvs). supervisor AVCI_VISUAL=bbox varsayılan.
+- Kademeli uçuş testi (Claude koşacak):
+  1. DÜZ uçuşta devir — en kolay giriş, kuyruktan yaklaşma. [SIRADA]
+  2. DÖNÜŞte devir — kritik: 66° kuyruk girişinden pure-pursuit kuyruğa
+     süzülebiliyor mu?
+  3. Kayıp → GPS → yeniden devir döngüsü.
+- Kalibrasyon açık uçları (uçuş sonrası): BOYUT_REF (70px kaba), K_FWD,
+  CY_NISAN (210), K_VZ. Piksel-boyut↔menzil eşlemesi uçuş logundan çıkacak.
+
 ### D — Görsel faza devir: BAĞLAYICI tasarım kararları (2026-08-08)
 
 **D0 — YARIŞMA KURALI (her şeyin üstündeki kısıt, kullanıcı aktarımı):**
