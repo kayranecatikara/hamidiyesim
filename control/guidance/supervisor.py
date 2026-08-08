@@ -24,6 +24,12 @@ from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
+from control.guidance.bbox_ibvs import run_bbox_ibvs, Cfg as IbvsCfg
+
+# GÖRSEL FAZ SEÇİMİ (2026-08-08, D0 yarışma kuralı):
+#   bbox : SAF bbox IBVS — GPS'siz, kural uyumlu (VARSAYILAN)
+#   lead : eski visual_lead (pose/truth-menzil zamanı; ARŞİV, kural dışı FF içerir)
+_GORSEL_YASA = os.environ.get("AVCI_VISUAL", "bbox").strip().lower()
 
 
 class SupCfg:
@@ -136,11 +142,17 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
         status["faz"] = "VISUAL"
         status["gecis_sayisi"] += 1
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
-              f"(geçiş #{status['gecis_sayisi']})")
-        sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
-                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                get_temas=get_temas, get_menzil=get_menzil,
-                                get_gercek=get_gercek)
+              f"(geçiş #{status['gecis_sayisi']}, yasa={_GORSEL_YASA.upper()})")
+        if _GORSEL_YASA == "bbox":
+            # SAF bbox IBVS — GPS/hedef verisi girmez (yarışma kuralı D0).
+            # get_plane_truth/get_menzil/get_gercek KASITEN geçilmez.
+            sebep = run_bbox_ibvs(conn, get_iris, wait_pose, stop_event,
+                                  cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M)
+        else:
+            sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
+                                    cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                    get_temas=get_temas, get_menzil=get_menzil,
+                                    get_gercek=get_gercek)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"
