@@ -9,17 +9,39 @@ GPS güdümünün kararlı referans hâli → **[KARARLI_HAL.md](KARARLI_HAL.md)
 
 ---
 
-## ⚑ Öncelik sırası (2026-08-06 güncellendi)
+## ⚑ Öncelik sırası (2026-08-08 akşam güncellendi)
+
+**İŞ BÖLÜMÜ (kullanıcı kararı 08-08):** GPS tarafı **Kayra'da**
+(`gps_guidance.py`, `UYGULANACAK.md`) — oraya DOKUNULMAZ, şart olursa önce
+kullanıcıya sorulur. Görsel güdüm **bizde** (`guidance_core`, `visual_lead`,
+`adapter_copter`, `supervisor`, arayüz, `tools/`).
 
 | # | iş | neden şimdi |
 |---|---|---|
-| **0** | [`gps_kararli_hal` TAM merge](#0--gps_kararli_hal-tam-merge-kullanıcı-kararı) | kullanıcı kararı — seçmeli entegrasyon yetmedi |
-| **1** | [LOS kayması — görsel fazın asıl kusuru](#1--los-kayması-görsel-fazın-asıl-kusuru) | **ölçüldü: ıskaların ortak imzası** |
-| **2** | [B10 — kalkışta hedefin üstüne çıkma](#b10--kalkışta-hedefin-üstüne-çıkma) | **her uçuşun başında bozuluyor** (max +17.9 m) |
-| **3** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser |
-| **4** | [Terminal kontrol yetkisi](#terminal-fazda-kontrol-yetkisi) | son metrede 25 m/s = kare başına 0.81 m |
-| **5** | [B8 — frenleme eğrisi](#b8--frenleme-eğrisi-mesafeye-bağlı-hız-tavanı) | "18 m/s çok yavaş" — **kullanıcı şimdilik erteledi** |
-| 6+ | aşağıdaki diğer maddeler | |
+| **1** | **Terminal dikey geometri** — drone hedefin ÜSTÜNDE kalırsa ıska **0/6** | [§0d](#0d--dördüncü-deney-de-çürüdü--vuruşun-asıl-ayrımı-2026-08-08-akşam) — düz uçuşta ölçüldü, dar ve çözülebilir |
+| **2** | [B2 — kör dalışta dikey komutu sönümle](#b2--kilit_kor-sırasında-dikey-komutu-sönümle) | 1'in doğrudan mekanizması: körken dikey serbest, araç daha da tırmanıyor |
+| **3** | [B6 — terminal algı SÜREKLİLİĞİ](#b6--terminal-algı-kalitesi--raftan-indi-2026-08-08) | vuran %0 kör, ıskalayan %11 kör |
+| **4** | [B1 — görsel faza irtifa tabanı](#b1--görsel-faza-irtifa-tabanı) | çakılmayı doğrudan keser (emniyet) |
+| **5** | [B10 — kalkışta hedefin üstüne çıkma](#b10--kalkışta-hedefin-üstüne-çıkma) | 1 ile aynı aile: araç üste çıkıyor |
+
+### ⛔ DÖNÜŞ PROBLEMİ — bu daldan çözülemez
+
+Görsel faz dönüşte 84 °/s LOS talebi üretiyor, araç 8 m/s²'de 17 °/s dönebiliyor.
+Kapatmak 32 m/s² = **3.3 g** ister; quad tavanı 1 g. Dört deney (lead kapısı,
+lead tavanı, kapanma hızı, ivme tavanı) bu duvara tosladı — hepsi §0b/§0d'de.
+Çözüm görsel tarafta DEĞİL: Kayra'nın "devir kapısı geometrik olacak" hattı
+(D0, commit 1c00deb) devir anında geometriyi yaşanabilir yapmayı hedefliyor.
+**Bu daldan yeni dönüş deneyi açılmayacak** — ölçüm yapılır, Kayra'ya iletilir.
+
+### ⚠ Kapanmış/eskimiş maddeler
+
+- **§0 `gps_kararli_hal` merge** — bitti (2125e23). §0b/0c/0d güncel iş.
+- **§1 LOS kayması deney matrisi** — konusu dönüş problemi; yukarıdaki ⛔
+  gereği bu daldan açılmayacak.
+- **Terminal kontrol yetkisi** — 08-08'de dört deneyle CEVAPLANDI (madde
+  içinde işaretlendi).
+- **B8 frenleme eğrisi** — kapanma hızı 12 m/s denendi ve çürüdü (§0d);
+  mesafeye bağlı tavan da aynı duvara çıkar, ertelendi kalsın.
 
 ### ✅ 2026-08-06'da BİTENLER (ölçümleri DURUM.md §3'te)
 
@@ -268,6 +290,31 @@ bağımsız tekrarı.)
 
 ⚠ Denenen ama KURULAMAYAN hipotez: "ıska ≈ menzil × tan(terminal dikey kadraj
 hatası)". Korelasyon r = +0.49, n = 8 — kanıt sayılmaz, veri yetersiz.
+
+### 🎯🎯 ASIL AYRIM: drone hedefin ÜSTÜNDE mi ALTINDA mı
+
+Son görülen karedeki gövde-çerçevesi yükselti açısı (kamera açısından bağımsız):
+
+| | vuruş | ıska |
+|---|---|---|
+| drone hedefin **ÜSTÜNDE** (6 faz) | **0** | **6** |
+| drone hedefin **ALTINDA** (6 faz) | **3** | 3 |
+
+Üstteki 6 fazın hepsinde kadraj hatası **−50…−54°** (hedef kamera ekseninin
+50° altında). Kadrajdan çıkış kenarı da bunu doğruluyor: 9 ıskanın **6'sında
+ALT kenardan** çıkıyor; üç vuruşta hiç çıkmıyor (faz hedef görülürken temasla
+bitiyor, kör kare 0).
+
+**MEKANİZMA:** kamera gövdeye **+25° YUKARI** bağlı → sistem baştan "alttan
+yaklaş" üzerine kurulu (GPS istasyonu da hedefin ALTINDA). Drone bir kez
+hedefin üstüne çıkarsa kamera onu göremez → kör dalış → ıska. Üste çıkmanın
+kaynağı fly-past: hedefi geçince "hedefe uç" komutu YUKARI-GERİYİ gösteriyor,
+araç tırmanıyor (bkz. B5 notu) ve bir SONRAKİ görsel faz üstten başlıyor.
+"Yeniden giriş fazları kötü" (ok %20-34, giriş 5-14 m) deseninin açıklaması bu.
+
+**Bu, dönüş probleminden AYRI ve çok daha dar bir problem** — düz uçuşta
+geçerli, ölçütü hazır (üstten başlayan faz oranı), ve çözümü görsel fazın
+içinde (bkz. B2, aşağıda).
 
 ### Devir menzili deseni
 
@@ -661,10 +708,17 @@ hedefe yetişme süresi kısalmalı.
 Görsel faza giriş medyanı ~6 m. Orada kalan 1 m'lik yanal hata
 **düzeltilemez**. Dönüş yarıçapı 25 m/s'te yatayda 156 m, dikeyde 62 m.
 
-- [ ] `AVCI_IBVS_V_KAPANMA=15`, sonra `=10` ile karne al.
-      *Uyarı:* `IVME_TAVAN=4` keyfi değil — quad ileri ivmelenmek için burnunu
-      eğer, kamera gövdeye +25° bağlı, 5 m/s² üstünde kamera yere bakar.
-*Sonuç:*
+- [x] `AVCI_IBVS_V_KAPANMA` düşürme — **YAPILDI, ÇÜRÜDÜ (08-08).** 12 m/s
+      denendi: menzil 16 → 89 m'ye açıldı (hedef 21 m/s, mutlak hız tavanı
+      yetmiyor). Zaten `V_YAKLASMA` yorumunda yazılıydı, okunmadan denendi.
+- [x] *Uyarıdaki* `IVME_TAVAN=4` gerekçesi — **ÇÜRÜDÜ (08-08).** Hem loglarda
+      hem uçuşta: 8 m/s² ile araç 13° burun aşağı gitti, tespit güveni
+      0.81 → 0.80 (bozulmadı). Ama kapanma da olmadı (0/15).
+*Sonuç:* **Bu maddenin tezi (fizik sınırı) DOĞRU ama sayıları eksikti.** Asıl
+kısıt yanal düzeltme bütçesi değil: görsel faz 84 °/s'lik LOS talebini KENDİ
+üretiyor (GPS aynı menzilde 28 °/s), buna yetişmek 32 m/s² = 3.3 g isterdi.
+Dört deneyin dördü de "talebe yetiş" dedi; yapılması gereken talebi küçültmek.
+Ayrıntı: §0d.
 
 ### B7 — İstasyon açısı: 15° mi, 25° mi, arası mı?
 `gps_guidance.Cfg.ISTASYON_ELEV_DEG`
@@ -744,10 +798,19 @@ B2'ye alternatif, daha kaba çözüm.
 Düşük öncelik.
 *Sonuç:*
 
-### B6 — Terminal algı kalitesi ⚠ kapsamı daraldı
-*Eski gerekçe çürütüldü (2026-08-04):* algı kusursuz yapıldığında (GT modu)
-isabet değişmedi. Genel "algıyı iyileştir" işi **rafa kalktı**; geriye kalan
-gerçek algı işi yukarıdaki manevra körlüğü.
+### B6 — Terminal algı kalitesi ⚠ RAFTAN İNDİ (2026-08-08)
+*Eski gerekçe (2026-08-04):* algı kusursuz yapıldığında (GT modu) isabet
+değişmedi → genel "algıyı iyileştir" işi rafa kalkmıştı.
+
+⚠ **08-08 verisi bunu çelişkiye sokuyor:** düz uçuşta vuran 3 fazda kör dalış
+%0/%0/%44, ıskalayan 9 fazda medyan %11. Vuran fazlarda algı TEMASA KADAR
+kopmadı.
+
+Çelişki muhtemelen sahte, çünkü iki AYRI şey ölçülmüş: GT modu algının
+DOĞRULUĞUNU kusursuzlaştırır (nişan kalitesi), kör dalış ise algının
+SÜREKLİLİĞİ (hiç tespit yok). GT modunda tespit hep var, yani GT deneyi
+sürekliliği hiç sınamamış. Doğrulanacak: GT koşularının kör dalış oranı 0
+muydu? Öyleyse eski çürütme sürekliliği kapsamıyor ve bu madde açıktır.
 
 ---
 
