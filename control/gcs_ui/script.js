@@ -51,7 +51,7 @@ const st = {
   imha: false,
 };
 const SCN_LBL = {
-  square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF',
+  duz: 'DÜZ', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF',
   // Daire çapı varyantları (run_plane_scenario.DAIRE_CAPLARI)
   circle_xl: 'DAİRE ⌀96', circle_l: 'DAİRE ⌀71', circle_s: 'DAİRE ⌀41',
 };

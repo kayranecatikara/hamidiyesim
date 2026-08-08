@@ -32,6 +32,17 @@ Arayüz: <http://localhost:8000>
     bash scripts/start_harmonic.sh durum    # ne çalışıyor — hiçbir şeyi öldürmez
                                             # Terminal B: Ctrl+C yeterli
 
+> ⚠ **VURUŞ SONRASI SİM KULLANILAMAZ.** Drone hedefe çarpınca uçak enkazı
+> Gazebo fiziğiyle savruluyor (bir kez yerin 1738 m altına gitti) ve ArduPlane
+> o durumdan dönmüyor. Panelden senaryoyu durdurup başlatmak YETMEZ.
+>
+>     GZ_HEADLESS=1 bash scripts/start_harmonic.sh yeniden
+>
+> **A/B deneylerine etkisi:** bir kol vuruşla bittiyse ikinci kol AYNI sim
+> oturumunda koşulamaz. Kollar ayrı simlerde koşulur; kıyas yine geçerlidir
+> ama "aynı oturum" garantisi kaybolur — damgadan (CSV `yapilandirma`) hangi
+> kolun hangisi olduğu yine okunur.
+
 ---
 
 ### Neden 50 s ve neden sıra önemli

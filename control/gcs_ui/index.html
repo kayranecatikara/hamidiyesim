@@ -42,6 +42,11 @@
             <div class="grp">
               <span class="label">Uçuş Senaryoları</span>
               <div class="scn" id="scn">
+                <!-- DÜZ: süresiz düz uçuş. Manuel modun yerine geçer — manuel
+                     nötr elevator'la yavaşça ALÇALIYOR ve o koşular geçersiz
+                     çıkıyordu (bkz. ucus_bekci "hedef-irtifa" ihlali). Düz
+                     referans ölçümü artık desen makinesinden. -->
+                <button data-scn="duz" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12 H21" stroke-width="2" stroke-linecap="round"/><path d="M17 8 L21 12 L17 16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Düz Uç</span></button>
                 <button data-scn="square" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" stroke-width="2"/></svg><span>Kare Çiz</span></button>
                 <button data-scn="circle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg><span>Daire Çiz</span></button>
                 <button class="aggr" data-scn="aggressive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M13 3 L6 13 H11 L10 21 L18 10 H12 Z" stroke-width="2" stroke-linejoin="round"/></svg><span>Agresif Uçuş</span></button>
