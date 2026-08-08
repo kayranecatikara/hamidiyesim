@@ -351,7 +351,28 @@ class Cfg:
     # geçmiş olabiliriz; menzil imzası gecikirse bu yakalar.
     FLYPAST_ARKA     = _env_b("AVCI_IBVS_FLYPAST_ARKA", True)
 
-    TERMINAL_COALT_DEG    = 10.0   # terminalde sabit yukarı nişan yanlılığı
+    # ── TERMİNAL YUKARI YANLILIĞI — 08-08'de ŞÜPHELİ HALE GELDİ ──
+    # Amacı: "alttan sıyırma yerine seviyeye çıkıp kafa kafaya" (yalnız hedef
+    # ÜSTTEyken uygulanır, elev > 0).
+    #
+    # ÖLÇÜM (08-08 akşam, düz uçuşta 12 görsel faz, gövde yükselti açısı):
+    #     her faz İYİ başlıyor (giriş +16…+30° = drone hedefin ALTINDA)
+    #     ıskalayanlar son karede −25…−29°  → hedefin ~0.5 m ÜSTÜNDEN geçiyor
+    #     vuranlar          son karede  +2…+26° → hafifçe ALTINDAN geçiyor
+    #     drone ÜSTTE biten 6 fazın 6'sı da ISKA (0/6)
+    # 10° yanlılık 3 m menzilde 0.53 m yukarı itme demek — ölçülen ıska
+    # mesafesiyle birebir aynı büyüklük.
+    #
+    # ŞÜPHELİ GERİ BESLEME: yanlılık yalnız hedef üstteyken açık; araç seviyeye
+    # gelince KAPANIYOR ama o ana kadar dikey hız kazanmış oluyor ve aşıyor.
+    # Aşınca hedef kadrajın ALT kenarından çıkıyor (kamera gövdeye +25° YUKARI
+    # bağlı) → kör dalış → araç son komutunda kalıyor. Ölçüldü: 9 ıskanın
+    # 6'sında hedef alt kenardan çıkmış; 3 vuruşta hiç çıkmamış (kör kare 0).
+    #
+    # ⚠ HENÜZ UÇUŞTA SINANMADI. Env ile açıldı ki A/B yapılabilsin:
+    #     AVCI_IBVS_COALT_DEG=0   → yanlılık kapalı
+    #     AVCI_IBVS_COALT_DEG=10  → bugünkü davranış (varsayılan, değişmedi)
+    TERMINAL_COALT_DEG    = _env_f("AVCI_IBVS_COALT_DEG", 10.0)   # ° yukarı yanlılık
     TERMINAL_COALT_MENZIL = _env_f("AVCI_IBVS_COALT_MENZIL", 12.0)  # m; altında co-altitude (kilitli)
 
 

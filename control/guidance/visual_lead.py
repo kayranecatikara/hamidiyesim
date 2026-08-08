@@ -362,6 +362,9 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         # analizinde istasyon geometrisinden geri hesaplamak gerekmişti.
         f"GPS_RANGE={os.environ.get('AVCI_GPS_RANGE', '11.0')}",
         f"IVME={cfg.IVME_TAVAN}/{cfg.IVME_TAVAN_DIKEY}",
+        # Terminal yukarı yanlılığı — 08-08 teşhisinde baş şüpheli
+        # (drone ÜSTTE biten 6 fazın 6'sı ıska). A/B kolları ayrılsın.
+        f"COALT={cfg.TERMINAL_COALT_DEG}",
         f"FLYPAST={cfg.FLYPAST_MENZIL}/{cfg.FLYPAST_BUYUME_M}",
     ])
     _yapilandirma_yazildi = False
