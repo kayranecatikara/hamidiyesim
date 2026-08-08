@@ -16,6 +16,11 @@
     bash scripts/gcs.sh gt           # teşhis: algı girdisi Gazebo gerçek pozundan
     bash scripts/gcs.sh takip        # bbox + HybridSORT + kilitli-ID
 
+`gcs.sh` **uçuş bekçisini de başlatır** (`tools/ucus_bekci.py`): sağlık bandı
+dışına sürekli çıkan durumu canlı yakalar ve `[BEKCI] İHLAL: ...` basar. Salt
+gözlemdir, uçuşu kesmez — o koşunun verisini geçersiz saymak okuyanın kararı.
+Kapatmak için `AVCI_BEKCI=0 bash scripts/gcs.sh takip`.
+
 `gcs.sh` ROS ortamını, `AVCI_GZ_CAMERA`/`AVCI_NO_BROWSER` değişkenlerini ve
 8000 portu temizliğini kendi yapar — elle `export` etmeye gerek yok.
 

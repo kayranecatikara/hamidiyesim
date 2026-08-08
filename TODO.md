@@ -199,6 +199,84 @@ değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3)
 
 ---
 
+## 0d — DÖRDÜNCÜ DENEY DE ÇÜRÜDÜ + vuruşun asıl ayrımı (2026-08-08 akşam)
+
+### Deney 4: ivme tavanı 4 → 8 m/s²  ❌
+
+Aynı oturumda A/B (ivme 8: 15 faz, ivme 4: 24 faz), aynı GPS hattı, ⌀55 daire:
+
+| ölçüt | ivme 8 | ivme 4 |
+|---|---|---|
+| komut ivmesi | 8.0 (tavanda) | 4.0 (tavanda) |
+| **hız vektörünün dönüşü** | **17.3 °/s** | 8.3 °/s |
+| **tespit güveni** | **0.80** | 0.81 |
+| gövde pitch p10 | −13.2° | −7.7° |
+| 3 m altına kapanan | **0/15** | 0/24 |
+
+✅ **"Kamera yere bakar, tespit bozulur" korkusu UÇUŞTA DA ÇÜRÜDÜ.** Araç 13°
+burun aşağı gitti, güven 0.81 → 0.80. `IVME_TAVAN` yorumundaki eski gerekçe
+artık ölçümle nitelenmiş durumda (kod yorumuna işlendi).
+
+❌ Ama çeviklik iki katına çıkmasına rağmen sonuç değişmedi.
+
+### ⚠ KENDİ SAYIMI DÜZELTTİM
+
+Daha önce "gereken 19.2 °/s" demiştim — **yanlıştı.** O sayı GPS fazının
+loglarından ölçülmüştü; GPS drone'u hedefle BİRLİKTE döndürdüğü için orada LOS
+yavaş kayıyor. Aynı uçuşta, benzer menzilde:
+
+| | LOS'un dönme hızı |
+|---|---|
+| GPS fazı (15-25 m) | **28 °/s** |
+| **görsel faz (11-19 m)** | **84 °/s** |
+| aracın yapabildiği (8 m/s²) | 17 °/s |
+
+84 °/s için gereken ivme **32 m/s² = 3.3 g** — quad'ın fiziksel tavanı 9.8.
+Bu yol KESİN kapalı.
+
+### Asıl bulgu: talebi güdüm KENDİ üretiyor
+
+Aynı uçuş, aynı hedef, benzer menzil — GPS 28 °/s, görsel 84 °/s. Farkı yaratan
+menzil değil, **drone'un kendi hareketi.** GPS hedefle birlikte dönüyor (hedefin
+açısal hareketi kendi hareketiyle sadeleşiyor); görsel faz hedefin üstüne
+dalıyor ve 84 °/s'lik talebi kendisi üretip sonra ona yetişemiyor.
+
+Dört deney (lead kapısı · lead tavanı · kapanma hızı · ivme tavanı) hepsi
+"talebe daha iyi yetiş" demeye çalıştı. Yapılması gereken **talebi küçültmek.**
+
+### DÜZ vs DÖNÜŞ — tam ayrım (55 faz, 18:00 sonrası)
+
+| hedef | LOS hızı | `ok` oranı | en yakın menzil |
+|---|---|---|---|
+| dönüşte (ω≈19 °/s), 41 faz | **60-113 °/s** | %44-56 | hiç 9.4 m altına inmedi |
+| düzde (ω≈1 °/s), 14 faz | **1.2-2.5 °/s** | %88-99 | **0.3-1.3 m** |
+
+### 🎯 VURUŞUN AYRIMI: terminal algı sürekliliği
+
+Düz uçuşta 3 vuruş / 9 ıska:
+
+| | `ok` oranı | **kör dalış** | en yakın |
+|---|---|---|---|
+| VURANLAR | %99 / %99 / %44 | **%0 / %0** / %44 | 0.87 / 0.92 / 0.31 m |
+| ISKALAYANLAR | %88 medyan | **%11 medyan** | 1.17 m medyan |
+
+**Vuran fazlarda drone hedefi temasa kadar hiç kaybetmedi.** Iskalayanlar son
+anda körleşti. `185411` **0.56 m**'ye indi ama vuramadı; `185800` **0.87 m**'de
+vurdu — yani mesafe değil, SON ANDA GÖRÜP nişanı düzeltebilmek belirleyici.
+(Bu, DURUM.md B6'daki "vuran 4 geçişin dördünde de kor_dalis ≤ %3" bulgusunun
+bağımsız tekrarı.)
+
+⚠ Denenen ama KURULAMAYAN hipotez: "ıska ≈ menzil × tan(terminal dikey kadraj
+hatası)". Korelasyon r = +0.49, n = 8 — kanıt sayılmaz, veri yetersiz.
+
+### Devir menzili deseni
+
+~20 m'de başlayan fazlar iyi (ok %88-99), 5-14 m'de başlayanlar kötü
+(ok %20-34). İkinciler bir geçiş sonrası yeniden giriş. "Birkaç geçiş sonra
+vuruyordu" gözleminin kaynağı bu: her seferinde bir ~20 m girişi bekleniyor.
+
+---
+
 ## 0c — C1: RANGE_SET 11 → 8 (kayramin_super_gudumu'ndan çekildi, 6d7854b)
 
 Kayra'nın dalında ÜÇ otonom uçuşla ölçüldü, buraya cherry-pick edildi:
