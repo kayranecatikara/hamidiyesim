@@ -261,6 +261,23 @@ class Cfg:
     # ω·τ kadar öne alma) koymadan deneme.
     FF_DONUS = _env_f("AVCI_GPS_FF_DONUS", 0.0) >= 0.5   # ❌ ölçümle kapalı
     FF_DONUS_MAX = 8.0        # m/s; ω kestirimi sıçrarsa düzeltme tavanı
+
+    # ── ARKA KISALTMA (2026-08-08, C1 üçüncü hamle) ──
+    #
+    # Dönüşte istasyon = arka bileşen (6.3 m @ elev 38°) + iç kayma (14 m);
+    # ikisi DİK vektörler, hedefe yatay uzaklık √(6.3²+14²) = 15.35 m.
+    # Ölçülen tutuş 13.3 m ve bunun çoğu istasyonun KENDİ ofseti (C1 tespiti).
+    # Arka bileşenin dönüşteki işlevi zayıf: kuyruk görüşü zaten yok (istasyon
+    # kuyruk hattından 66° içeride) ve burun/kamera hedefe yaw ile dönük.
+    # Bileşeni dönüşte eritmek istasyonu 14.0 m'ye getirir (~1.4 m kazanç);
+    # iç kaymanın yeniden ayarına da zemin açar (IC 14, ESKİ arka 10.6 m'yle
+    # birlikte ölçülmüştü).
+    #
+    # Ölçek iç kaymayla AYNI ω rampasında (IC_OMEGA_REF): düz uçuşta arka
+    # bileşen TAM kalır (en iyi bilinen düz davranış değişmez), tam dönüşte
+    # ARKA_KISALT oranında erir (1.0 = tamamen).
+    # Kapatmak için: AVCI_GPS_ARKA_KISALT=0
+    ARKA_KISALT = _env_f("AVCI_GPS_ARKA_KISALT", 1.0)   # 0..1; tam dönüşte eriyen pay
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
@@ -318,6 +335,7 @@ _CSV_ALANLAR = [
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
     "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
     "ff_donus_mps",   # dönüş ileri beslemesi |ω×r| (düzde 0)
+    "d_arka_m",       # istasyonun etkin arka bileşeni (dönüşte erir)
 ]
 
 
@@ -490,14 +508,24 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             d_below_eff = r_eff * math.sin(ist_elev)
 
             tgt_spd_h = math.hypot(vel_x, vel_y)
+
+            # Dönüş ölçeği (0=düz, 1=tam dönüş) — hem arka kısaltma hem iç
+            # kayma bunu kullanır; hedef yavaşsa ω kestirimi güvenilmez → 0.
+            olcek_don = 0.0
+            if tgt_spd_h >= cfg.TRACK_MIN_SPD:
+                olcek_don = min(1.0, abs(tgt_omega) / cfg.IC_OMEGA_REF)
+
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
                 bx, by = -vel_x / tgt_spd_h, -vel_y / tgt_spd_h   # hız yönünün gerisi (kuyruk)
             elif d_h > 1e-6:
                 bx, by = -ex / d_h, -ey / d_h                     # LOS gerisi (drone tarafı)
             else:
                 bx, by = 0.0, 0.0
-            st_x = est_x + bx * d_behind_eff
-            st_y = est_y + by * d_behind_eff
+            # ── ARKA KISALTMA (bkz. Cfg.ARKA_KISALT): dönüşte arka bileşen
+            # ω ölçeğiyle erir → istasyon kuyruktan yana (içeri) kayar.
+            d_arka = d_behind_eff * (1.0 - cfg.ARKA_KISALT * olcek_don)
+            st_x = est_x + bx * d_arka
+            st_y = est_y + by * d_arka
             st_z = est_z + d_below_eff                            # NED: altında (+z aşağı)
 
             # ── İÇ DAİRE KAYMASI (bkz. Cfg.IC_KAYMA; varsayılan 0 = kapalı) ──
@@ -508,7 +536,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             ic_kayma = 0.0
             ic_yaricap = None
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
-                olcek = min(1.0, abs(tgt_omega) / cfg.IC_OMEGA_REF)
+                olcek = olcek_don
                 if cfg.IC_ORAN > 0.0:
                     # YARIÇAP-ORANLI: R = |v| / |ω|. Dar dairede küçük, geniş
                     # dairede büyük kayma → tek katsayı her yarıçapta doğru.
@@ -621,6 +649,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "v_px": round(kad["v"], 1) if kad["v"] is not None else "",
                 "ist_elev_deg": round(math.degrees(ist_elev), 2),
                 "ff_donus_mps": round(ff_donus_mps, 2),
+                "d_arka_m": round(d_arka, 2),
             })
             f.flush()
 

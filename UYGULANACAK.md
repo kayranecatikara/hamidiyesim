@@ -51,6 +51,14 @@ istasyon yerinin her milimetresi davranışa yansıyor.
 - Dönüşte kadraj −9.4 → −15.2'ye geriledi (dikey ofset RANGE_SET'e göre,
   tutuş menzili değişmiyor — r_eff tavanı). Sıradaki hamlelerden biri:
   d_below'u gerçek menzille ölçekle; diğeri: dönüşte arka bileşeni daralt.
+- **Hamle 3 — arka kısaltma (dönüşte arka bileşen ω ölçeğiyle erir): KABUL.**
+  Daire truth MESAFE 13.3 → **5.7 m** (med; bant 5.3-6.8, min 4.8, temas yok;
+  log 141740). Beklenti 12 idi — fazlası geldi çünkü drone'un "istasyonun
+  gerisinde sürüklenme" payı, istasyon yana geçince hedefe DOĞRU katlanıyor.
+  Kadraj dönüşte −9.6°'ya toparladı (menzil < RANGE_SET → sabit-açı rejimi),
+  tespit güveni 0.85'e çıktı (~6 m'de kutu büyük). Kare köşeleri p90 20.7 ≈
+  eski seviye, düz uçuş etkilenmedi (ω=0 → kısaltma kapalı).
+  ⚠ Yalnız ⌀55'te ölçüldü; kilitlemeden önce ⌀96/71/41 doğrulaması gerek.
 
 ### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
 

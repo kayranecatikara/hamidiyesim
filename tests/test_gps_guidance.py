@@ -13,6 +13,7 @@ Kapsam:
          uca merkezleme, sınırlar, döngü içi işleyiş, kapatma anahtarı
   G14    dönüş ileri beslemesi (v_ist = v_hedef + ω×r): sayısal türevle
          doğrulama, düzde sıfır, tavan
+  G15    arka kısaltma: dönüşte arka bileşen erir, düzde tam kalır
 """
 
 import math
@@ -408,6 +409,29 @@ def main():
     mag = math.hypot(wg * (-ry_), wg * rx_)
     kontrol("G14d ⌀55 geometrisinde düzeltme ~4.6 m/s (ölçülen açıkla uyumlu)",
             3.5 < mag < 5.5, f"|ω×r| = {mag:.2f} m/s (r={math.hypot(rx_, ry_):.1f} m)")
+
+    # ── G15: ARKA KISALTMA — dönüşte arka bileşen erir, düzde tam kalır ──
+    def _d_arka(d_behind_eff, omega):
+        olc = min(1.0, abs(omega) / C.IC_OMEGA_REF)
+        return d_behind_eff * (1.0 - C.ARKA_KISALT * olc)
+
+    kontrol("G15a varsayılan AÇIK (tam dönüşte arka bileşen 0)",
+            C.ARKA_KISALT == 1.0, f"ARKA_KISALT={C.ARKA_KISALT}")
+
+    db = 8.0 * math.cos(math.radians(38.0))     # dönüş rejiminde tipik d_behind_eff
+    kontrol("G15b düzde tam, tam dönüşte sıfır, yarı dönüşte yarı",
+            _d_arka(db, 0.0) == db
+            and _d_arka(db, 0.30) < 1e-9
+            and abs(_d_arka(db, 0.075) - db / 2) < 1e-9,
+            f"ω=0 → {_d_arka(db, 0.0):.2f}  ω=0.075 → {_d_arka(db, 0.075):.2f}  "
+            f"ω=0.30 → {_d_arka(db, 0.30):.2f} m")
+
+    # Dönüşte istasyonun hedefe yatay uzaklığı: √(arka² + iç²) → iç kaymaya iner
+    eski_h = math.hypot(db, C.IC_KAYMA)
+    yeni_h = math.hypot(_d_arka(db, 0.30), C.IC_KAYMA)
+    kontrol("G15c tam dönüşte istasyon yatay uzaklığı iç kaymaya iner",
+            abs(yeni_h - C.IC_KAYMA) < 1e-9 and eski_h > yeni_h + 1.0,
+            f"eski {eski_h:.1f} m → yeni {yeni_h:.1f} m (iç kayma {C.IC_KAYMA:.0f})")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
