@@ -431,6 +431,7 @@ function sendCommand(endpoint, logMsg) {
 // Her buton: takeoff + desen. Aktif senaryonun butonuna tekrar basmak durdurur.
 // Manuel mod butonu ise uçuşu klavye kontrolüne devralır.
 const SCN_LABELS = {
+    duz:        '➜ DÜZ UÇUŞ',
     square:     '▢ KARE ÇİZ',
     circle:     '◯ DAİRE ⌀55 m',
     aggressive: '⚡ AGRESİF UÇUŞ',
@@ -439,6 +440,7 @@ const SCN_LABELS = {
     circle_s:   '◯ DAİRE ⌀41 m',
 };
 const scnButtons = {
+    duz:        document.getElementById('btn-scn-duz'),
     square:     document.getElementById('btn-scn-square'),
     circle:     document.getElementById('btn-scn-circle'),
     aggressive: document.getElementById('btn-scn-aggressive'),

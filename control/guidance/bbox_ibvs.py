@@ -59,6 +59,7 @@ from vision import geometry as geo
 from control.guidance.common import (
     clamp, normalize_angle, send_velocity, limit_acceleration,
 )
+from control.guidance.kurtarma import Kurtarma
 
 
 def _env_f(name, default):
@@ -258,6 +259,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     kor_baslangic = None      # kör hücumun başladığı duvar anı (süre sınırı)
     prev_time = None
     cmd_yaw = None
+    kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
 
     def _vuruldu():
         if get_temas is None:
@@ -301,6 +303,27 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
 
             iris = get_iris()
             iyaw = iris.get("yaw", 0.0)
+
+            # ── KURTARMA BEKÇİSİ (bkz. kurtarma.py) — takla/kaçak dönmede
+            # güdüm komutu kesilir. Terminal kör hücumdan da ÖNCE gelir:
+            # kontrolü kaybetmiş araçla hücumu sürdürmek uçuşu bitiriyor.
+            # Kayıp sayacı işlemeye devam eder → uzun sürerse GPS'e dönülür.
+            if kurt.guncelle(iris.get("roll", 0.0), iris.get("pitch", 0.0),
+                             iyaw, now):
+                send_velocity(conn, 0.0, 0.0, 0.0, iyaw)
+                vx_p = vy_p = vz_p = 0.0
+                son_v_cmd = None
+                cmd_yaw = iyaw
+                kayip_sayac += 1
+                if kayip_sayac >= kayip_kare_esik:
+                    print("[IBVS] kurtarma sırasında temas koptu → 'kayip'")
+                    return "kayip"
+                w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
+                                "durum": "KURTARMA",
+                                "kayip_sayac": kayip_sayac,
+                                "iris_yaw_deg": round(math.degrees(iyaw), 1)})
+                f.flush()
+                continue
 
             kutu = _kutu_gecerli(kayit["pose"], cfg)
             if kutu is None:

@@ -38,6 +38,7 @@ from control.guidance.common import (
     clamp, normalize_angle, limit_acceleration, send_velocity,
 )
 from control.guidance.guidance_core import hedef_kadraj_hatasi
+from control.guidance.kurtarma import Kurtarma
 
 
 def _env_f(name, default):
@@ -378,6 +379,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     prev_time = None
     loop_count = 0
     pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
+    kurt = Kurtarma()              # duruş bekçisi (normal uçuşta hiç tetiklenmez)
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR, time.strftime("gps_guidance_%Y%m%d_%H%M%S.csv"))
@@ -418,6 +420,19 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             iroll = iris.get("roll", 0.0)
             ipitch = iris.get("pitch", 0.0)
             iyaw = iris.get("yaw", 0.0)
+
+            # ── KURTARMA BEKÇİSİ (güdümden bağımsız emniyet; bkz. kurtarma.py) ──
+            # Araç takla atıyor/kaçak dönüyorsa güdüm komutu KESİLİR: hız sıfır,
+            # yaw olduğu yerde tutulur → araç toparlanır, uçuş kurtulur.
+            # Normal uçuşta tetiklenmez (eşikler ölçülen zarfın çok üstünde).
+            if kurt.guncelle(iroll, ipitch, iyaw, now):
+                send_velocity(conn, 0.0, 0.0, 0.0, iyaw)
+                vx_prev = vy_prev = vz_prev = 0.0
+                cmd_yaw = iyaw          # güdüm devralınca sıçrama olmasın
+                status.update(durum="KURTARMA")
+                loop_count += 1
+                _sleep(now, loop_period)
+                continue
 
             # ── DİNAMİK İSTASYON YÜKSELİŞİ: elev = tilt + pitch (bkz. Cfg) ──
             pitch_ema = ipitch if pitch_ema is None else (
