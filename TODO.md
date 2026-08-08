@@ -221,6 +221,68 @@ değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3)
 
 ---
 
+## 0e — ⚠ 08-08 A/B'LERİ GEÇERSİZ + yaw limit-çevrimi bulundu (08-08 gece)
+
+### A/B'ler neden geçersiz: hedef DAİREDE sürekli tırmanıyor
+
+| senaryo | irtifa davranışı |
+|---|---|
+| **DAİRE** | **+35…+92 m/dk, hiç oturmuyor** |
+| DÜZ | başta +13…+59 m/dk, sonra OTURUYOR (65 m, 134 m'de tam 0.0) |
+
+Aynı oturumda arka arkaya koşulan kollar bu yüzden farklı irtifada uçtu:
+
+| A/B | A kolu | B kolu | fark |
+|---|---|---|---|
+| IVME (18:21/18:29) | 84.8 m | 219.5 m | **134.6 m** |
+| PN_KAPI (14:29/14:32) | 52.5 m | 227.6 m | **175 m** |
+
+**Dairede yapılan TÜM 08-08 A/B'leri (PN_KAPI, PN_MAX, V_KAPANMA, IVME)
+GEÇERSİZ, tekrarlanmalı.** Hepsi "değişmedi" sonucu vermişti; o sonuçlara
+güvenilemez. §0b ve §0d'deki tablolar bu uyarıyla okunmalı.
+
+⚠ Benim hatam: önce yanlış şeyi (vuruşun simi bozup bozmadığını) ölçüp
+"A/B'ler geçerli" dedim. Vuruş gerçekten bozmuyor (11 vuruşta da hedef ve
+drone sağlıklı) ama asıl karıştırıcı irtifa sürüklenmesiydi.
+
+**Yöntem düzeltmesi:** A/B için (a) DÜZ senaryo + iki kol da irtifa platosuna
+oturduktan sonra, ya da (b) her kol için `start_harmonic.sh yeniden`.
+Kıyastan ÖNCE iki kolun hedef irtifası yazdırılacak; eşit değilse kıyas yok.
+
+### 🔍 YAW LİMİT-ÇEVRİMİ — araç saniyede ~4 kez sallanıyor
+
+Komut **54 saniye boyunca tam sabitken** (−79.7°) aracın hâli:
+
+| | |
+|---|---|
+| heading sapması | std **5.21°** |
+| yön değiştirme | **463 kez / 54 s = 4.3 Hz** |
+| kare-arası ortalama hareket | **1.42°** (20 Hz'de ≈ 28 °/s sürekli) |
+
+**GÜDÜM MASUM:** komut std 2.15°, temiz dilimde tamamen sabit. Titreten
+ArduCopter'ın kendi yaw çevrimi. `avci_copter.parm`'da hiç `ATC_*_YAW`
+satırı yok — hepsi firmware varsayılanı.
+
+**GERÇEK, telemetri gürültüsü DEĞİL** — iki bağımsız kanal doğruluyor:
+
+| kanal | yüksek-frekans sapma | frekans |
+|---|---|---|
+| hedefin GERÇEK piksel konumu | **6.12 px** | **4.7 Hz** |
+| bbox'tan türeyen yaw hatası | **1.37°** | **4.1 Hz** |
+
+6 px ≈ 2.1° — yaw sallanmasıyla birebir. Yani hedef kamerada saniyede ~5 kez
+oynuyor; terminal algı sürekliliğini (§0d, B6) bozmuş olabilir.
+
+**Denenecek (kullanıcı 08-08'de izin verdi):** `avci_copter.parm`'a
+`ATC_RAT_YAW_FLTE` (varsayılan 2.5 Hz) düşürmek — 4.3 Hz'lik çevrimi söndürür.
+parm yorumunda "sıradaki deneme" olarak zaten yazılıydı, hiç denenmedi.
+⚠ `ATC_ANG_YAW_P` 4.5→3.0 DENENDİ VE GERİ ALINDI (hata 4 katına çıktı) —
+o AÇI çevrimiydi, bu HIZ çevrimi, ayrı kaldıraç.
+⚠ Bu dosya avcının ortak ayarı; GPS fazını da etkiler. Kullanıcı kararı:
+denenecek, iyileşme yoksa geri alınacak, iyileşirse Kayra'ya anlatılacak.
+
+---
+
 ## 0d — DÖRDÜNCÜ DENEY DE ÇÜRÜDÜ + vuruşun asıl ayrımı (2026-08-08 akşam)
 
 ### Deney 4: ivme tavanı 4 → 8 m/s²  ❌
