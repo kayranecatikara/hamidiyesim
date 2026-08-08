@@ -39,32 +39,34 @@ def main():
 
     # ── B1: MERKEZDE nişan — yaw ≈ mevcut, dikey ≈ 0 ──
     # cx=CX (yatay merkez), cy=CY_NISAN (dikey nişan) → sapma yok.
-    vx, vy, vz, yaw, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, cfg=C)
+    vx, vy, vz, yaw, _I, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
     kontrol("B1  nişan noktasında: yaw≈0, vz≈0",
             abs(math.degrees(yaw)) < 0.5 and abs(vz) < 0.05,
             f"yaw={math.degrees(yaw):.2f}° vz={vz:.3f}")
 
     # ── B2: hedef SAĞDA (cx>CX) → yaw komutu POZİTİF (sağa dön) ──
-    vx, vy, vz, yaw_sag, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, cfg=C)
-    _, _, _, yaw_sol, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, cfg=C)
+    vx, vy, vz, yaw_sag, _I, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
+    _, _, _, yaw_sol, _, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
     kontrol("B2  hedef sağda → yaw>0, solda → yaw<0",
             yaw_sag > 0.05 and yaw_sol < -0.05,
             f"sağ yaw={math.degrees(yaw_sag):+.1f}° sol yaw={math.degrees(yaw_sol):+.1f}°")
 
-    # ── B3: KAPANMA — küçük kutu (uzak) tam kapanma, büyük kutu (yakın) geri ──
-    _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, cfg=C)
-    _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, cfg=C)
-    _, _, _, _, t_denge = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
-                                   0.0, cfg=C)
-    kontrol("B3  uzak kutu tam kapanma, REF'te 0, yakın kutu geri",
-            t_uzak["v_kapanma"] > 4.0 and abs(t_denge["v_kapanma"]) < 1e-6
-            and t_yakin["v_kapanma"] < 0,
-            f"5px→{t_uzak['v_kapanma']:+.1f}  REF({C.BOYUT_REF:.0f}px)→"
-            f"{t_denge['v_kapanma']:+.1f}  60px→{t_yakin['v_kapanma']:+.1f} m/s")
+    # ── B3: HIZ — küçük kutu (uzak) hızlı, REF'te integral kadar, yakın geri ──
+    _, _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 0.0, 0.05, C)
+    _, _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05, C)
+    _, _, _, _, _, t_denge = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
+                                      0.0, 0.0, 0.05, C)
+    # Yakın kutuda hız 0'a iner ama NEGATİF OLMAZ (V_MIN=0, geri gitme yok —
+    # 2026-08-08 kullanıcı kararı: fren vuruşu engelliyordu).
+    kontrol("B3  uzak kutu hızlı, REF'te integral kadar, yakında 0 (geri YOK)",
+            t_uzak["v_los"] > 4.0 and abs(t_denge["v_los"]) < 1e-6
+            and t_yakin["v_los"] == 0.0,
+            f"5px→{t_uzak['v_los']:+.1f}  REF({C.BOYUT_REF:.0f}px, I=0)→"
+            f"{t_denge['v_los']:+.1f}  60px→{t_yakin['v_los']:+.1f} m/s")
 
     # ── B4: DİKEY — hedef kadrajda AŞAĞIDA (cy>nişan) → ALÇAL (vz>0, NED down+) ──
-    _, _, vz_asa, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, cfg=C)
-    _, _, vz_yuk, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, cfg=C)
+    _, _, vz_asa, _, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, 0.0, 0.05, C)
+    _, _, vz_yuk, _, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, 0.0, 0.05, C)
     kontrol("B4  hedef altta → vz>0 (alçal), üstte → vz<0 (tırman)",
             vz_asa > 0.1 and vz_yuk < -0.1,
             f"altta vz={vz_asa:+.2f}  üstte vz={vz_yuk:+.2f}")
@@ -83,8 +85,8 @@ def main():
     ff_default = dp["ff_hiz"].default
     ff_sayi = (isinstance(ff_default, tuple) and len(ff_default) == 3
                and all(isinstance(v, (int, float)) for v in ff_default))
-    r1 = ib.komut(CX + 50, CY, 60, 40, 1.2, (5.0, 1.0, 0.0), C)
-    r2 = ib.komut(CX + 50, CY, 60, 40, 1.2, (5.0, 1.0, 0.0), C)
+    r1 = ib.komut(CX + 50, CY, 60, 40, 1.2, 8.0, 0.05, C)
+    r2 = ib.komut(CX + 50, CY, 60, 40, 1.2, 8.0, 0.05, C)
     kontrol("B5  D0: döngüde canlı hedef kaynağı YOK, taşıyıcı sayı üçlüsü",
             not hedef_param and ff_sayi and r1[:4] == r2[:4],
             f"run parametreleri={list(dp)}  ff varsayılan={ff_default}")
@@ -159,35 +161,108 @@ def main():
     # ~8 m/s üretiyordu; hedef 15 m/s → drone geride kaldı, faz 3.5 s'de koptu.
     # Taşıyıcıyla toplam hız hedefin hızını AŞMALI (aksi halde asla kapanmaz).
     HEDEF_V = 15.0
-    vx0, vy0, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, (0.0, 0.0, 0.0), C)
-    vx1, vy1, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, (HEDEF_V, 0.0, 0.0), C)
-    kontrol("B10 taşıyıcısız hedefin altında, taşıyıcıyla ÜSTÜNDE",
+    vx0, vy0, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, 0.0, 0.05, C)
+    vx1, vy1, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, HEDEF_V, 0.05, C)
+    kontrol("B10 integral sıcak başlangıcı: hedefin hızını aşan komut",
             math.hypot(vx0, vy0) < HEDEF_V and math.hypot(vx1, vy1) > HEDEF_V,
-            f"taşıyıcısız {math.hypot(vx0, vy0):.1f} m/s  |  "
-            f"taşıyıcılı {math.hypot(vx1, vy1):.1f} m/s  (hedef {HEDEF_V:.0f})")
+            f"I=0 → {math.hypot(vx0, vy0):.1f} m/s  |  "
+            f"I=15 → {math.hypot(vx1, vy1):.1f} m/s  (hedef {HEDEF_V:.0f})")
 
     # ── B11: toplam yatay hız tavanı bağlar ──
-    vx2, vy2, _, _, _ = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, (17.0, 0.0, 0.0), C)
+    vx2, vy2, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 17.0, 0.05, C)
     kontrol("B11 toplam hız V_TOPLAM_MAX ile tavanlı",
             math.hypot(vx2, vy2) <= C.V_TOPLAM_MAX + 1e-6,
             f"17+kapanma → {math.hypot(vx2, vy2):.2f} ≤ {C.V_TOPLAM_MAX}")
 
-    # ── B12: kutu yokken TAŞIYICI SÜRER (sıfır komut kalıcı kayıp yapar) ──
+    # ── B12: kutu boşluğunda SON KOMUT sürer (sıfır komut kalıcı kayıp yapar) ──
+    # ⚠ Eski sürüm burada DONDURULMUŞ NED taşıyıcıyı basıyordu; 2026-08-08
+    # uçuşunda o taşıyıcı hedef döndükçe drone'u yana savurdu (aspect 7°→70°,
+    # mesafe 8.7→66.6 m). Artık son LOS komutu sürdürülür — yön hedefin son
+    # görüldüğü yöndedir, sabit bir NED vektörü değil.
     conn3 = _FakeConn()
     st3 = {"seq": 0}
-    def wait_pose_bos2(son_seq, timeout=0.5):
+    def wait_pose_karisik(son_seq, timeout=0.5):
         st3["seq"] += 1
-        return {"seq": st3["seq"], "pose": None,
+        # ilk 8 kare kutu var, sonra boşluk
+        p = ({"bbox": (300, 290, 320, 305), "conf": 0.8}
+             if st3["seq"] <= 8 else None)
+        return {"seq": st3["seq"], "pose": p,
                 "stamp": None, "wall_recv": None, "lock": None}
+    # Devir gerçeği: drone zaten uçuyor (ivme sınırlayıcı oradan başlar)
+    def get_iris_ucan():
+        return {"yaw": 0.0, "vx": 14.0, "vy": 3.0, "vz": 0.0}
     stop3 = threading.Event()
     th3 = threading.Thread(
         target=ib.run_bbox_ibvs,
-        args=(conn3, get_iris, wait_pose_bos2, stop3, ib.Cfg, 50, (14.0, 3.0, 0.0)),
+        args=(conn3, get_iris_ucan, wait_pose_karisik, stop3, ib.Cfg, 50,
+              (14.0, 3.0, 0.0)),
         daemon=True)
-    th3.start(); time.sleep(0.3); s3 = conn3.mav.last; stop3.set(); th3.join(2.0)
-    kontrol("B12 kutu yokken taşıyıcı sürüyor (0 komut verilmiyor)",
-            s3 is not None and abs(s3[8] - 14.0) < 0.01 and abs(s3[9] - 3.0) < 0.01,
-            f"komut vx={s3[8] if s3 else None} vy={s3[9] if s3 else None} (taşıyıcı 14.0, 3.0)")
+    th3.start(); time.sleep(0.6); s3 = conn3.mav.last; stop3.set(); th3.join(2.0)
+    hiz3 = math.hypot(s3[8], s3[9]) if s3 else 0.0
+    kontrol("B12 kutu boşluğunda son komut sürüyor (sıfırlanmıyor)",
+            s3 is not None and hiz3 > 5.0,
+            f"boşlukta komut hızı {hiz3:.1f} m/s (sıfır olmamalı)")
+
+    # ── B13: TERMİNAL HÜCUM — fren yok, tam taahhüt ──
+    # Kullanıcı kararı (2026-08-08): "o freni koymasan aracı vurabiliyoruz."
+    _, _, _, _, _, t_tut = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
+                                    C, False)
+    _, _, _, _, _, t_ter = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
+                                    C, True)
+    kontrol("B13 terminalde fren yok: v = tam tavan (tut modunda ise 0)",
+            abs(t_ter["v_los"] - C.V_TOPLAM_MAX) < 1e-6 and t_tut["v_los"] < 1.0,
+            f"tut modu {t_tut['v_los']:+.1f} → terminal {t_ter['v_los']:+.1f} m/s")
+
+    kontrol("B14 geri gitme YOK (V_MIN=0) ve tavan 24 m/s",
+            C.V_MIN == 0.0 and C.V_TOPLAM_MAX >= 24.0,
+            f"V_MIN={C.V_MIN}  V_TOPLAM_MAX={C.V_TOPLAM_MAX}")
+
+    # ── B15: ÇARPMA SENSÖRÜ — temas gelince 'vuruldu' ──
+    conn4 = _FakeConn()
+    st4 = {"seq": 0}
+    def wait_pose4(son_seq, timeout=0.5):
+        st4["seq"] += 1
+        return {"seq": st4["seq"],
+                "pose": {"bbox": (310, 295, 330, 310), "conf": 0.8},
+                "stamp": None, "wall_recv": None, "lock": None}
+    temas_durum = {"v": False}
+    def get_temas():
+        st4["seq"] > 5 and temas_durum.update(v=True)
+        return temas_durum["v"]
+    stop4 = threading.Event()
+    son4 = {"r": None}
+    def kosu4():
+        son4["r"] = ib.run_bbox_ibvs(conn4, get_iris, wait_pose4, stop4,
+                                     ib.Cfg, 50, (14.0, 0.0, 0.0), get_temas)
+    th4 = threading.Thread(target=kosu4, daemon=True)
+    th4.start(); th4.join(3.0); stop4.set()
+    kontrol("B15 Talon çarpma sensörü → 'vuruldu' ile biter",
+            son4["r"] == "vuruldu", f"dönüş={son4['r']}")
+
+    # ── B16: ⚠ KÖR HÜCUM SÜRE SINIRLI — sınırsız kalırsa araç kaçar ──
+    # 2026-08-08 hatası: süre sınırı yoktu; drone ıskaladıktan sonra son
+    # komutu 260 s bastı ve 1032 m uzağa uçtu, faz hiç 'kayip' dönmedi.
+    class _KisaCfg(ib.Cfg):
+        TERMINAL_SURE = 0.4        # test için kısa
+        TERMINAL_BOYUT = 20.0      # hemen terminale girsin
+    conn5 = _FakeConn()
+    st5 = {"seq": 0}
+    def wait_pose5(son_seq, timeout=0.5):
+        st5["seq"] += 1
+        # ilk 5 kare BÜYÜK kutu (terminal tetiklenir), sonra hiç kutu yok
+        p = ({"bbox": (300, 285, 340, 315), "conf": 0.9}
+             if st5["seq"] <= 5 else None)
+        return {"seq": st5["seq"], "pose": p,
+                "stamp": None, "wall_recv": None, "lock": None}
+    stop5 = threading.Event()
+    son5 = {"r": None}
+    def kosu5():
+        son5["r"] = ib.run_bbox_ibvs(conn5, get_iris, wait_pose5, stop5,
+                                     _KisaCfg, 10, (14.0, 0.0, 0.0))
+    th5 = threading.Thread(target=kosu5, daemon=True)
+    th5.start(); th5.join(5.0); stop5.set()
+    kontrol("B16 kör hücum süre dolunca ISKA → 'kayip' (sonsuz kör YOK)",
+            son5["r"] == "kayip", f"dönüş={son5['r']} (thread canlı mı: {th5.is_alive()})")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

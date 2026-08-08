@@ -167,9 +167,11 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
             print(f"[SUPERVISOR] taşıyıcı donduruldu: "
                   f"({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
                   f"— görsel faz boyunca GPS'e bir daha bakılmayacak")
+            # get_temas: Talon çarpma sensörü — SONUÇ sinyali (vuruş kararı),
+            # güdüm girdisi değil; hedefin yerini/hızını taşımaz.
             sebep = run_bbox_ibvs(conn, get_iris, wait_pose, stop_event,
                                   cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                  ff_hiz=ff)
+                                  ff_hiz=ff, get_temas=get_temas)
         else:
             sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
                                     cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
