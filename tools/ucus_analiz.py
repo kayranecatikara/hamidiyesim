@@ -96,6 +96,24 @@ def analiz(yol):
         print(f"  ist_elev tick adımı: med {st.median(dif):.3f}°, max {max(dif):.2f}° "
               f"(sıçrama = salınım şüphesi)")
 
+    # ── GEÇERLİLİK: koşu sağlıklı koşullarda mıydı? ──
+    # 2026-08-08 dersi: düz uçuş testinde hedef 12 m'ye alçalmış, güdüm 8 m
+    # irtifa tabanına dayanmış — sayılar "iyi" görünürken koşul temsilî
+    # değildi. Menzil özetine bakmadan önce bu satır kontrol edilir.
+    alt = [-x for x in (_f(rows[i], "tgt_z") for i in idx) if x is not None]
+    spd = [math.hypot(a, b) for a, b in
+           ((_f(rows[i], "tgt_vx"), _f(rows[i], "tgt_vy")) for i in idx)
+           if a is not None and b is not None]
+    if alt and spd:
+        u1 = "⚠ " if (min(alt) < 20 or max(alt) > 250) else ""
+        u2 = "⚠ " if not (8 <= st.median(spd) <= 22) else ""
+        print(f"  GEÇERLİLİK: {u1}hedef irtifa med {st.median(alt):.0f} "
+              f"[min {min(alt):.0f}, max {max(alt):.0f}] m (bant 20-250) | "
+              f"{u2}hedef hız med {st.median(spd):.1f} m/s")
+        if u1 or u2:
+            print("  ⚠ Koşul bandın dışında — bu koşunun menzil sayılarına"
+                  " tek başına güvenme, koşuyu yinele.")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

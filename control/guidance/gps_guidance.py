@@ -52,7 +52,14 @@ class Cfg:
                               # Hedefin kadrajın TAM MERKEZİNDE görünmesi için
                               # gereken LOS yükselişi. Ölçüm/tanı referansı;
                               # istasyon geometrisini ARTIK BELİRLEMİYOR.
-    RANGE_SET = _env_f("AVCI_GPS_RANGE", 11.0)   # m; slant menzil setpoint (pose tatlı nokta)
+    # RANGE_SET 11 → 8 (2026-08-08, C1 ikinci hamle, UÇUŞTA DOĞRULANDI):
+    #     düz uçuş : 13-14 → 11.7 m (oturmuş p10 11.2 / p90 12.1 — kararlı)
+    #     dönüşler : 15.1 → 13.3 m (aynı segmentasyonla, kontrol log 121248)
+    # Eski "11→5 denendi, hiç etki yok" bulgusu bu değişikliğe engel DEĞİL:
+    # o ölçüm menzil >16 m'de komut V_MAX'a doygunken alınmıştı; artık 12-15 m
+    # bandında lineer bölgedeyiz ve istasyonun yeri birebir menzile yansıyor.
+    # 11'in kökeni pose modelinin tatlı noktasıydı (pose artık devre dışı).
+    RANGE_SET = _env_f("AVCI_GPS_RANGE", 8.0)    # m; slant menzil setpoint
 
     # İSTASYONUN LOS yükselişi — kamera tilt'inden AYRILDI (2026-08-02).
     #
@@ -217,6 +224,43 @@ class Cfg:
     IC_ORAN = _env_f("AVCI_GPS_IC_ORAN", 0.0)  # 0 = kapalı, sabit IC_KAYMA geçerli
     IC_KAYMA_MAX = _env_f("AVCI_GPS_IC_MAX", 25.0)   # m; oranlı kaymanın tavanı
     IC_R_MIN = 15.0            # m; bundan dar yarıçap kestirimi güvenilmez sayılır
+
+    # ── DÖNÜŞ İLERİ BESLEMESİ (2026-08-08, C1 birinci hamle) ──
+    #
+    # SORUN: hız ileri beslemesi HEDEFİN hızını basıyor (v_hedef). Ama istasyon
+    # dönüşte hedefle BİRLİKTE DÖNEN bir nokta: hedefin 8.7 m gerisi + 14 m içi.
+    # Birlikte dönen noktanın gerçek hızı  v_ist = v_hedef + ω × r  (r = hedef→
+    # istasyon). ⌀55 dairede: |ω×r| = 0.28 × 16.5 ≈ 4.6 m/s — istasyonun gerçek
+    # hızı ~10.9 m/s iken FF 14.5 basıyordu. Ölçüm bunu doğruluyor: drone dönüş
+    # tutuşunda 11.9 m/s uçuyor (2026-08-08, log 121248), yani PD her turda
+    # FF'in ~3 m/s'lik yalanını hata terimiyle geri ödüyor → kalıcı teğetsel
+    # gecikme (~14 m'nin ana bileşeni).
+    #
+    # ⚠ BU DAHA ÖNCE DENENDİ VE GERİ ALINDI ("istasyon hızı ileri beslemesi
+    # (ω×s)", KARARLI_HAL tablosu). GERİ ALMA GEREKÇESİ: "komut doygun olduğu
+    # için etkisi yutuldu" — o dönem menzil >16 m'de komut V_MAX'a doygundu.
+    # ŞİMDİ GEÇERSİZ: 15 m'de tutuyoruz ve komut lineer bölgede (dün ölçüldü:
+    # drone 11.9 m/s, tavan 18). Gerekçesi ölen ret, ret sayılmaz — yeniden
+    # deneniyor, bu kez tek değişken olarak ve otonom uçuşla ölçülerek.
+    #
+    # Formül ω ile ölçeklendiği için düz uçuşta (ω≈0) kendiliğinden sıfır —
+    # en iyi bilinen düz davranış bozulmaz (IC kaymasıyla aynı güvence).
+    #
+    # ❌ UÇUŞTA ELENDİ (2026-08-08, log 131037, otonom koşu):
+    #     FF açık : daire menzil med 23.0 m [p10 22.4, p90 23.7], FF med 6.6 m/s
+    #     kontrol : daire menzil med 15.1 m [p10 14.6, p90 17.2]  (log 121248)
+    # Formül doğru (G14b sayısal türevle birebir) ve uçuşta aktifti — yani
+    # sorun uygulama değil, MEKANİZMA: "doğru" istasyon hızı beslemesi komut
+    # hızını düşürüyor (10.9 < 14.5) ve dönen çerçevede aracın hız-takip
+    # gecikmesini telafisiz bırakıyor. Eski "yanlış" v_hedef beslemesindeki
+    # fazlalık, meğer bu gecikmeyi kazara telafi eden faydalı bir lead'miş.
+    # Denge kayması ölçümle uyumlu: Δv/KP ≈ 4.6/0.8 ≈ 6 m dışarı.
+    # DERS: FF'i "daha doğru" yapmak tek başına kazanç değil; araç gecikmesi
+    # dahil kapalı döngü ölçülmeden değiştirilmez. Varsayılan KAPALI kalacak;
+    # yeniden açmayı deneyeceksen yanına araç-gecikmesi telafisi (komut açısını
+    # ω·τ kadar öne alma) koymadan deneme.
+    FF_DONUS = _env_f("AVCI_GPS_FF_DONUS", 0.0) >= 0.5   # ❌ ölçümle kapalı
+    FF_DONUS_MAX = 8.0        # m/s; ω kestirimi sıçrarsa düzeltme tavanı
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
@@ -273,6 +317,7 @@ _CSV_ALANLAR = [
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
     "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
+    "ff_donus_mps",   # dönüş ileri beslemesi |ω×r| (düzde 0)
 ]
 
 
@@ -484,6 +529,25 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if -st_z < cfg.LOOKUP_MIN_ALT:                        # yere çakılma koruması
                 st_z = -cfg.LOOKUP_MIN_ALT
 
+            # ── 4b) DÖNÜŞ İLERİ BESLEMESİ: v_ist = v_hedef + ω × r ──
+            # r = hedef→istasyon; +90° dönüşü ω>0'da (−ry, rx) (IC ile aynı
+            # konvansiyon). Düz uçuşta ω≈0 → düzeltme 0. Bkz. Cfg.FF_DONUS.
+            ff_x, ff_y = vel_x, vel_y
+            ff_donus_mps = 0.0
+            if (cfg.FF_DONUS and tgt_spd_h >= cfg.TRACK_MIN_SPD
+                    and abs(tgt_omega) > 1e-6):
+                rx_, ry_ = st_x - est_x, st_y - est_y
+                dvx = tgt_omega * (-ry_)
+                dvy = tgt_omega * rx_
+                ff_donus_mps = math.hypot(dvx, dvy)
+                if ff_donus_mps > cfg.FF_DONUS_MAX:
+                    olc_ = cfg.FF_DONUS_MAX / ff_donus_mps
+                    dvx *= olc_
+                    dvy *= olc_
+                    ff_donus_mps = cfg.FF_DONUS_MAX
+                ff_x += dvx
+                ff_y += dvy
+
             # ── 5) EMA TÜREV (istasyona hata) ──
             ex_cmd, ey_cmd, ez_cmd = st_x - ix, st_y - iy, st_z - iz
             e_now = (ex_cmd, ey_cmd, ez_cmd)
@@ -495,9 +559,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                         de[i] = (1 - a) * de[i] + a * (e_now[i] - e_prev[i]) / ddt
             e_prev, t_prev_deriv = e_now, now
 
-            # ── 6) HIZ KOMUTU: hedef-hızı FF + PD ──
-            vx = vel_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
-            vy = vel_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
+            # ── 6) HIZ KOMUTU: istasyon-hızı FF + PD ──
+            vx = ff_x + cfg.KP_H * ex_cmd + cfg.KD_H * de[0]
+            vy = ff_y + cfg.KP_H * ey_cmd + cfg.KD_H * de[1]
             vmag = math.hypot(vx, vy)
             if vmag > cfg.V_MAX and vmag > 1e-6:
                 s = cfg.V_MAX / vmag
@@ -556,6 +620,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "u_px": round(kad["u"], 1) if kad["u"] is not None else "",
                 "v_px": round(kad["v"], 1) if kad["v"] is not None else "",
                 "ist_elev_deg": round(math.degrees(ist_elev), 2),
+                "ff_donus_mps": round(ff_donus_mps, 2),
             })
             f.flush()
 

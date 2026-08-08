@@ -184,7 +184,7 @@ def id_to_name(sysid):
 # -----------------------------------------------------------------------
 # Daire çapları (run_plane_scenario.DAIRE_CAPLARI ile aynı adlar) — yarıçap-oranlı
 # iç daire nişanını farklı yarıçaplarda sınayabilmek için.
-_SCENARIO_NAMES = ("square", "circle", "aggressive",
+_SCENARIO_NAMES = ("duz", "square", "circle", "aggressive",
                    "circle_xl", "circle_l", "circle_s")
 
 

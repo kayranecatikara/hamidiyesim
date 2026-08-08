@@ -39,6 +39,19 @@ daraltmak (ör. ω ölçeğiyle) — her testte TEK değişken kuralıyla.
 ⚠ RANGE_SET artık maskeli değil: 13-17 m bandında komut doygun değil,
 istasyon yerinin her milimetresi davranışa yansıyor.
 
+*Sonuç (2026-08-08, üç otonom uçuş):*
+- **Hamle 1 — dönüş ileri beslemesi (v_ist = v_hedef + ω×r): ELENDİ.**
+  Formül doğru (G14b) ama daire 15.1 → 23.0 m'ye AÇILDI (log 131037).
+  Mekanizma: "doğru" FF komut hızını düşürüp aracın dönen çerçevedeki
+  takip gecikmesini telafisiz bırakıyor; eski v_hedef fazlalığı kazara
+  faydalı lead'miş. Varsayılan KAPALI, ders koda gömüldü.
+- **Hamle 2 — RANGE_SET 11 → 8: KABUL, varsayılan yapıldı.**
+  Daire: 15.1 → **13.3 m** (log 131611). Düz: 13-14 → **10.3 m**
+  [p10 9.8, p90 10.8] (log 134512, `duz` senaryosu, bekçi temiz).
+- Dönüşte kadraj −9.4 → −15.2'ye geriledi (dikey ofset RANGE_SET'e göre,
+  tutuş menzili değişmiyor — r_eff tavanı). Sıradaki hamlelerden biri:
+  d_below'u gerçek menzille ölçekle; diğeri: dönüşte arka bileşeni daralt.
+
 ### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
 
 Kullanıcı fikri: kamera gövdeye vidalı → gövde duruşu değişince sabit açılı
