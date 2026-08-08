@@ -132,7 +132,13 @@ class Cfg:
     # LOS boyunca TAM hızla taahhüt eder; bir kez girilince mandal kilitli
     # kalır (kutu titrese de geri dönmez). Kutu kaybolursa son komut sürer —
     # kör hücum: terminalde hedef kadrajdan çıkabilir, çarpışma tamamlanmalı.
-    TERMINAL_BOYUT = _env_f("AVCI_IBVS_TERM", 45.0)  # px; ≈3-4 m
+    # 45 → 25 px (2026-08-08, kullanıcı kararı — "1. madde"): 45 px ≈ 3.6 m
+    # demekti; 24 m/s'lik hücumla o mesafe 0.15 s'de kapanıyor ve kamera 30 Hz'de
+    # yalnız 4-5 kare görüyordu — hedefin son anki kaçışını düzeltecek zaman yok,
+    # 7 hücumun 7'si ıska (en yakın 1.5 m). 25 px ≈ 6.4 m'den taahhüt → düzeltmeye
+    # ~20 kare kalır. Ölçüm: kutu ≈ 160/menzil (12 m'de 12-14 px, uçuş logu).
+    # 25, BOYUT_REF ile aynı: "tutuş mesafesine varınca hücuma geç" demek.
+    TERMINAL_BOYUT = _env_f("AVCI_IBVS_TERM", 25.0)  # px; ≈6.4 m
     # ⚠ KÖR HÜCUM SÜRE SINIRI (2026-08-08, pahalı hata): ilk sürümde kör
     # hücumun süresi YOKTU. Drone hedefi ıskalayıp geçti, kutu kayboldu ve
     # son komut 260 s boyunca basıldı — araç 1032 m uzağa düz uçtu, faz hiç
