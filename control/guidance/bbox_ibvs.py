@@ -172,6 +172,15 @@ class Cfg:
     #      kutuyu merkeze çektiği için piksel hızı kendi düzeltmemizi de
     #      içerir; ona lead vermek düzeltmeyle kavga etmek olurdu.
     #   Düz kuyruk takibinde LOS hızı ≈ 0 → lead ≈ 0, yalnız kesişim kalır.
+    # ── TERMİNAL HÜCUM HIZI (2026-08-08, kullanıcı kararı) ──
+    # Yaklaşmada tavan 24 m/s KALIR (hedefe yetişmek için gerekli), yalnız
+    # HÜCUM hızı 18'e düşer. Gerekçe: 24 m/s'de hedefin yanından 0.06 s'de
+    # geçiyoruz — kamera 30 Hz'de son metrede 2 kare görüyor ve temas
+    # penceresinden çok hızlı geçiliyor. 18 m/s'de kapanma 3.5 m/s (hedef
+    # 14.5) → hem düzeltmeye daha çok kare, hem pencerede daha uzun süre.
+    # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
+    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
+
     LEAD_SURE = _env_f("AVCI_IBVS_LEAD", 0.4)    # s; nişanın öne alınma süresi
     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
@@ -238,7 +247,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
     hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
     if terminal:
-        v_los = cfg.V_TOPLAM_MAX               # hücum: fren yok
+        v_los = cfg.V_TERMINAL                 # hücum: fren yok, sabit hız
     else:
         v_los = clamp(hiz_I + cfg.K_FWD * hata, cfg.V_MIN, cfg.V_TOPLAM_MAX)
 

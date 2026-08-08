@@ -209,9 +209,10 @@ def main():
                                     C, False)
     _, _, _, _, _, t_ter = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
                                     C, True)
-    kontrol("B13 terminalde fren yok: v = tam tavan (tut modunda ise 0)",
-            abs(t_ter["v_los"] - C.V_TOPLAM_MAX) < 1e-6 and t_tut["v_los"] < 1.0,
-            f"tut modu {t_tut['v_los']:+.1f} → terminal {t_ter['v_los']:+.1f} m/s")
+    kontrol("B13 terminalde fren yok: v = V_TERMINAL (tut modunda ise 0)",
+            abs(t_ter["v_los"] - C.V_TERMINAL) < 1e-6 and t_tut["v_los"] < 1.0,
+            f"tut modu {t_tut['v_los']:+.1f} → terminal {t_ter['v_los']:+.1f} m/s "
+            f"(yaklaşma tavanı {C.V_TOPLAM_MAX:.0f} ayrı)")
 
     kontrol("B14 geri gitme YOK (V_MIN=0) ve tavan 24 m/s",
             C.V_MIN == 0.0 and C.V_TOPLAM_MAX >= 24.0,
