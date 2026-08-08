@@ -59,6 +59,15 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   tespit güveni 0.85'e çıktı (~6 m'de kutu büyük). Kare köşeleri p90 20.7 ≈
   eski seviye, düz uçuş etkilenmedi (ω=0 → kısaltma kapalı).
   ⚠ Yalnız ⌀55'te ölçüldü; kilitlemeden önce ⌀96/71/41 doğrulaması gerek.
+- **Çap doğrulaması (2026-08-08, log 144907 + 150726 teyit): GEÇTİ.**
+  Truth MESAFE, oturmuş medyanlar: ⌀96 **8.9** · ⌀71 **7.0/7.2** (iki
+  bağımsız uçuş) · ⌀55 **5.7** · ⌀41 **9.5/10.4** · düz **10.3**.
+  Temas yok (en yakın 4.6 m). C1'in hedefi (<10 m her senaryoda) düz ve
+  tüm dairelerde tutturuldu; kare köşe geçişleri (~20 m tepe) ayrı konu.
+  ⚠ Bekçi her iki uçuşta da irtifa bandı ihlali bildirdi: daire trimleri
+  uçağı ~0.9 m/s tırmandırıyor, uzun koşuda 250 m tavanı aşılıyor. Sayılar
+  irtifadan bağımsız çıktı (⌀41: 9.5 @300-388 m vs 10.4 @175-263 m) ama
+  KÖK NEDEN backlog'da: senaryo pitch trimi irtifa tutacak şekilde ayarlanmalı.
 
 ### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
 
