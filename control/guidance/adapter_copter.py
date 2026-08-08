@@ -60,7 +60,7 @@ class CopterAdapter:
         self.az_rate_f = 0.0          # EMA'lı azimut oranı (rad/s)
         self.yatay_lead = 0.0         # son uygulanan yatay lead (rad, log)
 
-    def _yatay_pn(self, u_dunya, dt, kalite):
+    def _yatay_pn(self, u_dunya, dt, kalite, azimut_kalite=1.0):
         """AZİMUT-ORANI LEAD — pose şekil-lead'inin yerine (2026-08-06).
 
         Nişan yönünü YATAY düzlemde, LOS azimutunun değişim oranıyla orantılı
@@ -80,6 +80,34 @@ class CopterAdapter:
 
         AZİMUT DAİRESELDİR: farklar normalize_angle'dan geçirilir, yoksa
         ±180° geçişinde tek karede sahte 360°/dt oranı üretilir.
+
+        ── KAPI: ölçek kalitesi DEĞİL, azimut kalitesi (2026-08-08) ──
+        Lead eskiden `kalite` ile çarpılıyordu. `kalite` bbox GENİŞLİĞİnden
+        türer (menzil vekili, 22.5 m'de 0 / 9.6 m'de 1) — oysa buradaki sinyal
+        bbox MERKEZİdir ve menzilden bağımsız güvenilirdir. Kadraj tutma terimi
+        aynı gerekçeyle zaten `kalite` ile çarpılmıyor (bkz. _dikey_pn (3)).
+
+        ÖLÇÜM (08-08, 4 oturum, 60 görsel faz): görsel faz hedef DÜZ uçarken
+        39/39 kapanıyor, DÖNERKEN 0/14. Dönüş karelerinde (n=348) tespit
+        sağlamdı — güven 0.79, bbox merkez sapması 1.8° — ama:
+
+            gerçek menzil 15.3 m → kalite 0.00
+            |az_rate| 71.8 °/s → gereken lead 20° (tavan)
+            FİİLEN UYGULANAN LEAD: 0.0°
+
+        Yani lead tam ihtiyaç duyulan anda kapalıydı; hedef kadrajdan yandan
+        süpürülüp çıkıyor, 37 kare tespitsiz kalınca faz GPS'e dönüyordu
+        (tespit_yok karelerinin %91'inde hedef GERÇEKTEN kadraj dışında).
+
+        azimut_kalite bu uçuşlarda medyan 1.000 — pratikte "ölçek kapısını
+        kaldır, tekil geometri (nişan dikeye yaklaşınca) koruması kalsın"
+        demek. Gürültü koruması değişmedi: AZ_STEP_MAX + AZ_EMA + PN_RATE_EMA
+        + ±PN_YATAY_MAX tavanı.
+
+        ⚠ Dönüşte gereken lead 43°, tavan 20° — DOYAR. Tavanı yükseltmek AYRI
+        bir deneydir, bu koşuya karıştırılmadı.
+
+        Eski davranışa dönüş: AVCI_IBVS_PN_YATAY_KAPI=olcek
         """
         cfg = self.cfg
         elev = math.asin(max(-1.0, min(1.0, -float(u_dunya[2]))))
@@ -100,8 +128,9 @@ class CopterAdapter:
             rate = normalize_angle(az - self.az_onceki) / dt
             self.az_rate_f = (cfg.PN_RATE_EMA * rate
                               + (1.0 - cfg.PN_RATE_EMA) * self.az_rate_f)
+            kapi = kalite if cfg.PN_YATAY_KAPI == "olcek" else azimut_kalite
             lead = clamp(
-                cfg.PN_YATAY_SURE * self.az_rate_f * max(0.0, min(1.0, kalite)),
+                cfg.PN_YATAY_SURE * self.az_rate_f * max(0.0, min(1.0, kapi)),
                 -math.radians(cfg.PN_YATAY_MAX_DEG),
                 math.radians(cfg.PN_YATAY_MAX_DEG))
         self.az_onceki = az
@@ -212,7 +241,7 @@ class CopterAdapter:
         # SIRA ÖNEMLİ: yatay kanal yükselişe dokunmaz, dikey kanal azimuta
         # dokunmaz — ama dikey kanal azimutu yeniden okuduğu için yatay lead
         # ÖNCE uygulanmalı, yoksa dikey adım lead'siz azimutu geri yazar.
-        u_dunya, yatay_lead = self._yatay_pn(u_dunya, dt, kalite)
+        u_dunya, yatay_lead = self._yatay_pn(u_dunya, dt, kalite, azimut_kalite)
         u_dunya, pn_lead, coalt = self._dikey_pn(u_dunya, dt, kalite, terminal,
                                                  kadraj_elev=kadraj_elev)
         # ── YAKLAŞMA ALT-FAZI (2026-08-05) ──

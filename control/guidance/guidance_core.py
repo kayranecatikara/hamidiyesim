@@ -271,6 +271,13 @@ class Cfg:
     # yolu tek env değişkeni).
     PN_YATAY_SURE     = _env_f("AVCI_IBVS_PN_YATAY_SURE", 0.6)   # s
     PN_YATAY_MAX_DEG  = _env_f("AVCI_IBVS_PN_YATAY_MAX", 20.0)   # ° (eski MAX_LEAD_DEG 35'ti)
+    # Yatay lead KAPISI — "azimut" (varsayılan) | "olcek" (2026-08-08 öncesi).
+    # "olcek" lead'i bbox GENİŞLİĞİNDEN türeyen `kalite` ile söndürür; 13 m
+    # üstünde 0'a iner, yani hedef DÖNERKEN lead tamamen kapanır (ölçüm:
+    # dönüşte 0/14 görsel faz kapanabildi, uygulanan lead 0.0°/gereken 20°).
+    # "azimut" kapıyı azimut_kalite'ye bağlar — sinyal bbox MERKEZİ olduğu için
+    # doğru kapı budur. Gerekçenin tamamı: adapter_copter._yatay_pn.
+    PN_YATAY_KAPI     = os.environ.get("AVCI_IBVS_PN_YATAY_KAPI", "azimut").lower()
     AZ_STEP_MAX_DEG   = 10.0   # tek-karede azimut slew kırpması (ELEV_STEP_MAX_DEG eşi)
     AZ_EMA            = 0.4    # azimut yumuşatma (ELEV_EMA eşi)
     # ── KADRAJ TUTMA: "metre altta kal" DEĞİL, "AÇI altta kal" (2026-07-31) ──

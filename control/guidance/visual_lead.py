@@ -350,6 +350,13 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         f"V_KAPANMA={cfg.V_KAPANMA}",
         f"V_YAKLASMA={cfg.V_YAKLASMA}",
         f"PN_YATAY={cfg.PN_YATAY_SURE}",
+        # Lead kapısı: "azimut" (08-08 sonrası) | "olcek" (eski). A/B'nin hangi
+        # kolunda uçulduğu CSV'den okunabilsin — 08-08'de dönüşteki 0/14 tam bu
+        # kapıya bağlandı, damgasız kıyas yapılamaz.
+        f"PN_KAPI={cfg.PN_YATAY_KAPI}",
+        # Lead TAVANI: 08-08 ölçümünde devir anında gereken lead 33-59° çıktı,
+        # tavan 20°'ydi. Tavan taramasının hangi kolu olduğu damgadan okunsun.
+        f"PN_MAX={cfg.PN_YATAY_MAX_DEG}",
         # GPS istasyon menzili: devir menzilini doğrudan belirliyor, karne
         # kıyaslarında en çok değiştirilen ayar. Damgada olmadığı için 08-05
         # analizinde istasyon geometrisinden geri hesaplamak gerekmişti.

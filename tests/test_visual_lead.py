@@ -1084,6 +1084,47 @@ def main():
             f"u_govde[0]={float(r_arka['u_govde'][0]):+.3f} "
             f"yaw_hata={r_arka['yaw_hata_deg']:+.1f}°")
 
+    # ── T64-T66: YATAY LEAD KAPISI (2026-08-08) ──
+    # 08-08 ölçümü: görsel faz hedef DÜZ uçarken 39/39 kapanıyor, DÖNERKEN
+    # 0/14. Sebep: lead `kalite` (bbox GENİŞLİĞİ = menzil vekili) ile
+    # çarpılıyordu; dönüş karelerinde menzil 15.3 m → kalite 0.00 → lead 0.0°,
+    # oysa gereken 20°'ydi (tavan). Tespit sağlamdı: güven 0.79, bbox merkez
+    # sapması 1.8°. Kapı artık azimut_kalite — sinyal bbox MERKEZİ olduğu için.
+    from control.guidance.adapter_copter import CopterAdapter as _CA
+
+    def _lead_deg(kapi, omega_dps, kalite, az_kalite=1.0, n=120):
+        """n kare boyunca sabit omega ile döndür (EMA'lar otursun), son lead'i ver."""
+        c = cfg_copy()
+        c.PN_YATAY_KAPI = kapi
+        a = _CA(cfg=c)
+        dt = 1 / 30.0
+        lead = 0.0
+        for i in range(n):
+            az = math.radians(omega_dps) * i * dt
+            u = np.array([math.cos(az), math.sin(az), 0.0])
+            _, lead = a._yatay_pn(u, dt, kalite, az_kalite)
+        return math.degrees(lead)
+
+    # Uçuşta ölçülen dönüş koşulu birebir: |az_rate| 71.8 °/s, kalite 0.00
+    _yeni = _lead_deg("azimut", 72.0, 0.00)
+    _eski = _lead_deg("olcek", 72.0, 0.00)
+    kontrol("T64 DÖNÜŞTE lead ölçek kalitesiyle sönmez (08-08 kök nedeni)",
+            abs(_eski) < 0.01 and _yeni >= 19.9,
+            f"olcek kapısı {_eski:.1f}° → azimut kapısı {_yeni:.1f}° "
+            f"(PN_YATAY_MAX={cfg.PN_YATAY_MAX_DEG}° tavanı)")
+
+    # Kill-switch gerçekten ESKİ davranışı veriyor mu — A/B'nin geçerliliği buna bağlı
+    kontrol("T65 AVCI_IBVS_PN_YATAY_KAPI=olcek eski davranışı birebir geri getirir",
+            abs(_lead_deg("olcek", 30.0, 0.25) - 0.6 * 30.0 * 0.25) < 0.6,
+            f"lead={_lead_deg('olcek', 30.0, 0.25):.2f}° "
+            f"≈ PN_YATAY_SURE·ω·kalite={0.6*30.0*0.25:.2f}°")
+
+    # Tekil geometri koruması KALMALI: nişan dikeye yaklaşınca azimut tanımsız,
+    # lead orada da kapanmalı — yoksa kapıyı kaldırmış oluruz, değiştirmiş değil.
+    kontrol("T66 azimut tekilliğinde lead yine söner (koruma kaldırılmadı)",
+            abs(_lead_deg("azimut", 72.0, 1.00, az_kalite=0.0)) < 0.01,
+            f"azimut_kalite=0 → lead={_lead_deg('azimut', 72.0, 1.00, az_kalite=0.0):.3f}°")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

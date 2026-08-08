@@ -199,6 +199,125 @@ değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3)
 
 ---
 
+## 0b — Yatay lead kapısı: ölçek → azimut (UYGULANDI 2026-08-08, UÇUŞ ÖLÇÜMÜ BEKLİYOR)
+
+**Bulgu (08-08, 4 oturum, 60 görsel faz).** Görsel faz hedef DÜZ uçarken
+39/39 kapanıyor, DÖNERKEN **0/14**. Ayrım ikili — hedefin açısal hızı
+kapatanlarda medyan **1.2 °/s**, kapatamayanlarda **19.1 °/s**.
+
+**Kök neden.** Yatay lead `kalite` ile çarpılıyordu; `kalite` bbox
+GENİŞLİĞİNDEN türer (menzil vekili, 22.5 m'de 0 / 9.6 m'de 1). Dönüş
+karelerinde (n=348) ölçülen:
+
+| | DÖNÜŞ (kapatamayan) | DÜZ (kapatan) |
+|---|---|---|
+| gerçek menzil | 15.3 m | 11.1 m |
+| kalite (ölçek kapısı) | **0.00** | 0.49 |
+| \|az_rate\| | 71.8 °/s | 1.6 °/s |
+| gereken lead (0.6·ω, 20° tavan) | **20.0°** | 1.0° |
+| **uygulanan lead** | **0.0°** | 0.3° |
+| bbox merkez sapması (gt) | 1.84° | 0.33° |
+| tespit güveni | 0.79 | 0.76 |
+
+Tespit sağlamdı; lead tam ihtiyaç duyulan anda kapalıydı. `tespit_yok`
+karelerinin **%91'inde hedef GERÇEKTEN kadraj dışında** — dedektör hatası değil,
+nişanlama hatası. Aynı gerekçe kadraj tutma terimi için zaten kabul edilmişti
+(`adapter_copter._dikey_pn` (3): "kalite ile ÇARPILMAZ ... sinyal bbox
+merkezidir").
+
+**Yapılan.** `_yatay_pn` kapısı `kalite` → `azimut_kalite`. Gürültü koruması
+değişmedi (AZ_STEP_MAX + AZ_EMA + PN_RATE_EMA + ±20° tavan). Tekil geometri
+koruması duruyor (T66). Kill-switch: `AVCI_IBVS_PN_YATAY_KAPI=olcek`.
+Testler: T64/T65/T66, 69/69 geçti. CSV damgasında `PN_KAPI=`.
+
+### ❌ UÇUŞ ÖLÇÜMÜ: DEĞİŞİKLİK İŞE YARAMADI (08-08 14:28, A/B tek oturum)
+
+Aynı oturumda A (azimut, 11 faz) → B (olcek, 12 faz), ⌀55 daire, ω≈19 °/s:
+
+| ölçüt | A: yeni | B: eski | taban |
+|---|---|---|---|
+| **uygulanan lead** | **20.0°** | **0.0°** | 0.0° |
+| 3 m altına kapanan faz | **0/11** | **0/12** | 0/14 |
+| faz süresi (medyan) | 2.3 s | 2.3 s | 3.1 s |
+| dönüşte `ok` kare oranı | %49 | %48 | %44-59 |
+| en yakın menzil (medyan) | 13.6 m | 12.8 m | 12.6 m |
+| kapanma hızı | 2.9 m/s | 1.5 m/s | — |
+| \|yaw_hata\| | 17.9° | 21.0° | — |
+
+Mekanizma tasarlandığı gibi çalıştı (lead 0° → 20°), **hiçbir sonuç ölçütü
+değişmedi.** Kapı gerçek bir kusurdu ama dönüşteki başarısızlığın sebebi
+DEĞİLDİ. Kapanma hızı ve yaw hatası doğru yönde kıpırdadı — sonucu çevirmedi.
+
+### Asıl kısıt: YAW HIZI DOYGUNLUĞU
+
+Aynı karelerde ölçüldü:
+
+- `yaw_doygun` **%98-100** — yaw komutu neredeyse her karede tavanda
+- `v_doygun` %97, komut hızı 22.9 m/s, ama **kapanma hızı yalnız 1.5-2.9 m/s**
+- LOS'un gövdedeki azimut hızı **78-82 °/s**, güdüm tavanı
+  `YAW_HIZ_MAX = 90 °/s` — arada marj yok
+
+Yani yaw yetkisinin TAMAMI hedefin açısal hızına yetişmeye gidiyor, duran
+18-21°'lik hatayı kapatmaya bir şey kalmıyor. Hedef eksenden ~20° sapmış
+duruyor ve kadrajdan süpürülüyor (`ok` oranı %48).
+
+⚠ `YAW_HIZ_MAX` yükseltmek serbest bir düğme DEĞİL — 2026-07-25'te 1080
+denendi ve GERİ ALINDI (tespit gürültüsü doğrudan gövdeye geçti, bkz.
+`guidance_core.KP_YAW` üstündeki not).
+
+### Üç deney, üçü de çürüdü (08-08, hepsi ⌀55 daire, hedef ω≈19 °/s)
+
+| # | değişiklik | uygulandı mı | 3 m altına kapanan |
+|---|---|---|---|
+| 1 | lead kapısı `kalite` → `azimut_kalite` | evet (lead 0° → 20°) | **0/11** (kontrol 0/12) |
+| 2 | `PN_YATAY_MAX` 20° → 60° | evet (lead 20° → 47-58°) | **0/13** |
+| 3 | `V_KAPANMA` 25 → 12 m/s | evet (hız 22 → 12 m/s) | **0/20** |
+
+Deney 3'ün "iyileşme" gibi görünen sayıları (faz süresi 2.4→3.0 s, `ok`
+%51→%60) YANILTICI: uzun fazlarda menzil 16 → 34 → **89 m**'ye açılıyor. Hedef
+uzaklaşıyor, kamera geniş açılı olduğu için uzaktaki hedef kadrajda rahat
+duruyor. `V_YAKLASMA` yorumunda bu zaten yazılıydı ("İlk denemede 12.0 seçildi
+ve GT modunu tamamen bozdu ... menzil 24.2 → 82.8 m") — **önermeden önce
+okunmadı, ders budur.**
+
+### KÖK NEDEN: ivme tavanı × sabit kamera (KUTU)
+
+Yatay ivme `IVME_TAVAN=4 m/s²` ile sınırlı ve bu **kamera kısıtı**: quad
+ivmelenmek için burnunu eğer, kamera gövdeye +25° sabit → ~5 m/s² üstünde
+kamera yere bakar, gökyüzü arka planı gider, tespit bozulur.
+⚠ **Donanım değişikliği masada yok (kullanıcı kararı 08-08)** — gimbal cevabı
+verilmeyecek.
+
+Dönüş yarıçapı = V²/a. Ölçülenler:
+
+| | değer |
+|---|---|
+| hedefe yetişmek için gereken hız (mutlak) | > 21 m/s |
+| 21 m/s'te drone'un dönüş yarıçapı | **110 m** |
+| hedefin dönüş yarıçapı | **27.5 m** |
+| hız vektörünün dönebildiği hız @22 m/s | 7.3 °/s |
+| hız vektörünün dönebildiği hız @12 m/s | 17.4 °/s |
+| LOS'un döndüğü hız | 46-90 °/s |
+
+**Hiçbir SABİT hız ikisini birden sağlamıyor.** Yavaş → döner ama geride kalır;
+hızlı → yetişir ama dönemez.
+
+### Kapı: kavis değil, KESİŞME
+
+Kısıt yalnız **sürekli kavis çizilirse** bağlayıcı. Bugünkü yasa hedefin ŞU ANKİ
+yerine nişan alıyor; hedef daire çizince drone da kavis çizmek zorunda kalıyor.
+**Düz çizgi ivme gerektirmez** — hedefin OLACAĞI yere düz uçulursa tavan hiç
+devreye girmez. GPS fazı zaten bunu yapıyor (`IC_KAYMA` ile dönüşün içine).
+
+Denenen 1 ve 2 bunun ucuz taklidiydi: sabit bir lead AÇISI, kesişme NOKTASINA
+nişan almakla aynı şey değil. Üçü de bu yüzden tutmadı.
+
+**Sıradaki iş:** hedefin dönüş yarıçapını YALNIZ KAMERADAN kestirip nişanı
+kesişme noktasına koymak. Uçuştan önce çevrimdışı doğrulanacak — gerçek uçuş
+yörüngeleri + ölçülmüş algı gürültüsüyle.
+
+---
+
 ## 1 — LOS kayması: görsel fazın asıl kusuru
 
 **Yedek plan.** Önce [§0'daki tam merge](#0--gps_kararli_hal-tam-merge-kullanıcı-kararı)
