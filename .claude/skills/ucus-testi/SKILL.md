@@ -39,7 +39,7 @@ eşleşir ve kabuğunu öldürür (exit 144).
   `[TAKIP] HybridSORT`; istasyon yükselişi SABİT, kararlı daldaki dinamik
   sürüm burada yok).
 
-## 3 · Kayıt + uçuş
+## 3 · Kayıt + BEKÇİ + uçuş
 
 ```bash
 python3 tools/ucus_kaydi.py <scratchpad>/ucusN 420   # arka planda
@@ -49,11 +49,29 @@ curl -X POST http://127.0.0.1:8000/api/command/iris/start_chase
 # faz 1: 150 s → sonra: .../plane/scenario/square → faz 2: 150 s
 curl -X POST .../iris/stop_chase ; curl -X POST .../plane/stop_scenario
 ```
-Uçuş sırasında ara sıra `/api/chase_status` ve gcs_server logundaki `[GPS]`
-satırlarına bak; menzil/durum beklenenden sapıyorsa erken müdahale et.
+Düz uçuş ölçümü için senaryo **`duz`** kullan (manuel mod DEĞİL — manuel
+nötr elevator'la uçak alçalıp 12 m'ye indi, koşu geçersiz oldu).
 
-## 4 · Analiz — üç bacak, üçü de zorunlu
+**BEKÇİ ZORUNLU**: chase başlar başlamaz `python3 tools/ucus_bekci.py
+<uçuş_süresi+60> 30` komutunu **Monitor** olarak çalıştır. "İHLAL:" satırı
+düşerse test SAPITMIŞTIR: uçuşu hemen durdur, o koşunun verisini GEÇERSİZ
+say, simi komple öldürüp koşuyu baştan kur. (Ders: hedef 12 m'ye alçaldı,
+canlı fark edilmedi; test sonrası kontrolsüz bırakılan uçak yerin 1738 m
+altına savruldu ve kullanıcı bozuk simle karşılaştı.)
 
+## 3b · GÜVENLİ KAPANIŞ (her testin sonunda, atlanamaz)
+
+Test bitince araçları havada KONTROLSÜZ BIRAKMA — stop_chase/stop_scenario
+sonrası uçak kumandasızdır ve çakılır. HER ZAMAN simi komple öldür
+(1. adımdaki köşeli parantezli pkill) ve kullanıcıya "sim kapalı, kendin
+uçuracaksan baştan başlat" de. Kullanıcı "açık kalsın" dediyse bile araçlar
+uçuyorken bırakma: önce senaryoyu yeniden başlat (uçak desende kalır) ya da
+kapat.
+
+## 4 · Analiz — dört bacak, dördü de zorunlu
+
+0. **GEÇERLİLİK**: `tools/ucus_analiz.py` çıktısındaki GEÇERLİLİK satırına
+   önce bak — ⚠ varsa koşu yinelemeden sonuç bildirme.
 1. **CSV**: `python3 tools/ucus_analiz.py logs/gps_guidance_<yeni>.csv` —
    ve kıyas gerekiyorsa AYNI komutu eski uçuşun CSV'sine de uygula. Elle
    not edilmiş eski panel değerleriyle medyan kıyaslama YAPMA.

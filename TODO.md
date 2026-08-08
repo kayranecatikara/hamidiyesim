@@ -199,6 +199,33 @@ değil. Değişenler (ayrıntı: [KARARLI_HAL.md](KARARLI_HAL.md), DURUM.md §3)
 
 ---
 
+## 0c — C1: RANGE_SET 11 → 8 (kayramin_super_gudumu'ndan çekildi, 6d7854b)
+
+Kayra'nın dalında ÜÇ otonom uçuşla ölçüldü, buraya cherry-pick edildi:
+
+- **Dönüş ileri beslemesi (v_ist = v_hedef + ω×r): ELENDİ.** Formül doğru
+  (G14b sayısal türevle birebir) ama daire 15.1 → **23.0 m açıldı**. Mekanizma:
+  "doğru" FF, komut hızını düşürüp aracın dönen çerçevedeki takip gecikmesini
+  telafisiz bırakıyor; eski v_hedef fazlalığı kazara faydalı lead'miş.
+  Varsayılan **KAPALI** (`AVCI_GPS_FF_DONUS`), G14a regresyon koruması.
+- **RANGE_SET 11 → 8: KABUL.** Daire 15.1 → **13.3 m**, düz 13-14 → **10.3 m**
+  [p10 9.8, p90 10.8]. Eski "11→5 etkisiz" bulgusu doygunluk dönemine aitti.
+- Yan etki: dönüşte kadraj −9.4 → −15.2° geriledi (dikey ofset RANGE_SET'e
+  bağlı, tutuş menzili değişmiyor). Kayra'nın sıradaki hamleleri: d_below'u
+  gerçek menzille ölçekle; dönüşte arka bileşeni daralt.
+
+**ALINMAYANLAR** (bu dalda karşılığı yok): dinamik istasyon yükselişi
+(`ELEV_DINAMIK`) ve onun G13 testleri — burada yükseliş SABİT 15°.
+`UYGULANACAK.md` de alınmadı; bu dalın tek takip belgesi TODO.md.
+
+⚠ **§0b'nin görsel faz tabanı GEÇERSİZ.** O ölçümler RANGE_SET=11 ile alındı;
+görsel faza devir ~19 m'de oluyordu. İstasyon 8 m'ye inince devir daha da
+yakında olacak ve nişanın dönme hızı YAKINDA daha kötü (8-20 m: 19.2 °/s,
+araç 22 m/s'te ancak 10.4 °/s). GPS fazı için iyileşme, görsel faz için
+muhtemelen kötüleşme — görsel faz ölçümleri yeniden alınmalı.
+
+---
+
 ## 0b — Yatay lead kapısı: ölçek → azimut (UYGULANDI 2026-08-08, UÇUŞ ÖLÇÜMÜ BEKLİYOR)
 
 **Bulgu (08-08, 4 oturum, 60 görsel faz).** Görsel faz hedef DÜZ uçarken

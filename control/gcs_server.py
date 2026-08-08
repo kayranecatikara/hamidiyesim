@@ -188,10 +188,12 @@ def id_to_name(sysid):
 # -----------------------------------------------------------------------
 # UÇUŞ SENARYOLARI (kare / daire / agresif) — run_plane_scenario.py süreci
 # -----------------------------------------------------------------------
-# circle_xl/l/s: daire ÇAPI varyantları (bkz. run_plane_scenario.DAIRE_CAPLARI).
-# Arayüzde butonları YOK — iç daire nişanını farklı yarıçaplarda sınamak için
-# curl ile çağrılır:  curl -X POST localhost:8000/api/command/plane/scenario/circle_s
-_SCENARIO_NAMES = ("square", "circle", "aggressive",
+# circle_xl/l/s: daire ÇAPI varyantları (bkz. run_plane_scenario.DAIRE_CAPLARI) —
+# iç daire nişanını farklı yarıçaplarda sınamak için. Bu dalda arayüzde
+# "Daire Çapı" butonları VAR (index.html #cap).
+# duz: süresiz düz uçuş (6d7854b) — düz referans ölçümü için, butonu yok:
+#   curl -X POST localhost:8000/api/command/plane/scenario/duz
+_SCENARIO_NAMES = ("duz", "square", "circle", "aggressive",
                    "circle_xl", "circle_l", "circle_s")
 
 

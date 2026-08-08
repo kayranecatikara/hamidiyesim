@@ -8,6 +8,12 @@ Kapsam:
   G7     KADEME 1 tasarım tutarlılığı: geometrik kadraj noktasında drone → hedef MERKEZDE
   G8     kadraj noktası hedefin hız yönünün gerisinde + altında
   G9     döngü duman testi (fake conn): komut üretir, hold'da ≈ hedef hızı, durum dolu
+  G10-12 sabit açı ofseti · terminal dikey bütçe · iç daire nişanı · oranlı kayma
+  G14    dönüş ileri beslemesi (v_ist = v_hedef + ω×r): sayısal türevle
+         doğrulama, düzde sıfır, tavan
+  ⚠ 6d7854b çekilirken kayramin_super_gudumu'nun "dinamik istasyon yükselişi"
+    testleri ALINMADI: ELEV_DINAMIK bu dalda yok, yükseliş SABİT 15°.
+    (O daldaki numaraları da G13'tü — burada G13 YAW KAÇAĞI testidir, karıştırma.)
 """
 
 import math
@@ -192,16 +198,10 @@ def main():
     #   ölçülen kalan dikey: vurdu +0.03 m | ıskaladı +1.52 m, +2.06 m (alttan)
     # Bu test o hatanın geri gelmesini engeller: istasyon açısı yükseltilirse
     # (veya RANGE_SET küçültülürse) burada yakalanır.
-    # ── 2026-08-05: A_DIKEY 1.0 → 3.0 ──
-    # Bu sabit ARACIN gerçek yeteneği; testin keyfi bir varsayımı değil.
-    # ── 2026-08-05: BÜTÇE İKİ PARÇAYA AYRILDI ──
-    # Eski varsayım: dikey farkın TAMAMI terminal fazda kapatılacak. Görsel faza
-    # YAKLAŞMA alt-fazı eklenince bu değişti (adapter_copter.compute): devirden
-    # TERMINAL_MENZIL'e kadar drone yavaşlar (V_YAKLASMA) ve dikey farkı
-    # VZ_YAKLASMA tavanıyla ÖNCEDEN kapatır. Terminale artık seviyeye yakın
-    # giriliyor, kalan fark aracın ivme rampasına bırakılıyor.
-    # Testin işlevi aynı: geometri TOPLAM bütçeyi aşarsa burada yakalanır.
-    A_DIKEY = 1.0        # m/s²; WP_ACC_Z — aracın dikey hız rampası
+    # A_DIKEY 1.0 → 2.5 (2026-08-08): 1.0 ölçümü parametre adı düzeltmesinden
+    # ÖNCEYDİ — o dönem WPNAV_ACCEL_Z firmware varsayılanında (100 cm/s²) idi.
+    # avci_copter.parm artık 250 yazıyor ve uygulanıyor → bütçe 2.5 m/s².
+    A_DIKEY = 2.5        # m/s²; WPNAV_ACCEL_Z — aracın dikey hız rampası
     V_YATAY = 4.3        # m/s; ÖLÇÜLEN en hızlı terminal yatay kapanma (kötü hal)
     t_var = d_behind / V_YATAY
     terminal_pay = 0.5 * A_DIKEY * t_var ** 2
@@ -222,8 +222,12 @@ def main():
             f"(pay {tirmanilabilir - d_below:+.2f} m)")
 
     eski_4m = _eski_elev(4.0)
-    kontrol("G10b eski sabit-metre davranışı 4 m'de kadrajı taşırırdı",
-            eski_4m - tilt_hedef > 20.0,
+    # Eşik 20° → 8° (2026-08-08): RANGE_SET 11→8 ile eski davranışın 4 m'deki
+    # taşması küçüldü (d_alt 4.65 → 2.07 m) ama İLKE aynı: eski şema açıyı
+    # menzille büyütür, yeni şema sabit tutar. Test ilkeyi bekçiliyor.
+    kontrol("G10b eski sabit-metre davranışı 4 m'de açıyı büyütürdü, yeni sabit",
+            eski_4m - tilt_hedef > 8.0
+            and abs(_istasyon_elev(4.0) - tilt_hedef) < 0.5,
             f"eski: {eski_4m:.1f}° (merkezden {eski_4m - tilt_hedef:+.1f}°), "
             f"yeni: {_istasyon_elev(4.0):.1f}°")
 
@@ -382,6 +386,52 @@ def main():
     kontrol("G17e güvenilmez dar yarıçapta kayma kapanıyor",
             _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
             f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
+
+    # ── G14: DÖNÜŞ İLERİ BESLEMESİ — v_ist = v_hedef + ω × r ──
+    # Asıl doğrulama: birlikte-dönen istasyonun hızı SAYISAL türevle hesaplanır,
+    # formülle karşılaştırılır. (Formül yanlış işaret/eksende olsa burada patlar.)
+    # Uçuş 2026-08-08 (log 131037): FF açıkken daire 23.0 m, kontrol 15.1 m —
+    # varsayılan KAPALI ve öyle KALMALI (regresyon koruması).
+    kontrol("G14a varsayılan KAPALI (uçuşta elendi: 23.0 vs 15.1 m)",
+            (not C.FF_DONUS) and C.FF_DONUS_MAX == 8.0,
+            f"FF_DONUS={C.FF_DONUS} MAX={C.FF_DONUS_MAX}")
+
+    Rg, vg, d_arka_g, d_ic_g = 52.0, 14.5, 8.7, 14.0
+    wg = vg / Rg                                    # ω > 0 (saat yönü tersi değil, başlık artıyor)
+
+    def _istasyon_poz(theta):
+        px, py = Rg * math.cos(theta), Rg * math.sin(theta)
+        vxg, vyg = -vg * math.sin(theta), vg * math.cos(theta)
+        vhx, vhy = vxg / vg, vyg / vg
+        cxg, cyg = -vhy, vhx                        # ω>0'da merkez yönü (IC ile aynı)
+        sx = px - vhx * d_arka_g + cxg * d_ic_g
+        sy = py - vhy * d_arka_g + cyg * d_ic_g
+        return px, py, vxg, vyg, sx, sy
+
+    en_kotu = 0.0
+    for th in (0.0, 1.1, 2.7):
+        px, py, vxg, vyg, sx, sy = _istasyon_poz(th)
+        dt_ = 1e-4
+        _, _, _, _, sx2, sy2 = _istasyon_poz(th + wg * dt_)
+        v_num = ((sx2 - sx) / dt_, (sy2 - sy) / dt_)          # gerçek istasyon hızı
+        rx_, ry_ = sx - px, sy - py
+        v_form = (vxg + wg * (-ry_), vyg + wg * rx_)           # koddaki formül
+        en_kotu = max(en_kotu, math.hypot(v_form[0] - v_num[0], v_form[1] - v_num[1]))
+    kontrol("G14b formül = birlikte-dönen istasyonun sayısal türevi",
+            en_kotu < 1e-2, f"en kötü fark {en_kotu:.2e} m/s (3 açıda)")
+
+    duz_ff = math.hypot(0.0 * (-(-3.0)), 0.0 * 10.0)           # ω=0 → düzeltme 0
+    buyukluk = abs(0.5) * math.hypot(10.0, 30.0)               # ω=0.5, |r|=31.6 → 15.8
+    kontrol("G14c düzde sıfır, aşırı ω'da tavan bağlar",
+            duz_ff == 0.0 and min(buyukluk, C.FF_DONUS_MAX) == C.FF_DONUS_MAX,
+            f"düz={duz_ff}  ham {buyukluk:.1f} → tavan {C.FF_DONUS_MAX}")
+
+    # Büyüklük gerçeklik kontrolü: ⌀55 senaryosu geometrisinde ~4.6 m/s beklenir
+    _, _, _, _, sx, sy = _istasyon_poz(0.0)
+    rx_, ry_ = sx - Rg, sy - 0.0
+    mag = math.hypot(wg * (-ry_), wg * rx_)
+    kontrol("G14d ⌀55 geometrisinde düzeltme ~4.6 m/s (ölçülen açıkla uyumlu)",
+            3.5 < mag < 5.5, f"|ω×r| = {mag:.2f} m/s (r={math.hypot(rx_, ry_):.1f} m)")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

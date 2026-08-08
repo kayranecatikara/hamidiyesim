@@ -69,6 +69,23 @@ ffmpeg -framerate 5 -i /tmp/ucus_kayit/frames/f%04d.jpg -c:v libx264 \
        -pix_fmt yuv420p logs/ucus.mp4
 ```
 
+## Bekçi ve güvenli kapanış (2026-08-08'de eklendi — yaşanmış ders)
+
+İlk otonom koşularda iki kör nokta çıktı: (1) düz uçuş testinde hedef uçak
+yavaşça 12 m'ye alçaldı ve koşu geçersizleşti — canlı fark edilmedi;
+(2) test bitince kontrolsüz bırakılan uçak çakılıp SITL fiziğiyle yerin
+1738 m altına savruldu — sonraki kullanıcı bozuk simle karşılaştı. Önlemler:
+
+- **`tools/ucus_bekci.py`** uçuş boyunca çalışır: hedef irtifa 20-250 m,
+  hedef hız 6-25 m/s, takip aktifken drone irtifa >4 m ve mesafe <150 m
+  bandını izler; sürekli ihlalde tek satır "İHLAL: ..." basıp çıkar.
+  İhlal = koşu geçersiz + sim baştan.
+- **`tools/ucus_analiz.py`** sonuna GEÇERLİLİK satırı eklendi — koşu bandın
+  dışındaysa ⚠ basar; menzil sayılarına bakmadan önce bu satır okunur.
+- **Güvenli kapanış**: her test tam sim öldürmeyle biter; araç havada
+  kontrolsüz bırakılmaz. Düz uçuş ölçümü manuel modla değil `duz`
+  senaryosuyla yapılır (manuel nötr elevator alçalıyor).
+
 ## Claude'un otomasyonuna özgü tuzaklar (öğrenildi, tekrarlama)
 
 - **`pkill -f` kendi kabuğunu öldürür**: Claude komutları `bash -c "..."`

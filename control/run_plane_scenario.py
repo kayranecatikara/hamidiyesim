@@ -204,6 +204,18 @@ def takeoff(conn, climb_time=8.0):
 # Senaryolar — hepsi süresiz döner, GCS süreci öldürünce biter
 # ---------------------------------------------------------------------------
 
+def scenario_duz(conn):
+    """Süresiz düz uçuş — kare kenarıyla aynı trim (roll=0, pitch=0, gaz slider).
+
+    NEDEN VAR (2026-08-08): "düz uçuş" ölçümü manuel modla yapılınca elevator
+    nötrde uçak yavaşça alçalıp güdümün 8 m irtifa tabanına dayandı ve koşu
+    geçersiz oldu. Desen makinesi (FBWA + RC override) irtifayı kabaca
+    koruyor; düz referans ölçümü artık buradan alınır."""
+    print("[SCN] DÜZ — süresiz düz uçuş (gaz: GCS slider)")
+    while not _abort:
+        hold(conn, 0.5)
+
+
 def scenario_square(conn):
     side = 5.0
     print(f"[SCN] KARE — kenar {side}s, 90° pusula dönüşleri")
@@ -316,6 +328,7 @@ def scenario_aggressive(conn):
 
 
 SCENARIOS = {
+    "duz": scenario_duz,
     "square": scenario_square,
     "circle": scenario_circle,
     "aggressive": scenario_aggressive,
