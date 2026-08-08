@@ -8,6 +8,9 @@ Kapsam:
   G7     KADEME 1 tasarım tutarlılığı: geometrik kadraj noktasında drone → hedef MERKEZDE
   G8     kadraj noktası hedefin hız yönünün gerisinde + altında
   G9     döngü duman testi (fake conn): komut üretir, hold'da ≈ hedef hızı, durum dolu
+  G10-12 sabit açı ofseti · terminal dikey bütçe · iç daire nişanı · oranlı kayma
+  G13    dinamik istasyon yükselişi (elev = tilt + gövde pitch): formül, uçtan
+         uca merkezleme, sınırlar, döngü içi işleyiş, kapatma anahtarı
 """
 
 import math
@@ -271,6 +274,85 @@ def main():
     kontrol("G12e güvenilmez dar yarıçapta kayma kapanıyor",
             _oranli(C.IC_R_MIN - 1.0, 14.0) == 0.0,
             f"R={C.IC_R_MIN - 1:.0f} m (< IC_R_MIN={C.IC_R_MIN:.0f}) → 0.0 m")
+
+    # ── G13: DİNAMİK İSTASYON YÜKSELİŞİ — elev = tilt + gövde pitch ──
+    # Ölçülen sorun (2026-08-06, 8 uçuş): daire tutuşunda drone +11° burun
+    # yukarı uçuyor (yengeç ~26-37° + merkezcil yatma) ve hedef kadraj
+    # merkezinin 20-28° altına düşüyordu. Sabit açı bunu göremez.
+    def _elev_din(pitch_deg):
+        return max(C.ELEV_DIN_MIN, min(C.ELEV_DIN_MAX,
+                                       C.CENTER_ELEV_DEG + pitch_deg))
+
+    kontrol("G13a varsayılan AÇIK; pitch −10° → 15° (eski statik değer = regresyon çapası)",
+            C.ELEV_DINAMIK and abs(_elev_din(-10.0) - 15.0) < 1e-9,
+            f"ELEV_DINAMIK={C.ELEV_DINAMIK}  elev(−10°)={_elev_din(-10.0):.1f}°")
+
+    # Uçtan uca: daire duruşunda (pitch +11°) dinamik istasyondan bakınca hedef
+    # MERKEZDE; eski statik 15° istasyondan bakınca ~21° altta kalırdı.
+    pit11 = math.radians(11.0)
+    e_din = math.radians(_elev_din(11.0))
+    stD = [T[0] - C.RANGE_SET * math.cos(e_din), T[1],
+           T[2] + C.RANGE_SET * math.sin(e_din)]
+    rD = hedef_kadraj_hatasi(T, stD, 0, pit11, 0.0)
+    stS = [T[0] - d_behind, T[1], T[2] + d_below]
+    rS = hedef_kadraj_hatasi(T, stS, 0, pit11, 0.0)
+    kontrol("G13b daire duruşunda (pitch +11°) dinamik istasyon hedefi MERKEZE getirir",
+            abs(math.degrees(rD["pitch_hata"])) < 0.5 and abs(rD["v"] - 240) < 3,
+            f"dinamik: hata={math.degrees(rD['pitch_hata']):+.2f}° v={rD['v']:.0f}px | "
+            f"statik 15° olsaydı: {math.degrees(rS['pitch_hata']):+.2f}° v={rS['v']:.0f}px")
+
+    kontrol("G13c sınırlar bağlıyor: pitch −45° → MIN, pitch +30° → MAX",
+            _elev_din(-45.0) == C.ELEV_DIN_MIN and _elev_din(30.0) == C.ELEV_DIN_MAX,
+            f"elev(−45°)={_elev_din(-45.0):.0f}°  elev(+30°)={_elev_din(30.0):.0f}°")
+
+    # Döngü içi işleyiş: fake koşuda pitch +11° → CSV'ye yazılan ist_elev_deg
+    # 36° olmalı (dinamik); anahtar kapalıyken 15° (eski yol, birebir).
+    import glob as _gl
+    import os as _os
+    import csv as _csv
+
+    def _kosu_ist_elev(pitch_deg, dinamik):
+        eski = gg.Cfg.ELEV_DINAMIK
+        gg.Cfg.ELEV_DINAMIK = dinamik
+        try:
+            conn2 = _FakeConn()
+            stp = threading.Event()
+            t0 = time.monotonic()
+
+            def gp():
+                el = time.monotonic() - t0
+                return {"x": T[0] + 8.0 * el, "y": T[1], "z": T[2],
+                        "yaw": 0.0, "frozen": False}
+
+            def gi():
+                el = time.monotonic() - t0
+                return {"x": st0[0] + 8.0 * el, "y": st0[1], "z": st0[2],
+                        "roll": 0.0, "pitch": math.radians(pitch_deg),
+                        "yaw": yaw_to_tgt, "vx": 8.0, "vy": 0.0, "vz": 0.0}
+
+            th2 = threading.Thread(target=gg.run_gps_guidance,
+                                   args=(conn2, gp, gi, stp), daemon=True)
+            th2.start()
+            time.sleep(0.6)
+            stp.set()
+            th2.join(2.0)
+        finally:
+            gg.Cfg.ELEV_DINAMIK = eski
+        yol = max(_gl.glob(_os.path.join(gg._LOG_DIR, "*.csv")),
+                  key=_os.path.getmtime)
+        with open(yol) as fh:
+            rows = list(_csv.DictReader(fh))
+        return float(rows[-1]["ist_elev_deg"]) if rows else None
+
+    e_acik = _kosu_ist_elev(11.0, True)
+    kontrol("G13d döngü: pitch +11° ile ist_elev 36°'ye oturur (25 + 11)",
+            e_acik is not None and abs(e_acik - 36.0) < 0.5,
+            f"CSV ist_elev_deg={e_acik}")
+
+    e_kapali = _kosu_ist_elev(11.0, False)
+    kontrol("G13e kapatma anahtarı: dinamik OFF → sabit ISTASYON_ELEV_DEG (eski yol)",
+            e_kapali is not None and abs(e_kapali - C.ISTASYON_ELEV_DEG) < 1e-6,
+            f"CSV ist_elev_deg={e_kapali}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

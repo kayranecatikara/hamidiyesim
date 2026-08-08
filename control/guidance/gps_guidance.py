@@ -16,7 +16,11 @@ D_BEHIND gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek
 bir istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
 kilitlenince kararlı hold). Burun daima gerçek hedefe döner (yaw). Drone hedefin
 ALTINDA kalır → gökyüzü arka planı, pose kopmaz.
-(KADEME 2'de: gerçek attitude'la kadraj hatasını doğrudan kapatma eklenecek.)
+
+KADEME 2 (2026-08-06): istasyonun LOS yükselişi artık GÖVDE PİTCH'İNDEN
+dinamik türetilir (elev = kamera tilt + pitch) — kamera gövdeye vidalı olduğu
+için sabit açı hedefi kadrajda sabit tutamıyordu (daire tutuşunda burun +11°
+yukarı → hedef merkezin 20-28° altına düşüyordu). Bkz. Cfg.ELEV_DINAMIK.
 
 Arayüz (supervisor / gcs_server ile aynı sözleşme):
   run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg)
@@ -82,6 +86,44 @@ class Cfg:
     #   (2) Asıl alternatif: istasyonu 25°'de bırakıp WP_ACC_Z'yi 1.0 → 2.5
     #       yükseltmek. Tutarsa bu ayrım gereksiz hale gelir.
     ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 15.0)
+
+    # ── DİNAMİK İSTASYON YÜKSELİŞİ (2026-08-06, kullanıcı fikri) ──
+    #
+    # SORUN: sabit yükseliş açısı hedefi kadrajda sabit TUTMUYOR — kamera
+    # gövdeye vidalı (25° yukarı) ve gövdenin duruşu uçuş rejimiyle değişiyor.
+    # 8 uçuşun logundan ölçüldü (kadraj_pitch_hata_deg; 0 = dikey merkez):
+    #     düz kovalama : pitch ≈ 0°               → hedef merkezin ~10° altında
+    #     daire tutuşu : pitch +11° BURUN YUKARI  → hedef merkezin 20-28° altında
+    #                    (v_px 300-330/480; dikey yarı-FOV 55° — yarı yolda)
+    #
+    # Burun-yukarının nedeni FPV sezgisindeki "hızlanınca öne eğilme" DEĞİL
+    # (simde sürükleme küçük; düz kovalamada 12 m/s'de pitch ~0). Dairede burun
+    # hedefte ama hız teğet: drone 26-37° YENGEÇ uçuyor ve merkezcil yatma
+    # gövde ekseninde "geriye" bileşen kazanıyor → burun yukarı. Ölçüm
+    # (163801 uçuşu): yengeç>20° diliminde pitch +10.9° / roll +18.4°,
+    # yengeç<10° diliminde +1.1° / +0.8° — hızlar neredeyse aynı (9.8 vs 12.2).
+    # Yani pitch'i HIZ değil GEOMETRİ belirliyor. Teorik kestirim de tutuyor:
+    # istasyon geometrisinden yengeç 37°, merkezcil 3.1 m/s² → +10.6° beklenir.
+    #
+    # ÇÖZÜM: yükseliş gövde pitch'inden türetilir (hedef kadraj merkezi şartı):
+    #     elev = CENTER_ELEV_DEG + pitch_EMA,  [ELEV_DIN_MIN, ELEV_DIN_MAX]
+    # Roll ihmalinin kalıntısı ~2° (roll 18°'de). Girdi HIZ DEĞİL ölçülü pitch:
+    # hız→pitch bağı loglarda yok, pitch ise ATTITUDE'dan hazır geliyor.
+    # EMA (τ≈1 s): ivme geçicileri istasyonu sallamasın.
+    #
+    # Beklenen denge: düzde ~25° (alt 2.85→4.65 m), dairede ~36° (alt ~6.5 m).
+    # Eski 15°'nin gerekçesi dikey ivme bütçesiydi (1.0 m/s² ölçümü) — o ölçüm
+    # PARAM ADI DÜZELTMESİNDEN ÖNCE: 1.0, Copter'ın WPNAV_ACCEL_Z varsayılanı
+    # (100 cm/s²). avci_copter.parm artık 250 yazıyor (2.5 m/s²) → 25°'nin
+    # 4.65 m'si bütçeye yeniden sığar (2.32 s'de 6.7 m tırmanılabilir). Yani
+    # ISTASYON_ELEV_DEG yorumundaki "(2) asıl alternatif" fiilen gerçekleşti;
+    # G11 testi statik taban geometrisini korumaya devam ediyor.
+    #
+    # Kapatmak için: AVCI_GPS_ELEV_DIN=0 → sabit ISTASYON_ELEV_DEG (eski yol).
+    ELEV_DINAMIK = _env_f("AVCI_GPS_ELEV_DIN", 1.0) >= 0.5
+    ELEV_DIN_MIN = 5.0        # °; sert ileri ivmede (burun aşağı) taban
+    ELEV_DIN_MAX = 40.0       # °; dairede gereken ~36° içeride kalsın
+    ELEV_PITCH_EMA = 0.05     # tick başına; 20 Hz'de τ ≈ 1 s
     TRACK_MIN_SPD = 3.0       # m/s; üstünde istasyon HIZ yönünün gerisi (kuyruk), altında LOS gerisi
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)
 
@@ -230,6 +272,7 @@ _CSV_ALANLAR = [
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
+    "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
 ]
 
 
@@ -256,6 +299,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     cmd_yaw = None
     prev_time = None
     loop_count = 0
+    pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR, time.strftime("gps_guidance_%Y%m%d_%H%M%S.csv"))
@@ -270,6 +314,11 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
           f"yükseliş her menzilde {cfg.ISTASYON_ELEV_DEG:.0f}° kalır "
           f"(kamera tilt'i {cfg.CENTER_ELEV_DEG:.0f}° → hedef merkezin "
           f"{cfg.CENTER_ELEV_DEG - cfg.ISTASYON_ELEV_DEG:.0f}° altında) — log: {csv_yol}")
+    if cfg.ELEV_DINAMIK:
+        print(f"[GPS] istasyon yükselişi DİNAMİK: {cfg.CENTER_ELEV_DEG:.0f}° + gövde "
+              f"pitch (EMA τ≈1 s), sınır [{cfg.ELEV_DIN_MIN:.0f}°, "
+              f"{cfg.ELEV_DIN_MAX:.0f}°] — düzde ~25°, daire tutuşunda ~36° beklenir; "
+              f"kapatmak: AVCI_GPS_ELEV_DIN=0")
     _t_terminal = d_behind / 3.7          # ölçülen terminal yatay kapanma hızı
     print(f"[GPS] terminal dikey bütçe: {d_below:.2f} m kapatılacak, "
           f"~{_t_terminal:.2f} s var → 1 m/s² rampayla {0.5*_t_terminal**2:.2f} m "
@@ -291,6 +340,16 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             iroll = iris.get("roll", 0.0)
             ipitch = iris.get("pitch", 0.0)
             iyaw = iris.get("yaw", 0.0)
+
+            # ── DİNAMİK İSTASYON YÜKSELİŞİ: elev = tilt + pitch (bkz. Cfg) ──
+            pitch_ema = ipitch if pitch_ema is None else (
+                cfg.ELEV_PITCH_EMA * ipitch
+                + (1 - cfg.ELEV_PITCH_EMA) * pitch_ema)
+            if cfg.ELEV_DINAMIK:
+                ist_elev = math.radians(clamp(
+                    cfg.CENTER_ELEV_DEG + math.degrees(pitch_ema),
+                    cfg.ELEV_DIN_MIN, cfg.ELEV_DIN_MAX))
+
             plane = get_plane()
 
             # ── 1) TAZELİK + FİLTRE (EMA pozisyon, sonlu-fark hız) ──
@@ -496,6 +555,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "kadraj_pitch_hata_deg": round(math.degrees(kad["pitch_hata"]), 2),
                 "u_px": round(kad["u"], 1) if kad["u"] is not None else "",
                 "v_px": round(kad["v"], 1) if kad["v"] is not None else "",
+                "ist_elev_deg": round(math.degrees(ist_elev), 2),
             })
             f.flush()
 
@@ -503,7 +563,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if loop_count % int(cfg.LOOP_HZ * 3) == 0:
                 print(f"[GPS] {durum} d_h={d_h:.1f}m menzil={menzil:.1f}m "
                       f"kadraj(yaw={math.degrees(kad['yaw_hata']):+.0f}°,"
-                      f"elev={math.degrees(kad['elev']):+.0f}°/istasyon {cfg.ISTASYON_ELEV_DEG:.0f}°) "
+                      f"elev={math.degrees(kad['elev']):+.0f}°/istasyon {math.degrees(ist_elev):.0f}°) "
                       f"v=({vx:+.1f},{vy:+.1f},{vz:+.1f}) tgt_v={tgt_spd_h:.1f}")
 
             _sleep(now, loop_period)

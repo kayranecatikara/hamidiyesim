@@ -16,6 +16,49 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## DURUM — 2026-08-06 (GPS fazı; en güncel — aşağıdaki 08-02 bölümü görsel faz dönemine ait)
+
+**Kararlı hal:** `KARARLI_HAL.md` + `gps_kararli_hal` dalı + `kararli-gps-gudumu`
+etiketi. Ölçülen: düz 13-14 m, daireler 15-17 m, kare kenar 14 / köşe 21 m.
+
+### C1 — İstasyon ofseti artık TABAN (sıradaki bakılacak yer)
+
+2026-08-06 tespiti: kalan mesafenin çoğu artık takip hatası değil,
+**istasyonun kendi tasarım ofseti**:
+
+- Dönüşte istasyon hedefe **17.8 m slant** duruyor (10.63 m arka + 14 m iç
+  kayma + 2.85 m alt) — dairelerdeki ölçüm 15-16 m, yani drone tasarlanan
+  noktanın üzerinde/az önünde.
+- Düz uçuşta istasyon 11 m'de, ölçüm 13-14 m → takip payı yalnız 2-3 m.
+
+**Sonuç:** her senaryoda <10 m hedefi güdümü iyileştirmekten değil, bu
+geometriyi küçültmekten geçiyor. En büyük aday: dönüşte 10.63 m'lik **arka
+bileşen** — iç kaymayla vektörel toplanıp menzili 17.6 m'ye şişiriyor
+(açı: kuyruk hattından 52.8° içeri). Denenecek: dönüşte arka bileşeni
+daraltmak (ör. ω ölçeğiyle) — her testte TEK değişken kuralıyla.
+⚠ RANGE_SET artık maskeli değil: 13-17 m bandında komut doygun değil,
+istasyon yerinin her milimetresi davranışa yansıyor.
+
+### C2 — Dinamik istasyon yükselişi (2026-08-06'da kodlandı, uçuş bekliyor)
+
+Kullanıcı fikri: kamera gövdeye vidalı → gövde duruşu değişince sabit açılı
+istasyon hedefi kadrajda sabit tutamaz. Loglarla doğrulandı ve `elev =
+kamera_tilt + gövde_pitch(EMA)` olarak uygulandı (`AVCI_GPS_ELEV_DIN=0` ile
+eski yol). Ayrıntı: `gps_guidance.py` Cfg.ELEV_DINAMIK bloğu.
+*Sonuç (2026-08-08 uçuşu, log 121248 — Claude'un otonom koşusu, kare+CSV):*
+- Kadraj dikey sapma: dönüşte **−23° → −9.4°**, düzde **−10° → −3.0°**
+  (v_px 310-330 → 268 dönüş, 270 → 248 düz). Karelerde gözle doğrulandı:
+  hedef köşe sonrası en uzak anda bile merkezde.
+- Menzil DEĞİŞMEDİ (beklendiği gibi): daire 15.0-15.1 m (taban 15-16);
+  kare, eski kare uçuşuyla (152954) aynı segmentasyonda düz 21.7 vs 22.5,
+  dönüş 16.2 vs 16.4. ("kenar 14" panel okuması en iyi anmış; medyan hep ~22.)
+- EMA sağlıklı: ist_elev tick adımı med 0.10°, max 0.93°; dikey salınım yok.
+- Dönüşteki −9.4° kalıntının nedeni C1 ile aynı: drone 15 m'de tutunurken
+  dikey ofset RANGE_SET=11'e göre hesaplanıyor (r_eff tavanlı). d_below'u
+  gerçek menzille ölçekleme C1 kapsamında değerlendirilecek.
+
+---
+
 ## DURUM — 2026-08-02 22:30 (yeni oturum buradan devam etsin)
 
 **Depo:** `kubra_masaustu`, temiz, `origin` ile eşit. Son commit `f5737ca`.
