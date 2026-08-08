@@ -40,8 +40,7 @@ Güdüm değişikliklerini test etmenin insansız yolu. Claude:
   karşılaştırılmaz.
 - **Görüntü ve log birlikte.** Sadece sayı ya da sadece video yetmez;
   ikisinin tutarlılığı da raporun parçası.
-- Sonuç `TODO.md`'deki ilgili maddenin altına işlenir (bu dalda
-  `UYGULANACAK.md` yok; karşılığı TODO.md).
+- Sonuç `UYGULANACAK.md`'deki ilgili maddenin altına işlenir.
 
 ## Parçaları elle kullanmak
 
@@ -96,8 +95,7 @@ yavaşça 12 m'ye alçaldı ve koşu geçersizleşti — canlı fark edilmedi;
 - **EKF beklenmeden kalkış yapılmaz**: iki SITL çıktısında da
   `EKF3 IMU0 is using GPS` görülmeli.
 - **Kod doğrulaması**: gcs_server açılışında beklenen banner'lar kontrol
-  edilir (bu dalda ör. `[GPS] yükseliş her menzilde 15° kalır ...` ve
-  `[TAKIP] HybridSORT`) — yoksa test edilen
+  edilir (ör. `[GPS] istasyon yükselişi DİNAMİK ...`) — yoksa test edilen
   kod çalışmıyor demektir.
 
 ## İlk kullanım: 2026-08-08

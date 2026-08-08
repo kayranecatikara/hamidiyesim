@@ -2,7 +2,7 @@
 gps_guidance.py — GPS güdümü (sıfırdan yeniden inşa, görsel-temas odaklı).
 
 AMAÇ (başarı kriteri): Drone'u öyle konumlandır ki hedef sabit-kanatlı İHA
-kameranın TAM ORTASINDA, tespitin güvenilir çalıştığı menzil bandında
+kameranın TAM ORTASINDA, pose modelinin güvenilir çalıştığı menzil bandında
 (~10-11 m) ve KARARLI görünsün → supervisor görsel faza devretsin. (Vuruş DEĞİL;
 vuruş görsel fazın işi.)
 
@@ -15,8 +15,12 @@ KADEME 1 (bu sürüm): GEOMETRİK kadraj-noktası takibi. Hedefin hız yönünü
 D_BEHIND gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek)
 bir istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
 kilitlenince kararlı hold). Burun daima gerçek hedefe döner (yaw). Drone hedefin
-ALTINDA kalır → gökyüzü arka planı, tespit kopmaz.
-(KADEME 2'de: gerçek attitude'la kadraj hatasını doğrudan kapatma eklenecek.)
+ALTINDA kalır → gökyüzü arka planı, pose kopmaz.
+
+KADEME 2 (2026-08-06): istasyonun LOS yükselişi artık GÖVDE PİTCH'İNDEN
+dinamik türetilir (elev = kamera tilt + pitch) — kamera gövdeye vidalı olduğu
+için sabit açı hedefi kadrajda sabit tutamıyordu (daire tutuşunda burun +11°
+yukarı → hedef merkezin 20-28° altına düşüyordu). Bkz. Cfg.ELEV_DINAMIK.
 
 Arayüz (supervisor / gcs_server ile aynı sözleşme):
   run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg)
@@ -56,13 +60,6 @@ class Cfg:
     # bandında lineer bölgedeyiz ve istasyonun yeri birebir menzile yansıyor.
     # 11'in kökeni pose modelinin tatlı noktasıydı (pose artık devre dışı).
     RANGE_SET = _env_f("AVCI_GPS_RANGE", 8.0)    # m; slant menzil setpoint
-    # ⚠ BU DALDA (kubra_masaustu) DİKKAT: yukarıdaki ölçüm kayramin_super_gudumu
-    # dalında, DİNAMİK istasyon yükselişiyle alındı; burada yükseliş SABİT 15°.
-    # Ayrıca 08-08 görsel faz teşhisi RANGE_SET=11 ile yapıldı: görsel faza devir
-    # ~19 m'de oluyordu ve nişanın dönme hızı YAKINDA daha kötü (8-20 m: 19.2 °/s,
-    # araç 22 m/s'te ancak 10.4). İstasyon 8 m'ye inince devir daha da yakında
-    # olur — GPS fazı için iyileşme, GÖRSEL faz için muhtemelen kötüleşme.
-    # Görsel faz ölçümleri bundan SONRA yenilenmeli (TODO §0b tabanı geçersiz).
 
     # İSTASYONUN LOS yükselişi — kamera tilt'inden AYRILDI (2026-08-02).
     #
@@ -82,7 +79,7 @@ class Cfg:
     # BEDELİ: hedef kadraj merkezinde değil, ~10° altında görünür
     # (v_px ≈ 269/480 — hâlâ rahat içeride). G11 bütçeyi test olarak koruyor.
     #
-    # ⚠ BU AYRIM HENÜZ KESİNLEŞMEDİ — bkz. DURUM.md B7.
+    # ⚠ BU AYRIM HENÜZ KESİNLEŞMEDİ — bkz. UYGULANACAK.md B7.
     # 25° tesadüf değildi, kamera tilt'i o; istasyon 25°'de kurulunca hedef
     # kadrajın TAM MERKEZİNDE oluyordu. Ölçüm 15°'yi destekliyor (terminal
     # `ok` oranı %8.7 → %18.2, kadraj içi %59.8 → %67.0, en yakın menzil
@@ -95,24 +92,45 @@ class Cfg:
     #       sığan en büyük açı (18°? 20°?) merkeze daha yakın olurdu.
     #   (2) Asıl alternatif: istasyonu 25°'de bırakıp WP_ACC_Z'yi 1.0 → 2.5
     #       yükseltmek. Tutarsa bu ayrım gereksiz hale gelir.
-    #
-    # ── 2026-08-05: 25°'YE GERİ DÖNÜLDÜ — yukarıdaki (2) şıkkı deneniyor ──
-    # 15°'ye inilmesinin TEK gerekçesi dikey ivme bütçesiydi (4.65 m'yi
-    # 1 m/s² ile kapatamıyorduk). O kısıt kalktı: WP_ACC_Z 1 → 3 yapıldı,
-    # yani 4.65 m artık √(2·4.65/3) ≈ 1.76 s'de kapanıyor (eskiden 3.05 s;
-    # terminalde eldeki süre 2.4-2.8 s). Bütçe artık 25°'ye RAHAT sığıyor.
-    # Kazanç: hedef kadrajın TAM MERKEZİNDE görünür — 15°'de merkezin ~10°
-    # altındaydı ve merkez dışı kadrajlamanın bedeli hiç izole ölçülmemişti
-    # (B7 açık sorusu). Bu değişiklik o soruyu da kapatmayı hedefliyor.
-    # ⚠ İkisi BİRLİKTE değerlendirilmeli: WP_ACC_Z=3 geri alınırsa bu da 15'e
-    # dönmeli, yoksa dikey ıska geri gelir.
-    #
-    # ── 2026-08-06: 15°'YE GERİ DÖNÜLDÜ ──
-    # Yukarıdaki koşul gerçekleşti: WP_ACC_Z 3 → 1'e geri alındı (25°+ACC_Z=3
-    # birlikte ölçülüp KÖTÜLEŞTİRDİ — istasyon aşımı medyanı −5.4 → −8.3 m).
-    # Kendi kuralı gereği bu da 15'e döner. Ayrıca gps_kararli_hal dalının
-    # uçuşta doğrulanmış kararlı hâli de 15° kullanıyor (bkz. KARARLI_HAL.md).
     ISTASYON_ELEV_DEG = _env_f("AVCI_GPS_ISTASYON_ELEV", 15.0)
+
+    # ── DİNAMİK İSTASYON YÜKSELİŞİ (2026-08-06, kullanıcı fikri) ──
+    #
+    # SORUN: sabit yükseliş açısı hedefi kadrajda sabit TUTMUYOR — kamera
+    # gövdeye vidalı (25° yukarı) ve gövdenin duruşu uçuş rejimiyle değişiyor.
+    # 8 uçuşun logundan ölçüldü (kadraj_pitch_hata_deg; 0 = dikey merkez):
+    #     düz kovalama : pitch ≈ 0°               → hedef merkezin ~10° altında
+    #     daire tutuşu : pitch +11° BURUN YUKARI  → hedef merkezin 20-28° altında
+    #                    (v_px 300-330/480; dikey yarı-FOV 55° — yarı yolda)
+    #
+    # Burun-yukarının nedeni FPV sezgisindeki "hızlanınca öne eğilme" DEĞİL
+    # (simde sürükleme küçük; düz kovalamada 12 m/s'de pitch ~0). Dairede burun
+    # hedefte ama hız teğet: drone 26-37° YENGEÇ uçuyor ve merkezcil yatma
+    # gövde ekseninde "geriye" bileşen kazanıyor → burun yukarı. Ölçüm
+    # (163801 uçuşu): yengeç>20° diliminde pitch +10.9° / roll +18.4°,
+    # yengeç<10° diliminde +1.1° / +0.8° — hızlar neredeyse aynı (9.8 vs 12.2).
+    # Yani pitch'i HIZ değil GEOMETRİ belirliyor. Teorik kestirim de tutuyor:
+    # istasyon geometrisinden yengeç 37°, merkezcil 3.1 m/s² → +10.6° beklenir.
+    #
+    # ÇÖZÜM: yükseliş gövde pitch'inden türetilir (hedef kadraj merkezi şartı):
+    #     elev = CENTER_ELEV_DEG + pitch_EMA,  [ELEV_DIN_MIN, ELEV_DIN_MAX]
+    # Roll ihmalinin kalıntısı ~2° (roll 18°'de). Girdi HIZ DEĞİL ölçülü pitch:
+    # hız→pitch bağı loglarda yok, pitch ise ATTITUDE'dan hazır geliyor.
+    # EMA (τ≈1 s): ivme geçicileri istasyonu sallamasın.
+    #
+    # Beklenen denge: düzde ~25° (alt 2.85→4.65 m), dairede ~36° (alt ~6.5 m).
+    # Eski 15°'nin gerekçesi dikey ivme bütçesiydi (1.0 m/s² ölçümü) — o ölçüm
+    # PARAM ADI DÜZELTMESİNDEN ÖNCE: 1.0, Copter'ın WPNAV_ACCEL_Z varsayılanı
+    # (100 cm/s²). avci_copter.parm artık 250 yazıyor (2.5 m/s²) → 25°'nin
+    # 4.65 m'si bütçeye yeniden sığar (2.32 s'de 6.7 m tırmanılabilir). Yani
+    # ISTASYON_ELEV_DEG yorumundaki "(2) asıl alternatif" fiilen gerçekleşti;
+    # G11 testi statik taban geometrisini korumaya devam ediyor.
+    #
+    # Kapatmak için: AVCI_GPS_ELEV_DIN=0 → sabit ISTASYON_ELEV_DEG (eski yol).
+    ELEV_DINAMIK = _env_f("AVCI_GPS_ELEV_DIN", 1.0) >= 0.5
+    ELEV_DIN_MIN = 5.0        # °; sert ileri ivmede (burun aşağı) taban
+    ELEV_DIN_MAX = 40.0       # °; dairede gereken ~36° içeride kalsın
+    ELEV_PITCH_EMA = 0.05     # tick başına; 20 Hz'de τ ≈ 1 s
     TRACK_MIN_SPD = 3.0       # m/s; üstünde istasyon HIZ yönünün gerisi (kuyruk), altında LOS gerisi
     LOOKUP_MIN_ALT = 8.0      # m; alçalma tabanı (yere çakılma koruması)
 
@@ -243,6 +261,32 @@ class Cfg:
     # ω·τ kadar öne alma) koymadan deneme.
     FF_DONUS = _env_f("AVCI_GPS_FF_DONUS", 0.0) >= 0.5   # ❌ ölçümle kapalı
     FF_DONUS_MAX = 8.0        # m/s; ω kestirimi sıçrarsa düzeltme tavanı
+
+    # ── ARKA KISALTMA (2026-08-08, C1 üçüncü hamle) ──
+    #
+    # Dönüşte istasyon = arka bileşen (6.3 m @ elev 38°) + iç kayma (14 m);
+    # ikisi DİK vektörler, hedefe yatay uzaklık √(6.3²+14²) = 15.35 m.
+    # Ölçülen tutuş 13.3 m ve bunun çoğu istasyonun KENDİ ofseti (C1 tespiti).
+    # Arka bileşenin dönüşteki işlevi zayıf: kuyruk görüşü zaten yok (istasyon
+    # kuyruk hattından 66° içeride) ve burun/kamera hedefe yaw ile dönük.
+    # Bileşeni dönüşte eritmek istasyonu 14.0 m'ye getirir (~1.4 m kazanç);
+    # iç kaymanın yeniden ayarına da zemin açar (IC 14, ESKİ arka 10.6 m'yle
+    # birlikte ölçülmüştü).
+    #
+    # Ölçek iç kaymayla AYNI ω rampasında (IC_OMEGA_REF): düz uçuşta arka
+    # bileşen TAM kalır (en iyi bilinen düz davranış değişmez), tam dönüşte
+    # ARKA_KISALT oranında erir (1.0 = tamamen).
+    #
+    # ❗ YARIŞMA HATTINDA VARSAYILAN 0 = KAPALI (2026-08-08, kullanıcı kararı
+    # + D0 kuralı, bkz. UYGULANACAK.md): yakın yandan eskort (1.0 → daire
+    # 5.7 m, log 141740) tespit sürekliliği başlatır ve kural bizi görsel
+    # faza ZORLAR; 6 m'de yandan giriş saf bbox takibi için ölümcül (LOS
+    # dönüşü 139°/s > yaw tavanı 120°/s). 0 ile dönüş davranışı kararlı
+    # profildir: daire 13.3 m, kuyruktan 66° (log 131611) — oradan görsel
+    # devir yaşanabilir (~50-60°/s, pure pursuit kuyruğa süzülür).
+    # Teknik gimball_gudum branch'inde TAM haliyle arşivli; gimbal takılınca
+    # 1.0'a döner (docs/YANDAN_ESKORT_VE_GIMBAL.md).
+    ARKA_KISALT = _env_f("AVCI_GPS_ARKA_KISALT", 0.0)   # 0..1; tam dönüşte eriyen pay
     KP_Z = 1.0               # dikey konum hatası → hız (1/s)
     VZ_MAX = 6.0              # m/s; dikey hız tavanı (eski 3.5 darboğazı açıldı)
     # V_MAX 20→28 (2026-07-31): telemetri 4→25 Hz düzeltilince hedefin GERÇEK hızı
@@ -261,25 +305,21 @@ class Cfg:
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(120.0)
-    # Ardışık kaç kare AYNI YÖNDE yaw doygunluğuna izin verilir (bkz. döngüdeki
-    # "yaw kaçağı koruması"). adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe;
-    # GPS fazı 20 Hz olduğu için 15 kare ≈ 0.75 s.
+    # ── YAW KAÇAĞI KORUMASI (kubra_masaustu, 2026-08-05/06) ──
+    # ⚠ Bu blok kayramin_super_gudumu'nda YOK; merge'de (2026-08-08) oradaki
+    # GPS güdümü taban alındı ama bu koruma ÜSTÜNE taşındı. Kayra'nın dalına da
+    # gitmeli — orada hâlâ kendini-biriktiren cmd_yaw var.
+    #
+    # Kaç kare ardışık "doygun ama hata kapanmıyor" hoş görülür.
+    # adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe; GPS 20 Hz → 15 ≈ 0.75 s.
     YAW_DOYGUN_N = int(_env_f("AVCI_GPS_YAW_DOYGUN_N", 15))
-    # ── SUSMA SÜRESİ — KİLİTLENME DÜZELTMESİ (2026-08-06) ──
-    # Doygunluk kapısı bir KİLİT gibi davranıyordu ve asla açılmıyordu:
-    # kapı adım'ı 0 yapar → araç dönmez → yaw_err kapanmaz → kapı açık kalır.
-    # Çıkış koşulu "hata tavanın altına insin"di, ama dönmeyen araçta hata
-    # kendiliğinden inmez. Klasik ölü kilit.
-    #
-    # ÖLÇÜLDÜ (08-05/08-06, 124 346 GPS karesi): karelerin %7.8'inde burun
-    # hedeften >20° sapmış OLMASINA rağmen yaw adımı tam 0; en uzun kesintisiz
-    # susma 1867 kare = 93 SANİYE (log 142313 — o uçuşta araç 119° yan durup
-    # hiç dönmedi). Kullanıcının gördüğü "avcı düz gitmiyor" bu.
-    #
-    # Düzeltme: susma KALICI değil SÜRELİ. YAW_SUS_N kare sonra sayaç sıfırlanır
-    # ve dönüş yetkisi geri verilir. Sorun gerçekse kapı yeniden tetiklenir —
-    # sonuç sürekli dönme DEĞİL, oranı YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N)
-    # kadar kısılmış dönme (15/55 ≈ %27). Kaçak hâlâ sınırlı, kilit yok.
+    # SUSMA SÜRELİ, KALICI DEĞİL (kilitlenme düzeltmesi 2026-08-06). Kapı adımı
+    # 0 yapınca araç dönmez, dönmeyen araçta hata kapanmaz, kapı hiç açılmaz —
+    # ölü kilit. ÖLÇÜLDÜ (124 346 kare): karelerin %7.8'inde burun >20° sapmış
+    # olmasına rağmen adım tam 0; en uzun susma 1867 kare = 93 SANİYE (araç 119°
+    # yan durup hiç dönmedi). "Avcı düz gitmiyor" şikâyetinin kaynağı buydu.
+    # Süre dolunca yetki geri verilir; sorun gerçekse kapı yeniden tetiklenir →
+    # dönme oranı YAW_DOYGUN_N/(YAW_DOYGUN_N+YAW_SUS_N) ≈ %27'ye kısılır.
     YAW_SUS_N = int(_env_f("AVCI_GPS_YAW_SUS_N", 40))    # 20 Hz → 2.0 s
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
@@ -318,10 +358,13 @@ _CSV_ALANLAR = [
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
-    # iç daire nişanı teşhisi (bkz. Cfg.IC_KAYMA) — güdüme girmez, yalnız ölçüm
-    "tgt_omega_dps", "ic_kayma_m", "ic_yaricap_m",
     "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
     "ff_donus_mps",   # dönüş ileri beslemesi |ω×r| (düzde 0)
+    "d_arka_m",       # istasyonun etkin arka bileşeni (dönüşte erir)
+    # ── iç daire nişanı teşhisi (kubra_masaustu) — güdüme GİRMEZ, yalnız ölçüm.
+    # 08-08 görsel faz analizinin girdisi (tools/donus_kestirim_masa.py,
+    # tools/ucus_analiz.py rejim ayrımı). Merge'de bilerek korundu.
+    "tgt_omega_dps", "ic_kayma_m", "ic_yaricap_m",
 ]
 
 
@@ -351,6 +394,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     yaw_ref = None          # önceki karenin |yaw_err|'i (ilerleme ölçümü için)
     prev_time = None
     loop_count = 0
+    pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR, time.strftime("gps_guidance_%Y%m%d_%H%M%S.csv"))
@@ -365,6 +409,11 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
           f"yükseliş her menzilde {cfg.ISTASYON_ELEV_DEG:.0f}° kalır "
           f"(kamera tilt'i {cfg.CENTER_ELEV_DEG:.0f}° → hedef merkezin "
           f"{cfg.CENTER_ELEV_DEG - cfg.ISTASYON_ELEV_DEG:.0f}° altında) — log: {csv_yol}")
+    if cfg.ELEV_DINAMIK:
+        print(f"[GPS] istasyon yükselişi DİNAMİK: {cfg.CENTER_ELEV_DEG:.0f}° + gövde "
+              f"pitch (EMA τ≈1 s), sınır [{cfg.ELEV_DIN_MIN:.0f}°, "
+              f"{cfg.ELEV_DIN_MAX:.0f}°] — düzde ~25°, daire tutuşunda ~36° beklenir; "
+              f"kapatmak: AVCI_GPS_ELEV_DIN=0")
     _t_terminal = d_behind / 3.7          # ölçülen terminal yatay kapanma hızı
     print(f"[GPS] terminal dikey bütçe: {d_below:.2f} m kapatılacak, "
           f"~{_t_terminal:.2f} s var → 1 m/s² rampayla {0.5*_t_terminal**2:.2f} m "
@@ -386,6 +435,16 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             iroll = iris.get("roll", 0.0)
             ipitch = iris.get("pitch", 0.0)
             iyaw = iris.get("yaw", 0.0)
+
+            # ── DİNAMİK İSTASYON YÜKSELİŞİ: elev = tilt + pitch (bkz. Cfg) ──
+            pitch_ema = ipitch if pitch_ema is None else (
+                cfg.ELEV_PITCH_EMA * ipitch
+                + (1 - cfg.ELEV_PITCH_EMA) * pitch_ema)
+            if cfg.ELEV_DINAMIK:
+                ist_elev = math.radians(clamp(
+                    cfg.CENTER_ELEV_DEG + math.degrees(pitch_ema),
+                    cfg.ELEV_DIN_MIN, cfg.ELEV_DIN_MAX))
+
             plane = get_plane()
 
             # ── 1) TAZELİK + FİLTRE (EMA pozisyon, sonlu-fark hız) ──
@@ -481,17 +540,27 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             d_below_eff = r_eff * math.sin(ist_elev)
 
             tgt_spd_h = math.hypot(vel_x, vel_y)
+
+            # Dönüş ölçeği (0=düz, 1=tam dönüş) — hem arka kısaltma hem iç
+            # kayma bunu kullanır; hedef yavaşsa ω kestirimi güvenilmez → 0.
+            olcek_don = 0.0
+            if tgt_spd_h >= cfg.TRACK_MIN_SPD:
+                olcek_don = min(1.0, abs(tgt_omega) / cfg.IC_OMEGA_REF)
+
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
                 bx, by = -vel_x / tgt_spd_h, -vel_y / tgt_spd_h   # hız yönünün gerisi (kuyruk)
             elif d_h > 1e-6:
                 bx, by = -ex / d_h, -ey / d_h                     # LOS gerisi (drone tarafı)
             else:
                 bx, by = 0.0, 0.0
-            st_x = est_x + bx * d_behind_eff
-            st_y = est_y + by * d_behind_eff
+            # ── ARKA KISALTMA (bkz. Cfg.ARKA_KISALT): dönüşte arka bileşen
+            # ω ölçeğiyle erir → istasyon kuyruktan yana (içeri) kayar.
+            d_arka = d_behind_eff * (1.0 - cfg.ARKA_KISALT * olcek_don)
+            st_x = est_x + bx * d_arka
+            st_y = est_y + by * d_arka
             st_z = est_z + d_below_eff                            # NED: altında (+z aşağı)
 
-            # ── İÇ DAİRE KAYMASI (bkz. Cfg.IC_KAYMA) ──
+            # ── İÇ DAİRE KAYMASI (bkz. Cfg.IC_KAYMA; varsayılan 0 = kapalı) ──
             # Merkezcil yön: hız birim vektörünün dönüş yönünde 90°'si.
             # NED'de (x kuzey, y doğu) başlık atan2(vy,vx) ARTARKEN hız vektörü
             # x'ten y'ye döner; o dönüşün merkezi (-v̂y, +v̂x) yönündedir.
@@ -499,7 +568,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             ic_kayma = 0.0
             ic_yaricap = None
             if tgt_spd_h >= cfg.TRACK_MIN_SPD:
-                olcek = min(1.0, abs(tgt_omega) / cfg.IC_OMEGA_REF)
+                olcek = olcek_don
                 if cfg.IC_ORAN > 0.0:
                     # YARIÇAP-ORANLI: R = |v| / |ω|. Dar dairede küçük, geniş
                     # dairede büyük kayma → tek katsayı her yarıçapta doğru.
@@ -562,32 +631,25 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
             # ── 7) YAW: burun GERÇEK hedefe ──
             bearing = math.atan2(ey, ex)
-            # ── YAW KAÇAĞI KORUMASI (2026-08-05) ──
-            # ESKİ HÂLİ: cmd_yaw kendi kendini besleyen bir birikimdi
+            # ── YAW KAÇAĞI KORUMASI (bkz. Cfg.YAW_DOYGUN_N / YAW_SUS_N) ──
+            # ESKİ HÂLİ (kayramin_super_gudumu'nda HÂLÂ BÖYLE):
             #     yaw_err = bearing - cmd_yaw ;  cmd_yaw += clamp(yaw_err)
-            # Aracın GERÇEK başlığına hiç bakmıyordu. Araç komuta yetişemezse
-            # cmd_yaw yürümeye devam ediyor, hata kapanmıyor ve komut kaçıyor.
-            # adapter_copter'da bu tehlike zaten yazılıydı ("kalıcı cmd_yaw
-            # demirlemeyi kaybeder") ama koruma yalnız görsel fazda vardı.
-            #
-            # ÖLÇÜM (08-05, pose modu): GPS fazında yaw hızı 28 → 90 → 402 →
-            # 710 → 1237 °/s diye ıraksıyordu (komut yalnız 240 °/s). Araç
-            # fırıldak gibi dönüp itkiyi aşağı çeviriyor ve yerçekiminden hızlı
-            # düşüp çakılıyordu — 5/22 faz yerde bitti.
+            # Aracın GERÇEK başlığına hiç bakmıyor. Araç komuta yetişemezse
+            # cmd_yaw yürümeye devam ediyor, hata kapanmıyor, komut kaçıyor.
+            # ÖLÇÜM (08-05): yaw hızı 28 → 90 → 402 → 710 → 1237 °/s ıraksadı
+            # (komut yalnız 240 °/s'ydi). Araç fırıldak gibi dönüp itkiyi yana
+            # çeviriyor ve düşüyordu — 5/22 faz YERDE bitti.
             #
             # DÜZELTME 1 — DEMİRLEME: komut her karede aracın GERÇEK başlığından
-            # üretilir; böylece komut asla actual+adım'dan öne geçemez.
+            # (iyaw) üretilir; komut asla actual+adım'dan öne geçemez.
             yaw_err = normalize_angle(bearing - iyaw)
             adim_ham = yaw_err
             tavan = cfg.YAW_RATE_MAX * dt
             adim = clamp(adim_ham, -tavan, tavan)
             yaw_doygun = abs(adim_ham) > tavan
 
-            # DÜZELTME 2 — SÜREKLİ DOYGUNLUK KAPISI (adapter_copter T44/T45'in
-            # eşi): adım sürekli tavandayken hata AZALMIYORSA dönüş işe
-            # yaramıyor demektir; dönmeye devam etmek yalnız aracı çevirir.
-            # Ölçüt doygunluk değil, hatanın kapanmaması — büyük ama meşru bir
-            # dönüş de doygundur, onu kesmemeliyiz.
+            # DÜZELTME 2 — SÜREKLİ DOYGUNLUK KAPISI. Ölçüt doygunluk DEĞİL,
+            # hatanın kapanmaması: büyük ama meşru bir dönüş de doygundur.
             if yaw_doygun:
                 ilerleme = (None if yaw_ref is None else yaw_ref - abs(yaw_err))
                 if ilerleme is not None and ilerleme > 0.25 * abs(adim):
@@ -600,10 +662,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 yaw_ref = None
             if yaw_doygun_n > cfg.YAW_DOYGUN_N:
                 adim = 0.0                    # döngü kapanmıyor → yaw'ı sustur
-                # ⚠ SÜRELİ SUSMA (bkz. Cfg.YAW_SUS_N): süre dolunca yetki geri
-                # verilir. Yoksa kapı kendi kendini besleyen bir kilide dönüşür
-                # (dönmeyen araçta hata kapanmaz → kapı hiç açılmaz).
-                yaw_sus_n += 1
+                yaw_sus_n += 1                # ⚠ SÜRELİ: süre dolunca yetki geri
                 if yaw_sus_n >= cfg.YAW_SUS_N:
                     yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
             else:
@@ -654,12 +713,13 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "kadraj_pitch_hata_deg": round(math.degrees(kad["pitch_hata"]), 2),
                 "u_px": round(kad["u"], 1) if kad["u"] is not None else "",
                 "v_px": round(kad["v"], 1) if kad["v"] is not None else "",
+                "ist_elev_deg": round(math.degrees(ist_elev), 2),
+                "ff_donus_mps": round(ff_donus_mps, 2),
+                "d_arka_m": round(d_arka, 2),
                 "tgt_omega_dps": round(math.degrees(tgt_omega), 2),
                 "ic_kayma_m": round(ic_kayma, 2),
                 "ic_yaricap_m": (round(ic_yaricap, 1)
                                  if ic_yaricap is not None else ""),
-                "ist_elev_deg": round(math.degrees(ist_elev), 2),
-                "ff_donus_mps": round(ff_donus_mps, 2),
             })
             f.flush()
 
@@ -667,7 +727,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             if loop_count % int(cfg.LOOP_HZ * 3) == 0:
                 print(f"[GPS] {durum} d_h={d_h:.1f}m menzil={menzil:.1f}m "
                       f"kadraj(yaw={math.degrees(kad['yaw_hata']):+.0f}°,"
-                      f"elev={math.degrees(kad['elev']):+.0f}°/istasyon {cfg.ISTASYON_ELEV_DEG:.0f}°) "
+                      f"elev={math.degrees(kad['elev']):+.0f}°/istasyon {math.degrees(ist_elev):.0f}°) "
                       f"v=({vx:+.1f},{vy:+.1f},{vz:+.1f}) tgt_v={tgt_spd_h:.1f}")
 
             _sleep(now, loop_period)

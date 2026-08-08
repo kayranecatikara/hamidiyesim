@@ -35,9 +35,7 @@ eşleşir ve kabuğunu öldürür (exit 144).
 - **gcs_server**: `export AVCI_GZ_CAMERA=1 && fuser -k 8000/tcp;
   python3 -m control.gcs_server` → `/api/scenario_status` 200 dönene kadar bekle.
 - gcs_server açılış banner'larını KONTROL ET (test edilen kod gerçekten
-  aktif mi — bu dalda ör. `[GPS] yükseliş her menzilde 15° kalır`,
-  `[TAKIP] HybridSORT`; istasyon yükselişi SABİT, kararlı daldaki dinamik
-  sürüm burada yok).
+  aktif mi — ör. `[GPS] istasyon yükselişi DİNAMİK`).
 
 ## 3 · Kayıt + BEKÇİ + uçuş
 
@@ -87,7 +85,7 @@ kapat.
 - `ffmpeg -framerate 5 -i <dir>/frames/f%04d.jpg -c:v libx264 -pix_fmt yuv420p
   logs/ucus_<tarih>_kamera.mp4` — kullanıcı izleyebilsin.
 - Rapor: tablo (ölçüt | eski | yeni), kanıt kareleri, taban tabloyla kıyas.
-- Sonucu `TODO.md`'deki ilgili maddenin altına işle (bu dalda `UYGULANACAK.md` yok).
+- Sonucu `UYGULANACAK.md`'deki ilgili maddenin altına işle.
 - Commit için sor; push için AYRICA sor (kullanıcı kuralı: kafana göre push yok).
 
 ## Kurallar
