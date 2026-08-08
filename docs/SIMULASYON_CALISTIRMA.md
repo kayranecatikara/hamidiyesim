@@ -32,16 +32,19 @@ Arayüz: <http://localhost:8000>
     bash scripts/start_harmonic.sh durum    # ne çalışıyor — hiçbir şeyi öldürmez
                                             # Terminal B: Ctrl+C yeterli
 
-> ⚠ **VURUŞ SONRASI SİM KULLANILAMAZ.** Drone hedefe çarpınca uçak enkazı
-> Gazebo fiziğiyle savruluyor (bir kez yerin 1738 m altına gitti) ve ArduPlane
-> o durumdan dönmüyor. Panelden senaryoyu durdurup başlatmak YETMEZ.
+> **Vuruştan sonra ne olur?** Görev BİTER (tasarım gereği) — takibi panelden
+> yeniden başlatmanız gerekir. **Sim bozulmaz.** 2026-08-08'de 11 vuruşun
+> hepsinden sonra ölçüldü: hedef 14-15 m/s ile irtifa bandında uçmaya, drone
+> 10-25 m'de uçmaya devam etti. Aynı oturumda deney sürdürülebilir.
+>
+> ⚠ Ayrı bir durum: **test sonunda araç havada KONTROLSÜZ bırakılırsa** uçak
+> uçmaya devam edip sonunda düşer ve enkaz Gazebo fiziğiyle savrulur (bir kez
+> yerin 1738 m altına gitti) — sonraki kullanıcıya bozuk sim kalır. Bitirirken
+> senaryoyu durdurun ya da simi kapatın.
+>
+> Gerekirse tek komutla baştan kurulur (durdurur + kurar):
 >
 >     GZ_HEADLESS=1 bash scripts/start_harmonic.sh yeniden
->
-> **A/B deneylerine etkisi:** bir kol vuruşla bittiyse ikinci kol AYNI sim
-> oturumunda koşulamaz. Kollar ayrı simlerde koşulur; kıyas yine geçerlidir
-> ama "aynı oturum" garantisi kaybolur — damgadan (CSV `yapilandirma`) hangi
-> kolun hangisi olduğu yine okunur.
 
 ---
 

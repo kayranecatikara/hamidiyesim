@@ -122,13 +122,14 @@ if [ "${1:-}" = "stop" ]; then
 fi
 
 # ── yeniden: durdur + baştan kur ────────────────────────────────────────────
-# NEDEN VAR: VURUŞ SONRASI SİM KULLANILAMAZ HALE GELİYOR. Drone hedefe çarpınca
-# uçak enkazı Gazebo fiziğiyle savruluyor (bir kez yerin 1738 m altına gitti) ve
-# ArduPlane o durumdan dönmüyor. Panelden senaryo durdurup başlatmak YETMEZ —
-# bozukluk model tarafında. Aynı sebeple A/B kolları, biri vurduysa AYNI sim
-# oturumunda koşulamaz; ikinci kol taze simde koşulur.
+# NEDEN VAR: elle "stop + baştan başlat" yazmak yerine tek komut.
+# ⚠ VURUŞ SONRASI SİM BOZULMAZ — bu ölçüldü (2026-08-08, 11 vuruşun hepsinde
+# hedef 14-15 m/s ile bantta, drone 10-25 m'de uçmaya devam etti). Vuruş yalnız
+# GÖREVİ bitirir; takip panelden yeniden başlatılır. Bu komut o iş için DEĞİL.
+# Asıl gereken durum: araç havada kontrolsüz bırakılıp düştüyse, ya da SITL/
+# Gazebo gerçekten takıldıysa.
 if [ "${1:-}" = "yeniden" ] || [ "${1:-}" = "restart" ]; then
-    echo "[HARMONIC] Yeniden kuruluyor (vuruş sonrası sim bozulur — bkz. yorum)"
+    echo "[HARMONIC] Yeniden kuruluyor (durdur + baştan kur)"
     stop_all || true
     sleep 2
     shift
