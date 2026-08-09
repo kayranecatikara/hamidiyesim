@@ -16,7 +16,69 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
-## DURUM — 2026-08-06 (GPS fazı; en güncel — aşağıdaki 08-02 bölümü görsel faz dönemine ait)
+## DURUM — 2026-08-09 · MANEVRA (en güncel)
+
+Kullanıcı gözlemi: "düz uçuşta ıskalamıyor, hedef **manevra** yapınca görsel
+güdüm sapıtıyor, yatayda çok salınım oluyor."
+
+Altı uçuş koşuldu (daire senaryosu, 210 s, aynı profil, koşu başına TEK
+değişken). Hepsi geçerli: hedef 20-250 m bandında, hız 14.8-15.1 m/s.
+Videolar `logs/manevra_*.mp4`, ölçüm aracı `manevra.py` + `kayip.py`.
+
+### M1 — Yatay roll/pitch telafisi (T1a) · UÇUŞTA DOĞRULANDI ✓ · varsayılan AÇIK
+
+`AVCI_IBVS_ROLL=0` → eski yol. Kök neden ae2c600'de.
+
+| ölçüt | A1 telafisiz | A2 telafisiz | B1 **telafili** | B2 **telafili** |
+|---|---|---|---|---|
+| yatay hata medyan | 66.5 px | 53.0 px | **50.2** | **44.5** |
+| salınım (işaret değişimi/s) | 0.104 | 0.143 | **0.000** | **0.057** |
+| görsel temas oranı | %53.6 | %36.7 | **%64.4** | **%56.2** |
+| İMHA | ✗ | ✗ | **✓** | ✗ |
+
+Üç ölçüt de her iki çiftte telafi lehine (6/6). **Ama manevrayı ÇÖZMÜYOR:**
+210 s'de hâlâ ~12 temas kopuşu, 2 koşuda 1 vuruş.
+
+### M2 — Tespit eşiği 0.35 → 0.15 · ÖLÇÜLDÜ, HENÜZ VARSAYILAN DEĞİL
+
+Kopuşların **%100'ünde hedef hâlâ kadrajın İÇİNDE**; kopuştan önceki 5 karede
+güven medyanı 0.39, min 0.35 = `CONF_MIN`. Yani dedektör görüyor, güdüm eşikte
+atıyor. `AVCI_POSE_CONF=0.15 AVCI_IBVS_CONF=0.15` ile:
+
+| ölçüt | B1/B2 (0.35) | C1/C2 (**0.15**) |
+|---|---|---|
+| yatay hata medyan | 50.2 / 44.5 px | **17.0 / 15.5** |
+| yatay hata p90 | 197 / 154 px | **102.5 / 54.5** |
+| toplam temas süresi | 37 / 53 s | **88 / 111 s** |
+| İMHA | 1/2 | 0/2 |
+
+Takip 3× iyi, temas 2× uzun — **ama vuruş yok.** Varsayılan yapılmadı: (a) düz
+uçuş gerilemesi ölçülmedi, (b) düz eşik yerine histerezis olmalı (yakala 0.35,
+tut 0.20), (c) vuruşu engelleyen darboğaz M3.
+
+### M3 — SIRADAKİ: lead tam gerektiği anda sıfırlanıyor
+
+C koşularında ≤10 m'deki 91 kare:
+
+    cx medyan 453 (merkez 320)   yatay açı medyan 39.6°, p90 63.3°
+    LOS oranı medyan 1.47 rad/s (84°/s), p90 4.81 rad/s
+    tutmak için gereken: 15 m/s ÷ 8 m = 1.87 rad/s (107°/s)
+    lead açısı medyan 0.00°   ← ÇALIŞMIYOR
+    durum: 91 karenin yalnız 21'i TERMINAL
+
+İki yapısal sebep, ikisi de kodda:
+1. `lead_az` YALNIZ `terminal` iken uygulanıyor → yakın karelerin %77'sinde yok.
+2. `lead_olcek = clamp(BOYUT_REF/boyut, 0, 1)` → hedef büyüdükçe (yaklaştıkça)
+   lead SÖNÜYOR. Düz takipte doğru (LOS oranı ≈ 0), **dönüşte tam tersi**.
+
+Yani yakın menzilde saf takip hedefin BULUNDUĞU yeri gösteriyor, hedef 40-63°
+yanda ve LOS 84-276°/s süpürüyor. Saf takip bu geometriyi kapatamaz.
+Öneri: lead'i menzille söndürmek yerine **LOS oranıyla ölçekle** (gerçek PN) ve
+TERMINAL kapısından çıkar. ⚠ Kullanıcı onayı alınmadan uygulanmayacak.
+
+---
+
+## DURUM — 2026-08-06 (GPS fazı; aşağıdaki 08-02 bölümü görsel faz dönemine ait)
 
 **Kararlı hal:** `KARARLI_HAL.md` + `gps_kararli_hal` dalı + `kararli-gps-gudumu`
 etiketi. Ölçülen: düz 13-14 m, daireler 15-17 m, kare kenar 14 / köşe 21 m.
