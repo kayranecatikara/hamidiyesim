@@ -588,6 +588,23 @@ def main():
             f"serbest {_vz_serbest:+.2f} → donuk {_vz_donuk:+.2f} m/s "
             f"(mandal anındaki değer); varsayılan kapalı")
 
+    # ── B40: terminalde dikeyi tutuş yasasında bırakma ──
+    # Terminal iki iş yapıyor: (a) freni kaldırıyor — GEREKLİ, (b) dikey yasayı
+    # "hız vektörünü LOS'a doğrult"a çeviriyor — kazancı v_los·tan() olduğu için
+    # 18 m/s'de raya dayanıyor ve araç (2.5 m/s²) izleyemiyor. Bu seçenek
+    # (a)'yı korur, (b)'yi geri alır.
+    class _DikTut(ib.Cfg):
+        TERM_DIKEY_TUTUS = True
+    _a = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, _DikTut, True)
+    _b = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, C, True)
+    _yat_a = math.hypot(_a[0], _a[1])
+    _yat_b = math.hypot(_b[0], _b[1])
+    kontrol("B40 terminalde dikey tutuş yasasında: hız TAM, dikey RAYA DAYANMAZ",
+            _yat_a >= _yat_b - 1e-6 and abs(_a[2]) < abs(_b[2]) - 0.5
+            and abs(_a[2]) <= C.VZ_MAX + 1e-6 and not ib.Cfg.TERM_DIKEY_TUTUS,
+            f"tutuş yasası: yatay {_yat_a:.1f} m/s, vz {_a[2]:+.2f} | "
+            f"eski terminal: yatay {_yat_b:.1f} m/s, vz {_b[2]:+.2f} (rayda)")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

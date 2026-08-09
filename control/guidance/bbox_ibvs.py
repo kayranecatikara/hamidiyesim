@@ -256,6 +256,23 @@ class Cfg:
     # küçük olan ofset 1-2 saniye boyunca küçük kalır.
     # 1 = terminalde dikey hız mandal anındaki değerde dondurulur.
     TERM_VZ_DONDUR = _env_f("AVCI_IBVS_TERM_VZDON", 0.0) >= 0.5
+
+    # ══ TERMİNALDE DİKEYİ TUTUŞ YASASINDA BIRAKMA (2026-08-09) ══
+    # Terminal iki şey birden yapıyor ve ikisi AYNI kefeye konmamalı:
+    #   (a) FRENİ KALDIRIYOR — tutuşun PI hız denetimi kutu büyüdükçe yavaşlar
+    #       (ölçüldü: 2.7 m'de yalnız 1.7 m/s komut). Bu olmadan araç son
+    #       metrede frene basar. Terminalin bu kısmı GEREKLİ.
+    #   (b) DİKEY YASAYI DEĞİŞTİRİYOR — nazik yükseliş eşitleyicisi yerine
+    #       "hız vektörünü LOS'a doğrult" geliyor. Bunun kazancı v_los·tan(),
+    #       yani 18 m/s'de devasa: komut karelerin %17-77'sinde raya dayanıyor
+    #       ve araç (2.5 m/s² sınırıyla) izleyemiyor. Bu kısım ZARARLI.
+    # Bu seçenek (b)'yi geri alır, (a)'yı korur: terminalde hız tam, dikey
+    # ise tutuş fazının eşitleyicisiyle sürülür.
+    # Fizik neden doğru: sabit bir YÜKSELİŞ AÇISI tutmak, menzil küçüldükçe
+    # doğrusal ofseti sıfıra götürür — yani eşitleyici zaten bir kesişim
+    # çözümüdür, üstelik kazancı hıza değil açı hatasına bağlı olduğu için
+    # raya dayanmaz.
+    TERM_DIKEY_TUTUS = _env_f("AVCI_IBVS_TERM_DIKEY_TUTUS", 0.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -466,6 +483,25 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     vy_ned = v_los * math.sin(yaw_cmd)
 
     eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
+    if terminal and cfg.TERM_DIKEY_TUTUS:
+        # Yatay: terminal (fren yok, tam hız). Dikey: tutuş eşitleyicisi.
+        elev_atalet = piksel_elev(cy, cfg) + iris_pitch
+        hata_elev = elev_atalet - math.radians(cfg.ELEV_HEDEF_DEG)
+        elev_I = clamp(elev_I + cfg.K_ELEV_I * hata_elev * dt,
+                       -cfg.ELEV_I_MAX, cfg.ELEV_I_MAX)
+        vz_nisan = -(cfg.K_VZ * cfg.V_NOM * hata_elev + elev_I)
+        vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
+                   -cfg.VZ_MAX, cfg.VZ_MAX)
+        yaw_cmd = normalize_angle(iris_yaw + eps_yaw)
+        vx_ned = v_los * math.cos(yaw_cmd)
+        vy_ned = v_los * math.sin(yaw_cmd)
+        eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)
+        tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
+                "elev_atalet": elev_atalet, "elev_hata": hata_elev,
+                "hata": hata, "v_los": v_los, "terminal": True,
+                "lead_az": 0.0, "lead_olcek": 0.0, "elev_I": elev_I}
+        return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani, elev_I, pn_yon
+
     if terminal and cfg.PN:
         # ══ PN — hız vektörünün YÖNÜ, LOS dönüşünün N katıyla döner ══
         # pn_yon = [azimut, yükseliş] (atalet, rad). İlk turda LOS'a kilitlenir.
