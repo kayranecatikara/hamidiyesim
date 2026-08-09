@@ -32,6 +32,9 @@ from control import carpisma_state
 from control import mav_common
 from control.guidance.adapter_copter import CopterAdapter
 from control.guidance.common import send_velocity
+# Yalnız yapılandırma DAMGASI için: GPS istasyon menzilinin TEK kaynağı.
+# (gps_guidance yalnız common + guidance_core'a bağlı, döngü oluşmuyor.)
+from control.guidance.gps_guidance import Cfg as _gps_cfg
 from control.guidance.guidance_core import (Cfg, LeadPursuitCore, govde_to_dunya,
                                             hedef_kadraj_hatasi)
 from vision import geometry as geo
@@ -78,6 +81,10 @@ class _ArasState:
         self.attitude = None      # (roll, pitch, yaw) rad
         self.mode = None          # HEARTBEAT custom_mode
         self.pos = None           # (x, y, z) NED, iris çerçevesi
+        # Aracın GERÇEK hızı (vx,vy,vz NED, m/s). LOCAL_POSITION_NED bunu zaten
+        # taşıyordu ama okunmuyordu; ivme limitleyicisini gerçek hızdan
+        # başlatmak için gerekli (bkz. run_visual_lead'deki tohumlama).
+        self.hiz = None
 
     def drenaj(self, conn):
         while True:
@@ -93,6 +100,13 @@ class _ArasState:
                 self.mode = msg.custom_mode
             elif t == "LOCAL_POSITION_NED":
                 self.pos = (msg.x, msg.y, msg.z)
+                # getattr: hız alanları eksik/kısmi bir mesaj güdüm döngüsünü
+                # DÜŞÜRMEMELİ — konum yine kullanılabilir, hız yoksa tohumlama
+                # atlanır ve eski davranış geçerli kalır.
+                vx = getattr(msg, "vx", None)
+                if vx is not None:
+                    self.hiz = (vx, getattr(msg, "vy", 0.0),
+                                getattr(msg, "vz", 0.0))
 
 
 def _menzil_hesapla(get_plane_truth, iris_pos):
@@ -360,7 +374,15 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         # GPS istasyon menzili: devir menzilini doğrudan belirliyor, karne
         # kıyaslarında en çok değiştirilen ayar. Damgada olmadığı için 08-05
         # analizinde istasyon geometrisinden geri hesaplamak gerekmişti.
-        f"GPS_RANGE={os.environ.get('AVCI_GPS_RANGE', '11.0')}",
+        #
+        # ⚠ 2026-08-09: burada varsayılan ELLE '11.0' yazılıydı. 08-08'de
+        # gps_guidance.Cfg.RANGE_SET 11 → 8 yapıldı, bu satır güncellenmedi;
+        # env set edilmediğinde araç 8 ile uçarken log 11 yazıyordu. Damganın
+        # görevi tam da bunu önlemek olduğu için hata sessiz ve zehirliydi:
+        # TODO §0c "o ölçümler RANGE_SET=11 ileydi, geçersiz" derken bu yalan
+        # damgaya dayanıyor. Artık DEĞERİN KENDİSİ kaynağından okunuyor —
+        # ikinci bir varsayılan tanımlanmıyor, dolayısıyla bir daha ayrışamaz.
+        f"GPS_RANGE={_gps_cfg.RANGE_SET}",
         f"IVME={cfg.IVME_TAVAN}/{cfg.IVME_TAVAN_DIKEY}",
         # Terminal yukarı yanlılığı — 08-08 teşhisinde baş şüpheli
         # (drone ÜSTTE biten 6 fazın 6'sı ıska). A/B kolları ayrılsın.
@@ -398,22 +420,43 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         dönüş (~350 °/s), irtifa 21.8 → 2.0 m. `DesYaw` aynı rampayı izliyordu,
         yani komut hiç kesilmemişti — güdüm yalnız CSV'yi kapatmıştı.
 
-        Sıfır hız + MEVCUT başlık gönderilir (hedef başlık değil: dönüşü
-        durdurmak istiyoruz, yeni bir dönüş başlatmak değil). Tek mesaj UDP'de
-        düşebileceği için 3 kez tekrarlanır."""
+        MEVCUT başlık gönderilir (hedef başlık değil: dönüşü durdurmak
+        istiyoruz, yeni bir dönüş başlatmak değil). Tek mesaj UDP'de
+        düşebileceği için 3 kez tekrarlanır.
+
+        ── ÖTELENME: 2026-08-09'da AYRIŞTIRILDI ──
+        Ölçülen kusur YAW kaçağıydı; sıfır ÖTELENME onun bedeliydi, amacı
+        değil. 'kayip' yolunda GPS fazı milisaniyeler içinde devralıyor, yani
+        aracı önce durdurmanın hiçbir faydası yok — zararı ölçüldü (08-09):
+            GPS fazı başlangıç hızı medyan 0.16 m/s   → araç durmuş
+            15 m/s'e HİÇ ulaşamayan GPS fazı 9/23
+            rampada geçen süre 47 s / 342 s = %14
+        Kullanıcının "gps kopup duruyo" dediği şey buydu.
+
+        Bu yüzden:
+          vuruldu / durduruldu → GÖREV BİTTİ, tam duruş (0,0,0) DOĞRU
+          kayip                → son ötelenme korunur, YALNIZ başlık dondurulur
+        Kill-switch cfg.BITIR_TAM_DUR=True her yolda eski davranışa döner."""
         yaw = None
         if aras.attitude is not None:
             yaw = aras.attitude[2]
         elif son_v_cmd is not None:
             yaw = son_v_cmd[3]
+        tam_dur = cfg.BITIR_TAM_DUR or sebep != "kayip"
+        if tam_dur or son_v_cmd is None:
+            vx, vy, vz = 0.0, 0.0, 0.0
+        else:
+            vx, vy, vz = son_v_cmd[0], son_v_cmd[1], son_v_cmd[2]
         try:
             for _ in range(3):
-                send_velocity(conn, 0.0, 0.0, 0.0, yaw or 0.0)
+                send_velocity(conn, vx, vy, vz, yaw or 0.0)
                 time.sleep(0.02)
         except Exception as e:                    # bağlantı koptuysa yut
-            print(f"[LEAD WARN] faz sonu sıfır komutu gönderilemedi: {e}")
-        print(f"[LEAD] faz bitti ({sebep}) — hız komutu sıfırlandı "
-              f"(yaw {math.degrees(yaw or 0.0):.0f}° tutuluyor)")
+            print(f"[LEAD WARN] faz sonu komutu gönderilemedi: {e}")
+        ne = "tam duruş" if (vx, vy, vz) == (0.0, 0.0, 0.0) else \
+             f"ötelenme korundu (|v|={math.hypot(vx, vy):.1f} m/s)"
+        print(f"[LEAD] faz bitti ({sebep}) — {ne}, "
+              f"yaw {math.degrees(yaw or 0.0):.0f}° donduruldu")
         return sebep
 
     def _terminal_giris_ok():
@@ -700,6 +743,14 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
                 if (menzil_onceki is not None
                         and menzil_onceki < cfg.TERMINAL_COALT_MENZIL):
                     coalt_latch = True
+                # İLK KARE: ivme limitleyicisinin hız referansını aracın
+                # GERÇEK hızına kur. res["dt"] yalnız fazın ilk karesinde
+                # None'dır; adaptör o ana kadar v_onceki=(0,0,0) sanıyor, oysa
+                # araç GPS fazından 18 m/s'e varan hızla geliyor.
+                if res["dt"] is None and cfg.ILK_KARE_LIMIT:
+                    if adapter.hiz_tohumla(aras.hiz):
+                        print("[LEAD] ivme referansı gerçek hızdan tohumlandı: "
+                              f"|v_yatay|={math.hypot(aras.hiz[0], aras.hiz[1]):.1f} m/s")
                 cmd = adapter.command(conn, res["u_govde"], res["yaw_hata"],
                                       aras.attitude, res["dt"], mevcut_yaw,
                                       kalite=res["kalite"], terminal=coalt_latch,

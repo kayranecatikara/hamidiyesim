@@ -48,6 +48,16 @@ def kontrol(ad, kosul, detay=""):
 # Ölçülen kutu en-boy oranı (08-06, n=1917 `ok` karesi): medyan 1.95
 _EN_BOY = 1.95
 
+# set_position_target_local_ned_send'in konumsal argümanlarında HIZ alanı.
+# common.send_velocity çağrısı (common.py:99-105):
+#   0 zaman · 1 sys · 2 comp · 3 frame · 4 typemask
+#   5,6,7  KONUM   → common SABİT 0.0 gönderiyor (typemask ignore ediyor)
+#   8,9,10 HIZ     → vx, vy, vz          ← ölçmek istediğimiz yer
+#   11,12,13 ivme · 14 yaw · 15 yaw_rate
+# ⚠ T62 uzun süre [5:8]'e bakıyordu; orası sabit sıfır olduğu için test hangi
+# hız gönderilirse gönderilsin geçiyordu (2026-08-09'da fark edildi).
+_HIZ_DILIMI = slice(8, 11)
+
 
 def make_det(R, cx=CX, cy=CY, conf=1.0, w_ovr=None):
     """Sentetik detection: kutu merkezi (cx,cy), genişliği w = fx·L_ETKIN/R."""
@@ -308,10 +318,15 @@ def main():
     class _FakeConn:
         target_system = 1; target_component = 1
         def __init__(s): s.mav = _FakeMav(); s._q = []
-        def durum_yaz(s, pos):
+        def durum_yaz(s, pos, hiz=None):
+            # hiz=None → LOCAL_POSITION_NED'de vx/vy/vz YOK. Gerçek MAVLink'te
+            # bu alanlar vardır; None hâli "telemetri henüz gelmedi" durumunu
+            # temsil eder ve ilk-kare tohumlamasının atlandığı yolu sınar.
+            lp = _Msg("LOCAL_POSITION_NED", x=pos[0], y=pos[1], z=pos[2])
+            if hiz is not None:
+                lp.vx, lp.vy, lp.vz = hiz
             s._q = [_Msg("ATTITUDE", roll=0.0, pitch=0.0, yaw=0.0),
-                    _Msg("HEARTBEAT", custom_mode=4),
-                    _Msg("LOCAL_POSITION_NED", x=pos[0], y=pos[1], z=pos[2])]
+                    _Msg("HEARTBEAT", custom_mode=4), lp]
         def recv_match(s, type=None, blocking=False):
             return s._q.pop(0) if s._q else None
 
@@ -1044,9 +1059,16 @@ def main():
             "gecildi" not in _durG and len(_satG) == len(menzG),
             f"{len(_satG)}/{len(menzG)} kare işlendi, durumlar={sorted(_durG)}")
 
-    # ── T62: FAZ SONU KOMUT SIFIRLAMA — son mesaj (0,0,0) olmalı ──
-    # _FakeMav gönderilen tüm SET_POSITION_TARGET paketlerini biriktiriyor;
-    # sözleşme: son üç paket sıfır hız (UDP kaybına karşı 3 kez).
+    # ── T62: FAZ SONU — araç KOMUTSUZ bırakılmaz, YAW dondurulur ──
+    # Ölçülmüş kusur (log 00000108): faz bitince güdüm yalnız CSV'yi kapatıyor,
+    # son yaw komutu araçta yaşamaya devam ediyordu → kesintisiz 14.57 TUR.
+    # MAVLink hız komutu KALICIDIR; "göndermeyi bırakmak" DUR demek değildir.
+    # Sözleşme: faz sonunda 3 paket (UDP kaybına karşı) gönderilir ve yaw
+    # MEVCUT başlığa dondurulur (hedef başlığa değil — dönüşü durdurmak
+    # istiyoruz, yenisini başlatmak değil).
+    # ⚠ ÖTELENMEYİ bu test ARTIK SINAMAZ: 08-09'da ayrıştırıldı, 'kayip'
+    # yolunda ötelenme korunuyor (T67), 'vuruldu'/kill-switch yolunda
+    # sıfırlanıyor (T68).
     connZ = _FakeConn()
     durumZ = {"i": 0}
     menzZ = [10.0, 8.0, 6.0, 4.0, 3.0, 4.0, 5.0, 6.0]
@@ -1062,14 +1084,22 @@ def main():
 
     vlmod.run_visual_lead(connZ, wpZ, lambda: {"x": 0.0, "y": 0.0, "z": 0.0},
                           threading.Event(), cfg=cfgF, kayip_kare_esik=20)
-    # send_velocity paketinin hız alanları: (..., vx, vy, vz, ...) — konum
-    # sözleşmesini bilmek yerine "son paketlerde sıfırdan farklı hız yok"
-    # ölçütü kullanılır (paket düzeni değişse de test anlamlı kalır).
+    # ⚠ 2026-08-09: bu test hız alanı diye [5:8]'e bakıyordu — orası
+    # set_position_target'ın KONUM alanı ve common.send_velocity onu SABİT
+    # 0.0 gönderiyor. Yani test bir sabitin sıfır olduğunu doğruluyordu ve
+    # ne gönderilirse gönderilsin GEÇİYORDU. Yukarıdaki 14.57 turluk kusuru
+    # koruması gereken test fiilen boştu. Doğru düzen: _HIZ_DILIMI (8:11),
+    # yaw indeksi 14.
     _sonlar = connZ.mav.gonderilen[-3:]
-    _sifir = all(all(abs(float(x)) < 1e-9 for x in pkt[5:8]) for pkt in _sonlar)
-    kontrol("T62 faz sonunda hız komutu SIFIRLANIR (komut araçta yaşamasın)",
-            len(connZ.mav.gonderilen) >= 3 and _sifir,
-            f"{len(connZ.mav.gonderilen)} paket, son 3'ünün hızı sıfır={_sifir}")
+    _YAW_IX = 14
+    _uc_paket = len(connZ.mav.gonderilen) >= 3
+    _ayni = all(p[_HIZ_DILIMI] == _sonlar[-1][_HIZ_DILIMI] for p in _sonlar)
+    # Sahte araçta mevcut başlık 0.0 (durum_yaz ATTITUDE yaw=0.0)
+    _yaw_donduruldu = abs(float(_sonlar[-1][_YAW_IX])) < 1e-9
+    kontrol("T62 faz sonunda araç komutsuz bırakılmaz + yaw dondurulur",
+            _uc_paket and _ayni and _yaw_donduruldu,
+            f"{len(connZ.mav.gonderilen)} paket, son 3 aynı={_ayni}, "
+            f"yaw={math.degrees(float(_sonlar[-1][_YAW_IX])):.1f}° (mevcut başlık)")
 
     # ── T63: nişan GERİYİ gösterince (hedef arkada) fly-past ──
     # u_govde[0] < 0 → |yaw_hata| > 90°. Kutu kadrajın çok kenarında ve
@@ -1124,6 +1154,89 @@ def main():
     kontrol("T66 azimut tekilliğinde lead yine söner (koruma kaldırılmadı)",
             abs(_lead_deg("azimut", 72.0, 1.00, az_kalite=0.0)) < 0.01,
             f"azimut_kalite=0 → lead={_lead_deg('azimut', 72.0, 1.00, az_kalite=0.0):.3f}°")
+
+    # ── T67-T70: FAZ GEÇİŞİ TRANSİENTLERİ (2026-08-09) ──
+    # 08-09 uçuşunda ölçülen: her görsel faz 12-25 m/s BASAMAK komutuyla
+    # başlıyor (ilk karede dt=None → ivme limiti tümüyle atlanıyordu), ve her
+    # faz sonunda araç TAM DURDURULUYOR (GPS fazı başlangıç hızı medyan
+    # 0.16 m/s, 23 fazın 9'u 15 m/s'e hiç ulaşamadı, %14 rampada geçti).
+    # Kullanıcının "gps kopup duruyo" dediği şey buydu.
+    def _gecis_kosusu(cfg, hiz=None):
+        """Fly-past ile 'kayip' dönen kısa bir faz koşar.
+        Dönüş: (sonuc, ilk_paket_hizi, son_3_paketin_hizi)"""
+        cn = _FakeConn()
+        d = {"i": 0}
+        menz = [10.0, 8.0, 6.0, 4.0, 3.0, 4.0, 5.0, 6.0]
+
+        def wp(son_seq, timeout=0.5):
+            i = d["i"]
+            if i >= len(menz):
+                return None
+            d["i"] += 1
+            cn.durum_yaz((menz[i], 0.0, 0.0), hiz)
+            return {"seq": i + 1, "det": make_det(8), "stamp": (i + 1) / 30.0,
+                    "wall_recv": _t.time()}
+
+        s = vlmod.run_visual_lead(cn, wp, lambda: {"x": 0.0, "y": 0.0, "z": 0.0},
+                                  threading.Event(), cfg=cfg, kayip_kare_esik=20)
+        pk = cn.mav.gonderilen
+        hz = lambda p: tuple(round(float(x), 2) for x in p[_HIZ_DILIMI])
+        return s, hz(pk[0]), [hz(p) for p in pk[-3:]]
+
+    def _gcfg(**kw):
+        c = cfg_copy()
+        c.TERMINAL_MENZIL = 0.0      # kör dalış yoluna girme
+        c.VURUS_MENZIL = 0.1
+        c.FLYPAST_MENZIL = 8.0
+        c.FLYPAST_BUYUME_M = 1.5
+        for k, v in kw.items():
+            setattr(c, k, v)
+        return c
+
+    # T67: 'kayip' yolunda ÖTELENME korunur — GPS fazı devralacak, araç
+    # durdurulmamalı. (Yaw yine dondurulur; T62'nin koruduğu kusur buydu.)
+    _s67, _ilk67, _son67 = _gecis_kosusu(_gcfg(), hiz=(18.0, 0.0, 0.0))
+    _oteleniyor = any(abs(v) > 1e-6 for v in _son67[-1][:2])
+    kontrol("T67 'kayip' yolunda ötelenme KORUNUR (GPS durmuş araç devralmasın)",
+            _s67 == "kayip" and _oteleniyor and all(p == _son67[-1] for p in _son67),
+            f"sonuç={_s67}  son paket={_son67[-1]}  (3 paket de aynı)")
+
+    # T68: kill-switch eski davranışı BİREBİR geri getirir (tam duruş).
+    _s68, _ilk68, _son68 = _gecis_kosusu(_gcfg(BITIR_TAM_DUR=True), hiz=(18.0, 0.0, 0.0))
+    kontrol("T68 AVCI_IBVS_BITIR_TAM_DUR=on tam duruşu geri getirir",
+            _s68 == "kayip" and all(p == (0.0, 0.0, 0.0) for p in _son68),
+            f"son 3 paket={_son68}")
+
+    # T69: İLK KARE — araç 18 m/s ile gelirken komut BASAMAK olmamalı.
+    # Eski davranışta ilk paket doğrudan v_hedef'ti (~20 m/s, referans 0'dan).
+    # Yeni davranışta gerçek hızdan IVME_TAVAN×dt kadar sapabilir.
+    _c69 = _gcfg()
+    _pay69 = _c69.IVME_TAVAN * _c69.DT_TAVAN_S       # bir karede izinli değişim
+    _s69, _ilk69, _ = _gecis_kosusu(_c69, hiz=(18.0, 0.0, 0.0))
+    _sapma69 = math.hypot(_ilk69[0] - 18.0, _ilk69[1])
+    kontrol("T69 ilk kare gerçek hızdan tohumlanır (basamak yok)",
+            _sapma69 <= _pay69 + 1e-6,
+            f"ilk paket={_ilk69}, araç 18.0 m/s → sapma {_sapma69:.2f} "
+            f"m/s ≤ pay {_pay69:.2f}")
+
+    # T70: telemetri hızı YOKKEN ilk kare limitlenmez.
+    # Yanlış referanstan ((0,0,0)) limitlemek 20 m/s yerine 0.4 m/s komut
+    # ederdi — basamaktan DAHA kötü, sahte fren. Tohumlanamayınca eski
+    # (limitsiz) davranış korunmalı.
+    _s70, _ilk70, _ = _gecis_kosusu(_gcfg(), hiz=None)
+    kontrol("T70 telemetri hızı yoksa ilk kare limitlenmez (sahte fren yok)",
+            math.hypot(_ilk70[0], _ilk70[1]) > 5.0,
+            f"ilk paket={_ilk70} (tohumlanamadı → limitsiz, sahte fren yok)")
+
+    # T71: yapılandırma damgasındaki GPS_RANGE'in İKİNCİ bir varsayılanı
+    # OLMAMALI. 08-08'de gps_guidance varsayılanı 11→8 oldu, damgada elle
+    # yazılmış '11.0' kaldı; araç 8 ile uçarken log 11 yazdı ve bu yalan
+    # damga TODO §0c'deki geçerlilik kararının dayanağı oldu.
+    import control.guidance.gps_guidance as _gg71
+    _kaynak = open(vlmod.__file__, encoding="utf-8").read()
+    kontrol("T71 damgadaki GPS_RANGE tek kaynaktan okunur (elle varsayılan yok)",
+            "AVCI_GPS_RANGE'" not in _kaynak and '_gps_cfg.RANGE_SET' in _kaynak,
+            f"gps_guidance.Cfg.RANGE_SET={_gg71.Cfg.RANGE_SET}")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

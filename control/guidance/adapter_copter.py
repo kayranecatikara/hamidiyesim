@@ -59,6 +59,26 @@ class CopterAdapter:
         self.az_onceki = None         # önceki azimut (kare-arası Δaz için)
         self.az_rate_f = 0.0          # EMA'lı azimut oranı (rad/s)
         self.yatay_lead = 0.0         # son uygulanan yatay lead (rad, log)
+        # v_onceki aracın gerçek hızıyla tohumlandı mı (bkz. hiz_tohumla).
+        # İlk karede limitleme YALNIZ tohumlandıysa açılır: yanlış referanstan
+        # (0,0,0) limitlemek basamak komutundan DAHA kötü — sahte fren olur.
+        self._tohumlandi = False
+
+    def hiz_tohumla(self, v):
+        """İvme limitleyicisinin referansını aracın GERÇEK hızına kur.
+
+        Adaptör her görsel fazda YENİDEN kurulur ve `v_onceki` (0,0,0)'dan
+        başlar. Ama araç durmuyor: GPS fazından 18 m/s'e varan hızla geliyor.
+        Bu yanlış başlangıç durumu iki ayrı hataya yol açıyordu —
+        limitleme atlanınca basamak komutu, limitleme açılınca sahte fren.
+        Faz başında bir kez çağrılır; `None` gelirse (telemetri henüz yok)
+        dokunmaz ve False döner — o durumda ilk kare limitlenmez.
+        """
+        if v is None:
+            return False
+        self.v_onceki = (float(v[0]), float(v[1]), float(v[2]))
+        self._tohumlandi = True
+        return True
 
     def _yatay_pn(self, u_dunya, dt, kalite, azimut_kalite=1.0):
         """AZİMUT-ORANI LEAD — pose şekil-lead'inin yerine (2026-08-06).
@@ -304,6 +324,29 @@ class CopterAdapter:
         # 160249 uçuşunda tek karede 74° yaw adımı. Ham dt _dikey_pn'de aynen
         # kaldı: orada dt bir türev paydası, harcanacak bir pay değil.
         dt_lim = min(dt, cfg.DT_TAVAN_S) if (dt is not None and dt > 0) else None
+
+        # ── İLK KARE (dt=None) — 2026-08-09 ────────────────────────────────
+        # Eskiden dt None ise limitleme TÜMÜYLE atlanıyordu ve komut doğrudan
+        # v_hedef oluyordu. dt her GÖRSEL FAZIN ilk karesinde None'dır, yani
+        # bu "nadir kenar durum" değil, her devirde bir kez yaşanan kuraldı.
+        # Ölçüldü (08-09 uçuşu, altı fazın ilk karesi):
+        #     25.00 · 12.13 · 25.00 · 20.16 · 23.87 · 21.72 m/s   (hepsi dt='')
+        # Fazlar 0.3-5 s sürdüğü için bu basamak fazın kendisiyle aynı
+        # mertebedeydi.
+        #
+        # ⚠ Limitlemeyi açmak TEK BAŞINA yetmez: v_onceki (0,0,0)'dan başlıyor
+        # ama araç DURMUYOR — GPS fazından 18 m/s ile geliyor. Sıfırdan
+        # limitlemek bu kez yapay bir yavaşlama üretirdi. Çözüm iki parçalı:
+        #   (a) v_onceki aracın GERÇEK hızıyla tohumlanır (hiz_tohumla)
+        #   (b) burada nominal dt ile limitleyici çalıştırılır
+        # Böylece ne basamak kalır ne de sahte fren.
+        #
+        # ⚠ TOHUMLAMA ŞARTI: telemetri ilk karede henüz gelmemişse v_onceki
+        # hâlâ (0,0,0)'dır. O referanstan limitlemek 20 m/s yerine 0.4 m/s
+        # komut ederdi — basamaktan DAHA kötü, sahte fren. Tohumlanmadıysa
+        # eski (limitsiz) davranış korunur.
+        if dt_lim is None and cfg.ILK_KARE_LIMIT and self._tohumlandi:
+            dt_lim = cfg.DT_TAVAN_S
 
         if dt_lim is None:
             v_cmd = tuple(v_hedef)

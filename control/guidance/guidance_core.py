@@ -198,6 +198,28 @@ class Cfg:
     # (oradaki kullanım türev/zaman sabiti, "biriken hak" değil).
     DT_TAVAN_S = _env_f("AVCI_IBVS_DT_TAVAN", 0.1)   # s (~3 kare @30 Hz)
 
+    # ── İLK KARE İVME LİMİTİ (2026-08-09) ──
+    # Görsel fazın ilk karesinde dt None'dır (kıyaslanacak önceki kare yok) ve
+    # eskiden limitleme tümüyle atlanıyordu. Bu her devirde bir kez yaşanıyor:
+    # 08-09 uçuşunda altı fazın ilk karesi 12-25 m/s basamak komutuyla başladı.
+    # Açıkken nominal dt (DT_TAVAN_S) kullanılır ve adaptörün hız referansı
+    # aracın gerçek hızıyla tohumlanır (CopterAdapter.hiz_tohumla).
+    # Kill-switch: AVCI_IBVS_ILK_KARE_LIMIT=off → eski (limitsiz) davranış.
+    ILK_KARE_LIMIT = _env_b("AVCI_IBVS_ILK_KARE_LIMIT", True)
+
+    # ── FAZ SONU TAM DURUŞ (2026-08-09) ──
+    # _bitir() faz biterken 3 kez send_velocity(0,0,0,yaw) gönderiyordu.
+    # Ölçülmüş gerekçesi bir YAW kaçağıydı (log 00000108: 14.57 tur) ama komut
+    # ötelenmeyi de sıfırlıyor. 08-09 uçuşunda sonucu:
+    #     GPS fazı başlangıç hızı medyan 0.16 m/s  (araç durmuş)
+    #     15 m/s'e HİÇ ulaşamayan GPS fazı 9/23
+    #     rampada geçen süre 47 s / 342 s = %14
+    # Kullanıcının "gps kopup duruyo" dediği şey bu. Görev gerçekten bittiğinde
+    # (vuruldu/durduruldu) tam duruş DOĞRU; 'kayip' yolunda ise GPS fazı hemen
+    # devralıyor, aracı önce durdurmanın bir faydası yok.
+    # Kill-switch: AVCI_IBVS_BITIR_TAM_DUR=on → her yolda tam duruş (eski).
+    BITIR_TAM_DUR = _env_b("AVCI_IBVS_BITIR_TAM_DUR", False)
+
     # ── AZİMUT TEKİLLİĞİ KAPISI (2026-07-31) ──
     # yaw_hata = atan2(u_govde[1], u_govde[0]); hedef kadraj tepesinden çıkarken
     # nişan vektörü dikeye yaklaşır, yatay bileşen (=cos(yükseliş)) sıfıra iner ve
