@@ -572,6 +572,19 @@ def main():
             "yasasında kalıyordu (ölçülen terminal süreleri 9.6/17.3/37.3 s); "
             "varsayılan hâlâ kapalı")
 
+    # ── B39: terminalde dikeyi dondurma ──
+    class _Don(ib.Cfg):
+        TERM_VZ_DONDUR = True
+    _vz_serbest = ib.komut(CX, 150, 30, 30, 0.0, 10.0, 0.05, C, True,
+                           (0.0, 0.0), 0.0, 0.0, 0.0, None)[2]
+    _vz_donuk = ib.komut(CX, 150, 30, 30, 0.0, 10.0, 0.05, _Don, True,
+                         (0.0, 0.0), 0.0, 0.0, 0.0, None, -0.7)[2]
+    kontrol("B39 terminalde dikey hız mandal anındaki değerde dondurulabilir",
+            abs(_vz_donuk - (-0.7)) < 1e-9 and abs(_vz_serbest + 0.7) > 0.3
+            and not ib.Cfg.TERM_VZ_DONDUR,
+            f"serbest {_vz_serbest:+.2f} → donuk {_vz_donuk:+.2f} m/s "
+            f"(mandal anındaki değer); varsayılan kapalı")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

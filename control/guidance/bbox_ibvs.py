@@ -241,6 +241,17 @@ class Cfg:
     # döner, irtifayı yeniden eşitler, sonra yeniden mandallar.
     # 0 = kapalı (eski davranış). 0.6 → 15 px ≈ 10.7 m'de bırakır.
     TERM_BIRAK = _env_f("AVCI_IBVS_TERM_BIRAK", 0.0)
+
+    # ══ TERMİNALDE DİKEYİ DONDURMA (2026-08-09) ══
+    # Aracın dikey tepkisi ~1.5-2 s gecikmeli; terminal ise ~1-2 s sürüyor.
+    # Yani terminal SÜRESİNCE dikey döngü yakınsayamaz — matematiksel olarak
+    # mümkün değil. Her düzeltme denemesi, ancak hücum bittikten sonra etki
+    # eden bir komut üretir; bu da savrulmadan başka bir şey değildir.
+    # Mandal anında irtifa zaten kapıdan geçmiş (hata ≤ eşik) ve eşitleyici
+    # yakınsamış durumda. En iyi hamle: O ANDAKİ dikey hızı KORU. Böylece
+    # küçük olan ofset 1-2 saniye boyunca küçük kalır.
+    # 1 = terminalde dikey hız mandal anındaki değerde dondurulur.
+    TERM_VZ_DONDUR = _env_f("AVCI_IBVS_TERM_VZDON", 0.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -407,7 +418,7 @@ def piksel_elev(cy, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0, elev_I=0.0,
-          pn_yon=None):
+          pn_yon=None, vz_dondurulmus=None):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -479,6 +490,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         vy_ned = v_los * math.sin(v_yon)
         vz = clamp(-v_los * math.tan(nisan_elev),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+        if cfg.TERM_VZ_DONDUR and vz_dondurulmus is not None:
+            vz = vz_dondurulmus
         eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)
         elev_atalet_tani = los_el_simdi
         tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
@@ -518,6 +531,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+        if cfg.TERM_VZ_DONDUR and vz_dondurulmus is not None:
+            vz = vz_dondurulmus
     elif cfg.ELEV_ATALET:
         # TUTUŞ — İRTİFA EŞİTLEME (bkz. Cfg.ELEV_HEDEF_DEG).
         # Hedef artık sabit bir PİKSEL değil, ATALET yükselişi: gövde eğimi
@@ -621,6 +636,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     tani_onceki_elev_hata = (99.0 if cfg.KAPI_KATI else 0.0)
     elev_I = 0.0              # dikey integral (irtifa eşitleyici)
     pn_yon = None             # PN hız-vektörü yönü [azimut, yükseliş]
+    vz_mandal = None          # mandal anındaki dikey hız (dondurma için)
     irtifa_bekleme_yazildi = False
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
@@ -771,6 +787,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             if (terminal_mandal and cfg.TERM_BIRAK > 0
                     and _boy_simdi < cfg.TERM_BIRAK * cfg.TERMINAL_BOYUT):
                 terminal_mandal = False
+                vz_mandal = None
                 pn_yon = None            # yeniden mandallayınca LOS'a kilitlensin
                 irtifa_bekleme_yazildi = False
                 print(f"[IBVS] terminal BIRAKILDI (kutu {_boy_simdi:.0f}px < "
@@ -782,6 +799,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 if _boy >= cfg.TERMINAL_BOYUT:
                     if _eh <= cfg.TERMINAL_ELEV_ESIK:
                         terminal_mandal = True
+                        # Dondurma seçeneği için: hücuma girerken aracın
+                        # GERÇEK dikey hızı — eşitleyici yakınsamışken bu,
+                        # hedefin tırmanışına oturmuş hızdır.
+                        vz_mandal = float(iris.get("vz", 0.0) or 0.0)
                         print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {_boy:.0f}px ≥ "
                               f"{cfg.TERMINAL_BOYUT:.0f}, yükseliş hatası "
                               f"{_eh:.1f}° ≤ {cfg.TERMINAL_ELEV_ESIK:.0f}°) — "
@@ -794,7 +815,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             vx, vy, vz, yaw_hedef, hiz_I, tani, elev_I, pn_yon = komut(
                 cx, cy, bw, bh, iyaw, hiz_I, dt, cfg, terminal_mandal,
                 tuple(los_hiz), ipitch, float(iris.get("vz", 0.0) or 0.0),
-                elev_I, pn_yon)
+                elev_I, pn_yon, vz_mandal)
             tani_onceki_elev_hata = tani.get("elev_hata", 0.0)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
