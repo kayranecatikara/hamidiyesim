@@ -146,14 +146,25 @@
                         <div class="d-row"><span>DURUM:</span> <span id="chase-status" class="val warning">BEKLEMEDE</span></div>
                         <div class="d-row"><span>MESAFE:</span> <span id="chase-dist" class="val">-- m</span></div>
                         <!-- Güdüm fazı göstergesi: aktif faz yeşil yanar (supervisor.faz) -->
-                        <!-- Güdüm modu seçimi KALDIRILDI (2026-08-04): görsel faz
-                             devre dışı, görev yalnız GPS güdümü koşuyor. Gerekçe
-                             ve geri açma yolu: gcs_server.py _GORSEL_ACIK. -->
+                        <!-- Güdüm modu seçimi 2026-08-04'te kaldırılmıştı (görsel
+                             faz devre dışıydı). 2026-08-09'da GERİ KONDU: görsel
+                             faz artık çalışıyor ve 39 uçuşta doğrulandı, ama
+                             sunucunun varsayılanı hâlâ "gps" — seçim panelde
+                             olmayınca görev sessizce GPS'te kalıyordu.
+                             Butonlar yalnız AVCI_GORSEL=on ise etkin olur. -->
                         <div class="d-row"><span>GÜDÜM:</span>
                             <span class="faz-grup">
                                 <span id="faz-gps" class="faz-isik">● GPS</span>
+                                <span id="faz-gorsel" class="faz-isik">● GÖRSEL</span>
                             </span>
                         </div>
+                        <div class="d-row"><span>MOD:</span>
+                            <span class="faz-grup">
+                                <button id="btn-mod-gps" class="t-btn mod-btn">GPS</button>
+                                <button id="btn-mod-hybrid" class="t-btn mod-btn">HİBRİT</button>
+                            </span>
+                        </div>
+                        <div id="mod-not" class="d-row" style="opacity:.75"></div>
                     </div>
 
 

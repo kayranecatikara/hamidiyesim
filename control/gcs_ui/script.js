@@ -348,12 +348,17 @@ function updateMissionStatus() {
     fetch('/api/chase_status')
         .then(r => r.json())
         .then(d => {
-            // ── Güdüm fazı ışığı — görsel faz devre dışı, yalnız GPS var ──
+            // ── Güdüm fazı ışıkları (GPS / GÖRSEL) ──
+            const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
             const fazGps = document.getElementById('faz-gps');
-            if (fazGps) {
-                const faz = (d.active && d.supervisor) ? d.supervisor.faz : null;
-                fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
+            if (fazGps) fazGps.className = 'faz-isik' + (faz === 'GPS' ? ' aktif' : '');
+            const fazGor = document.getElementById('faz-gorsel');
+            if (fazGor) {
+                fazGor.className = 'faz-isik'
+                    + (faz && faz !== 'GPS' ? ' aktif' : '');
             }
+            // Seçili mod düğmesini vurgula (sunucu tek doğru kaynak)
+            if (d.mode) modBtnVurgula(d.mode);
 
             const lockEl = document.getElementById('tele-lock-status');
             const termEl = document.getElementById('tele-terminal-status');
@@ -1121,3 +1126,60 @@ window.onload = () => {
     setInterval(updatePnPTelemetry, 1000);
 
 };
+
+
+// ══ GÜDÜM MODU SEÇİMİ (2026-08-09 geri kondu) ══
+// 2026-08-04'te görsel faz devre dışı bırakılınca bu seçim panelden
+// kaldırılmıştı. Görsel faz geri geldi ve 39 uçuşta doğrulandı, ama SUNUCUNUN
+// VARSAYILANI hâlâ "gps" — seçim panelde olmayınca görev sessizce GPS'te
+// kalıyor ve görsel güdüm hiç denenmemiş oluyordu. Bu tam olarak öyle oldu.
+function modBtnVurgula(mod) {
+    const g = document.getElementById('btn-mod-gps');
+    const h = document.getElementById('btn-mod-hybrid');
+    if (g) g.className = 't-btn mod-btn' + (mod === 'gps' ? ' aktif' : '');
+    if (h) h.className = 't-btn mod-btn' + (mod === 'hybrid' ? ' aktif' : '');
+}
+
+function modSec(mod) {
+    fetch('/api/guidance_mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: mod}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        const not = document.getElementById('mod-not');
+        if (d.status === 'success') {
+            modBtnVurgula(d.mode);
+            if (not) not.textContent = '';
+        } else if (not) {
+            not.textContent = d.message || 'Mod değiştirilemedi';
+        }
+    })
+    .catch(() => {
+        const not = document.getElementById('mod-not');
+        if (not) not.textContent = 'Sunucuya ulaşılamadı';
+    });
+}
+
+// Başlangıçta sunucudan gerçek modu oku; görsel faz kapalıysa HİBRİT'i kilitle
+// ve nedenini yaz (sessizce çalışmayan bir buton en kötüsü).
+(function modKur() {
+    const g = document.getElementById('btn-mod-gps');
+    const h = document.getElementById('btn-mod-hybrid');
+    if (!g || !h) return;
+    g.addEventListener('click', () => modSec('gps'));
+    h.addEventListener('click', () => modSec('hybrid'));
+    fetch('/api/guidance_mode')
+        .then(r => r.json())
+        .then(d => {
+            modBtnVurgula(d.mode);
+            const not = document.getElementById('mod-not');
+            if (!d.gorsel_acik) {
+                h.disabled = true;
+                if (not) not.textContent =
+                    'Görsel faz kapalı — sunucuyu AVCI_GORSEL=on ile başlatın';
+            }
+        })
+        .catch(() => {});
+})();
