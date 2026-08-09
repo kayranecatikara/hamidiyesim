@@ -206,6 +206,12 @@ def main(argv):
                          if da.get(k) != db.get(k))
         print()
         if not farklar:
+            # ⚠ 2026-08-09: bu dalda `sorunlar_damga` HİÇ ATANMIYORDU ve
+            # birkaç satır aşağıdaki `if sorunlar_damga:` UnboundLocalError
+            # veriyordu — yani "iki kol aynı" durumu, aracın çökmesi demekti.
+            # Tam da en sık karşılaşılan hâl (damga sınanan değişkeni
+            # taşımıyorsa kollar hep "aynı" görünür).
+            sorunlar_damga = False
             print("yapılandırma damgası: iki kol AYNI "
                   "(sınanan değişken damgada değilse elle doğrula)")
         else:
