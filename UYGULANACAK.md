@@ -68,7 +68,17 @@ DOĞRULAMA (6 koşu daha, toplam 9): **8/9 VURUŞ**, dikey kaçırma medyanı
     AVCI_IBVS_TERM_DIKEY_TUTUS=1 AVCI_IBVS_VZMAX=2.5 AVCI_IBVS_KAPI_KATI=1
 
 ⚠ Hepsi hâlâ VARSAYILAN KAPALI — varsayılan yapmak kullanıcı kararı.
-Pay dağılımı (üç parçadan hangisi ne katıyor) testleri sürüyor.
+
+PAY DAĞILIMI (hangi parça ne katıyor) — SONUÇSUZ, üçü birlikte önerilir:
+
+    yalnız yasa ayrımı          1/3   dikey 0.21 m
+    yasa ayrımı + tavan 2.5     2/3   dikey 0.37 m
+    yasa ayrımı + katı kapı     1/3   dikey 0.40 m
+    ÜÇÜ BİRLİKTE                8/9   dikey 0.16 m
+
+İkililerin havuzu 4/9 vs tam takım 8/9 → p ≈ 0.13, AYIRT EDİLEMİYOR.
+Kontrol 0/3 vs tam takım 8/9 → p ≈ 0.018, ANLAMLI.
+Sadeleştirme istenirse her ikili için 9'ar koşu gerekir.
 
 **Elenen:** PN — 0/3 ve dikey sürüklenmeyi hiç değiştirmedi (yanlış katman).
 
