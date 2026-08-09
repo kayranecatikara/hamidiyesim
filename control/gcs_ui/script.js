@@ -427,6 +427,49 @@ function sendCommand(endpoint, logMsg) {
         .catch(err => addLog('ERR', `Bağlantı Hatası: ${err}`, 'crit'));
 }
 
+// === UÇUŞ KAYDI (⏺ VİDEO KAYDI AL) ===
+// Saniyede 1 kamera karesi + tam durum (faz, mesafe, GÜDÜM MODU, MANUEL
+// KUMANDA konumları) logs/kayit/ucus_<tarih>/ altına yazılır. Manuel uçuşta
+// "o an ne yapıyordun" bilgisi olmadan video yorumlanamıyor (2026-08-09).
+const btnKayit = document.getElementById('btn-kayit');
+let kayitAktif = false;
+
+async function kayitDurumTazele() {
+    try {
+        const d = await (await fetch('/api/kayit/durum')).json();
+        kayitAktif = !!d.aktif;
+        if (!btnKayit) return;
+        if (kayitAktif) {
+            btnKayit.classList.add('scn-active');
+            btnKayit.textContent = `⏹ KAYDI DURDUR (${d.kare} kare / ${Math.round(d.gecen_s)}s)`;
+        } else {
+            btnKayit.classList.remove('scn-active');
+            btnKayit.textContent = '⏺ VİDEO KAYDI AL';
+        }
+    } catch (e) {}
+}
+
+if (btnKayit) {
+    btnKayit.addEventListener('click', async () => {
+        const yol = kayitAktif ? '/api/kayit/dur' : '/api/kayit/basla';
+        try {
+            const d = await (await fetch(yol, { method: 'POST' })).json();
+            if (d.status === 'success') {
+                addLog('CMD', kayitAktif
+                    ? `⏹ Kayıt durdu — ${d.kare} kare → ${d.dizin}`
+                    : `⏺ Kayıt başladı → ${d.dizin}`, 'success');
+            } else {
+                addLog('ERR', 'Kayıt hatası: ' + d.message, 'crit');
+            }
+        } catch (e) {
+            addLog('ERR', 'Kayıt isteği başarısız: ' + e, 'crit');
+        }
+        kayitDurumTazele();
+    });
+    setInterval(kayitDurumTazele, 2000);
+    kayitDurumTazele();
+}
+
 // === UÇUŞ SENARYOLARI (kare / daire / agresif) ===
 // Her buton: takeoff + desen. Aktif senaryonun butonuna tekrar basmak durdurur.
 // Manuel mod butonu ise uçuşu klavye kontrolüne devralır.

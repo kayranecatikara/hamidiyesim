@@ -205,12 +205,26 @@ def takeoff(conn, climb_time=8.0):
 # ---------------------------------------------------------------------------
 
 def scenario_duz(conn):
-    """Süresiz düz uçuş — kare kenarıyla aynı trim (roll=0, pitch=0, gaz slider).
+    """Kalkış + BEKLEME DAİRESİ + süresiz düz uçuş.
 
     NEDEN VAR (2026-08-08): "düz uçuş" ölçümü manuel modla yapılınca elevator
     nötrde uçak yavaşça alçalıp güdümün 8 m irtifa tabanına dayandı ve koşu
     geçersiz oldu. Desen makinesi (FBWA + RC override) irtifayı kabaca
-    koruyor; düz referans ölçümü artık buradan alınır."""
+    koruyor; düz referans ölçümü artık buradan alınır.
+
+    ⚠ BAŞLANGIÇ DAİRESİ (2026-08-09, kullanıcı isteği): kalkıştan hemen sonra
+    düze geçince hedef, avcı drone daha kalkarken ufka doğru uzaklaşıyor ve
+    her testin ilk ~60 saniyesi sırf mesafe kapatmakla geçiyordu. Uçak artık
+    BEKLEME_TUR_S boyunca daire çizerek bölgede kalır; drone yaklaşınca düze
+    geçer. Ölçüm daha kısa sürer ve karşılaşma geometrisi de tekrarlanabilir
+    olur (her koşuda benzer menzilden başlanır).
+    Kapatmak için: AVCI_DUZ_BEKLEME=0
+    """
+    bekleme = float(os.environ.get("AVCI_DUZ_BEKLEME", 45.0))
+    if bekleme > 0 and not _abort:
+        print(f"[SCN] DÜZ — önce {bekleme:.0f} s bekleme dairesi "
+              f"(drone yaklaşsın), sonra düz uçuş")
+        _daire_sureli(conn, DAIRE_CAPLARI["circle"][0], bekleme)
     print("[SCN] DÜZ — süresiz düz uçuş (gaz: GCS slider)")
     while not _abort:
         hold(conn, 0.5)
@@ -259,6 +273,17 @@ DAIRE_CAPLARI = {
     # a_max/ω = 8/0.564 = 14.2 m/s, hedefin hızına eşit → sıfır pay).
     # Geri eklemek gerekirse: "circle_xs": (800, "çok dar (~32 m)")
 }
+
+
+def _daire_sureli(conn, roll_cmd, sure_s):
+    """Belirli süre daire çiz (bekleme turu). _daire ile aynı trim mantığı."""
+    import math as _m
+    import time as _t
+    yatis_deg = roll_cmd / 1000.0 * 45.0
+    pitch_cmd = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
+    t0 = _t.time()
+    while not _abort and (_t.time() - t0) < sure_s:
+        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
 
 
 def _daire(conn, roll_cmd, etiket):

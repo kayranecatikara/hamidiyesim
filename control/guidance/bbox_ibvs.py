@@ -200,7 +200,19 @@ class Cfg:
     # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
     V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
 
-    LEAD_SURE = _env_f("AVCI_IBVS_LEAD", 0.4)    # s; nişanın öne alınma süresi
+    # ⚠ LEAD MENZİLLE SÖNER (2026-08-09, kullanıcı gözlemi: "çarpacakken
+    # birden yukarı itki verip kaçırıyoruz").
+    # SORUN: lead = LOS_hızı × sabit süre. Ama LOS dönüş hızı menzil→0 iken
+    # PATLAR (1 m'de küçük bir göreli hareket bile devasa açısal hız üretir).
+    # Sabit süreyle çarpılınca nişan yukarı savruluyor, drone hedefin ÜSTÜNE
+    # çıkıyor, sonra dalmak zorunda kalıyor ve ıskalıyor.
+    # Ölçüldü (3 uçuşun son terminal kareleri): dikey hata +13° → +45°
+    # büyüyor, yatay hız 10 m/s tabanına yapışıyor, hedef 45° ALTTA kalıyor.
+    # ÇÖZÜM: lead, kalan süreyle (≈menzille) ölçeklenir — güdüm literatüründe
+    # lead daima t_go ile çarpılır. Menzil vekili kutu boyutu olduğu için
+    # ölçek = BOYUT_REF/boyut: uzakta 1.0, temas anında ~0.2.
+    LEAD_SURE = _env_f("AVCI_IBVS_LEAD", 0.4)    # s; uzaktaki lead süresi
+    LEAD_SONUM = _env_f("AVCI_IBVS_LEAD_SON", 1.0) >= 0.5  # 0 = eski (sabit) yol
     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
     VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
@@ -254,10 +266,16 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
     # YAW: yatay açı hatası → burun hedefe
     eps_yaw = math.atan((cx - cfg.CX_NISAN) / geo.FX)
+    # LEAD ÖLÇEĞİ: kalan süreyle (≈menzille) söner — bkz. Cfg.LEAD_SONUM.
+    # boyut ∝ 1/menzil olduğu için REF/boyut ≈ menzil/menzil_REF.
+    lead_olcek = 1.0
+    if cfg.LEAD_SONUM and boyut > 1e-6:
+        lead_olcek = clamp(cfg.BOYUT_REF / boyut, 0.0, 1.0)
+    lead_sure = cfg.LEAD_SURE * lead_olcek
     lead_az = 0.0
     if terminal:
         # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE)
-        lead_az = clamp(cfg.LEAD_SURE * los_hiz[0],
+        lead_az = clamp(lead_sure * los_hiz[0],
                         -math.radians(cfg.LEAD_MAX_DEG),
                         math.radians(cfg.LEAD_MAX_DEG))
     yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
@@ -279,7 +297,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
         # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
         elev_atalet = piksel_elev(cy, cfg) + iris_pitch
-        lead_el = clamp(cfg.LEAD_SURE * los_hiz[1],
+        lead_el = clamp(lead_sure * los_hiz[1],
                         -math.radians(cfg.LEAD_MAX_DEG),
                         math.radians(cfg.LEAD_MAX_DEG))
         nisan_elev = clamp(elev_atalet + lead_el,
@@ -308,7 +326,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
-            "lead_az": lead_az}
+            "lead_az": lead_az, "lead_olcek": lead_olcek}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
