@@ -62,13 +62,13 @@ DOZ-YANIT (mekanizma kanıtı, vuruş saymaktan bağımsız):
     yalnız yasa ayrımı       3.0     %14-19             1/3     0.21 m
     yasa ayrımı + tavan 2.5  2.5     %0, %0, %39        3/3     0.07 m
 
-Pencere ±0.13 m → İLK KEZ İÇERİDEYİZ. Kazanan env:
+DOĞRULAMA (6 koşu daha, toplam 9): **8/9 VURUŞ**, dikey kaçırma medyanı
+0.16 m. Tek ıska zaten en büyük dikey sapmalı koşuydu (0.33 m).
 
     AVCI_IBVS_TERM_DIKEY_TUTUS=1 AVCI_IBVS_VZMAX=2.5 AVCI_IBVS_KAPI_KATI=1
 
-⚠ 3/3 tek başına yetmez (daha önce 5/5 → tekrarda 2/5 olmuştu). Dayanak
-vuruş sayısı değil, ON İKİ KAT düzelen sürekli ölçüt + doz-yanıt.
-6 koşuluk doğrulama ve pay dağılımı testleri sürüyor.
+⚠ Hepsi hâlâ VARSAYILAN KAPALI — varsayılan yapmak kullanıcı kararı.
+Pay dağılımı (üç parçadan hangisi ne katıyor) testleri sürüyor.
 
 **Elenen:** PN — 0/3 ve dikey sürüklenmeyi hiç değiştirmedi (yanlış katman).
 
