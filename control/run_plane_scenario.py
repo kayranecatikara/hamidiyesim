@@ -220,7 +220,9 @@ def scenario_duz(conn):
     olur (her koşuda benzer menzilden başlanır).
     Kapatmak için: AVCI_DUZ_BEKLEME=0
     """
-    bekleme = float(os.environ.get("AVCI_DUZ_BEKLEME", 45.0))
+    # 45 → 15 s (2026-08-09, kullanıcı kararı): bölgede kalmak için 15 s yeter,
+    # fazlası testi uzatıyordu.
+    bekleme = float(os.environ.get("AVCI_DUZ_BEKLEME", 15.0))
     if bekleme > 0 and not _abort:
         print(f"[SCN] DÜZ — önce {bekleme:.0f} s bekleme dairesi "
               f"(drone yaklaşsın), sonra düz uçuş")
