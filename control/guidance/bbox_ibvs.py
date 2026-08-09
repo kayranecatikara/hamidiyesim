@@ -335,7 +335,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "elev_atalet_deg", "elev_I", "los_hiz_az", "los_hiz_el",
-    "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+    "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac", "gecikme_ms",
 ]
 
 
@@ -593,6 +593,13 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     return "kayip"
                 continue
             son_seq = kayit["seq"]
+            # ── TESPİT GECİKMESİ (yalnız ÖLÇÜM, davranış değişmez) ──
+            # wall_recv = ham karenin GELDİĞİ an; buraya varana dek YOLO
+            # çıkarımı + kuyruk + döngü beklemesi eklendi. Kapanma 5-18 m/s
+            # olduğu için 100 ms bile 1-2 m bayatlık demek; dikey döngüdeki
+            # faz gecikmesinin kaynağı da bu olabilir. Önce ÖLÇ.
+            _wr = kayit.get("wall_recv")
+            gecikme_ms = round((time.time() - _wr) * 1000.0, 1) if _wr else None
 
             if _vuruldu():
                 print("[IBVS] ✓✓ VURULDU (Talon çarpma sensörü)")
@@ -624,6 +631,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KURTARMA",
                                 "kayip_sayac": kayip_sayac,
+                                "gecikme_ms": gecikme_ms,
                                 "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                 f.flush()
                 continue
@@ -650,6 +658,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                     "durum": "TERM_KOR",
                                     "kayip_sayac": kayip_sayac,
+                                    "gecikme_ms": gecikme_ms,
                                     "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                     f.flush()
                     continue
@@ -665,6 +674,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     send_velocity(conn, vx_p, vy_p, vz_p, cmd_yaw or iyaw)
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KUTU_YOK", "kayip_sayac": kayip_sayac,
+                                "gecikme_ms": gecikme_ms,
                                 "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                 f.flush()
                 continue
@@ -750,7 +760,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
-                "kayip_sayac": 0,
+                "kayip_sayac": 0, "gecikme_ms": gecikme_ms,
             })
             f.flush()
 
