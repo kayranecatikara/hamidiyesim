@@ -60,18 +60,22 @@ def main():
             and v["vurus"] is False,
             f"{v['faz_sayisi']} faz, min(3.40, 1.20) = {v['en_yakin']:.2f} m")
 
-    # ── K4: "pose var mı" ölçütü satırın DOLU olması (kalite 0.0 da sayılır) ──
-    # Boş kalite = tespit yok. kalite="0.0" gerçek bir pose'dur (kanat güveni
-    # düşük → kalite söndürülmüş); pose oranı bunu pose sayar. Eşiğe çevrilirse
-    # bu test uyarır — eski karnelerle kıyas bozulur.
+    # ── K4: pose ORANI ARTIK YOK — metrik geri sızarsa uyar ──
+    # 2026-08-06'da pose modeli kaldırıldı (bkz. scripts/gcs.sh başlığı), ama
+    # bu test 'pose_orani_%' okumaya devam etti ve KeyError ile ÇÖKTÜ. Çöken
+    # dosya K5-K10'u hiç çalıştırmıyordu; üstelik testleri `python3 dosya.py |
+    # tail` ile koşarsanız çıkış kodu boruda kaybolduğu için sağlam görünür.
+    # (2026-08-09'da fark edildi.) Artık ölçüt tersine çevrildi: metriğin
+    # OLMADIĞI doğrulanıyor. Pose geri gelirse burası kırmızı yanar ve testi
+    # bilinçli olarak yeniden yazmak gerekir.
     karisik = [_vis_satir(0.0, 8.0, "ok", kalite="0.9"),
                _vis_satir(0.1, 8.0, "kanat_dusuk", kalite="0.0"),
                _vis_satir(0.2, 8.0, "tespit_yok", kalite=""),
                _vis_satir(0.3, 8.0, "tespit_yok", kalite="")]
     v = gk._vis_metrik([(VIS, karisik)])
-    kontrol("K4  pose oranı: dolu kalite sütunu = pose var (0.0 dahil)",
-            abs(v["pose_orani_%"] - 50.0) < 1e-9,
-            f"4 kareden 2'si dolu → %{v['pose_orani_%']:.1f}")
+    kontrol("K4  pose metriği kaldırılmış durumda (08-06 pose kaldırıldı)",
+            "pose_orani_%" not in v and v["faz_sayisi"] == 1,
+            f"anahtarlar: {sorted(v)[:6]}…")
 
     # ── K5: istasyonda oturma, İLK kez 15 m altına inildikten SONRA ölçülür ──
     # Uzun ilk yaklaşma (30, 20 m) yüzdeyi sulandırmamalı.
