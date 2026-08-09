@@ -90,6 +90,23 @@ class Cfg:
     K_YAW = _env_f("AVCI_IBVS_KYAW", 1.0)
     YAW_ESIK = math.radians(1.0)   # bu açının altında yaw komutu güncellenmez
 
+    # ── YAW HIZ SINIRI (2026-08-09, TAKLANIN KÖK NEDENİ) ──
+    # Yaw komutu her kare "iris_yaw + eps_yaw" olarak YENİDEN kuruluyordu;
+    # hız sınırı YOKTU. Hedefin yanından geçerken (terminal sonrası fly-past)
+    # kutu kadrajı hızla tarıyor ve komut çılgınlaşıyor. ÖLÇÜLDÜ (5 görsel faz):
+    #     medyan 12-38 °/s   p95 238-412 °/s   MAX 876 °/s
+    # Aracın yapabildiği ~120 °/s. 876 °/s isteyince yaw doyuyor, motorlar
+    # yaw torkuna gidiyor, roll/pitch yetkisi kalmıyor → TAKLA.
+    # Taklanın maliyeti ölçüldü: takla yaşamayan koşular 2/2 vurdu, takla
+    # yaşayanlar 1/3 — her kurtarma 13+ s sürüyor ve hedef kaçıyor.
+    #
+    # ÇÖZÜM: gps_guidance'ta zaten olan slew sınırı buraya da konur.
+    # ⚠ NORMAL TAKİBİ KISITLAMAZ: medyan 12-38 °/s, sınır 120 °/s — yalnız
+    # p95 üstü (fly-past) anlarda bağlar.
+    # ⚠ HIZ YÖNÜ ETKİLENMEZ: hız hedefin GERÇEK LOS'u boyunca gider; yalnız
+    # BURUN yavaş döner. Multirotor yan uçabilir, nişan bozulmaz.
+    YAW_RATE_MAX = math.radians(_env_f("AVCI_IBVS_YAWRATE", 120.0))  # rad/s
+
     # ── DİKEY ──
     # eps_elev = atan((cy − CY_NISAN)/FY); v_z = K_VZ · V_NOM · eps_elev.
     # cy büyük (hedef kadrajda AŞAĞIDA) → hedef boresight'ın altında → ALÇAL
@@ -471,11 +488,19 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 terminal_mandal = True
                 print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
                       f"≥ {cfg.TERMINAL_BOYUT:.0f}) — fren yok, tam taahhüt")
-            vx, vy, vz, yaw_cmd, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
-                                                     hiz_I, dt, cfg,
-                                                     terminal_mandal,
-                                                     tuple(los_hiz), ipitch)
-            cmd_yaw = yaw_cmd
+            vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
+                                                       hiz_I, dt, cfg,
+                                                       terminal_mandal,
+                                                       tuple(los_hiz), ipitch)
+            # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
+            # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
+            # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
+            if cmd_yaw is None:
+                cmd_yaw = iyaw
+            yaw_err = normalize_angle(yaw_hedef - cmd_yaw)
+            adim = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
+            cmd_yaw = normalize_angle(cmd_yaw + adim)
+            yaw_cmd = cmd_yaw
 
             # ivme sınırı (komut hızı sıçramasın)
             vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,

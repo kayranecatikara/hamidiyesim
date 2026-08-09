@@ -299,6 +299,46 @@ def main():
             f"LOS=0.5 rad/s → {math.degrees(t_ld['lead_az']):.1f}°  "
             f"tutuş → {math.degrees(t_tut2['lead_az']):.1f}°")
 
+    # ── B21: ⚠ YAW SLEW SINIRI — takla önleyici ──
+    # 2026-08-09: görsel fazda yaw komutu 876 °/s'ye çıkıyordu (araç ~120);
+    # yaw doyumu roll/pitch yetkisini yiyor → takla. Ölçülen medyan 12-38 °/s,
+    # yani sınır normal takibi KISITLAMAZ, yalnız fly-past'ta bağlar.
+    conn6 = _FakeConn()
+    st6 = {"seq": 0}
+    def wait_pose_savrulan(son_seq, timeout=0.5):
+        st6["seq"] += 1
+        # kutu kadrajı sağdan sola SÜPÜRÜYOR (fly-past): her karede ±uç
+        cxx = 600 if st6["seq"] % 2 else 40
+        return {"seq": st6["seq"],
+                "pose": {"bbox": (cxx - 15, 290, cxx + 15, 315), "conf": 0.9},
+                "stamp": None, "wall_recv": None, "lock": None}
+    stop6 = threading.Event()
+    th6 = threading.Thread(
+        target=ib.run_bbox_ibvs,
+        args=(conn6, get_iris, wait_pose_savrulan, stop6, ib.Cfg, 100,
+              (14.0, 0.0, 0.0)),
+        daemon=True)
+    th6.start(); time.sleep(0.7); stop6.set(); th6.join(2.0)
+    # log'dan yaw komutu değişim hızını ölç
+    import glob as _g2, os as _o2, csv as _c2
+    _y6 = max(_g2.glob(_o2.path.join(ib._LOG_DIR, "*.csv")), key=_o2.path.getmtime)
+    _r6 = [r for r in _c2.DictReader(open(_y6)) if r["durum"] in ("IBVS", "TERMINAL")]
+    _hiz6 = []
+    for a, b in zip(_r6, _r6[1:]):
+        try:
+            _dt = float(b["t"]) - float(a["t"])
+            _d = (float(b["yaw_cmd_deg"]) - float(a["yaw_cmd_deg"]) + 180) % 360 - 180
+            if 1e-3 < _dt < 0.5:
+                _hiz6.append(abs(_d / _dt))
+        except (ValueError, KeyError):
+            pass
+    _enb = max(_hiz6) if _hiz6 else 0.0
+    _sinir = math.degrees(C.YAW_RATE_MAX)
+    kontrol("B21 yaw komut hızı slew sınırında kalır (fly-past'ta takla yok)",
+            len(_hiz6) > 5 and _enb <= _sinir * 1.15,
+            f"savrulan kutuda en hızlı yaw komutu {_enb:.0f}°/s ≤ sınır "
+            f"{_sinir:.0f}°/s (sınırsız sürüm 876°/s üretmişti)")
+
     kontrol("B20 lead açısı tavanla sınırlı (gürültülü LOS savurmasın)",
             abs(ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
                          (50.0, 0.0), 0.0)[5]["lead_az"])
