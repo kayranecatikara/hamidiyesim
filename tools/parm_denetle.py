@@ -30,6 +30,12 @@ CIFTLER = [
      f"{_AP}/mav_5_1.parm"),
     ("PLANE (Talon)", f"{_KOK}/sim/ardupilot_params/avci_plane.parm",
      f"{_AP}/mav_2_1.parm"),
+    # A/B yaması (AVCI_PARM_EK ile logs/ab_yama.parm'a yazılır). Boşsa
+    # denetle() sessizce geçer. BURADA OLMASI ŞART: bir A/B kolunun asıl
+    # değişkeni burada yaşıyor; uygulanmadığını fark etmezsek "fark yok"
+    # sonucunu değişikliğin etkisizliğine yazarız — oysa hiç uygulanmamıştır.
+    ("A/B YAMASI (AVCI_PARM_EK)", f"{_KOK}/logs/ab_yama.parm",
+     f"{_AP}/mav_5_1.parm"),
 ]
 
 
