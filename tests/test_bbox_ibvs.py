@@ -504,6 +504,29 @@ def main():
             f"PN açık lead_olcek={_t_pn.get('lead_olcek')}, "
             f"kapalı={_t_esk.get('lead_olcek'):.2f}")
 
+    # ── B33: ALTTAN YAKLAŞMA EĞİLİMİ ──
+    # Kamera 25° yukarı baktığı için aşağı yalnız 30° görüyor; hedefin üstüne
+    # çıkınca kör kalıyoruz. Eğilim, nişanı LOS'un ALTINA alıp drone'u hedefin
+    # altında tutmalı — yani ALÇALMA yönünde (vz daha POZİTİF, NED down+).
+    class _Bias(ib.Cfg):
+        TERM_ELEV_BIAS = math.radians(5.0)
+    _pnA = _pnB = None
+    for _ in range(6):
+        _a = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.0, _pnA)
+        _b = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _Bias, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.0, _pnB)
+        _pnA, _pnB = _a[7], _b[7]
+    kontrol("B33 alttan yaklaşma eğilimi drone'u hedefin ALTINDA tutar",
+            _b[2] > _a[2] + 0.3,
+            f"eğilimsiz vz {_a[2]:+.2f} → 5° eğilimle vz {_b[2]:+.2f} m/s "
+            f"(pozitif = alçal = hedefin altında kal, kadrajda yukarıda tut)")
+
+    # B34: eğilim VARSAYILAN olarak KAPALI (davranış değişmedi)
+    kontrol("B34 alttan yaklaşma eğilimi varsayılan KAPALI",
+            abs(ib.Cfg.TERM_ELEV_BIAS) < 1e-9,
+            "AVCI_IBVS_TERM_BIAS verilmedikçe eski davranış aynen sürer")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

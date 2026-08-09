@@ -189,6 +189,21 @@ class Cfg:
     #       yarışma kuralının can damarı olduğu için varsayılan bu)
     #   0 = burun hız vektöründe (eski davranış; hedef kadrajın kenarına kayar)
     PN_YAW_LOS = _env_f("AVCI_IBVS_PN_YAWLOS", 1.0) >= 0.5
+
+    # ══ ALTTAN YAKLAŞMA EĞİLİMİ (2026-08-09) ══
+    # ÖLÇÜM (3 kontrol uçuşu, üçünde de aynı): terminalde hedef kadrajın
+    # ALTINDAN çıkıyor (cy 316 → 461, kadraj yüksekliği 480) ve dedektör onu
+    # kaybediyor; ardından 2 s kör hücum, sonra hedef 58° yandan bulunuyor.
+    # GEOMETRİ: kamera gövdeye 25° YUKARI bakıyor. Dikey görüş sınırları:
+    #     yukarı  25° + atan(240/166.6) = +80°
+    #     aşağı   25° − atan(240/166.6) = −30°
+    # Yani hedefin ÜSTÜNE çıktığımız an kör kalıyoruz; altında kalırsak 80°
+    # payımız var. Bu eğilim, nişanı LOS'un biraz ALTINA alarak drone'u
+    # hedefin altında tutar — hem görsel temas korunur (yarışma kuralının can
+    # damarı) hem de sistematik "üstünden geçme" hatası ters yöne çekilir.
+    # Maliyeti küçük: 2-6 m menzilde 5° = 0.17-0.52 m. Hedef gövdesi + drone
+    # yarıçapı bunu yutar.  0 = kapalı (varsayılan, davranış değişmez).
+    TERM_ELEV_BIAS = math.radians(_env_f("AVCI_IBVS_TERM_BIAS", 0.0))
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -418,7 +433,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
         v_yon = normalize_angle(pn_yon[0])          # HIZ vektörünün yönü
         yaw_cmd = los_az_simdi if cfg.PN_YAW_LOS else v_yon   # BURNUN yönü
-        nisan_elev = pn_yon[1]
+        nisan_elev = pn_yon[1] - cfg.TERM_ELEV_BIAS
         # dikey bütçe: vektör bu açıyı gösteremiyorsa yatayı kıs
         t_ = abs(math.tan(nisan_elev))
         if t_ > 1e-6 and v_los * t_ > cfg.VZ_MAX_TERM:
@@ -443,7 +458,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         lead_el = clamp(lead_sure * los_hiz[1],
                         -math.radians(cfg.LEAD_MAX_DEG),
                         math.radians(cfg.LEAD_MAX_DEG))
-        nisan_elev = clamp(elev_atalet + lead_el,
+        nisan_elev = clamp(elev_atalet + lead_el - cfg.TERM_ELEV_BIAS,
                            -math.radians(60.0), math.radians(60.0))
 
         # ── DİKEY BÜTÇE KISITI (2026-08-09, kullanıcı gözlemi: "dikeyde çok

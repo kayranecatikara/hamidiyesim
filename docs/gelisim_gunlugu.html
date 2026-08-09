@@ -933,6 +933,67 @@ kutu kayması:   118 px → <span class="kismi">64 px</span>   (ama en iyi yapı
     <div class="satir"><span class="etiket">Karar</span>
       <p>Kısmen yardım etti, sistemde duruyor. Ama tek başına yeterli değil.</p></div>
   </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Kaçırmanın kök nedeni bulundu: dikey döngü aracın yapabildiğinden hızlı komut veriyor</h3>
+      <span class="damga d-kabul">Teşhis</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Nasıl bulundu</span>
+      <p>Kontrol yapılandırmasıyla 3 uçuş yapıldı, üçü de ıska. Ama bu kez
+      vuruş/ıska saymak yerine <b>son 5 metrenin kare kare kaydına</b> bakıldı.
+      Üç uçuşta da AYNI şey görüldü — yani şans değil, mekanizma.</p></div>
+    <div class="satir"><span class="etiket">Görülen</span>
+      <p class="olcum">dikey fark (drone − hedef), en yakın anın çevresi:
+  −1.1 m  →  <span class="kotu">+1.6 m</span>  →  −0.6 m  →  <span class="kotu">−5.8 m</span>
+drone hedefin irtifasını 4 saniyede İKİ KEZ kesiyor
+en yakın geçiş (1.94 m) tam bir kesişme anına denk gelmiş — <b>şans</b></p></div>
+    <div class="satir"><span class="etiket">Sonucu</span>
+      <p>Hedef kadrajın ALTINDAN çıkıyor ve dedektör onu kaybediyor. Kamera
+      gövdeye 25° YUKARI bakıyor: yukarı 80° görüyor ama <b>aşağı yalnız 30°</b>.
+      Yani "üstüne çıktığımız an" kör kalıyoruz. Ardından 2 saniyelik kör
+      hücum başlıyor, araç 30 m yol alıyor, hedefi 58° yandan yeniden buluyor.</p></div>
+    <div class="satir"><span class="etiket">Kök neden — sayıyla</span>
+      <p class="olcum">aracın dikey ivme sınırı (WPNAV_ACCEL_Z) = <b>2.5 m/s²</b>
+±5 m/s'lik bir dikey komutu uygulaması            = <b>4 saniye</b>
+gözlenen salınım periyodu                          = <b>3.5-4 saniye</b>
+komut ±5 m/s raylarında, araç ancak 1.4-2.4 m/s yapıyor</p></div>
+    <div class="satir"><span class="etiket">İki ayrı kusur</span>
+      <p><b>1)</b> Dikey tavan 5 m/s — araç bunu asla yapamıyor, komut sürekli
+      doygun, yani bang-bang. <b>2)</b> Sönümleme terimi
+      <code>vz = vz_nişan + 0.9·(vz_nişan − vz_gerçek)</code> araç geride
+      kaldığı sürece hedef değeri <b>1.9 katına</b> çıkarıyor; araç hep geride
+      kaldığı için bu takviye hiç kapanmıyor. Drone LOS'un istediğinden
+      neredeyse iki kat hızlı tırmanıp hedefin üstünden geçiyor.</p></div>
+    <div class="satir"><span class="etiket">Neden daha önce görülmedi</span>
+      <p>Çünkü şimdiye kadar "vurdu mu?" diye bakıyorduk. Vuruş oranı %30-50
+      arası ve gürültülü; 3 uçuşta hiçbir şey ayırt edilemiyor. Mekanizmaya
+      bakınca üç uçuş bile yetti.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>PN — orantılı seyrüsefer</h3>
+      <span class="damga d-kismi">Test ediliyor</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>Şimdiye kadarki bütün terminal yasaları <b>nişan AÇISINI</b> kontrol
+      ediyordu ("hedefi şuraya koy"). Oysa çarpışma koşulu açının
+      <b>SABİT KALMASI</b>. Denizcilerin kuralı: çarpışacağın gemi ufuktaki
+      yerini değiştirmez. PN tam bunu hedefler:
+      <code>χ̇ = N · λ̇</code> — hız vektörünü, görüş hattının dönüşünün N
+      katıyla döndür.</p></div>
+    <div class="satir"><span class="etiket">Yeni olan</span>
+      <p>Multirotorda hız komutu yaw'dan bağımsız olduğu için <b>burun hedefe
+      kilitli kalırken hız vektörü öne alınabiliyor</b>. Böylece kutu kadraj
+      merkezinde kalıyor (görsel temas yarışma kuralının can damarı), hız
+      vektörü ayrı olarak çarpışma rotasına oturuyor.</p></div>
+    <div class="satir"><span class="etiket">Durum</span>
+      <p>Kod ve 6 birim testi hazır (B27-B32), uçuş testi sürüyor.
+      <code>AVCI_IBVS_PN=0</code> ile eski yasa aynen geri geliyor.</p></div>
+  </div>
 </section>
 
 <section>
