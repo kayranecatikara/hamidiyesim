@@ -74,6 +74,10 @@ class Cfg:
 status = {
     "durum": "WARMUP", "d_h": None, "menzil": None,
     "kadraj_yaw_deg": None, "kadraj_elev_deg": None, "none_count": 0,
+    # tgt_v*: hedefin kestirilen hız vektörü. Supervisor bunu görsel faza
+    # geçerken DONDURULMUŞ TAŞIYICI olarak okur (bkz. bbox_ibvs ff_hiz).
+    # ⚠ Eksikse devir sessizce sıfır taşıyıcı ile başlar — test D2 bunu bekler.
+    "tgt_vx": None, "tgt_vy": None, "tgt_vz": None,
 }
 
 _LOG_DIR = os.path.join(
@@ -239,7 +243,9 @@ def run_frpn_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg,
             durum = "KILIT" if d_h < cfg.HANDOFF_RANGE else "ARAMA"
             status.update(durum=durum, d_h=round(d_h, 1), menzil=round(menzil, 1),
                           kadraj_yaw_deg=round(math.degrees(kad["yaw_hata"]), 1),
-                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1))
+                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1),
+                          tgt_vx=round(v_h[0], 2), tgt_vy=round(v_h[1], 2),
+                          tgt_vz=round(v_h[2], 2))
 
             a_h = kes["a"]
             w.writerow({

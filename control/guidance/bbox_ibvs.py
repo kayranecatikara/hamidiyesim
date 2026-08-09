@@ -156,6 +156,39 @@ class Cfg:
     # Terminal sırasında DONDURULUR (orada farklı yasa çalışıyor, windup olmasın).
     K_ELEV_I = _env_f("AVCI_IBVS_KELEVI", 4.0)   # (m/s)/(rad·s)
     ELEV_I_MAX = 3.0                             # m/s; integral penceresi
+
+    # ══ PN — ORANTILI SEYRÜSEFER (2026-08-09) ══
+    #
+    # NEDEN: bugüne kadarki bütün terminal yasaları AÇIYI kontrol ediyordu
+    # ("hız vektörünü hedefe doğrult"). Ama çarpışmanın şartı açının belli bir
+    # DEĞERDE olması değil, açının SABİT KALMASI (denizcilik kuralı: çarpışma
+    # rotasındaki gemi ufuktaki yerini değiştirmez). Kontrol ettiğimiz büyüklük
+    # ile başarı ölçütümüz (kutu kayması) farklı şeylerdi; her yamada bir
+    # yerden bastırıp başka yerden kaçıyordu:
+    #     lead sabit → yukarı savuruyor        (menzille söndürüldü)
+    #     nişanlama → dikey momentum salınımı  (türev sönümlemesi eklendi)
+    #     irtifa eşitleme → yakınsamıyor       (integral eklendi, kısmi)
+    # Hiçbiri tekrarlanabilir üstünlük vermedi.
+    #
+    # PN bunun yerine doğrudan LOS DÖNÜŞÜNÜ sıfırlar — yani ölçütümüzle AYNI
+    # büyüklüğü hedefler. Güdümlü füzelerde 1950'lerden beri standart.
+    # Hız formu: hız vektörünün yönü, LOS dönüş hızının N katıyla döner.
+    #     χ̇ = N · λ̇        (χ: hız vektörü yönü, λ: LOS yönü)
+    # Doğası gereği sönümlüdür: λ̇ küçüldükçe komut da küçülür; nişanlama
+    # yasasının aksine "hedefe varınca fren" sorunu yoktur.
+    #
+    # PN_BETA: saf PN yavaşça sürüklenebilir (λ̇ ölçümü gürültülü). Küçük bir
+    # oranla LOS'a geri çekilir — klasik "PN + pursuit bias".
+    PN = _env_f("AVCI_IBVS_PN", 1.0) >= 0.5      # 0 = eski nişanlama yasası
+    PN_N = _env_f("AVCI_IBVS_PN_N", 3.0)         # seyrüsefer sabiti (klasik 3-5)
+    PN_BETA = _env_f("AVCI_IBVS_PN_BETA", 0.10)  # LOS'a geri çekme oranı
+    PN_HOLD = _env_f("AVCI_IBVS_PN_HOLD", 0.0) >= 0.5   # tutuş fazında da PN
+    # BURUN nereye baksın? Multirotorda hız komutu NED'dir, yaw'dan bağımsız —
+    # yani kamerayı hedefe kilitleyip hız vektörünü BAŞKA yöne sürebiliriz.
+    #   1 = burun DAİMA hedefte (kutu kadraj merkezinde kalır; görsel temas
+    #       yarışma kuralının can damarı olduğu için varsayılan bu)
+    #   0 = burun hız vektöründe (eski davranış; hedef kadrajın kenarına kayar)
+    PN_YAW_LOS = _env_f("AVCI_IBVS_PN_YAWLOS", 1.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -320,7 +353,8 @@ def piksel_elev(cy, cfg=Cfg):
 
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
-          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0, elev_I=0.0):
+          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0, elev_I=0.0,
+          pn_yon=None):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -364,9 +398,46 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     vy_ned = v_los * math.sin(yaw_cmd)
 
     eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
+    if terminal and cfg.PN:
+        # ══ PN — hız vektörünün YÖNÜ, LOS dönüşünün N katıyla döner ══
+        # pn_yon = [azimut, yükseliş] (atalet, rad). İlk turda LOS'a kilitlenir.
+        los_az_simdi = normalize_angle(iris_yaw + eps_yaw)
+        los_el_simdi = piksel_elev(cy, cfg) + iris_pitch
+        if pn_yon is None:
+            pn_yon = [los_az_simdi, los_el_simdi]
+        else:
+            # χ̇ = N·λ̇  (+ küçük oranla LOS'a geri çekme: sürüklenme koruması)
+            pn_yon[0] = normalize_angle(pn_yon[0] + cfg.PN_N * los_hiz[0] * dt)
+            pn_yon[1] = pn_yon[1] + cfg.PN_N * los_hiz[1] * dt
+            if cfg.PN_BETA > 0:
+                pn_yon[0] = normalize_angle(
+                    pn_yon[0] + cfg.PN_BETA * normalize_angle(los_az_simdi - pn_yon[0]))
+                pn_yon[1] += cfg.PN_BETA * (los_el_simdi - pn_yon[1])
+        pn_yon[1] = clamp(pn_yon[1], -math.radians(60.0), math.radians(60.0))
+
+        v_yon = normalize_angle(pn_yon[0])          # HIZ vektörünün yönü
+        yaw_cmd = los_az_simdi if cfg.PN_YAW_LOS else v_yon   # BURNUN yönü
+        nisan_elev = pn_yon[1]
+        # dikey bütçe: vektör bu açıyı gösteremiyorsa yatayı kıs
+        t_ = abs(math.tan(nisan_elev))
+        if t_ > 1e-6 and v_los * t_ > cfg.VZ_MAX_TERM:
+            v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
+        vx_ned = v_los * math.cos(v_yon)
+        vy_ned = v_los * math.sin(v_yon)
+        vz = clamp(-v_los * math.tan(nisan_elev),
+                   -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+        eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)
+        elev_atalet_tani = los_el_simdi
+        tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
+                "elev_atalet": elev_atalet_tani,
+                "elev_hata": elev_atalet_tani - math.radians(cfg.ELEV_HEDEF_DEG),
+                "hata": hata, "v_los": v_los, "terminal": True,
+                "lead_az": normalize_angle(v_yon - los_az_simdi),
+                "lead_olcek": 1.0, "elev_I": elev_I}
+        return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani, elev_I, pn_yon
+
     if terminal:
-        # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
-        # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
+        # KESİŞİM (PN kapalıyken eski yasa): hız vektörü hedefe DOĞRU baksın.
         elev_atalet = piksel_elev(cy, cfg) + iris_pitch
         lead_el = clamp(lead_sure * los_hiz[1],
                         -math.radians(cfg.LEAD_MAX_DEG),
@@ -420,7 +491,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             "elev_hata": elev_atalet_tani - math.radians(cfg.ELEV_HEDEF_DEG),
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "lead_az": lead_az, "lead_olcek": lead_olcek}
-    return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani, elev_I
+    return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani, elev_I, pn_yon
 
 
 def _kutu_gecerli(pose, cfg):
@@ -487,6 +558,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
     tani_onceki_elev_hata = 0.0   # terminal kapısı için (bir önceki turdan)
     elev_I = 0.0              # dikey integral (irtifa eşitleyici)
+    pn_yon = None             # PN hız-vektörü yönü [azimut, yükseliş]
     irtifa_bekleme_yazildi = False
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
@@ -638,10 +710,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                         print(f"[IBVS] menzil hazır ama İRTİFA OTURMADI "
                               f"(yükseliş hatası {_eh:.1f}° > "
                               f"{cfg.TERMINAL_ELEV_ESIK:.0f}°) — önce eşitleniyor")
-            vx, vy, vz, yaw_hedef, hiz_I, tani, elev_I = komut(
+            vx, vy, vz, yaw_hedef, hiz_I, tani, elev_I, pn_yon = komut(
                 cx, cy, bw, bh, iyaw, hiz_I, dt, cfg, terminal_mandal,
                 tuple(los_hiz), ipitch, float(iris.get("vz", 0.0) or 0.0),
-                elev_I)
+                elev_I, pn_yon)
             tani_onceki_elev_hata = tani.get("elev_hata", 0.0)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
