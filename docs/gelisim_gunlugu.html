@@ -1022,6 +1022,37 @@ terminal salınım genliği  34°  (kontrol 62°, ama dikey tavan tek başına 2
       <p>Bir şeyin varsayılan olması ölçümle hak edilir. PN'i açık bırakmak
       kolaydı ("teorik olarak daha iyi"), ama uçuş desteklemedi.</p></div>
   </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hedefin vuruş zarfı ölçüldü — dikey pencere yatayın 1/5'i</h3>
+      <span class="damga d-kabul">Teşhis</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Nereden</span>
+      <p>Hedefin Gazebo çarpışma STL'lerinin sınır kutuları. Temas sensörü
+      gövde + iki kanat + iki kuyruğu kapsıyor, yani vuruş GERÇEK mesh
+      temasıyla oluyor — mesafe eşiğiyle değil.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">gövde   0.81 × 0.13 × <span class="kotu">0.19</span> m
+kanat   0.58 m (tek taraf), kalınlık yalnız <span class="kotu">0.03</span> m
+kanat açıklığı toplam ≈ 1.29 m</p></div>
+    <div class="satir"><span class="etiket">Anlamı</span>
+      <p class="olcum">YATAY tolerans  ≈ ±0.65 m  (kanat yarı açıklığı)
+DİKEY tolerans  ≈ <span class="kotu">±0.10 m</span>  (gövde yüksekliğinin yarısı)
+                          kanat hizasında ±0.015 m</p></div>
+    <div class="satir"><span class="etiket">Neden bu her şeyi değiştiriyor</span>
+      <p>Şu anki uçuşlarda en yakın anda dikey sapma <b>~1 metre</b>. Yani
+      ±0.1 m'lik bir pencereye 1 m hatayla giriyoruz — vuruş neredeyse
+      tamamen şansa kalıyor. Yatayda ise sapma zaten 0.03-0.27 m, yani
+      ±0.65 m'lik bol pencerenin çok içinde. <b>Bütün iş dikeyde.</b></p></div>
+    <div class="satir"><span class="etiket">Ve bir sonuç daha</span>
+      <p>Araç 2.5 m/s² ile 1 m'lik bir dikey hatayı en iyi ihtimalle
+      <b>1.26 saniyede</b> kapatabilir (hızlan + yavaşla). Terminal ise
+      1-2 saniye sürüyor. Yani <b>dikey hata terminal sırasında düzeltilemez</b>
+      — tutuş fazında düzeltilip terminalde KORUNMALI.</p></div>
+  </div>
+
 </section>
 
 <section>
