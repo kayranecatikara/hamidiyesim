@@ -305,6 +305,40 @@ class Cfg:
     # --- YAW ---
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(120.0)
+    # ── YAW ÇIPALAMA — VARSAYILAN KAPALI, DENEY KOLU (2026-08-09) ──
+    # ⚠ İŞ BÖLÜMÜ NOTU: bu dosya Kayra'nın alanı. KAPALIYKEN kod yolu
+    # origin/kayramin_super_gudumu ile BİREBİR aynıdır (aşağıdaki if/else'in
+    # else dalı Kayra'nın satırlarının kendisidir) — yani varsayılan davranış
+    # değişmedi. Açmak tek env: AVCI_GPS_YAW_CIPA=1
+    #
+    # NE YAPAR: Kayra'nın yasasında cmd_yaw yalnız `bearing`i kovalar, aracın
+    # GERÇEK başlığına hiç bakmaz. Çıpalama komutu her karede gerçek başlıktan
+    # (iyaw) üretir; komut asla "actual + bir adım"ın önüne geçemez.
+    #
+    # ⚠ GERİ GETİRME GEREKÇESİ ZAYIF — ÖLÇÜLDÜ (2026-08-09, 751 log / 380 004
+    # sağlam kare; tumble ve <5 m kareler ayıklandı):
+    #     |yaw_cmd − yaw_gerçek| medyan 1.0°, p95 62°
+    # Yani 08-05'teki KAÇAK İMZASI (komut yürür, araç yetişemez) ARTIK YOK;
+    # Kayra'nın "bende yaw kaçağı problemi yok" bildirimi bu veriyle uyumlu.
+    #
+    # AMA BAŞKA BİR YAW KUSURU VAR: komut DONMUŞKEN araç tam tur atıyor.
+    #     log 185411, cmd sabit −115.2°: gerçek −10.9 → +171 → −113 (1.3 s'de
+    #     360°, tepe 486 °/s). Hata −104° iken araç +255°, yani UZUN YOLDAN.
+    #     Karelerin %6.2'si 120 °/s komut tavanını aşıyor.
+    # Çıpalama bu kusur için TASARLANMADI ve teorik olarak kötüleştirebilir:
+    # komutu dönen gerçek başlığa demirler, yani dönüşün peşine takar.
+    # Bu yüzden varsayılan KAPALI — cevabı yalnız A/B verir.
+    YAW_CIPA = _env_f("AVCI_GPS_YAW_CIPA", 0.0) >= 0.5
+    # Kaç kare ardışık "doygun ama hata kapanmıyor" hoş görülür.
+    # GPS 20 Hz → 15 ≈ 0.75 s. adapter_copter.Cfg.YAW_DOYGUN_N ile aynı gerekçe.
+    YAW_DOYGUN_N = int(_env_f("AVCI_GPS_YAW_DOYGUN_N", 15))
+    # SUSMA SÜRELİ, KALICI DEĞİL (kilitlenme düzeltmesi 2026-08-06). Kapı adımı
+    # 0 yapınca araç dönmez, dönmeyen araçta hata kapanmaz, kapı hiç açılmaz —
+    # ölü kilit. ÖLÇÜLDÜ (124 346 kare): karelerin %7.8'inde burun >20° sapmış
+    # olmasına rağmen adım tam 0; en uzun susma 1867 kare = 93 SANİYE (araç 119°
+    # yan durup hiç dönmedi). Süre dolunca yetki geri verilir; sorun gerçekse
+    # kapı yeniden tetiklenir → dönme oranı ≈ %27'ye kısılır.
+    YAW_SUS_N = int(_env_f("AVCI_GPS_YAW_SUS_N", 40))    # 20 Hz → 2.0 s
 
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
@@ -369,6 +403,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
     vx_prev = vy_prev = vz_prev = 0.0
     cmd_yaw = None
+    yaw_doygun_n = 0        # ardışık "doygun ama hata kapanmıyor" kare sayısı
+    yaw_sus_n = 0           # kaç karedir SUSTURULMUŞ durumdayız (süreli susma)
+    yaw_ref = None          # önceki karenin |yaw_err|'i (ilerleme ölçümü için)
     prev_time = None
     loop_count = 0
     pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
@@ -391,6 +428,10 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
               f"pitch (EMA τ≈1 s), sınır [{cfg.ELEV_DIN_MIN:.0f}°, "
               f"{cfg.ELEV_DIN_MAX:.0f}°] — düzde ~25°, daire tutuşunda ~36° beklenir; "
               f"kapatmak: AVCI_GPS_ELEV_DIN=0")
+    # A/B kolunun hangisi olduğu SONRADAN ayırt edilebilsin. 08-09'da
+    # GPS_RANGE damgasının yalan söylediği ortaya çıkmıştı (visual_lead'de
+    # varsayılan elle yazılıydı) — damga hep DEĞERİN KAYNAĞINDAN okunur.
+    print(f"[GPS] yaw yasası: {'ÇIPALAMA (deney kolu, AVCI_GPS_YAW_CIPA=1)' if cfg.YAW_CIPA else 'kendini-biriktiren cmd_yaw (varsayılan)'}")
     _t_terminal = d_behind / 3.7          # ölçülen terminal yatay kapanma hızı
     print(f"[GPS] terminal dikey bütçe: {d_below:.2f} m kapatılacak, "
           f"~{_t_terminal:.2f} s var → 1 m/s² rampayla {0.5*_t_terminal**2:.2f} m "
@@ -608,12 +649,48 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
 
             # ── 7) YAW: burun GERÇEK hedefe ──
             bearing = math.atan2(ey, ex)
-            if cmd_yaw is None:
-                cmd_yaw = bearing
-            yaw_err = normalize_angle(bearing - cmd_yaw)
-            if abs(yaw_err) > cfg.YAW_DEADBAND:
-                step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
-                cmd_yaw = normalize_angle(cmd_yaw + step)
+            if cfg.YAW_CIPA:
+                # ── ÇIPALAMA KOLU (deney; bkz. Cfg.YAW_CIPA) ──
+                # DÜZELTME 1 — DEMİRLEME: komut her karede aracın GERÇEK
+                # başlığından üretilir; actual+adım'ın önüne geçemez.
+                yaw_err = normalize_angle(bearing - iyaw)
+                adim_ham = yaw_err
+                tavan = cfg.YAW_RATE_MAX * dt
+                adim = clamp(adim_ham, -tavan, tavan)
+                yaw_doygun = abs(adim_ham) > tavan
+
+                # DÜZELTME 2 — SÜREKLİ DOYGUNLUK KAPISI. Ölçüt doygunluk
+                # DEĞİL, hatanın kapanmaması: büyük ama meşru bir dönüş de
+                # doygundur.
+                if yaw_doygun:
+                    ilerleme = (None if yaw_ref is None else yaw_ref - abs(yaw_err))
+                    if ilerleme is not None and ilerleme > 0.25 * abs(adim):
+                        yaw_doygun_n = 0      # hata kapanıyor → yetki tam
+                    else:
+                        yaw_doygun_n += 1
+                    yaw_ref = abs(yaw_err)
+                else:
+                    yaw_doygun_n = 0
+                    yaw_ref = None
+                if yaw_doygun_n > cfg.YAW_DOYGUN_N:
+                    adim = 0.0                # döngü kapanmıyor → yaw'ı sustur
+                    yaw_sus_n += 1            # ⚠ SÜRELİ: süre dolunca yetki geri
+                    if yaw_sus_n >= cfg.YAW_SUS_N:
+                        yaw_doygun_n, yaw_ref, yaw_sus_n = 0, None, 0
+                else:
+                    yaw_sus_n = 0
+
+                if abs(yaw_err) <= cfg.YAW_DEADBAND:
+                    adim = 0.0
+                cmd_yaw = normalize_angle(iyaw + adim)
+            else:
+                # ── VARSAYILAN: Kayra'nın hattı. Bu üç satır DEĞİŞMEDİ. ──
+                if cmd_yaw is None:
+                    cmd_yaw = bearing
+                yaw_err = normalize_angle(bearing - cmd_yaw)
+                if abs(yaw_err) > cfg.YAW_DEADBAND:
+                    step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
+                    cmd_yaw = normalize_angle(cmd_yaw + step)
 
             # ── 8) İVME SINIRI + GÖNDER ──
             vx, vy, vz = limit_acceleration(
