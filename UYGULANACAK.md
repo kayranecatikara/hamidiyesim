@@ -1,5 +1,57 @@
 # UYGULANACAK — teker teker, ölçerek
 
+## DURUM — 2026-08-09 (GÖRSEL FAZ: kaçırmanın kök nedeni bulundu)
+
+**Bulgu: ıskaların sebebi güdüm yasası değil, DİKEY DÖNGÜ.** Araç dikey
+komutu uygulayamıyor; döngü hedefin irtifasını tekrar tekrar kesiyor.
+
+Ölçüm (bbox_ibvs logları, 3 kontrol + 3 PN uçuşu — hepsinde aynı):
+
+    WPNAV_ACCEL_Z = 250  →  aracın dikey ivme sınırı 2.5 m/s²
+    ±5 m/s'lik dikey komutu uygulaması                4 saniye
+    gözlenen salınım periyodu                         3.5-4 saniye
+    vz KOMUTU 1.4 s boyunca −5.0'da sabit dururken
+    araç: +1.1 → +0.6 → +0.1 → −0.3 → −0.8 → −1.3 → −2.5  (yarısına bile varmıyor)
+    dikey fark: −1.1 → +1.6 → −0.6 → −5.8 m  (4 saniyede İKİ kesişme)
+
+En yakın geçişin (1.9 m) bir kesişmeye denk gelmesi ŞANS — vuruş oranının
+%30-50 ve tekrarlanamaz olmasının sebebi bu.
+
+Üç kusur, tek mekanizma:
+
+1. **Dikey tavan gerçekçi değil** (terminal 5, tutuş 3 m/s) — araç 2.5 yapıyor,
+   komut sürekli doygun, döngü bang-bang.  → `AVCI_IBVS_VZT`, `AVCI_IBVS_VZMAX`
+2. **"Sönümleme" aslında takviye:** `vz = vz_nişan + 0.9·(vz_nişan − vz_gerçek)`
+   araç geride kaldığı sürece hedefi 1.9 katına çıkarır; araç HEP geride.
+   → `AVCI_IBVS_KVZD=0`
+3. **İntegral doyması:** elev_I yarım saniyede tavana yapışıp 6 s orada kaldı;
+   hata sıfırı geçtiğinde hâlâ doluydu → yükseliş +0.6° → −25.6° savruldu.
+   Yani "önce irtifayı eşitle" fikri doğruydu ama eşitleyici hedefin ÜSTÜNDEN
+   geçerek eşitliyordu.  → `AVCI_IBVS_AWU=1`
+
+Ayrıca **terminal kapısı boş geçiyor**: kapı `tani_onceki_elev_hata`ya bakıyor,
+o da 0.0 ile başlıyor. Iskadan sonra GPS'e dönüp YAKINDAN yeniden devrediliyor
+(bir koşuda 5 görsel faz); o girişte kutu zaten 30-50 px olduğundan kapı sahte
+0° hatayla ilk karede açılıyor.  → `AVCI_IBVS_KAPI_KATI=1`
+
+**Kamera kör noktası (sorunu büyüten):** kamera 25° YUKARI bakıyor → yukarı
++80°, aşağı yalnız −30°. Hedefin üstüne çıkınca kör kalıyoruz; hedef kadrajın
+altından çıkıyor (cy 316 → 461/480), 2 s kör hücum, araç 30 m yol alıyor ve
+hedefi 58° YANDAN buluyor. Gimbal gerekçesinin ikinci kanıtı.
+
+**İlk sonuç (COMBO = VZT 2.5 + AWU + katı kapı):** elev_I bir kez bile tavana
+yapışmadı (0/227 kare; kontrolde 6 saniye yapışıktı), yükseliş medyanı **+2.4°**
+(hedef 2°) — eşitleyici İLK KEZ yakınsıyor. Salınım genliği 53° → 21°.
+
+⚠ Bütün bu anahtarlar VARSAYILAN KAPALI. Kampanya bitince kazanan varsayılan
+yapılacak — kullanıcı onayıyla.
+
+### Ölçüm notu (önemli)
+`en_yakin`/telemetri mesafesi METRE ölçeğinde KULLANILAMAZ: iki aracın ayrı
+MAVLink akışından geliyor (ölçüldü: 0.25 m "kaçırma" ıska, 2.38 m "kaçırma"
+vuruş). Doğru ölçüt `menzil_min ≈ 160/kutu_boyutu` (tek kare, tek sensör).
+Tespit gecikmesi 68 ms medyan (~1 m bayatlık) — gerçek ama ikincil.
+
 Aşağıdakiler **tek tek** uygulanacak; her maddeden sonra uçulup ölçülecek,
 sonuç maddenin altına yazılacak. Bir madde bitmeden diğerine geçilmeyecek.
 
