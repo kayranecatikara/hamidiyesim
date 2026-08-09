@@ -959,13 +959,31 @@ en yakın geçiş (1.94 m) tam bir kesişme anına denk gelmiş — <b>şans</b>
 ±5 m/s'lik bir dikey komutu uygulaması            = <b>4 saniye</b>
 gözlenen salınım periyodu                          = <b>3.5-4 saniye</b>
 komut ±5 m/s raylarında, araç ancak 1.4-2.4 m/s yapıyor</p></div>
-    <div class="satir"><span class="etiket">İki ayrı kusur</span>
-      <p><b>1)</b> Dikey tavan 5 m/s — araç bunu asla yapamıyor, komut sürekli
-      doygun, yani bang-bang. <b>2)</b> Sönümleme terimi
-      <code>vz = vz_nişan + 0.9·(vz_nişan − vz_gerçek)</code> araç geride
-      kaldığı sürece hedef değeri <b>1.9 katına</b> çıkarıyor; araç hep geride
-      kaldığı için bu takviye hiç kapanmıyor. Drone LOS'un istediğinden
-      neredeyse iki kat hızlı tırmanıp hedefin üstünden geçiyor.</p></div>
+    <div class="satir"><span class="etiket">Doğrudan kanıt — komut vs gerçek</span>
+      <p class="olcum">vz KOMUTU 1.4 saniye boyunca −5.0 m/s'de sabit dururken
+aracın GERÇEK dikey hızı:  +1.1 → +0.6 → +0.1 → −0.3 → −0.8 → −1.3 → −2.5
+yani araç komutun <span class="kotu">yarısına bile ulaşmıyor</span> ve tepesini
+komut TERSİNE DÖNDÜKTEN SONRA yapıyor</p></div>
+    <div class="satir"><span class="etiket">Üç ayrı kusur, tek mekanizma</span>
+      <p><b>1) Tavan gerçekçi değil.</b> 5 m/s isteniyor, araç 2.5 yapıyor —
+      komut sürekli doygun, döngü bang-bang.
+      <br><b>2) "Sönümleme" aslında takviye.</b>
+      <code>vz = vz_nişan + 0.9·(vz_nişan − vz_gerçek)</code>: araç geride
+      kaldığı sürece hedef değeri <b>1.9 katına</b> çıkarır. Araç HEP geride
+      kaldığı için takviye hiç kapanmaz; drone LOS'un istediğinden iki kat
+      hızlı tırmanıp üstten geçer.
+      <br><b>3) İntegral doyması.</b> Tutuş fazında <code>elev_I</code> yarım
+      saniyede tavana yapışıp <b>6 saniye</b> orada kaldı. Hata sıfırı
+      geçtiğinde hâlâ doluydu → yükseliş +0.6°'den −25.6°'ye savruldu.
+      Yani "önce irtifayı eşitle" kapısı doğru fikirdi, ama eşitleyicinin
+      kendisi hedefin <b>üstünden geçerek</b> "eşitliyordu".</p></div>
+    <div class="satir"><span class="etiket">Bir de kapı boş geçiyormuş</span>
+      <p>Terminal kapısı "kutu ≥ 25 px <b>VE</b> yükseliş oturmuş" ister. Ama
+      ikinci şart, döngü başında <code>0.0</code> ile başlatılan bir değişkene
+      bakıyor. Iskadan sonra araç GPS'e dönüp <b>yakından</b> yeniden devrediyor
+      (bir koşuda 5 görsel faz sayıldı) — o girişte kutu zaten 30-50 px olduğu
+      için kapı <b>sahte 0° hatayla ilk karede açılıyor</b>. Yani kapının
+      engellemesi gereken durum, tam da kapıyı boşa düşüren durum.</p></div>
     <div class="satir"><span class="etiket">Neden daha önce görülmedi</span>
       <p>Çünkü şimdiye kadar "vurdu mu?" diye bakıyorduk. Vuruş oranı %30-50
       arası ve gürültülü; 3 uçuşta hiçbir şey ayırt edilemiyor. Mekanizmaya
