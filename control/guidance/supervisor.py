@@ -31,6 +31,8 @@ from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
+from control.guidance.bbox_ibvs import (run_bbox_ibvs as _run_bbox_ibvs,
+                                        Cfg as _IbvsCfg)
 from control.guidance.common import send_velocity
 from control import menzil_tutucu as _tutucu
 from control.mission_fsm import State
@@ -52,6 +54,15 @@ from vision.detection_state import (get_kilit_durum, get_gorev_state,
 _GPS_SET = frozenset({State.SEARCH, State.APPROACH, State.DETECT,
                       State.TRACK_LOCK, State.TRACK_LOST})
 _GORSEL_SET = frozenset({State.ENGAGE, State.STRIKE})
+
+# GÖRSEL FAZ ALGORİTMASI (2026-08-09): FSM görsel fazına (ENGAGE/STRIKE) girince
+# hangi görsel güdüm yürütücüsü koşar?
+#   bbox_ibvs (VARSAYILAN) → kayramin IBVS algoritması (dikey-ıska çözümlü);
+#                            terminal FSM STRIKE'a kapılı (3-faz disiplini korunur).
+#   visual_lead            → eski (benim) PN + co-altitude yürütücüm (A/B için).
+# 3 fazlı FSM YAPISI HER İKİSİNDE de aynı sürer; değişen yalnız fazların İÇİNDEKİ
+# görsel algoritma. bbox_ibvs kutu akışına wait_pose adaptörüyle bağlanır.
+_GORSEL_YASA = os.environ.get("AVCI_GORSEL_YASA", "bbox_ibvs").strip().lower()
 
 
 class SupCfg:
@@ -265,10 +276,33 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                 gorsel_stop.wait(0.05)
 
         threading.Thread(target=gorsel_izci, daemon=True).start()
-        sebep = run_visual_lead(conn, wait_kare, get_plane_truth, gorsel_stop,
-                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                get_temas=get_temas, get_menzil=get_menzil,
-                                get_gt=get_gt, get_gorev_state=get_gorev_state)
+        # ── GÖRSEL FAZ ALGORİTMASI DİSPATCH (bkz. _GORSEL_YASA) ──
+        # 3 fazlı FSM yürütücüyü buraya getirdi (ENGAGE/STRIKE); İÇİNDE koşan
+        # görsel algoritma seçilir. bbox_ibvs: kutu akışını wait_pose adaptörüyle
+        # alır (det→pose), integralini drone'un o anki hızıyla sıcak başlatır,
+        # terminal hücumu FSM STRIKE'a kapılar (get_gorev_state).
+        if _GORSEL_YASA == "bbox_ibvs":
+            _i = get_iris() or {}
+            _ff = (float(_i.get("vx", 0.0) or 0.0),
+                   float(_i.get("vy", 0.0) or 0.0), 0.0)
+
+            def _wait_pose(son_seq, timeout=0.5):
+                k = wait_kare(son_seq, timeout)
+                if k is None:
+                    return None
+                return {"seq": k["seq"], "pose": k.get("det"),
+                        "stamp": k.get("stamp"), "wall_recv": k.get("wall_recv"),
+                        "lock": k.get("lock")}
+
+            sebep = _run_bbox_ibvs(conn, get_iris, _wait_pose, gorsel_stop,
+                                   cfg=_IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                   ff_hiz=_ff, get_temas=get_temas,
+                                   get_gorev_state=get_gorev_state)
+        else:
+            sebep = run_visual_lead(conn, wait_kare, get_plane_truth, gorsel_stop,
+                                    cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                    get_temas=get_temas, get_menzil=get_menzil,
+                                    get_gt=get_gt, get_gorev_state=get_gorev_state)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"
