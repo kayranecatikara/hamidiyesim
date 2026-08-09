@@ -116,7 +116,10 @@ class Cfg:
     # agresifti (10° hata → 2.5 m/s) ve tavana yapışıp salındı. Nişan doğru
     # yere gelince (≈300) hata küçük kalır; yumuşak kazanç yeter.
     K_VZ = _env_f("AVCI_IBVS_KVZ", 0.5)
-    VZ_MAX = 3.0                    # m/s; dikey hız tavanı
+    # Tutuş fazının dikey tavanı. ⚠ Aracın ölçülen dikey ivme sınırı 2.5 m/s²
+    # (WPNAV_ACCEL_Z=250) — 3 m/s'lik bir komutu uygulaması 1.2 s sürüyor.
+    # Terminal tavanıyla (VZ_MAX_TERM) birlikte ayarlanmalı.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 3.0)   # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ══ İRTİFA EŞİTLE, SONRA DAL (2026-08-09, KULLANICI FİKRİ) ══
