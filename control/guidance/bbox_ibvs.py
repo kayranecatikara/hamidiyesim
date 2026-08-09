@@ -216,6 +216,24 @@ class Cfg:
     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
     VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
+
+    # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
+    # geçtik") ──
+    # SORUN: terminal dikey kanalı SAF NİŞANLAMA (vz = −v·tan(elev)) — türev/
+    # sönümleme terimi YOK. Uzaktayken haklı olarak tırmanma emri veriliyor,
+    # araç dikey momentum kazanıyor; hedefe varınca komut azalıyor ama momentum
+    # geç sönüyor → hedefin ÜSTÜNDEN geçiliyor.
+    # Kullanıcının manuel uçuş kaydından ölçüldü (log 081132, son kareler):
+    #     hedef TAM nişanda (dikey hata −2.2°) iken vz komutu −4.2 m/s
+    #     ardından kutu kadrajda 294 → 456 px kayıyor = üstünden geçildi
+    # ⚠ Lead DEĞİLDİ: aynı karelerde lead 0.09-0.15 s'ye sönmüş ve AŞAĞI
+    # yönlüydü (−3° … −13°). Lead sönümü çalışıyor, sebep bu değil.
+    #
+    # ÇÖZÜM: aracın KENDİ dikey hızıyla türev sönümlemesi.
+    #     vz = vz_nişan + K_VZ_D · (vz_nişan − vz_gerçek)
+    # Zaten gerekenden hızlı tırmanıyorsak komut azalır/ters döner.
+    # Girdi drone'un KENDİ sensörü — yarışma kuralı serbest.
+    K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.6)   # dikey sönümleme kazancı
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
     # ── KUTU GEÇERLİLİĞİ ──
@@ -249,7 +267,7 @@ def piksel_elev(cy, cfg=Cfg):
 
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
-          los_hiz=(0.0, 0.0), iris_pitch=0.0):
+          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -318,7 +336,10 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
             vx_ned = v_los * math.cos(yaw_cmd)
             vy_ned = v_los * math.sin(yaw_cmd)
-        vz = clamp(-v_los * math.tan(nisan_elev),
+        vz_nisan = -v_los * math.tan(nisan_elev)
+        # TÜREV SÖNÜMLEMESİ: aracın kendi dikey hızı nişanın ötesine geçtiyse
+        # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
+        vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
     else:
         # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
@@ -527,7 +548,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,
-                                                       tuple(los_hiz), ipitch)
+                                                       tuple(los_hiz), ipitch,
+                                                       float(iris.get("vz", 0.0) or 0.0))
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.

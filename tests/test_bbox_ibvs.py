@@ -332,6 +332,21 @@ def main():
             f"hedef 35° → yatay taban {vyat_e:.1f} m/s, vektör {elev_e:.0f}° "
             f"(eski sürüm 15.5°)")
 
+    # ── B24: TERMİNAL DİKEY SÖNÜMLEME — "üstten geçme" önleyici ──
+    # Kullanıcının manuel uçuş kaydı (log 081132): hedef TAM nişandayken
+    # (dikey hata −2.2°) vz komutu −4.2 m/s; sonra kutu 294→456 px kaydı,
+    # yani hedefin üstünden geçildi. Sebep: dikey kanalda türev/sönümleme
+    # terimi yoktu, araç tırmanma momentumu kazanıp geç sönüyordu.
+    cy_bir_az_ust = geo.CY + geo.FY * math.tan(math.radians(25 - 8))
+    _, _, vz_durgun, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
+                                        0.05, C, True, (0.0, 0.0), 0.0, 0.0)
+    _, _, vz_tirmanan, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
+                                          0.05, C, True, (0.0, 0.0), 0.0, -4.0)
+    kontrol("B24 zaten tırmanan araçta dikey komut GERİ ÇEKİLİR (sönümleme)",
+            vz_durgun < -2.0 and vz_tirmanan > vz_durgun + 1.5,
+            f"araç durgunken {vz_durgun:+.2f} → 4 m/s tırmanırken "
+            f"{vz_tirmanan:+.2f} m/s (fark {vz_tirmanan - vz_durgun:+.2f})")
+
     # ── B21: ⚠ YAW SLEW SINIRI — takla önleyici ──
     # 2026-08-09: görsel fazda yaw komutu 876 °/s'ye çıkıyordu (araç ~120);
     # yaw doyumu roll/pitch yetkisini yiyor → takla. Ölçülen medyan 12-38 °/s,
