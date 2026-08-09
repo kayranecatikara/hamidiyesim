@@ -6,132 +6,162 @@ NEDEN VAR
 2026-08-08'de dört A/B ("PN_KAPI, PN_MAX, V_KAPANMA, IVME") yapıldı, hepsi
 "fark yok" çıktı ve öyle raporlandı. Sonradan ölçüldü ki hedef uçak DAİRE
 senaryosunda irtifa tutmuyor (+35…+92 m/dk, hiç oturmuyor); iki kol 134-175 m
-farklı irtifada uçmuş. Yani ölçtüğümüz şey değişikliğin etkisi değildi.
-Dördü de çöpe gitti.
+farklı irtifada uçmuş. Ölçtüğümüz şey değişikliğin etkisi değildi; dördü de
+çöpe gitti. Bu araç o kontrolü gözden alıp koda veriyor: kıyastan ÖNCE
+çalıştır, KIRMIZI derse o A/B'yi rapor etme.
 
-Bu araç o kontrolü gözden alıp koda veriyor: kıyastan ÖNCE çalıştır, KIRMIZI
-derse o A/B'yi rapor etme.
+⚠ 2026-08-09 DÜZELTMESİ — bir kol = bir UÇUŞ, bir DOSYA değil.
+İlk sürüm son iki CSV DOSYASINI iki kol sanıyordu. Oysa supervisor her faz
+geçişinde yeni dosya açıyor (`supervisor.py:180,190,199`): 08-09 uçuşu tek
+başına 45 dosya / 23 GPS + 22 görsel faz. Araç bu yüzden "21 s / 14 s sürmüş"
+diyordu — onlar tek tek FAZLARDI, kollar değil. Artık gruplama
+`gudum_karne.ucuslar()`'a devredildi (120 s boşluk kuralı, tek kaynak).
 
 KULLANIM
 --------
-    PYTHONPATH=. python3 tools/ab_gecerli_mi.py          # son iki koşu
-    PYTHONPATH=. python3 tools/ab_gecerli_mi.py A.csv B.csv
+    PYTHONPATH=. python3 tools/ab_gecerli_mi.py            # son iki uçuş
+    PYTHONPATH=. python3 tools/ab_gecerli_mi.py 1421 1435  # damgayla
 
 Çıkış kodu: kollar kıyaslanabilirse 0, değilse 1.
 """
 from __future__ import annotations
 
-import csv
-import glob
 import os
+import statistics as st
 import sys
 
-_KOK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LOGLAR = os.path.join(_KOK, "logs")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from tools.gudum_karne import ucuslar as _ucuslar    # noqa: E402  (yol ayarı üstte)
 
 # Eşikler — gerekçeleri:
 #   irtifa 25 m : ölçülen tırmanma 35-92 m/dk; 25 m'lik fark ~20-40 saniyelik
 #                 kayma demek, menzil/geometri sonucunu görünür şekilde kaydırır.
-#   süre  %40   : bir kol yarı sürede biterse (ör. erken vuruş) örneklem sayısı
-#                 kıyaslanamaz.
-#   asgari 40 s : altında irtifa platosuna oturmamış olabilir.
 #   tırmanma ±15 m/dk : düz uçuşta plato ölçüldü (65 m ve 134 m'de tam 0.0);
-#                 dairede 35-92 m/dk. 15 ikisini ayırır. Bu eşik ASIL SEBEBİ
-#                 yakalar: kollar aynı irtifada başlasa bile hedef tırmanmaya
-#                 devam ediyorsa fark koşu boyunca büyür.
+#                 dairede 35-92 m/dk. 15 ikisini ayırır. ASIL SEBEBİ yakalar:
+#                 kollar aynı irtifada başlasa bile hedef tırmanmaya devam
+#                 ediyorsa fark koşu boyunca büyür.
+#   süre  %40   : bir kol yarı sürede biterse örneklem sayısı kıyaslanamaz.
+#   asgari 40 s : altında irtifa platosuna oturmamış olabilir.
 IRTIFA_ESIK_M = 25.0
+TIRMANMA_ESIK_MDK = 15.0
 SURE_ORAN_ESIK = 0.40
 ASGARI_SURE_S = 40.0
-TIRMANMA_ESIK_MDK = 15.0
 
 
-def _son_ikisi():
-    d = sorted(glob.glob(os.path.join(_LOGLAR, "gps_guidance_*.csv")),
-               key=os.path.getmtime)
-    # Aynı oturumda birden çok kısa dosya oluşabiliyor; anlamlı uzunlukta
-    # olanları al (başlıktan ibaret dosyalar kıyasa girmemeli).
-    anlamli = [y for y in d if os.path.getsize(y) > 20000]
-    return anlamli[-2:]
+def _yasa(rows):
+    """GPS kolunun hangi yasayla uçtuğunu CSV SÜTUNLARINDAN tanı.
+
+    `frpn_guidance` çıktısını `gps_guidance` ile AYNI dosya adıyla yazıyor
+    (`frpn_guidance.py:128`) ve GPS tarafında yapılandırma damgası yok — yani
+    dosya adından hangi yasanın uçtuğu anlaşılmıyor. Sütun kümeleri ayrık
+    olduğu için imza oradan okunur.
+    """
+    if not rows:
+        return None
+    a = rows[0].keys()
+    if "t_go" in a:            # frpn_guidance.py:83-93
+        return "frpn"
+    if "ist_elev_deg" in a:    # gps_guidance._CSV_ALANLAR
+        return "istasyon"
+    return "bilinmiyor"
 
 
-def _oku(yol):
-    ts, alt, menzil = [], [], []
-    with open(yol, newline="", encoding="utf-8") as f:
-        for s in csv.DictReader(f):
+def _ozet(etiket, dosyalar):
+    """Bir UÇUŞUN (tüm fazları birlikte) A/B geçerliliği açısından özeti."""
+    ts, alt = [], []
+    yasalar = set()
+    for tip, _p, rows in dosyalar:
+        if tip != "gps":
+            continue
+        y = _yasa(rows)
+        if y:
+            yasalar.add(y)
+        for s in rows:
             try:
                 ts.append(float(s["t"]))
                 # tgt_z NED'dir (aşağı POZİTİF). İrtifa = -tgt_z; işareti
-                # burada çeviriyoruz ki tabloda "43 m" yazsın, "-43" değil.
+                # burada çevriliyor ki tabloda "43 m" yazsın, "-43" değil.
                 alt.append(-float(s["tgt_z"]))
-                menzil.append(float(s["menzil"]))
-            except (KeyError, ValueError):
+            except (KeyError, ValueError, TypeError):
                 continue
-    return ts, alt, menzil
-
-
-def _ozet(yol):
-    ts, alt, menzil = _oku(yol)
     if len(ts) < 20:
         return None
-    sure = ts[-1] - ts[0]
-    # Hedef irtifasının ORTANCASI — tek tük telemetri sıçraması etkilemesin
+    # Fazlar ayrı dosyalarda ama 't' aynı saat ekseninde → uçuş süresi uçtan uca
+    sure = max(ts) - min(ts)
     sirali = sorted(alt)
     ortanca = sirali[len(sirali) // 2]
-    # Tırmanma hızı (m/dk): son %20 ile ilk %20 arasındaki fark
-    n = len(alt)
+    # Tırmanma (m/dk): zamanla sıralanıp ilk %20 ile son %20 karşılaştırılır
+    ikili = sorted(zip(ts, alt))
+    n = len(ikili)
     d = max(1, n // 5)
-    bas = sum(alt[:d]) / d
-    son = sum(alt[-d:]) / d
+    bas = st.mean(a for _, a in ikili[:d])
+    son = st.mean(a for _, a in ikili[-d:])
     tirmanma = (son - bas) / sure * 60.0 if sure > 0 else 0.0
     return {
-        "ad": os.path.basename(yol), "sure": sure, "n": n,
+        "etiket": etiket, "sure": sure, "n": n,
         "irtifa": ortanca, "tirmanma": tirmanma,
-        "menzil_min": min(menzil) if menzil else float("nan"),
+        "yasa": "+".join(sorted(yasalar)) if yasalar else "?",
+        "faz": sum(1 for t, _, _ in dosyalar if t == "gps"),
     }
 
 
 def main(argv):
-    yollar = argv[1:] if len(argv) > 2 else _son_ikisi()
-    if len(yollar) < 2:
-        print("⚠ kıyaslanacak iki koşu bulunamadı (logs/gps_guidance_*.csv)")
+    gruplar = _ucuslar()
+    if len(argv) > 2:
+        secili = []
+        for anahtar in argv[1:3]:
+            adaylar = [g for g in gruplar if anahtar in g[0]]
+            if not adaylar:
+                print(f"⚠ '{anahtar}' damgalı uçuş yok "
+                      f"(PYTHONPATH=. python3 tools/gudum_karne.py --liste)")
+                return 1
+            secili.append(adaylar[-1])
+    else:
+        secili = gruplar[-2:]
+
+    if len(secili) < 2:
+        print("⚠ kıyaslanacak İKİ UÇUŞ yok "
+              f"(logs/ içinde {len(gruplar)} uçuş bulundu).")
+        print("  Bir A/B iki AYRI uçuş ister; tek uçuşun fazları kol değildir.")
         return 1
 
-    ozetler = [_ozet(y) for y in yollar]
+    ozetler = [_ozet(e, d) for e, d in secili]
     if any(o is None for o in ozetler):
-        print("⚠ koşulardan biri boş/kısa — kıyas yok")
+        print("⚠ uçuşlardan biri boş/kısa — kıyas yok")
         return 1
-    a, b = ozetler[0], ozetler[1]
+    a, b = ozetler
 
-    print(f"{'kol':<34}{'süre s':>9}{'hedef irtifa m':>16}{'tırmanma m/dk':>15}"
-          f"{'en yakın m':>12}")
-    for etiket, o in (("A  " + a["ad"], a), ("B  " + b["ad"], b)):
-        print(f"{etiket:<34}{o['sure']:>9.1f}{o['irtifa']:>16.1f}"
-              f"{o['tirmanma']:>15.1f}{o['menzil_min']:>12.1f}")
+    print(f"{'kol':<8}{'uçuş':<18}{'süre s':>9}{'GPS faz':>9}"
+          f"{'hedef irtifa m':>16}{'tırmanma m/dk':>15}{'GPS yasası':>13}")
+    for ad, o in (("A", a), ("B", b)):
+        print(f"{ad:<8}{o['etiket']:<18}{o['sure']:>9.1f}{o['faz']:>9}"
+              f"{o['irtifa']:>16.1f}{o['tirmanma']:>15.1f}{o['yasa']:>13}")
 
     sorunlar = []
     d_irt = abs(a["irtifa"] - b["irtifa"])
     if d_irt > IRTIFA_ESIK_M:
-        sorunlar.append(
-            f"hedef irtifası {d_irt:.1f} m farklı (eşik {IRTIFA_ESIK_M:.0f} m) — "
-            f"iki kol aynı geometride uçmamış")
+        sorunlar.append(f"hedef irtifası {d_irt:.1f} m farklı "
+                        f"(eşik {IRTIFA_ESIK_M:.0f} m) — kollar aynı "
+                        f"geometride uçmamış")
     for o in (a, b):
         if o["sure"] < ASGARI_SURE_S:
-            sorunlar.append(f"{o['ad']} yalnız {o['sure']:.0f} s sürmüş "
+            sorunlar.append(f"{o['etiket']} yalnız {o['sure']:.0f} s sürmüş "
                             f"(asgari {ASGARI_SURE_S:.0f} s)")
+        if abs(o["tirmanma"]) > TIRMANMA_ESIK_MDK:
+            sorunlar.append(
+                f"{o['etiket']}: hedef {o['tirmanma']:+.0f} m/dk ile irtifa "
+                f"değiştiriyor (eşik ±{TIRMANMA_ESIK_MDK:.0f}) — geometri koşu "
+                f"boyunca kayıyor, plato beklenmemiş")
     kisa, uzun = sorted((a["sure"], b["sure"]))
     if uzun > 0 and kisa / uzun < SURE_ORAN_ESIK:
         sorunlar.append(f"süreler çok farklı ({kisa:.0f} s ↔ {uzun:.0f} s)")
-    # ASIL SEBEP DENETİMİ: kollar şu an eşit irtifada olsa bile, hedef
-    # tırmanmaya devam ediyorsa iki koşu FARKLI anlarda farklı geometride
-    # olur ve fark her saniye büyür. 08-08'de olan tam olarak buydu.
-    for o in (a, b):
-        if abs(o["tirmanma"]) > TIRMANMA_ESIK_MDK:
-            sorunlar.append(
-                f"{o['ad']}: hedef {o['tirmanma']:+.0f} m/dk ile irtifa "
-                f"değiştiriyor (eşik ±{TIRMANMA_ESIK_MDK:.0f}) — geometri "
-                f"koşu boyunca kayıyor, plato beklenmemiş")
 
     print()
+    if a["yasa"] != b["yasa"]:
+        print(f"ℹ GPS yasası kollarda FARKLI: A={a['yasa']}  B={b['yasa']}")
+        print("  (FRPN A/B'sinde beklenen budur; başka bir A/B'de KARIŞTIRICIDIR)")
+        print()
     if sorunlar:
         print("KIRMIZI — bu A/B KIYASLANAMAZ:")
         for s in sorunlar:
@@ -141,7 +171,7 @@ def main(argv):
         print("ve DÜZ senaryo kullan (dairede hedef sürekli tırmanıyor).")
         return 1
     print("YEŞİL — kollar kıyaslanabilir. (Bu yalnız GEOMETRİ denetimidir;")
-    print("değişikliğin etkisi ayrıca ölçülmeli.)")
+    print("değişikliğin etkisi ayrıca ölçülmeli: tools/gudum_karne.py --kiyasla)")
     return 0
 
 

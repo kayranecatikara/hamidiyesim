@@ -69,7 +69,19 @@ class SupCfg:
     # kor_dalis ≤ %3) — bkz. DURUM.md B6.
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
-    KAYIP_M = 20          # ardışık tespitsiz kare → GPS'e dön (~0.66 s)
+    # ⚠ KAYIP_M BİR EŞİK DEĞİL, BAYRAK — 2026-08-09'da anlaşıldı.
+    # Buradaki 20 değeri HİÇBİR YERDE KULLANILMIYOR. `run_visual_lead`'e
+    # `kayip_kare_esik=` diye geçiliyor ama orada yalnız `is not None` diye
+    # okunuyor (visual_lead.py:423,513,620) — anlamı "hibrit moddayız, temas
+    # kaybında GPS'e dön". Eski yorumu ("ardışık tespitsiz kare ~0.66 s")
+    # yanlıştı ve analizleri yanlış yöne sürüyordu.
+    # GERÇEK kayıp ölçütü KAYAN PENCEREDİR, ardışık sayaç değil:
+    #     guidance_core.KAYIP_PENCERE = 40 kare (~1.3 s @30 Hz)
+    #     guidance_core.KAYIP_MIN_ISABET = 4
+    #   → son 40 karede 4'ten az tespit varsa faz düşer.
+    # Değeri değiştirmek DAVRANIŞI DEĞİŞTİRMEZ; eşiği ayarlamak isteyen
+    # guidance_core'daki o iki sabite bakmalı.
+    KAYIP_M = 20
     POSE_CONF_MIN = 0.5
     GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
     # Devir menzili: GPS handoff bayrağı 40 m'de açılıyor ama orada kutu ~7 px,

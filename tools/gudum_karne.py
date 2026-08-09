@@ -183,10 +183,84 @@ def _vis_metrik(dosyalar):
     }
 
 
+_HIZLANMA_ESIK = 15.0     # m/s — "faz hızına ulaştı" sayılan yatay hız
+_KISA_FAZ_S = 3.0         # s — bunun altındaki görsel faz "sahte" sayılır
+_GERCEK_DEVIR_M = 15.0    # m — devir kapısı 20 m; altı yeniden-giriş demek
+
+
+def _gecis_metrik(dosyalar):
+    """FAZ GEÇİŞİ SAĞLIĞI — 2026-08-09'da eklendi.
+
+    NEDEN VAR: kullanıcı "gps kopup duruyo, sürekli gps-görsel geçişi oluyor"
+    dedi ve hiçbir araç bunu raporlamıyordu. Karne faz SAYISINI basıyordu ama
+    bir uçuşta 22 faz olmasının anormal olduğunu söyleyen bir ölçüt yoktu.
+
+    Ölçülen (08-09, 23 GPS + 22 görsel faz / 7,5 dk — beklenen 1):
+        GPS fazı başlangıç hızı medyan 0.16 m/s   → araç her geçişte DURUYOR
+        15 m/s'e hiç ulaşamayan GPS fazı 9/23
+        görsel fazların %45'i 3 s'den kısa
+        görsel fazların %77'si fly-past ('gecildi') ile bitiyor
+        devir menzili İKİLİ: yarısı ~19.6 m (gerçek), yarısı ~9.6 m (yeniden-giriş)
+
+    Sağlıklı bir uçuşta beklenen: az sayıda faz, kısa faz oranı düşük,
+    GPS fazları faz hızına ULAŞIYOR.
+    """
+    gps_ilk_hiz, gps_ulasamadi, gps_n = [], 0, 0
+    for _, rows in dosyalar.get("gps", []):
+        v = []
+        for r in rows:
+            vx, vy, t = _f(r.get("vx_cmd")), _f(r.get("vy_cmd")), _f(r.get("t"))
+            if vx is None or vy is None or t is None:
+                continue
+            v.append((t, math.hypot(vx, vy)))
+        if len(v) < 5:
+            continue
+        gps_n += 1
+        gps_ilk_hiz.append(v[0][1])
+        if not any(h >= _HIZLANMA_ESIK for _, h in v):
+            gps_ulasamadi += 1
+
+    sureler, girisler, gecildi, vis_n = [], [], 0, 0
+    for _, rows in dosyalar.get("vis", []):
+        t = [_f(r.get("t_ros")) for r in rows]
+        t = [x for x in t if x is not None]
+        if len(t) < 2:
+            continue
+        vis_n += 1
+        sureler.append(t[-1] - t[0])
+        m = [_f(r.get("menzil_gercek_m")) for r in rows]
+        m = [x for x in m if x is not None]
+        if m:
+            girisler.append(m[0])
+        if any(r.get("durum") == "gecildi" for r in rows):
+            gecildi += 1
+
+    if not gps_n and not vis_n:
+        return None
+    return {
+        "gps_faz": gps_n, "vis_faz": vis_n,
+        "gps_ilk_hiz_med": st.median(gps_ilk_hiz) if gps_ilk_hiz else None,
+        "gps_ulasamadi": gps_ulasamadi,
+        "gps_ulasamadi_%": 100.0 * gps_ulasamadi / gps_n if gps_n else None,
+        "vis_sure_med": st.median(sureler) if sureler else None,
+        "vis_kisa_%": (100.0 * sum(1 for s in sureler if s < _KISA_FAZ_S)
+                       / len(sureler)) if sureler else None,
+        "gecildi_%": 100.0 * gecildi / vis_n if vis_n else None,
+        # Yeniden-giriş: devir kapısı 20 m; 15 m'nin altında başlayan faz
+        # önceki fazın hemen ardından alınmış demektir.
+        "yeniden_giris_%": (100.0 * sum(1 for m in girisler if m < _GERCEK_DEVIR_M)
+                            / len(girisler)) if girisler else None,
+        "giris_med": st.median(girisler) if girisler else None,
+    }
+
+
 def karne(etiket, dosyalar):
-    gps = _gps_metrik([(p, r) for t, p, r in dosyalar if t == "gps"])
-    vis = _vis_metrik([(p, r) for t, p, r in dosyalar if t == "vis"])
-    return {"etiket": etiket, "gps": gps, "vis": vis}
+    gps_d = [(p, r) for t, p, r in dosyalar if t == "gps"]
+    vis_d = [(p, r) for t, p, r in dosyalar if t == "vis"]
+    gps = _gps_metrik(gps_d)
+    vis = _vis_metrik(vis_d)
+    gecis = _gecis_metrik({"gps": gps_d, "vis": vis_d})
+    return {"etiket": etiket, "gps": gps, "vis": vis, "gecis": gecis}
 
 
 # ── yazdırma ───────────────────────────────────────────────────────────────
@@ -226,6 +300,29 @@ def yazdir(k):
                   f"→{_fmt(f['son_menzil'], '', 1)}  → {f['sonuc']}")
     else:
         print("[GÖRSEL] faz yok (hiç devir olmadı)")
+    gc = k.get("gecis")
+    if gc:
+        print(f"[GEÇİŞ] {gc['gps_faz']} GPS + {gc['vis_faz']} görsel faz"
+              f"   (sağlıklı uçuşta bir avuç olmalı)")
+        print(f"  GPS fazı başlangıç hızı: {_fmt(gc['gps_ilk_hiz_med'], ' m/s', 2)}"
+              f"   {_HIZLANMA_ESIK:.0f} m/s'e ULAŞAMAYAN: "
+              f"{gc['gps_ulasamadi']}/{gc['gps_faz']}"
+              f" ({_fmt(gc['gps_ulasamadi_%'], '%', 0)})")
+        print(f"  görsel faz süresi: medyan {_fmt(gc['vis_sure_med'], ' s')}"
+              f"   <{_KISA_FAZ_S:.0f} s olan: {_fmt(gc['vis_kisa_%'], '%', 0)}"
+              f"   fly-past ile biten: {_fmt(gc['gecildi_%'], '%', 0)}")
+        print(f"  devir menzili medyan {_fmt(gc['giris_med'], ' m')}"
+              f"   <{_GERCEK_DEVIR_M:.0f} m'de başlayan (yeniden-giriş): "
+              f"{_fmt(gc['yeniden_giris_%'], '%', 0)}")
+        _uyari = []
+        if gc["gps_ilk_hiz_med"] is not None and gc["gps_ilk_hiz_med"] < 2.0:
+            _uyari.append("araç her geçişte DURUYOR")
+        if gc["gps_ulasamadi_%"] is not None and gc["gps_ulasamadi_%"] > 20:
+            _uyari.append("GPS fazlarının çoğu faz hızına ulaşamıyor")
+        if gc["yeniden_giris_%"] is not None and gc["yeniden_giris_%"] > 30:
+            _uyari.append("faz SALINIMI (yeniden-giriş oranı yüksek)")
+        if _uyari:
+            print("  ⚠ " + "  ·  ".join(_uyari))
 
 
 def kiyasla(k1, k2):
@@ -250,6 +347,15 @@ def kiyasla(k1, k2):
         satir("GÖRSEL yaw RMS (°)", v1["yaw_rms"], v2["yaw_rms"])
         satir("GÖRSEL en yakın (m)", v1["en_yakin"], v2["en_yakin"], "", 2)
         satir("VURUŞ", 1.0 if v1["vurus"] else 0.0, 1.0 if v2["vurus"] else 0.0, "", 0)
+    c1, c2 = k1.get("gecis"), k2.get("gecis")
+    if c1 and c2:
+        satir("GEÇİŞ GPS faz sayısı", c1["gps_faz"], c2["gps_faz"], "", 0)
+        satir("GEÇİŞ GPS ilk hız (m/s)", c1["gps_ilk_hiz_med"], c2["gps_ilk_hiz_med"], "", 2)
+        satir(f"GEÇİŞ {_HIZLANMA_ESIK:.0f} m/s'e ulaşamayan %",
+              c1["gps_ulasamadi_%"], c2["gps_ulasamadi_%"], "%", 0)
+        satir("GEÇİŞ görsel faz süresi (s)", c1["vis_sure_med"], c2["vis_sure_med"])
+        satir("GEÇİŞ kısa faz %", c1["vis_kisa_%"], c2["vis_kisa_%"], "%", 0)
+        satir("GEÇİŞ yeniden-giriş %", c1["yeniden_giris_%"], c2["yeniden_giris_%"], "%", 0)
 
 
 def _bul(gruplar, anahtar):

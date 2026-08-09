@@ -10,6 +10,7 @@ K1-K3  _vis_metrik    faz sonucu sınıflaması, en yakın menzil, vuruş bayra�
 K4     _vis_metrik    pose oranı — hangi satır "pose var" sayılıyor
 K5-K6  _gps_metrik    istasyonda oturma yüzdesi, kadraj hatası yalnız KİLİT'te
 K7-K8  _sentetik      eski test artefaktı süzgeci (gerçek uçuşu ELEMEMELİ)
+K9-K11 _gecis_metrik  faz geçişi sağlığı (2026-08-09: "gps kopup duruyo")
 """
 
 import math
@@ -110,6 +111,49 @@ def main():
             and not gk._sentetik(GPS, [{"tgt_x": "12.3", "tgt_y": "4.5",
                                         "tgt_z": "-30.0"}]),
             "gerçekçi t_ros ve hedef konumu süzgeçten geçiyor")
+
+    # ── K9-K11: FAZ GEÇİŞİ SAĞLIĞI (2026-08-09) ──
+    # Kullanıcı "gps kopup duruyo, sürekli gps-görsel geçişi oluyor" dedi ve
+    # hiçbir araç bunu raporlamıyordu. Karne faz SAYISINI basıyordu ama 22
+    # fazın anormal olduğunu söyleyen bir ölçüt yoktu.
+    def _gps_hiz(t0, hizlar):
+        """t0'dan başlayan, verilen yatay hızlara sahip GPS fazı satırları."""
+        return [{"t": str(t0 + i * 0.05), "vx_cmd": str(h), "vy_cmd": "0.0"}
+                for i, h in enumerate(hizlar)]
+
+    # K9: araç durmuş başlıyor ve faz hızına ULAŞAMIYOR → yakalanmalı
+    duran = _gps_hiz(0.0, [0.1, 0.5, 1.2, 2.0, 3.1, 4.0])       # 15'e çıkmıyor
+    saglikli = _gps_hiz(100.0, [17.0] * 6 + [18.0] * 4)          # baştan hızlı
+    c = gk._gecis_metrik({"gps": [(GPS, duran), (GPS, saglikli)], "vis": []})
+    kontrol("K9  GPS fazı 'durmuş başladı' ve 'hıza ulaşamadı' ölçülüyor",
+            c["gps_faz"] == 2 and c["gps_ulasamadi"] == 1
+            and abs(c["gps_ilk_hiz_med"] - (0.1 + 17.0) / 2) < 1e-9,
+            f"{c['gps_faz']} faz, ulaşamayan {c['gps_ulasamadi']}, "
+            f"ilk hız medyan {c['gps_ilk_hiz_med']:.2f} m/s")
+
+    # K10: kısa faz + fly-past + yeniden-giriş oranları
+    # uzun faz: 4 s, devir 19 m (gerçek devir) — fly-past ile biter
+    uzun = [_vis_satir(i * 0.04, 19.0 - i * 0.15, "ok") for i in range(100)]
+    uzun[-1]["durum"] = "gecildi"
+    # kısa faz: 0.8 s, devir 9 m (yeniden-giriş)
+    kisa = [_vis_satir(i * 0.04, 9.0 - i * 0.1, "ok") for i in range(20)]
+    c = gk._gecis_metrik({"gps": [], "vis": [(VIS, uzun), (VIS, kisa)]})
+    kontrol("K10 kısa faz / fly-past / yeniden-giriş oranları",
+            c["vis_faz"] == 2 and abs(c["vis_kisa_%"] - 50.0) < 1e-9
+            and abs(c["gecildi_%"] - 50.0) < 1e-9
+            and abs(c["yeniden_giris_%"] - 50.0) < 1e-9,
+            f"kısa %{c['vis_kisa_%']:.0f}  fly-past %{c['gecildi_%']:.0f}  "
+            f"yeniden-giriş %{c['yeniden_giris_%']:.0f}")
+
+    # K11: GPS yasası CSV SÜTUNLARINDAN tanınmalı. frpn_guidance çıktısını
+    # gps_guidance ile AYNI dosya adıyla yazıyor ve damgası yok — kol yalnız
+    # sütun imzasından ayırt edilebiliyor. FRPN A/B'si buna bağlı.
+    from tools import ab_gecerli_mi as ab
+    kontrol("K11 GPS yasası (frpn / istasyon) sütun imzasından tanınıyor",
+            ab._yasa([{"t_go": "1.0", "zem_norm": "0.1"}]) == "frpn"
+            and ab._yasa([{"ist_elev_deg": "15.0"}]) == "istasyon"
+            and ab._yasa([]) is None,
+            "t_go → frpn · ist_elev_deg → istasyon · boş → None")
 
     return ozet("gudum_karne")
 
