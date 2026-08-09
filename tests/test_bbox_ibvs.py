@@ -277,22 +277,26 @@ def main():
             abs(e_bore - 25.0) < 0.2 and abs(e_seviye) < 0.3,
             f"cy=240 → {e_bore:+.1f}°   cy=318 → {e_seviye:+.1f}°")
 
+    class _EskiCfg(ib.Cfg):
+        # B18-B24 ESKİ terminal yasasını bekçiliyor. O yasa artık varsayılan
+        # DEĞİL (39 uçuşluk kampanya dikey kanalı tutuşa bıraktı), ama
+        # AVCI_IBVS_TERM_DIKEY_TUTUS=0 / AVCI_IBVS_PN=1 ile seçilebiliyor —
+        # geri dönüş yolunun çalışır kaldığını bu testler garanti eder.
+        PN = False
+        TERM_DIKEY_TUTUS = False
+
     # ── B18: TERMİNAL KESİŞİM — hız vektörü hedefe DOĞRU bakar ──
     # 2026-08-08 ölçümü: ıskanın baskın bileşeni DİKEYDİ (0.5-1.1 m). Sebep:
     # terminalde bile dikey kanal "tutuş" yasasıydı → hedefin altından geçiyorduk.
     cy_ust = geo.CY + geo.FY * math.tan(math.radians(15))   # hedef 10° yukarıda
-    _, _, vz_tut, _, _, _, _eI, _pn = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
-                                     False, (0.0, 0.0), 0.0)
-    _, _, vz_ter, _, _, _, _eI, _pn = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
-                                     True, (0.0, 0.0), 0.0)
+    _, _, vz_tut, _, _, _, _eI, _pn = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05,
+                                     _EskiCfg, False, (0.0, 0.0), 0.0)
+    _, _, vz_ter, _, _, _, _eI, _pn = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05,
+                                     _EskiCfg, True, (0.0, 0.0), 0.0)
     # hedef 10° yukarıda → kesişim için TIRMANMALI (vz<0, NED)
     kontrol("B18 terminalde hedef yukarıdayken TIRMANIR (tutuş modu tırmanmıyordu)",
             vz_ter < -0.5 and vz_ter < vz_tut,
             f"tutuş vz={vz_tut:+.2f}  →  terminal vz={vz_ter:+.2f} m/s")
-
-    class _EskiCfg(ib.Cfg):
-        PN = False    # B19-B24 PN'SİZ (nişanlama) yasayı bekçiliyor — o yasa
-                      # AVCI_IBVS_PN=0 ile hâlâ seçilebilir durumda
 
     # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken ──
     _, _, _, yaw_ldsz, _, t_ldsz, _eI, _pn = ib.komut(
@@ -429,7 +433,11 @@ def main():
             f"LOS=50 rad/s → tavan {C.LEAD_MAX_DEG:.0f}°")
 
     class _PnCfg(ib.Cfg):
-        PN = True     # PN varsayılan KAPALI (ölçüm desteklemedi); testler açar
+        # PN varsayılan KAPALI (ölçüm desteklemedi). Ayrıca dikey kanal artık
+        # varsayılan olarak tutuş yasasında (kazanan yapılandırma) ve o dal
+        # PN'den ÖNCE geliyor — PN'i sınamak için ikisini birden ayarla.
+        PN = True
+        TERM_DIKEY_TUTUS = False
 
     # ══ B27-B32: PN (ORANTILI SEYRÜSEFER) ══
     # PN'nin bekçiliği: eski yasalar LOS AÇISINI kontrol ediyordu; çarpışma
@@ -511,16 +519,16 @@ def main():
     # Kamera 25° yukarı baktığı için aşağı yalnız 30° görüyor; hedefin üstüne
     # çıkınca kör kalıyoruz. Eğilim, nişanı LOS'un ALTINA alıp drone'u hedefin
     # altında tutmalı — yani ALÇALMA yönünde (vz daha POZİTİF, NED down+).
-    class _Bias(ib.Cfg):
+    class _Bias(_EskiCfg):
         TERM_ELEV_BIAS = math.radians(5.0)
     _pnA = _pnB = None
     for _ in range(6):
-        _a = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+        _a = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _EskiCfg, True,
                       (0.0, 0.0), 0.0, 0.0, 0.0, _pnA)
         _b = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _Bias, True,
                       (0.0, 0.0), 0.0, 0.0, 0.0, _pnB)
         _pnA, _pnB = _a[7], _b[7]
-    kontrol("B33 alttan yaklaşma eğilimi drone'u hedefin ALTINDA tutar",
+    kontrol("B33 [eski yasa] alttan yaklaşma eğilimi drone'u ALTTA tutar",
             _b[2] > _a[2] + 0.3,
             f"eğilimsiz vz {_a[2]:+.2f} → 5° eğilimle vz {_b[2]:+.2f} m/s "
             f"(pozitif = alçal = hedefin altında kal, kadrajda yukarıda tut)")
@@ -538,11 +546,10 @@ def main():
         KAPI_KATI = True
     import control.guidance.bbox_ibvs as _ib2
     _kaynak = open(_ib2.__file__, encoding="utf-8").read()
-    kontrol("B35 kapı katı modda sahte 0° ile açılmaz",
-            "99.0 if cfg.KAPI_KATI else 0.0" in _kaynak
-            and _Kati.KAPI_KATI and not ib.Cfg.KAPI_KATI,
-            "katı modda başlangıç 99° (kapı kapalı), varsayılan hâlâ eski "
-            "davranış — kampanyada ölçülecek")
+    kontrol("B35 terminal kapısı sahte 0° ile açılmaz (VARSAYILAN)",
+            "99.0 if cfg.KAPI_KATI else 0.0" in _kaynak and ib.Cfg.KAPI_KATI,
+            "kapı gerçek ölçüm gelene dek kapalı; ıskadan sonraki yakın "
+            "girişlerde boş geçmiyor")
 
     # ── B36: integral doyma koruması ──
     # Büyük ve sürekli bir hatada (hedef çok yukarıda) klasik integral tavana
@@ -561,10 +568,16 @@ def main():
             f"3 s büyük hatadan sonra integral: klasik {_I_klasik:+.2f} "
             f"(tavan ±{C.ELEV_I_MAX:.1f}) → korumalı {_I_awu:+.2f}")
 
-    kontrol("B37 doyma koruması varsayılan KAPALI (ölçülmeden davranış değişmez)",
-            not ib.Cfg.AWU and not ib.Cfg.KAPI_KATI
-            and abs(ib.Cfg.TERM_ELEV_BIAS) < 1e-9,
-            "AWU / KAPI_KATI / TERM_BIAS üçü de env ile açılıyor")
+    # B37: KAZANAN YAPILANDIRMANIN BEKÇİSİ. 39 uçuşluk kampanya (2026-08-09):
+    # kontrol 0/3 vuruş & 0.84 m dikey kaçırma → bu üçlü 8/9 & 0.16 m (p≈0.018).
+    # Bu üçü birlikte ölçüldü; biri kazara kapanırsa test kırmızıya döner.
+    kontrol("B37 KAZANAN varsayılanlar yerinde (39 uçuşla doğrulandı)",
+            ib.Cfg.TERM_DIKEY_TUTUS and ib.Cfg.KAPI_KATI
+            and abs(ib.Cfg.VZ_MAX - 2.5) < 1e-9
+            and not ib.Cfg.PN and not ib.Cfg.AWU,
+            f"dikey_tutus={ib.Cfg.TERM_DIKEY_TUTUS} kapi_kati={ib.Cfg.KAPI_KATI} "
+            f"VZ_MAX={ib.Cfg.VZ_MAX} | ölçüm desteklemeyenler kapalı: "
+            f"PN={ib.Cfg.PN} AWU={ib.Cfg.AWU}")
 
     # ── B38: terminal mandalı menzil açılınca bırakılır ──
     _src = open(ib.__file__, encoding="utf-8").read()
@@ -576,13 +589,13 @@ def main():
             "varsayılan hâlâ kapalı")
 
     # ── B39: terminalde dikeyi dondurma ──
-    class _Don(ib.Cfg):
+    class _Don(_EskiCfg):
         TERM_VZ_DONDUR = True
-    _vz_serbest = ib.komut(CX, 150, 30, 30, 0.0, 10.0, 0.05, C, True,
+    _vz_serbest = ib.komut(CX, 150, 30, 30, 0.0, 10.0, 0.05, _EskiCfg, True,
                            (0.0, 0.0), 0.0, 0.0, 0.0, None)[2]
     _vz_donuk = ib.komut(CX, 150, 30, 30, 0.0, 10.0, 0.05, _Don, True,
                          (0.0, 0.0), 0.0, 0.0, 0.0, None, -0.7)[2]
-    kontrol("B39 terminalde dikey hız mandal anındaki değerde dondurulabilir",
+    kontrol("B39 [eski yasa] terminalde dikey hız dondurulabilir",
             abs(_vz_donuk - (-0.7)) < 1e-9 and abs(_vz_serbest + 0.7) > 0.3
             and not ib.Cfg.TERM_VZ_DONDUR,
             f"serbest {_vz_serbest:+.2f} → donuk {_vz_donuk:+.2f} m/s "
@@ -593,15 +606,15 @@ def main():
     # "hız vektörünü LOS'a doğrult"a çeviriyor — kazancı v_los·tan() olduğu için
     # 18 m/s'de raya dayanıyor ve araç (2.5 m/s²) izleyemiyor. Bu seçenek
     # (a)'yı korur, (b)'yi geri alır.
-    class _DikTut(ib.Cfg):
-        TERM_DIKEY_TUTUS = True
-    _a = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, _DikTut, True)
-    _b = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, C, True)
+    class _EskiTavan(_EskiCfg):
+        VZ_MAX_TERM = 5.0     # eski terminal tavanı
+    _a = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, C, True)          # varsayılan
+    _b = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, _EskiTavan, True)  # eski yasa
     _yat_a = math.hypot(_a[0], _a[1])
     _yat_b = math.hypot(_b[0], _b[1])
     kontrol("B40 terminalde dikey tutuş yasasında: hız TAM, dikey RAYA DAYANMAZ",
             _yat_a >= _yat_b - 1e-6 and abs(_a[2]) < abs(_b[2]) - 0.5
-            and abs(_a[2]) <= C.VZ_MAX + 1e-6 and not ib.Cfg.TERM_DIKEY_TUTUS,
+            and abs(_a[2]) <= C.VZ_MAX + 1e-6 and ib.Cfg.TERM_DIKEY_TUTUS,
             f"tutuş yasası: yatay {_yat_a:.1f} m/s, vz {_a[2]:+.2f} | "
             f"eski terminal: yatay {_yat_b:.1f} m/s, vz {_b[2]:+.2f} (rayda)")
 

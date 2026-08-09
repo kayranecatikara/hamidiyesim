@@ -119,7 +119,11 @@ class Cfg:
     # Tutuş fazının dikey tavanı. ⚠ Aracın ölçülen dikey ivme sınırı 2.5 m/s²
     # (WPNAV_ACCEL_Z=250) — 3 m/s'lik bir komutu uygulaması 1.2 s sürüyor.
     # Terminal tavanıyla (VZ_MAX_TERM) birlikte ayarlanmalı.
-    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 3.0)   # m/s; dikey hız tavanı
+    # ⚠ 3.0 → 2.5 (2026-08-09): aracın ÖLÇÜLEN dikey ivme sınırı 2.5 m/s²
+    # (WPNAV_ACCEL_Z=250). 3 m/s'lik komutu uygulaması 1.2 s sürüyor ve komut
+    # sürekli doygun kalıyordu. Tavanı aracın yapabildiğine indirmek, her
+    # salınımın GENLİĞİNİ küçültüyor — kazanan üçlünün parçası.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 2.5)   # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ══ İRTİFA EŞİTLE, SONRA DAL (2026-08-09, KULLANICI FİKRİ) ══
@@ -222,7 +226,9 @@ class Cfg:
     # 1 = kapı gerçek ölçüm gelene dek KAPALI kalır (doğrusu bu).
     # Varsayılan 0: faz-2 kampanyasının tek-değişken temeli bozulmasın diye;
     # ölçülüp kazanırsa varsayılan çevrilecek.
-    KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 0.0) >= 0.5
+    # ⚠ VARSAYILAN AÇIK (kazanan üçlünün parçası). Kapı artık gerçek ölçüm
+    # gelene dek kapalı kalır; sahte 0° ile açılmaz.
+    KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 1.0) >= 0.5
 
     # ══ İNTEGRAL DOYMA KORUMASI (anti-windup) — 2026-08-09 ══
     # ÖLÇÜLDÜ (log 112517, tutuş fazı): elev_I ilk yarım saniyede tavana (3.0)
@@ -272,7 +278,11 @@ class Cfg:
     # doğrusal ofseti sıfıra götürür — yani eşitleyici zaten bir kesişim
     # çözümüdür, üstelik kazancı hıza değil açı hatasına bağlı olduğu için
     # raya dayanmaz.
-    TERM_DIKEY_TUTUS = _env_f("AVCI_IBVS_TERM_DIKEY_TUTUS", 0.0) >= 0.5
+    # ⚠ VARSAYILAN AÇIK (2026-08-09, 39 uçuşluk kampanyayla doğrulandı):
+    #     kontrol            0/3 vuruş, dikey kaçırma 0.84 m
+    #     bu yasa + tavan 2.5  8/9 vuruş, dikey kaçırma 0.16 m   (p ≈ 0.018)
+    # AVCI_IBVS_TERM_DIKEY_TUTUS=0 eski davranışı geri getirir.
+    TERM_DIKEY_TUTUS = _env_f("AVCI_IBVS_TERM_DIKEY_TUTUS", 1.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -692,6 +702,12 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     f = open(csv_yol, "w", newline="")
     w_csv = csv.DictWriter(f, fieldnames=_CSV_ALANLAR, extrasaction="ignore")
     w_csv.writeheader()
+    if cfg.TERM_DIKEY_TUTUS and (abs(cfg.TERM_ELEV_BIAS) > 1e-9
+                                 or cfg.TERM_VZ_DONDUR or cfg.PN):
+        print("[IBVS] ⚠ TERM_BIAS / TERM_VZDON / PN yalnız ESKİ terminal "
+              "yasasında etkilidir; şu an dikey kanal tutuş yasasında "
+              "(AVCI_IBVS_TERM_DIKEY_TUTUS=1). Bu anahtarlar YOK SAYILIYOR — "
+              "kullanmak için AVCI_IBVS_TERM_DIKEY_TUTUS=0 verin.")
     print(f"[IBVS] bbox görsel güdüm başladı — SAF TAKİP + PI hız "
           f"(CANLI GPS YOK, yarışma kuralı). İntegral sıcak başlangıç: "
           f"{hiz_I:.1f} m/s, REF={cfg.BOYUT_REF:.0f}px, tavan "
@@ -849,8 +865,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                               f"irtifa oturdu, tam taahhüt")
                     elif not irtifa_bekleme_yazildi:
                         irtifa_bekleme_yazildi = True
+                        _eh_yazi = ("henüz ölçüm yok" if _eh > 360.0
+                                    else f"yükseliş hatası {_eh:.1f}°")
                         print(f"[IBVS] menzil hazır ama İRTİFA OTURMADI "
-                              f"(yükseliş hatası {_eh:.1f}° > "
+                              f"({_eh_yazi}, eşik "
                               f"{cfg.TERMINAL_ELEV_ESIK:.0f}°) — önce eşitleniyor")
             vx, vy, vz, yaw_hedef, hiz_I, tani, elev_I, pn_yon = komut(
                 cx, cy, bw, bh, iyaw, hiz_I, dt, cfg, terminal_mandal,
