@@ -1,0 +1,1042 @@
+<title>Avcı İHA — Güdüm Geliştirme Günlüğü</title>
+<style>
+  :root {
+    --zemin:        #F7F9FB;
+    --zemin-kart:   #FFFFFF;
+    --zemin-alt:    #EDF2F6;
+    --murekkep:     #101820;
+    --murekkep-yumusak: #46545F;
+    --murekkep-silik:   #6C7A87;
+    --cizgi:        #D5DFE7;
+    --cizgi-ince:   #E6EDF2;
+    --vurgu:        #1E6FA8;
+    --vurgu-zemin:  #E4EFF7;
+    --kabul:        #3F6E28;
+    --kabul-zemin:  #E7F0DF;
+    --red:          #A8452F;
+    --red-zemin:    #F7E6E1;
+    --kismi:        #8A5E10;
+    --kismi-zemin:  #F7EEDA;
+    --olcum-zemin:  #F1F5F8;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --zemin:        #0D1319;
+      --zemin-kart:   #141C24;
+      --zemin-alt:    #111920;
+      --murekkep:     #E4ECF2;
+      --murekkep-yumusak: #A9B7C2;
+      --murekkep-silik:   #7C8B98;
+      --cizgi:        #26323C;
+      --cizgi-ince:   #1D272F;
+      --vurgu:        #63AEE0;
+      --vurgu-zemin:  #152836;
+      --kabul:        #8FBF63;
+      --kabul-zemin:  #172413;
+      --red:          #E08874;
+      --red-zemin:    #2A1611;
+      --kismi:        #DDAE4B;
+      --kismi-zemin:  #261C09;
+      --olcum-zemin:  #10181F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --zemin:        #0D1319;
+    --zemin-kart:   #141C24;
+    --zemin-alt:    #111920;
+    --murekkep:     #E4ECF2;
+    --murekkep-yumusak: #A9B7C2;
+    --murekkep-silik:   #7C8B98;
+    --cizgi:        #26323C;
+    --cizgi-ince:   #1D272F;
+    --vurgu:        #63AEE0;
+    --vurgu-zemin:  #152836;
+    --kabul:        #8FBF63;
+    --kabul-zemin:  #172413;
+    --red:          #E08874;
+    --red-zemin:    #2A1611;
+    --kismi:        #DDAE4B;
+    --kismi-zemin:  #261C09;
+    --olcum-zemin:  #10181F;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--zemin);
+    color: var(--murekkep);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 20px 100px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sayfa { max-width: 860px; margin: 0 auto; }
+
+  /* ── Başlık ── */
+  header.ust {
+    border-bottom: 2px solid var(--murekkep);
+    padding: 56px 0 22px;
+    margin-bottom: 34px;
+  }
+  .goz {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--vurgu);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(30px, 5.5vw, 46px);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .ozet-metin {
+    font-size: 17px;
+    color: var(--murekkep-yumusak);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+  .sayaclar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .sayac {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 7px 12px;
+    border: 1px solid var(--cizgi);
+    background: var(--zemin-kart);
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .sayac b { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .s-kabul b { color: var(--kabul); }
+  .s-red b { color: var(--red); }
+  .s-kismi b { color: var(--kismi); }
+  .s-notr b { color: var(--vurgu); }
+
+  /* ── Bölümler ── */
+  section { margin: 0 0 52px; }
+  h2 {
+    font-family: var(--serif);
+    font-size: 27px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 0 0 6px;
+    padding-top: 18px;
+    border-top: 1px solid var(--cizgi);
+    text-wrap: balance;
+  }
+  .bolum-not {
+    color: var(--murekkep-silik);
+    font-size: 15px;
+    margin: 0 0 26px;
+    max-width: 62ch;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+  p { margin: 0 0 14px; max-width: 66ch; }
+  a { color: var(--vurgu); }
+
+  /* ── Karar kartı ── */
+  .kart {
+    background: var(--zemin-kart);
+    border: 1px solid var(--cizgi);
+    padding: 22px 24px 20px;
+    margin: 0 0 18px;
+  }
+  .kart-ust {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .kart-ust h3 { margin: 0; flex: 1 1 300px; }
+  .damga {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .d-kabul { color: var(--kabul); background: var(--kabul-zemin); }
+  .d-red { color: var(--red); background: var(--red-zemin); }
+  .d-kismi { color: var(--kismi); background: var(--kismi-zemin); }
+  .d-arac { color: var(--vurgu); background: var(--vurgu-zemin); }
+  .tarih {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--murekkep-silik);
+    white-space: nowrap;
+  }
+
+  .satir { margin: 0 0 12px; }
+  .satir:last-child { margin-bottom: 0; }
+  .etiket {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--murekkep-silik);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .satir p { margin: 0; }
+
+  .olcum {
+    background: var(--olcum-zemin);
+    border-left: 3px solid var(--vurgu);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 0;
+  }
+  .olcum .iyi { color: var(--kabul); font-weight: 700; }
+  .olcum .kotu { color: var(--red); font-weight: 700; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--zemin-alt);
+    padding: 1px 5px;
+    border: 1px solid var(--cizgi-ince);
+  }
+
+  /* ── Tablo ── */
+  .tablo-sar { overflow-x: auto; margin: 0 0 20px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.5px;
+    min-width: 460px;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--cizgi-ince);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--murekkep-silik);
+    border-bottom: 1px solid var(--cizgi);
+    font-weight: 600;
+  }
+  td.sayi { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── Yöntem kutusu ── */
+  .yontem {
+    background: var(--vurgu-zemin);
+    border: 1px solid var(--vurgu);
+    padding: 22px 24px;
+    margin: 0 0 26px;
+  }
+  .yontem h3 { margin-top: 0; }
+  .yontem ol { margin: 0; padding-left: 20px; }
+  .yontem li { margin-bottom: 9px; max-width: 62ch; }
+  .yontem li:last-child { margin-bottom: 0; }
+
+  .uyari {
+    border: 1px solid var(--kismi);
+    background: var(--kismi-zemin);
+    padding: 18px 20px;
+    margin: 0 0 22px;
+  }
+  .uyari p:last-child { margin-bottom: 0; }
+
+  footer {
+    border-top: 1px solid var(--cizgi);
+    padding-top: 20px;
+    margin-top: 40px;
+    font-size: 14px;
+    color: var(--murekkep-silik);
+  }
+  footer p { max-width: 66ch; }
+</style>
+
+<div class="sayfa">
+
+<header class="ust">
+  <p class="goz">Teknofest Avcı İHA · Güdüm Geliştirme Kaydı</p>
+  <h1>Neyi denedik, neyi tuttuk, neyi attık</h1>
+  <p class="ozet-metin">
+    Bu sayfa güdüm sisteminin gelişim günlüğü. Her madde bir fikir: ne olduğu
+    sade dille, uçuş testinde ne ölçtüğümüz, ve sisteme <strong>eklenip
+    eklenmediği</strong> — gerekçesiyle. Yeni bir şey test ettikçe buraya
+    ekleniyor. Amaç, aylar sonra dönüp bakınca "bunu neden böyle yapmıştık"
+    sorusunun cevabını bulabilmek.
+  </p>
+  <div class="sayaclar">
+    <div class="sayac s-kabul"><b>18</b> sisteme eklendi</div>
+    <div class="sayac s-red"><b>6</b> denendi, elendi</div>
+    <div class="sayac s-kismi"><b>3</b> kısmi / kararsız</div>
+    <div class="sayac s-notr"><b>7</b> ölçüm aracı</div>
+  </div>
+</header>
+
+<section>
+  <h2>Nasıl karar veriyoruz</h2>
+  <p class="bolum-not">
+    Sisteme bir şey eklemenin tek ölçütü var: uçuşta ölçülüp iyileştirdiğini
+    göstermek. Bu yöntem bize pahalıya mal olan hatalardan sonra oturdu.
+  </p>
+
+  <div class="yontem">
+    <h3>Beş kural</h3>
+    <ol>
+      <li><strong>Her testte tek değişken.</strong> İki şeyi birden değiştirirsek
+      hangisinin işe yaradığını asla bilemeyiz. Bir keresinde sekiz değişikliği
+      birden uçurduk; biri belirgin zarar verdi ama hangisi olduğunu ayıramadık.</li>
+
+      <li><strong>Az koşu bir şey kanıtlamaz.</strong> Bir yapılandırma 5 koşuda
+      5 vuruş yaptı, "tuttu" dedik. Aynı kodla tekrar ölçünce 2/5 çıktı. Yaklaşık
+      %70'lik bir sistemde 5/5 gelme ihtimali %17 — yani dörtte bir ihtimalle
+      şansla oluyor. Artık vuruş sayısına tek başına güvenmiyoruz.</li>
+
+      <li><strong>İkili sonuç yerine sürekli ölçüt.</strong> "Vurdu / ıskaladı"
+      gürültülü. Bunun yerine <em>kutu kayması</em> gibi mekanizmayı doğrudan
+      ölçen büyüklüklere bakıyoruz (aşağıda anlatılıyor) — birkaç koşuda bile
+      eğilim görünüyor.</li>
+
+      <li><strong>Medyan değil, eğilim.</strong> Bir koşuda "mesafe medyanı 7.2 m"
+      diye rapor ettim, iyi sandık. Oysa mesafe sürekli açılıyordu ve sonunda
+      hedefi kaybettik. Medyan bunu gizler; eğilim gizlemez.</li>
+
+      <li><strong>Görüntü ve sayı birlikte.</strong> Sadece log okumak yetmiyor.
+      Uçuş kareleri gözle inceleniyor ve sayılarla çapraz kontrol ediliyor.
+      Bir hatayı tam da kamera görüntüsü yakaladı: drone hedefi yandan
+      görüyordu, sayılar iyi görünüyordu.</li>
+    </ol>
+  </div>
+
+  <h3>Kutu kayması — asıl başarı ölçütümüz</h3>
+  <p>
+    Denizcilikten gelen bir kural var: <strong>çarpışma rotasındaysan, karşı gemi
+    ufuktaki yerini değiştirmez.</strong> Aynısı burada geçerli. Drone hedefe
+    gerçekten çarpacak bir rotadaysa hedef kamera kadrajında sabit bir noktada
+    durur — büyür ama kaymaz.
+  </p>
+  <p>
+    Biz de son hücumun son 8 karesinde hedefin kadrajda dikey olarak ne kadar
+    kaydığını ölçüyoruz:
+  </p>
+  <div class="tablo-sar">
+    <table>
+      <thead><tr><th>Kutu kayması</th><th>Anlamı</th></tr></thead>
+      <tbody>
+        <tr><td class="sayi">0'a yakın</td><td>Çarpışma rotası — hedef kadrajda çakılı</td></tr>
+        <tr><td class="sayi">artı (+)</td><td>Kutu aşağı kayıyor → drone yükseliyor → <strong>üstünden</strong> geçiyoruz</td></tr>
+        <tr><td class="sayi">eksi (−)</td><td>Kutu yukarı kayıyor → drone alçalıyor → <strong>altından</strong> geçiyoruz</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Ölçüm aracı: <code>tools/kutu_kaymasi.py</code>
+  </p>
+</section>
+
+<section>
+  <h2>Sistem nasıl çalışıyor</h2>
+  <p class="bolum-not">
+    Yeni bakan biri için üç cümlelik özet. Aşağıdaki maddeler bu üç aşamanın
+    içindeki ayarlar.
+  </p>
+
+  <div class="kart">
+    <div class="kart-ust"><h3>1 · GPS fazı — yaklaşma</h3></div>
+    <p>Drone, hedefin GPS konumunu kullanarak onun arkasında sanal bir
+    "istasyon" noktası hesaplar ve oraya gider. Amaç vuruş değil, hedefi
+    kameranın göreceği bir pozisyona gelmek.</p>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust"><h3>2 · Görsel faz — takip</h3></div>
+    <p>Kamera hedefi kesintisiz görmeye başlayınca güdüm görsel algoritmaya
+    devredilir. Bu faz <strong>yalnız kameradan gelen kutuyu</strong> kullanır;
+    hedefin GPS'ine bakmak yarışma kuralınca yasaktır.</p>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust"><h3>3 · Terminal hücum — vuruş</h3></div>
+    <p>Kutu yeterince büyüyünce (yani yeterince yaklaşınca) sistem hücuma
+    taahhüt eder: fren yok, tam hızla hedefe. Çarpma sensörü teması
+    bildirirse görev tamamlanmıştır.</p>
+  </div>
+</section>
+
+<section>
+  <h2>GPS fazı — eklenen ve elenenler</h2>
+  <p class="bolum-not">
+    Buradaki asıl hedef: hedefe mümkün olduğunca yaklaşıp kameraya iyi bir
+    görüş açısı vermek. Başlangıçta 34 metrede takılıyorduk.
+  </p>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Panelin mesafeye 8 metre eklemesi</h3>
+      <span class="damga d-kabul">Düzeltildi</span>
+      <span class="tarih">06 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Neydi</span>
+      <p>Arayüz, ekranda gösterdiği her mesafeye sabit 8 metre ekliyordu.
+      Deponun ilk gününden beri böyleymiş.</p></div>
+    <div class="satir"><span class="etiket">Nasıl yakalandı</span>
+      <p>Aynı ekranda dört sayı vardı: panel 21.3 m, simülasyonun gerçeği
+      13.2 m, güdümün ölçümü 11.4 m, ekrandaki konumlardan elle hesap 13.3 m.
+      Fark hep tam 8'di.</p></div>
+    <div class="satir"><span class="etiket">Sonucu</span>
+      <p>Bütün uçuş gözlemleri aylarca 8 metre şişik okunmuş, sistem
+      olduğundan çok daha kötü sanılmıştı. <strong>Kural:</strong> iki bağımsız
+      ölçüm sürekli çelişiyorsa, farkın sabit olup olmadığına bak — sabitse
+      bir yerde ofset vardır.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Lead terimi güçlendirildi</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">05 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Neydi</span>
+      <p>Güdümde "hedefin gideceği yere nişan alma" miktarını belirleyen bir
+      katsayı var. Onu sönümleme sanıyorduk; meğer lead teriminin kendisiymiş
+      ve üç kat zayıf ayarlanmış.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">katsayı 0.20 → menzil 34.3 m
+katsayı 0.60 → menzil <span class="iyi">29.4 m</span>   (150 s boyunca ±0.3 m kararlı)</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>İç daire nişanı — en büyük tek kazanç</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">05 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Hedef daire çizerken istasyon noktası hedefin <em>kendi çemberi
+      üzerinde</em> kalıyordu. Drone onu kovaladığı sürece aynı yarıçapta
+      uçmak, dolayısıyla aynı hıza muhtaç olmak zorundaydı — ve hedeften hızlı
+      değilse asla yaklaşamıyordu.</p></div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>İstasyonu dönüşün <strong>içine</strong> kaydır. Drone daha küçük
+      yarıçapta, daha az hızla aynı açısal hızı tutturur. Temel bağ:
+      <code>yarıçap = hız / açısal hız</code>.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">kayma  0 m → menzil 34.1 m  (drone hedefle aynı çemberde)
+kayma  8 m → menzil 22.8 m
+kayma 14 m → menzil <span class="iyi">9.8 m</span>   (drone çemberin 11 m içinde)</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>İç daire kaymasını yarıçapla orantılı yapmak</h3>
+      <span class="damga d-red">Elendi</span>
+      <span class="tarih">06 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sezgi</span>
+      <p>"Sabit 14 metre yalnız belli bir çapta doğru olur; yarıçapla orantılı
+      olmalı." Mantıklı görünüyordu.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm — dört daire çapında</span>
+      <p class="olcum">              ⌀96    ⌀71    ⌀55    ⌀41
+sabit 14 m   <span class="iyi">14-15</span>  <span class="iyi">15-16</span>  <span class="iyi">15-16</span>  <span class="iyi">16-17</span>
+oranlı 0.27  17-18  15-16  16-17  <span class="kotu">22-23</span></p></div>
+    <div class="satir"><span class="etiket">Neden elendi</span>
+      <p>Sabit değer 2.7 kat yarıçap aralığında <em>her yerde</em> kazandı.
+      Sebebi de bulundu: kaymanın işi "geri kalmayı" azaltmak ve bu kazanç
+      14 metrede doyuyor. Doyma noktasını dairenin büyüklüğü değil,
+      <strong>drone'un kendi dinamiği</strong> belirliyor — o yüzden sabit
+      bir sayı orantılı kuraldan iyi.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hız tavanını yükseltmek (18 → 24 m/s)</h3>
+      <span class="damga d-red">Elendi</span>
+      <span class="tarih">05 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sezgi</span>
+      <p>"Yetişemiyorsak daha hızlı gidelim."</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">V_MAX 18 → 24  ⇒  drone yarıçapı 38 → 43 m
+                   menzil 29 → <span class="kotu">35-41 m</span>  (AÇILDI)</p></div>
+    <div class="satir"><span class="etiket">Neden</span>
+      <p>Dairesel kovalamacada hızlanmak çemberi <em>büyütür</em>
+      (<code>yarıçap = hız / açısal hız</code>). Güç eklemek ters tepti.
+      Bu bulgu sonraki bütün kararları şekillendirdi.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>İstasyon yüksekliğini gövde eğimine bağlamak</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">06 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir (kullanıcı)</span>
+      <p>Kamera gövdeye vidalı ve 25° yukarı bakıyor. Gövdenin duruşu uçuş
+      rejimine göre değişince sabit açılı bir istasyon hedefi kadrajda sabit
+      tutamaz.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm — 8 uçuşun logundan</span>
+      <p class="olcum">düz kovalama : gövde eğimi  ≈0°  → hedef merkezin ~10° altında
+daire tutuşu : gövde eğimi +11°  → hedef merkezin <span class="kotu">20-28° altında</span></p></div>
+    <div class="satir"><span class="etiket">Sürpriz</span>
+      <p>Burun-yukarının sebebi "hızlanınca öne eğilme" değildi. Dairede burun
+      hedefte ama hız teğet: drone 26-37° yengeç uçuyor ve yatma gövde
+      ekseninde geriye bileşen kazanıyor.</p></div>
+    <div class="satir"><span class="etiket">Sonuç</span>
+      <p class="olcum">kadraj sapması dönüşte  −23° → <span class="iyi">−9.4°</span>
+kadraj sapması düzde   −10° → <span class="iyi">−3.0°</span>
+menzil değişmedi (beklendiği gibi)</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>İstasyonun hedefe olan mesafesini kısaltmak (11 → 8 m)</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Neden daha önce yapılmamıştı</span>
+      <p>Eskiden denenmiş ve "hiç etki etmiyor" diye kaydedilmişti. Ama o ölçüm,
+      komutun hız tavanına doygun olduğu bir dönemde alınmıştı — istasyonun
+      yeri o zaman davranışı etkileyemiyordu. Artık lineer bölgedeyiz.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">düz uçuş : 13-14 m → <span class="iyi">10.3 m</span>
+daire    : 15.1 m → <span class="iyi">13.3 m</span></p></div>
+    <div class="satir"><span class="etiket">Ders</span>
+      <p>Bir fikri "denendi, olmadı" diye reddetmeden önce, o denemedeki
+      koşulların hâlâ geçerli olup olmadığına bak.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Dönüşte istasyon hızını düzeltmek (ω×r ileri beslemesi)</h3>
+      <span class="damga d-red">Elendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>İstasyon dönüşte hedefle birlikte dönen bir nokta; gerçek hızı hedefin
+      hızından farklı. Formülü düzeltelim.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">düzeltmesiz : daire menzili 15.1 m
+düzeltmeli  : daire menzili <span class="kotu">23.0 m</span>  (8 m kötüleşti)</p></div>
+    <div class="satir"><span class="etiket">Neden</span>
+      <p>Formül matematiksel olarak doğruydu (testlerle birebir doğrulandı) ama
+      "doğru" hız beslemesi komut hızını düşürüp aracın takip gecikmesini
+      telafisiz bıraktı. Eski "yanlış" beslemedeki fazlalık, meğer o gecikmeyi
+      kazara telafi eden faydalı bir şeymiş. <strong>Ders:</strong> bir
+      formülü daha doğru yapmak tek başına kazanç değil.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Yakın yandan eskort (dönüşte arka bileşeni eritmek)</h3>
+      <span class="damga d-kismi">Arşivde</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Ölçüm — çok başarılıydı</span>
+      <p class="olcum">daire ⌀55 menzili 13.3 m → <span class="iyi">5.7 m</span>
+tüm çaplarda ≤ 10 m, tespit güveni 0.85</p></div>
+    <div class="satir"><span class="etiket">Neden kapatıldı</span>
+      <p>Bu teknik hedefi <strong>tam yandan</strong> gösteriyor. Yarışma kuralı
+      görsel temas kurulunca görsel güdüme geçmeyi zorunlu kılıyor; yandan
+      devirde görsel algoritma hedefi kaçırır (6 metrede bakış hattı saniyede
+      139° dönüyor, aracın yaw tavanı 120°).</p></div>
+    <div class="satir"><span class="etiket">Nerede duruyor</span>
+      <p>Kod silinmedi: <code>gimball_gudum</code> branch'inde tam haliyle
+      duruyor. Drone'a gimbal (dönen kamera) takılırsa geri getirilecek —
+      o zaman gövde iç rotayı uçarken kamera yandan kilitli kalabilir.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Faz girişinde yaw komutunun sıçraması</h3>
+      <span class="damga d-kabul">Düzeltildi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Görsel fazdan GPS'e dönerken burun komutu doğrudan hedefin yönüne
+      atlıyordu. Hedef genelde arkada kaldığı için bu, tek karede 100-160°'lik
+      bir komut sıçraması demekti.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">12 faz girişinin 6'sında sıçrama &gt;60° (en büyüğü 160°)
+vuruş 3/5 → <span class="iyi">4/5</span>,  takla 9 → <span class="iyi">6</span></p></div>
+    <div class="satir"><span class="etiket">Düzeltme</span>
+      <p>Komut artık aracın mevcut yönünden başlıyor ve mevcut dönüş hızı
+      sınırıyla hedefe yürüyor. Normal takipte hiçbir fark yok.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hız komutunun süreklileştirilmesi</h3>
+      <span class="damga d-red">Elendi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>Faz değişiminde hız komutu sıfırdan başlıyordu — araç 18 m/s giderken
+      "tam fren" emri alıyor. Gerçek hızdan başlatalım.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">öncesi : vuruş 4/5, takla 6
+sonrası: vuruş <span class="kotu">3/5</span>, takla <span class="kotu">10</span></p></div>
+    <div class="satir"><span class="etiket">Karar</span>
+      <p>Mantığı sağlamdı ama veri desteklemedi; geri alındı. Asıl takla sebebi
+      başkaymış (aşağıda: yaw hız sınırı).</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Görsel faz — sıfırdan kuruldu</h2>
+  <p class="bolum-not">
+    Yarışma kuralı: kamera hedefi kesintisiz görmeye başladığı anda GPS ile
+    güdüm yasak. Bu yüzden görsel faz baştan, <strong>yalnız kameradaki
+    kutuyla</strong> çalışacak şekilde yazıldı.
+  </p>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Pose modeli denklemden çıkarıldı</h3>
+      <span class="damga d-kabul">Karar</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Neden</span>
+      <p>Eski tasarım hedefin 3B duruşunu kestiren bir modele bağlıydı. O model
+      pipeline'dan çıkarıldı; yeni güdüm sadece tespit kutusunu kullanıyor.
+      Daha az bağımlılık, daha az kırılma noktası.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Menzil kapısının kaldırılması</h3>
+      <span class="damga d-kabul">Düzeltildi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Sistem "hedefi görüyorum ama henüz 20 metreden uzağım, GPS'te
+      kalayım" diyordu. Bu doğrudan yarışma kuralını ihlal ediyordu.
+      Kapıyı 12 metreye çekmek ihlali <em>büyütüyordu</em>.</p></div>
+    <div class="satir"><span class="etiket">Doğru çözüm</span>
+      <p>Kapıyı daraltmak değil, görsel fazı uzak menzilde de çalışır yapmak.
+      Devir artık yalnız tespit sürekliliğine bakıyor.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Dondurulmuş taşıyıcı — sabit yönde</h3>
+      <span class="damga d-red">Elendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>Devir anındaki hedef hızını dondurup görsel fazda taşıyıcı olarak
+      kullanmak. İlk sonuçlar çok iyiydi: 160 saniye kesintisiz takip,
+      mesafe medyanı 7.2 metre.</p></div>
+    <div class="satir"><span class="etiket">Ama görüntü başka söyledi</span>
+      <p>Kullanıcı videodan yakaladı: drone hedefi yandan görüyor ve sonunda
+      kaçırıyordu. Ölçüldüğünde:</p>
+      <p class="olcum">devir anı: bakış açısı  <span class="iyi">7°</span> (tam kuyrukta)
+ 72. saniye:            55°
+180. saniye:            <span class="kotu">70°</span> (tam yandan)
+216. saniye: mesafe <span class="kotu">66.6 m</span> — kayıp</p></div>
+    <div class="satir"><span class="etiket">Kök neden</span>
+      <p>Taşıyıcı sabit bir yönde donmuştu. Hedef saniyede 0.16° gibi neredeyse
+      hiç dönmese bile, 168 saniyede 27° birikiyor ve drone saniyede ~6 metre
+      yana kayıyor.</p></div>
+    <div class="satir"><span class="etiket">Yerine gelen</span>
+      <p><strong>Saf takip:</strong> hız daima hedefe bakan yönde. Hedef
+      dönünce hız vektörü de döner; yana savrulma yapısal olarak imkânsız.
+      Dondurulmuş GPS artık yalnız hız integralinin başlangıç değeri.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hız için PI kontrol (hedefin hızını görüntüden öğrenmek)</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Kutu boyutundan hesaplanan hız 12 metrede sadece 8 m/s veriyordu;
+      hedef 15 m/s gidiyor. Drone geride kalıp kutuyu kaybediyordu.</p></div>
+    <div class="satir"><span class="etiket">Anahtar kavrayış</span>
+      <p>Kutu boyutu <strong>menzil</strong> göstergesidir, <strong>hız</strong>
+      göstergesi değil. Küçük kutu "uzak" demek zorunda değil — hedef zaten
+      küçük olabilir.</p></div>
+    <div class="satir"><span class="etiket">Çözüm</span>
+      <p>Hıza integral terimi eklendi; integral hedefin hızını görüntüden
+      öğreniyor. GPS'e gerek yok.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Yaw hız sınırı — taklanın kök nedeni</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Kullanıcının gözlemi</span>
+      <p>"Hedefi kaçırdıktan sonra araç kendi etrafında hızla dönüp dengesini
+      kaybediyor ve düşüyor."</p></div>
+    <div class="satir"><span class="etiket">Ölçüm — 5 görsel faz</span>
+      <p class="olcum">yaw komut hızı: medyan 12-38 °/s   p95 238-412   <span class="kotu">MAX 876 °/s</span>
+aracın yapabildiği: ~120 °/s</p></div>
+    <div class="satir"><span class="etiket">Mekanizma</span>
+      <p>876 °/s isteyince yaw doyuyor, motorlar yaw torkuna gidiyor, roll/pitch
+      yetkisi kalmıyor ve araç takla atıyor (roll −157°'ye kadar).</p></div>
+    <div class="satir"><span class="etiket">Neden değerliydi</span>
+      <p class="olcum">takla YAŞAMAYAN koşular: <span class="iyi">2/2 vuruş</span>  (ikisi de ilk denemede)
+takla yaşayan koşular : <span class="kotu">1/3 vuruş</span>
+→ asıl düşman ıska değil, TAKLA</p></div>
+    <div class="satir"><span class="etiket">Not</span>
+      <p>Bu düzeltmeyle ilk 5 koşuda 5/5 vuruş alındı — ama tekrarında 2/5
+      çıktı. Tek başına vuruş oranını garantilemiyor; taklayı azalttığı ise
+      birden çok sette görüldü.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Kurtarma bekçisi</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Araç bir kez kontrolü kaybedince güdüm komut vermeye devam ediyordu ve
+      toparlanamıyordu. Uçuş bitiyor, aynı koşuda ikinci deneme şansı
+      kalmıyordu.</p></div>
+    <div class="satir"><span class="etiket">Kanıt</span>
+      <p class="olcum">güdüm SAKİN komut verirken aracın gerçek duruşu:
+  roll −97° → −119° → <span class="kotu">−157°</span> (ters döndü)
+  yaw hızı 3590 °/s (saniyede 10 tur)
+  irtifa 97.8 → 5.3 m → yer altı, 12 saniyede</p></div>
+    <div class="satir"><span class="etiket">Çözüm</span>
+      <p>Duruş bozulunca (roll/pitch &gt;60° veya yaw hızı &gt;300°/s) güdüm
+      komutları kesilir, araç toparlanır, sonra kontrol geri verilir.</p></div>
+    <div class="satir"><span class="etiket">Kullanıcı şartı nasıl garanti edildi</span>
+      <p>"Normal uçuşta aracı hiçbir şekilde kısıtlamasın." Eşikler tahminle
+      değil, üç temiz uçuşun <em>ölçülen zarfından</em> seçildi: sağlıklı
+      uçuşta roll en fazla 46°, yaw hızı en fazla 188°/s. Bir test bu üç değeri
+      aynı anda uygulayıp bekçinin sustuğunu doğruluyor.</p></div>
+    <div class="satir"><span class="etiket">Sonuç</span>
+      <p>240 saniyelik uçuşta 10 tetik, 3 toparlanma, <strong>yere çakılma
+      yok</strong> — önceki koşuda 13. saniyede yerin altına gidilmişti.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Terminal hücum — vuruş</h2>
+  <p class="bolum-not">
+    En zor kısım burası: son birkaç metre. İlk vuruş 8 Ağustos'ta geldi,
+    ama tekrarlanabilirlik hâlâ tam oturmadı.
+  </p>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Frenin kaldırılması + terminal hücum mandalı</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Kullanıcının tespiti</span>
+      <p>"O freni koymasan aracı vurabiliyoruz." Sistem hedefe yaklaşınca
+      tutuş mesafesinde durmaya çalışıyordu.</p></div>
+    <div class="satir"><span class="etiket">Değişiklik</span>
+      <p>Geri gitme kaldırıldı; kutu belli bir boyutu aşınca sistem hücuma
+      taahhüt ediyor — mandal kilitleniyor, geri dönüş yok.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Kör hücumun süre sınırı</h3>
+      <span class="damga d-kabul">Kritik düzeltme</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Hata</span>
+      <p>Terminal hücumda kutu kaybolursa son komut sürdürülüyordu — ama süre
+      sınırı yoktu. Drone hedefi ıskalayıp geçtikten sonra aynı komutu
+      <strong>260 saniye</strong> bastı ve 1032 metre uzağa düz uçtu.</p></div>
+    <div class="satir"><span class="etiket">Düzeltme</span>
+      <p>Kör hücum 2 saniye ile sınırlı; süre dolunca ıska sayılıp GPS fazına
+      dönülüyor.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hücum eşiği ve hızı ayarlandı</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Eşik: 45 → 25 piksel</span>
+      <p>45 piksel ≈ 3.6 metre demekti; 24 m/s ile o mesafe 0.15 saniyede
+      kapanıyor ve kamera sadece 4-5 kare görüyordu. 25 piksel ≈ 6.4
+      metreden taahhüt → düzeltmeye ~20 kare kalıyor.</p>
+      <p class="olcum">en yakın mesafe 1.0 m → <span class="iyi">0.8 m</span>
+üç denemenin ÜÇÜ de 2 m altına indi (öncekinde 5'te 2)</p></div>
+    <div class="satir"><span class="etiket">Hız: 24 → 18 m/s</span>
+      <p class="olcum">vuruş oranı 1/2 → <span class="iyi">2/3</span></p>
+      <p>Yaklaşma tavanı 24'te kaldı; yalnız hücum hızı düştü. 24 m/s'de
+      hedefin yanından 0.06 saniyede geçiliyordu.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Kesişim + lead nişanı — ilk vuruş</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Ölçümle bulunan kök neden</span>
+      <p>Iskaların baskın bileşeni <strong>dikeydi</strong>. Sebep: terminalde
+      bile dikey kanal "tutuş" yasasıydı — hedefi kadrajda 5° yukarıda tutmaya
+      çalışıyordu, yani altından geçiyorduk.</p></div>
+    <div class="satir"><span class="etiket">Düzeltme</span>
+      <p>Hız vektörü hedefe <em>doğru</em> bakacak şekilde hesaplanıyor, üstüne
+      hedefin hareketini öngören lead ekleniyor.</p></div>
+    <div class="satir"><span class="etiket">Sonuç</span>
+      <p class="olcum">Gazebo çarpma sensörü: <span class="iyi">GERÇEK TEMAS</span>
+mini_talon gövdesi ↔ iris gövdesi
+terminal dikey hız medyanı: −2.99 m/s (eski yasa ≈0 veriyordu)</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Dikey bütçe kısıtı</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">08 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sert geometrik sınır</span>
+      <p>Yatay 18 m/s, dikey tavan 5 m/s ⇒ hız vektörü en fazla
+      <strong>15.5°</strong> yukarı bakabiliyor. Hedef bundan dikse kesişim
+      matematiksel olarak imkânsız — 6 metrede sadece 1.7 metrelik bir pencere.</p>
+      <p class="olcum">terminal karelerinin <span class="kotu">%22-49</span>'unda dikey hız tavana dayanmış</p></div>
+    <div class="satir"><span class="etiket">Çözüm</span>
+      <p>Dikey bütçe yetmiyorsa yatay hızı kıs — böylece vektör hedefe
+      gerçekten bakabilir.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Lead'in menzille sönmesi</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Sorun</span>
+      <p>Lead sabit 0.4 saniyeyle çarpılıyordu. Ama bakış açısının dönüş hızı
+      menzil sıfıra giderken patlıyor; sabit süreyle çarpılınca nişan yukarı
+      savruluyordu.</p></div>
+    <div class="satir"><span class="etiket">Düzeltme</span>
+      <p class="olcum">6.4 m → lead 0.40 s
+1.6 m → lead 0.10 s
+1.0 m → lead <span class="iyi">0.06 s</span></p></div>
+    <div class="satir"><span class="etiket">Dürüst not</span>
+      <p>Bu düzeltme çalıştı ama asıl "üstten geçme" sebebi bu değildi —
+      lead zaten küçülmüş ve aşağı yönlüydü. Gerçek sebep bir sonraki
+      maddede.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Dikey sönümleme — "son anda üstten geçme"</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Kullanıcının kaydından</span>
+      <p class="olcum">hedef TAM nişanda (dikey hata −2.2°) iken
+  vz komutu <span class="kotu">−4.2 m/s (TIRMAN)</span>
+ardından kutu kadrajda 294 → 456 px kaydı = üstünden geçildi</p></div>
+    <div class="satir"><span class="etiket">Mekanizma</span>
+      <p>Dikey kanalda fren (türev terimi) yoktu. Uzaktayken haklı olarak
+      tırmanma emri veriliyor, araç dikey momentum kazanıyor; hedefe varınca
+      komut azalıyor ama momentum geç sönüyor.</p></div>
+    <div class="satir"><span class="etiket">Çözüm</span>
+      <p>Aracın kendi dikey hızıyla sönümleme. Zaten gerekenden hızlı
+      tırmanıyorsa komut geri çekiliyor.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Hız tabanı 14 + sönümleme 0.9 — yalnız BİRLİKTE çalışıyor</h3>
+      <span class="damga d-kabul">Eklendi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">9 uçuşluk deney</span>
+      <p class="olcum">yapılandırma          vuruş   kutu kayması   çarpışma rotası
+taban (10 / 0.6)        —        49 px          2/8
+A: yalnız taban 14     1/3       <span class="kotu">96 px</span>          1/12  ← KÖTÜLEŞTİ
+B: yalnız sönüm 0.9    1/3       56 px          1/5
+C: <span class="iyi">İKİSİ BİRLİKTE</span>      2/3       <span class="iyi">13 px</span>          <span class="iyi">3/3</span></p></div>
+    <div class="satir"><span class="etiket">Bu deneyin dersi</span>
+      <p>Hız tabanını tek başına yükseltmek <em>tabandan da kötü</em> sonuç
+      verdi. Eğer ikisini birden ekleseydik bunu göremezdik; ya da sadece A'yı
+      deneyip fikri tamamen çöpe atardık. Tek tek <em>ve</em> birlikte ölçmek
+      şart.</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Önce irtifayı eşitle, sonra dal</h3>
+      <span class="damga d-kismi">Kararsız</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Kullanıcı fikri</span>
+      <p>"Drone önce hedefle aynı irtifaya gelsin, eşitledikten sonra dalışa
+      geçsin. Kamera 25° tilt'li, gövde eğimi jiroskoptan gelir, kutunun
+      kadrajdaki yeri ile irtifa farkının oranı bilinebilir — o oranı
+      sıfırlayalım."</p></div>
+    <div class="satir"><span class="etiket">Gözlem ölçümle doğrulandı</span>
+      <p class="olcum">yaklaşmada dikey fark (hedef − drone), limit çevrimi:
+−1.4 → −0.5 → +1.5 → +1.4 → −0.6 → −1.9 → −0.5 → +2.8 → +6.4 → <span class="kotu">+7.5</span>
+en yakın anda (1.50 m) drone hedefin 0.5 m ÜSTÜNDEYDİ</p></div>
+    <div class="satir"><span class="etiket">Kurulan mekanizma</span>
+      <p>Tutuş fazının dikey hedefi artık sabit piksel değil, gövde eğimi
+      hesaba katılmış <em>gerçek yükseliş açısı</em>. Terminal hücum, irtifa
+      oturmadan açılmıyor.</p></div>
+    <div class="satir"><span class="etiket">Sonuç — kapı çalışıyor, eşitleyici zayıf</span>
+      <p class="olcum">✓ kapı işliyor: "İRTİFA OTURMADI (13.4° &gt; 5°) — önce eşitleniyor"
+✗ ama tutuş fazı hatayı kapatamıyor: 8-9° → <span class="kotu">8-12°</span> (yakınsamıyor)
+✗ kutu kayması: <span class="kotu">118 px</span></p></div>
+    <div class="satir"><span class="etiket">Durum</span>
+      <p>Fikir doğru, mekanizma doğru kuruldu, altındaki dikey döngünün ayarı
+      eksik. Kod sistemde duruyor (<code>AVCI_IBVS_ELEV_ATALET=0</code> ile
+      kapatılabilir).</p></div>
+  </div>
+
+  <div class="kart">
+    <div class="kart-ust">
+      <h3>Dikey döngüye integral</h3>
+      <span class="damga d-kismi">Kısmi</span>
+      <span class="tarih">09 Ağu</span>
+    </div>
+    <div class="satir"><span class="etiket">Fikir</span>
+      <p>Orantılı kontrol kalıcı hatayı kapatamaz. Buradaki kalıcı yük hedefin
+      sürekli tırmanışı. İntegral bunu öğrenir.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm</span>
+      <p class="olcum">yükseliş hatası: integralsiz 8-9° → 8-12° (yakınsamıyor)
+                integralli  <span class="iyi">8.0° → 6.2°</span> / 10.4° → 10.1°
+kutu kayması:   118 px → <span class="kismi">64 px</span>   (ama en iyi yapılandırma 13 px'ti)</p></div>
+    <div class="satir"><span class="etiket">Karar</span>
+      <p>Kısmen yardım etti, sistemde duruyor. Ama tek başına yeterli değil.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Ölçüm ve test altyapısı</h2>
+  <p class="bolum-not">
+    Bunlar güdüm değil, güdümü <em>ölçmek</em> için yazılan araçlar. Kullanıcının
+    isteğiyle testler artık otomatik koşuluyor — insan faktörü ölçümü
+    saptırmasın diye.
+  </p>
+
+  <div class="tablo-sar">
+    <table>
+      <thead><tr><th>Araç</th><th>Ne yapar</th><th>Neden gerekti</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>/ucus-testi</code></td>
+          <td>Simi kendisi başlatır, uçuşu yönetir, saniyede 1 kare + telemetri kaydeder, gözle inceler</td>
+          <td>Elle test insan hatası taşıyordu: yanlış senaryo, farklı gaz, kaçırılan an</td>
+        </tr>
+        <tr>
+          <td><code>ucus_bekci.py</code></td>
+          <td>Uçuş sırasında sağlık bandını izler; ihlalde koşuyu geçersiz sayar</td>
+          <td>Bir testte hedef 12 metreye alçalmıştı ve koşu geçersizken "sonuç" olarak raporlanmıştı</td>
+        </tr>
+        <tr>
+          <td><code>kutu_kaymasi.py</code></td>
+          <td>Çarpışma rotasında mıyız — asıl başarı ölçütü</td>
+          <td>Vuruş/ıska ikili ve gürültülü; birkaç koşuda karar veremiyor</td>
+        </tr>
+        <tr>
+          <td><code>vurus_orani.py</code></td>
+          <td>Koşuları sınıflandırır: vuruş / ıska / hedef düştü / geçersiz</td>
+          <td>Vuruştan sonra hedef enkaz oluyor; sonraki koşu geçersiz ama "ıska" görünüyordu</td>
+        </tr>
+        <tr>
+          <td><code>ucus_analiz.py</code></td>
+          <td>Uçuşu DÜZ/DÖNÜŞ rejimlerine ayırır; aspect açısı ve mesafe eğilimi basar</td>
+          <td>İki uçuşu adil karşılaştırmak için aynı segmentasyon şart</td>
+        </tr>
+        <tr>
+          <td>⏺ Video kaydı butonu</td>
+          <td>Panelden tek tuş: kare + tam durum + manuel kumanda konumları</td>
+          <td>Kullanıcının manuel uçuşlarını inceleyebilmek için — "o an ne yapıyordun" bilgisi olmadan video yorumlanamıyor</td>
+        </tr>
+        <tr>
+          <td>➜ Düz uçuş senaryosu</td>
+          <td>Kalkış + 15 s bekleme dairesi + düz uçuş</td>
+          <td>Hedef, drone kalkarken uzaklaşıyordu; her testin ilk dakikası boşa gidiyordu</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Şu anki durum ve açık işler</h2>
+
+  <div class="uyari">
+    <p><strong>Dürüst durum (9 Ağustos):</strong> Düz uçan hedefte vuruş oluyor
+    ama <strong>tekrarlanabilir değil</strong> — yaklaşık üç koşuda iki. Aynı
+    yapılandırma bir koşuda 0.2 metreye kadar yaklaşıp ıskalıyor, diğerinde
+    vuruyor. Dikey salınım azaldı ama tamamen bitmedi.</p>
+  </div>
+
+  <h3>Sıradaki büyük karar: PN (orantılı seyrüsefer)</h3>
+  <p>
+    Şu an hem yaklaşmada hem hücumda <strong>açıyı</strong> kontrol ediyoruz.
+    Ama çarpışmanın şartı açının belli bir değerde olması değil, <strong>açının
+    sabit kalması</strong>. Kontrol ettiğimiz büyüklükle başarı ölçütümüz farklı
+    şeyler — bu yüzden her yamada bir yerden bastırıp başka yerden kaçıyor.
+  </p>
+  <p>
+    PN, güdümlü füzelerin altmış yıldır kullandığı yasa: "hedefe doğrult" yerine
+    <strong>"bakış açısının dönmesini sıfırla"</strong> der. Yani bizim kutu-kayması
+    ölçütümüzle <em>aynı büyüklüğü</em> hedefler ve doğası gereği sönümlüdür.
+    Gereken veriyi zaten ölçüyoruz.
+  </p>
+
+  <h3>Bekleyen diğer işler</h3>
+  <div class="tablo-sar">
+    <table>
+      <thead><tr><th>Konu</th><th>Durum</th></tr></thead>
+      <tbody>
+        <tr><td>Manevra yapan hedefte vuruş (daire, kare)</td><td>Hiç test edilmedi — düz uçuş oturduktan sonra</td></tr>
+        <tr><td>Kare köşelerinde mesafenin açılması (~20 m)</td><td>Bilinen, kabul edilmiş</td></tr>
+        <tr><td>Daire senaryolarının yavaş tırmanması (~0.9 m/s)</td><td>Ölçüm sonuçlarını etkilemiyor ama düzeltilmeli</td></tr>
+        <tr><td>Gimbal takılırsa yakın yandan eskort</td><td><code>gimball_gudum</code> branch'inde hazır bekliyor</td></tr>
+        <tr><td>Yarışma şartnamesindeki "N kare süreklilik" sayısı</td><td>Kesin değer doğrulanmalı — şu an 10 kare varsayılıyor</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Bu günlük geliştirme sürdükçe güncelleniyor. Her yeni deneme için:
+    özelliğin ne olduğu, uçuş testinde ne ölçüldüğü, sisteme eklenip
+    eklenmediği ve gerekçesi buraya yazılıyor.
+  </p>
+  <p>
+    Kaynak: <code>docs/gelisim_gunlugu.html</code> ·
+    Dal: <code>kayramin_super_gudumu</code> ·
+    Son güncelleme: 9 Ağustos 2026
+  </p>
+</footer>
+
+</div>
