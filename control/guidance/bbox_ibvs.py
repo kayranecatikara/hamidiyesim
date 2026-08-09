@@ -119,6 +119,36 @@ class Cfg:
     VZ_MAX = 3.0                    # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
+    # ══ İRTİFA EŞİTLE, SONRA DAL (2026-08-09, KULLANICI FİKRİ) ══
+    #
+    # KULLANICI GÖZLEMİ + KANIT (kayıt ucus_20260809_092315): yaklaşmada dikey
+    # fark (hedef − drone) bir LİMİT ÇEVRİMİ yapıyordu, genliği büyüyerek:
+    #   −1.4 → −0.5 → +1.5 → +1.4 → −0.6 → −1.9 → −0.5 → +2.8 → +6.4 → +7.5
+    # En yakın anda (1.50 m) drone hedefin 0.5 m ÜSTÜNDEYDİ → ıska.
+    # Kullanıcı: "irtifayı eşitlemeden dalışa geçince hep altından yaklaşıp
+    # bir anda üstünden geçiyor". Doğru teşhis: terminal hem yatayı kapatmaya
+    # hem dikeyi düzeltmeye çalışınca dikey döngü salınıyor.
+    #
+    # ÇÖZÜM (kullanıcının önerdiği mekanizma): önce İRTİFAYI EŞİTLE, sonra dal.
+    #   1) Tutuş fazının dikey hedefi artık SABİT PİKSEL değil, ATALET
+    #      YÜKSELİŞİ: elev = piksel_elev(cy) + gövde_pitch (jiroskop).
+    #      Yani drone'un kendi eğimi hesaba katılır — kullanıcının dediği gibi
+    #      "kaç derece eğildiği jiroskoptan çekilebilir".
+    #   2) Terminal hücum, yükseliş oturmadan AÇILMAZ (aşağıki eşik).
+    # Böylece terminal saf yatay bir koşuya dönüşür; dikey iş bitmiş olur.
+    #
+    # Menzil bilgisine GEREK YOK: açıyı sıfırlamak irtifayı eşitlemekle aynı
+    # şeydir (her menzilde geçerli) — kullanıcının "oranı sıfırlamak" dediği.
+    #
+    # ELEV_HEDEF neden tam 0 değil: 0° hedefi tam ufuk çizgisine oturtur,
+    # orası tespit için en kötü zemin (kontrast düşük). 2°'de hedef ufkun az
+    # üstünde kalır (gökyüzü zemini korunur) ama 6 m'de yalnız 0.2 m fark eder
+    # — pratikte "aynı irtifa".
+    ELEV_HEDEF_DEG = _env_f("AVCI_IBVS_ELEV_HEDEF", 2.0)   # °; tutuşta yükseliş
+    # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
+    TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
+    ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
+
     # ── HIZ: PI kontrol, kutu boyutu hatası üzerinden (menzil vekili) ──
     # boyut = sqrt(w·h). Büyük kutu = yakın. hata = REF − boyut (pozitif = uzak).
     #     v_los = I + K_FWD·hata      (LOS yönünde uygulanır — saf takip)
@@ -260,7 +290,7 @@ _LOG_DIR = os.path.join(
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "elev_atalet_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -353,11 +383,26 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+    elif cfg.ELEV_ATALET:
+        # TUTUŞ — İRTİFA EŞİTLEME (bkz. Cfg.ELEV_HEDEF_DEG).
+        # Hedef artık sabit bir PİKSEL değil, ATALET yükselişi: gövde eğimi
+        # (jiroskop) hesaba katılır. Böylece drone kendi pitch'i yüzünden
+        # yanlış irtifaya sürüklenmez — dikey limit çevriminin kaynağı buydu.
+        elev_atalet = piksel_elev(cy, cfg) + iris_pitch
+        hata_elev = elev_atalet - math.radians(cfg.ELEV_HEDEF_DEG)
+        vz_nisan = -cfg.K_VZ * cfg.V_NOM * hata_elev
+        # Terminaldeki ile aynı türev sönümlemesi (salınımı kesen terim).
+        vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
+                   -cfg.VZ_MAX, cfg.VZ_MAX)
     else:
-        # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
+        # ESKİ YOL (AVCI_IBVS_ELEV_ATALET=0): hedefi sabit CY_NISAN pikselinde tut
         vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
 
+    # Terminal kapısı için atalet yükselişi (çağıran karar verir)
+    elev_atalet_tani = piksel_elev(cy, cfg) + iris_pitch
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
+            "elev_atalet": elev_atalet_tani,
+            "elev_hata": elev_atalet_tani - math.radians(cfg.ELEV_HEDEF_DEG),
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "lead_az": lead_az, "lead_olcek": lead_olcek}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -425,6 +470,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     prev_time = None
     cmd_yaw = None
     kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
+    tani_onceki_elev_hata = 0.0   # terminal kapısı için (bir önceki turdan)
+    irtifa_bekleme_yazildi = False
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
@@ -552,16 +599,35 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 los_hiz[1] = (a_ * ((los_el - los_el_onceki) / dt)
                               + (1 - a_) * los_hiz[1])
             los_az_onceki, los_el_onceki = los_az, los_el
-            # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt, geri dönüş yok
-            if not terminal_mandal and math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT:
-                terminal_mandal = True
-                print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
-                      f"≥ {cfg.TERMINAL_BOYUT:.0f}) — fren yok, tam taahhüt")
+            # ── TERMİNAL MANDALI: İKİ ŞART (2026-08-09, kullanıcı fikri) ──
+            #  1) kutu yeterince büyük (menzil kapandı)
+            #  2) ⚠ İRTİFA OTURDU — atalet yükselişi hedef bandında
+            # İkincisi yeni: eskiden irtifa eşitlenmeden hücum başlıyordu ve
+            # terminal hem yatayı kapatıp hem dikeyi düzeltmeye çalışınca
+            # dikey döngü salınıyordu (ölçüldü: dikey fark ±7 m limit çevrimi,
+            # en yakın anda drone hedefin 0.5 m ÜSTÜNDE → ıska).
+            # Artık önce irtifa eşitlenir, terminal saf yatay koşuya döner.
+            if not terminal_mandal:
+                _boy = math.sqrt(bw * bh)
+                _eh = math.degrees(abs(tani_onceki_elev_hata))
+                if _boy >= cfg.TERMINAL_BOYUT:
+                    if _eh <= cfg.TERMINAL_ELEV_ESIK:
+                        terminal_mandal = True
+                        print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {_boy:.0f}px ≥ "
+                              f"{cfg.TERMINAL_BOYUT:.0f}, yükseliş hatası "
+                              f"{_eh:.1f}° ≤ {cfg.TERMINAL_ELEV_ESIK:.0f}°) — "
+                              f"irtifa oturdu, tam taahhüt")
+                    elif not irtifa_bekleme_yazildi:
+                        irtifa_bekleme_yazildi = True
+                        print(f"[IBVS] menzil hazır ama İRTİFA OTURMADI "
+                              f"(yükseliş hatası {_eh:.1f}° > "
+                              f"{cfg.TERMINAL_ELEV_ESIK:.0f}°) — önce eşitleniyor")
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0))
+            tani_onceki_elev_hata = tani.get("elev_hata", 0.0)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -591,6 +657,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
+                "elev_atalet_deg": round(math.degrees(tani["elev_atalet"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),

@@ -37,9 +37,14 @@ def main():
     C = ib.Cfg
     CX, CY, FX, FY = geo.CX, geo.CY, geo.FX, geo.FY
 
-    # ── B1: MERKEZDE nişan — yaw ≈ mevcut, dikey ≈ 0 ──
-    # cx=CX (yatay merkez), cy=CY_NISAN (dikey nişan) → sapma yok.
-    vx, vy, vz, yaw, _I, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
+    # ── B1: NİŞANDA — yaw ≈ mevcut, dikey ≈ 0 ──
+    # ⚠ 2026-08-09: tutuş dikey hedefi artık sabit piksel DEĞİL, atalet
+    # yükselişi (ELEV_HEDEF_DEG). Nişan pikseli pitch'e göre değişir; pitch=0
+    # için: cy = CY + FY·tan(kamera_tilt − ELEV_HEDEF).
+    _cy_nisan_atalet = geo.CY + geo.FY * math.tan(
+        math.radians(25.0 - C.ELEV_HEDEF_DEG))
+    vx, vy, vz, yaw, _I, t = ib.komut(CX, _cy_nisan_atalet, 40, 40, 0.0, 0.0,
+                                      0.05, C)
     kontrol("B1  nişan noktasında: yaw≈0, vz≈0",
             abs(math.degrees(yaw)) < 0.5 and abs(vz) < 0.05,
             f"yaw={math.degrees(yaw):.2f}° vz={vz:.3f}")
@@ -350,6 +355,26 @@ def main():
             vz_durgun < -2.0 and vz_tirmanan > vz_durgun + 1.5,
             f"araç durgunken {vz_durgun:+.2f} → 4 m/s tırmanırken "
             f"{vz_tirmanan:+.2f} m/s (fark {vz_tirmanan - vz_durgun:+.2f})")
+
+    # ── B25: İRTİFA EŞİTLEME — gövde pitch'i hesaba katılır (jiroskop) ──
+    # Kullanıcı fikri (2026-08-09): önce irtifayı eşitle, sonra dal.
+    # Aynı PİKSEL, farklı gövde pitch'i → FARKLI gerçek yükseliş. Eski yasa
+    # (sabit piksel) bunu göremiyordu; dikey limit çevriminin kaynağı buydu.
+    _cy_test = geo.CY + geo.FY * math.tan(math.radians(25.0 - C.ELEV_HEDEF_DEG))
+    _, _, vz_p0, _, _, t_p0 = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
+                                       False, (0.0, 0.0), 0.0, 0.0)
+    # aynı piksel ama araç 10° burun YUKARI → hedef gerçekte 10° daha yukarıda
+    _, _, vz_p10, _, _, t_p10 = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
+                                         False, (0.0, 0.0), math.radians(10.0), 0.0)
+    kontrol("B25 aynı piksel + burun yukarı → TIRMANMA komutu (pitch hesaba katılıyor)",
+            abs(vz_p0) < 0.05 and vz_p10 < -0.5,
+            f"pitch 0° → vz {vz_p0:+.2f} | pitch +10° → vz {vz_p10:+.2f} m/s "
+            f"(eski sabit-piksel yasası ikisinde de aynı verirdi)")
+
+    kontrol("B26 terminal kapısı irtifa şartı içeriyor (eşik tanımlı)",
+            C.TERMINAL_ELEV_ESIK > 0 and C.ELEV_ATALET,
+            f"yükseliş hedefi {C.ELEV_HEDEF_DEG:.0f}°, hücum eşiği "
+            f"±{C.TERMINAL_ELEV_ESIK:.0f}° — irtifa oturmadan hücum açılmaz")
 
     # ── B21: ⚠ YAW SLEW SINIRI — takla önleyici ──
     # 2026-08-09: görsel fazda yaw komutu 876 °/s'ye çıkıyordu (araç ~120);
