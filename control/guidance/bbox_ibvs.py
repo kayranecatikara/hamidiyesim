@@ -216,6 +216,17 @@ class Cfg:
     # Varsayılan 0: faz-2 kampanyasının tek-değişken temeli bozulmasın diye;
     # ölçülüp kazanırsa varsayılan çevrilecek.
     KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 0.0) >= 0.5
+
+    # ══ İNTEGRAL DOYMA KORUMASI (anti-windup) — 2026-08-09 ══
+    # ÖLÇÜLDÜ (log 112517, tutuş fazı): elev_I ilk yarım saniyede tavana (3.0)
+    # yapıştı ve 6 SANİYE orada kaldı; vz komutu −3.0 rayında durdu, aracın
+    # gerçek dikey hızı ise ancak 5. saniyede −3.0'a ulaştı. Hata sıfırı
+    # geçtiğinde integral hâlâ doluydu → yükseliş +0.6°'den −25.6°'ye savruldu
+    # ve terminal tam bu savrulmanın ortasında mandalladı.
+    # Klasik integral doyması: çıkış doymuşken integral almaya devam etmek,
+    # hatanın işareti dönene kadar boşalamayan bir yük biriktirir.
+    # 1 = çıkış doymuşken ve hata doymayı DERİNLEŞTİRİYORKEN integral durur.
+    AWU = _env_f("AVCI_IBVS_AWU", 0.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -502,8 +513,16 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         hata_elev = elev_atalet - math.radians(cfg.ELEV_HEDEF_DEG)
         # İNTEGRAL: hedefin sürekli tırmanışı gibi SABİT yükü öğrenir; orantılı
         # terim tek başına kalıcı hatayı kapatamıyordu (bkz. Cfg.K_ELEV_I).
-        elev_I = clamp(elev_I + cfg.K_ELEV_I * hata_elev * dt,
-                       -cfg.ELEV_I_MAX, cfg.ELEV_I_MAX)
+        _I_yeni = clamp(elev_I + cfg.K_ELEV_I * hata_elev * dt,
+                        -cfg.ELEV_I_MAX, cfg.ELEV_I_MAX)
+        if cfg.AWU:
+            # Doymuş çıkışta, hatayı DAHA DA doyuran yönde integral alma.
+            _ham = -(cfg.K_VZ * cfg.V_NOM * hata_elev + _I_yeni)
+            _doymus = abs(_ham) >= cfg.VZ_MAX
+            if not (_doymus and (_ham * -hata_elev) > 0):
+                elev_I = _I_yeni
+        else:
+            elev_I = _I_yeni
         vz_nisan = -(cfg.K_VZ * cfg.V_NOM * hata_elev + elev_I)
         # Terminaldeki ile aynı türev sönümlemesi (salınımı kesen terim).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),

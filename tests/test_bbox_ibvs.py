@@ -541,6 +541,28 @@ def main():
             "katı modda başlangıç 99° (kapı kapalı), varsayılan hâlâ eski "
             "davranış — kampanyada ölçülecek")
 
+    # ── B36: integral doyma koruması ──
+    # Büyük ve sürekli bir hatada (hedef çok yukarıda) klasik integral tavana
+    # yapışır ve hata sıfırı geçtikten sonra bile boşalmaz → savrulma.
+    class _Awu(ib.Cfg):
+        AWU = True
+    _I_klasik = _I_awu = 0.0
+    _cy_yukari = 120          # hedef kadrajın çok üstünde → büyük hata
+    for _ in range(60):       # 3 saniye
+        _I_klasik = ib.komut(CX, _cy_yukari, 30, 30, 0.0, 10.0, 0.05, C,
+                             False, (0.0, 0.0), 0.0, 0.0, _I_klasik)[6]
+        _I_awu = ib.komut(CX, _cy_yukari, 30, 30, 0.0, 10.0, 0.05, _Awu,
+                          False, (0.0, 0.0), 0.0, 0.0, _I_awu)[6]
+    kontrol("B36 integral doyma koruması integrali tavana yapıştırmaz",
+            abs(_I_klasik) > abs(_I_awu) + 0.5,
+            f"3 s büyük hatadan sonra integral: klasik {_I_klasik:+.2f} "
+            f"(tavan ±{C.ELEV_I_MAX:.1f}) → korumalı {_I_awu:+.2f}")
+
+    kontrol("B37 doyma koruması varsayılan KAPALI (ölçülmeden davranış değişmez)",
+            not ib.Cfg.AWU and not ib.Cfg.KAPI_KATI
+            and abs(ib.Cfg.TERM_ELEV_BIAS) < 1e-9,
+            "AWU / KAPI_KATI / TERM_BIAS üçü de env ile açılıyor")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
