@@ -563,6 +563,15 @@ def main():
             and abs(ib.Cfg.TERM_ELEV_BIAS) < 1e-9,
             "AWU / KAPI_KATI / TERM_BIAS üçü de env ile açılıyor")
 
+    # ── B38: terminal mandalı menzil açılınca bırakılır ──
+    _src = open(ib.__file__, encoding="utf-8").read()
+    kontrol("B38 terminal mandalı, kutu eşiğin altına düşünce bırakılabilir",
+            "terminal_mandal = False" in _src and "TERM_BIRAK" in _src
+            and ib.Cfg.TERM_BIRAK == 0.0,
+            "ıskadan sonra menzil 10-16 m'ye açılıyordu ama araç terminal "
+            "yasasında kalıyordu (ölçülen terminal süreleri 9.6/17.3/37.3 s); "
+            "varsayılan hâlâ kapalı")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

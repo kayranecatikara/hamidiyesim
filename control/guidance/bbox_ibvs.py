@@ -230,6 +230,17 @@ class Cfg:
     # hatanın işareti dönene kadar boşalamayan bir yük biriktirir.
     # 1 = çıkış doymuşken ve hata doymayı DERİNLEŞTİRİYORKEN integral durur.
     AWU = _env_f("AVCI_IBVS_AWU", 0.0) >= 0.5
+
+    # ══ TERMİNAL MANDALININ BIRAKILMASI (2026-08-09) ══
+    # Mandal bir kez kapanınca bir daha açılmıyor. ÖLÇÜLDÜ: terminal fazı
+    # 9.6 / 17.3 / 37.3 saniye sürdü — oysa hücumun kendisi ~1-2 saniye.
+    # Sebep: ıskadan sonra menzil 10-16 m'ye AÇILIYOR ama araç hâlâ terminal
+    # yasasında — tam gaz, nişan LOS'ta, hız PI'si ve irtifa eşitleyici DEVRE
+    # DIŞI. O menzilde doğru yasa tutuş yasasıdır.
+    # Bu oran, kutu bu eşiğin altına düşerse mandalı BIRAKIR; araç tutuşa
+    # döner, irtifayı yeniden eşitler, sonra yeniden mandallar.
+    # 0 = kapalı (eski davranış). 0.6 → 15 px ≈ 10.7 m'de bırakır.
+    TERM_BIRAK = _env_f("AVCI_IBVS_TERM_BIRAK", 0.0)
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -756,8 +767,17 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # dikey döngü salınıyordu (ölçüldü: dikey fark ±7 m limit çevrimi,
             # en yakın anda drone hedefin 0.5 m ÜSTÜNDE → ıska).
             # Artık önce irtifa eşitlenir, terminal saf yatay koşuya döner.
+            _boy_simdi = math.sqrt(bw * bh)
+            if (terminal_mandal and cfg.TERM_BIRAK > 0
+                    and _boy_simdi < cfg.TERM_BIRAK * cfg.TERMINAL_BOYUT):
+                terminal_mandal = False
+                pn_yon = None            # yeniden mandallayınca LOS'a kilitlensin
+                irtifa_bekleme_yazildi = False
+                print(f"[IBVS] terminal BIRAKILDI (kutu {_boy_simdi:.0f}px < "
+                      f"{cfg.TERM_BIRAK * cfg.TERMINAL_BOYUT:.0f}) — menzil "
+                      f"açıldı, tutuşa dönülüyor (irtifa yeniden eşitlenecek)")
             if not terminal_mandal:
-                _boy = math.sqrt(bw * bh)
+                _boy = _boy_simdi
                 _eh = math.degrees(abs(tani_onceki_elev_hata))
                 if _boy >= cfg.TERMINAL_BOYUT:
                     if _eh <= cfg.TERMINAL_ELEV_ESIK:
