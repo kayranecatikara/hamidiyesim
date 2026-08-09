@@ -972,11 +972,13 @@ komut TERSİNE DÖNDÜKTEN SONRA yapıyor</p></div>
       kaldığı sürece hedef değeri <b>1.9 katına</b> çıkarır. Araç HEP geride
       kaldığı için takviye hiç kapanmaz; drone LOS'un istediğinden iki kat
       hızlı tırmanıp üstten geçer.
-      <br><b>3) İntegral doyması.</b> Tutuş fazında <code>elev_I</code> yarım
-      saniyede tavana yapışıp <b>6 saniye</b> orada kaldı. Hata sıfırı
-      geçtiğinde hâlâ doluydu → yükseliş +0.6°'den −25.6°'ye savruldu.
-      Yani "önce irtifayı eşitle" kapısı doğru fikirdi, ama eşitleyicinin
-      kendisi hedefin <b>üstünden geçerek</b> "eşitliyordu".</p></div>
+      <br><b>3) İntegral doyması</b> — <i>ama bu her uçuşta değil.</i> Bir
+      koşuda <code>elev_I</code> yarım saniyede tavana yapışıp <b>6 saniye</b>
+      orada kaldı ve yükseliş +0.6°'den −25.6°'ye savruldu. Sonradan bütün
+      koşuları taradım: <b>çoğunda integral tavana hiç değmiyor</b> (%0).
+      Yani gerçek ama <b>istisnai</b> bir arıza — görsel faza çok büyük bir
+      yükseliş hatasıyla (39-65°) yeniden girildiğinde oluyor.
+      Aşağıda bunun testi de var; sonucu dürüstçe yazdım.</p></div>
     <div class="satir"><span class="etiket">Bir de kapı boş geçiyormuş</span>
       <p>Terminal kapısı "kutu ≥ 25 px <b>VE</b> yükseliş oturmuş" ister. Ama
       ikinci şart, döngü başında <code>0.0</code> ile başlatılan bir değişkene
@@ -1136,16 +1138,24 @@ DİKEY tolerans  ≈ <span class="kotu">±0.10 m</span>  (gövde yüksekliğinin
         <tr><td>PN (orantılı seyrüsefer)</td><td>0/3</td><td>0.71 m</td><td>5</td><td><b>elendi</b></td></tr>
         <tr><td>Dikey tavan 5 → 2.5 m/s</td><td>1/3</td><td><span class="iyi">0.43 m</span></td><td><b>1</b></td><td>tutuyor</td></tr>
         <tr><td>+ doyma koruması + katı kapı</td><td>1/3</td><td><span class="iyi">0.37 m</span></td><td>2</td><td>tutuyor</td></tr>
-        <tr><td>Yalnız doyma koruması</td><td>0/2</td><td><span class="iyi">0.32 m</span></td><td>4</td><td>tutuyor</td></tr>
+        <tr><td>Yalnız doyma koruması</td><td>0/3</td><td>0.32 m</td><td>6</td><td><b>mekanizması doğrulanmadı</b></td></tr>
       </tbody>
     </table>
   </div>
   <p>
-    <strong>Dikey kaçırma yarı yarıya indi: 0.84 m → 0.32-0.43 m.</strong> Üç
-    ayrı yapılandırma, üçü de dikey döngüye dokunuyor, üçü de aynı yöne hareket
-    etti — yani bu şans değil, mekanizma. Hedef pencere ±0.14-0.29 m; artık
-    altı kat değil, yaklaşık iki kat dışarıdayız.
+    <strong>Dikey kaçırma yarı yarıya indi: 0.84 m → 0.37-0.43 m.</strong>
+    Bunun mekanizması <em>doğrulandı</em>: terminalde dikey komut karelerin
+    %17-77'sinde raya dayanıyor (ölçüldü) ve araç bunu izleyemiyor. Tavanı
+    yarıya indirince doygunluk azalmıyor — ama <b>her salınımın genliği
+    yarılanıyor</b>. Sonuç sayıya birebir yansıdı.
   </p>
+  <div class="uyari">
+    <p><strong>Doyma korumasında dürüst olayım:</strong> ölçüt olarak en iyi
+    sonucu o verdi (0.32 m), ama <b>mekanizmasını doğrulayamadım</b>.
+    İntegral çoğu koşuda zaten tavana değmiyor, yani korumanın devreye girecek
+    yeri yok. Üç koşuluk bir farkın şans olma ihtimali yüksek. Sistemde
+    <b>varsayılan kapalı</b> bırakıyorum; daha çok koşu gerekiyor.</p>
+  </div>
   <p>
     İkinci sağlam kazanç <strong>görsel temasın korunması</strong>: kontrolde
     temas koşu başına 5 kez kopuyordu, dikey tavan düzeltilince 1'e indi.

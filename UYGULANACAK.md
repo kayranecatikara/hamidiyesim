@@ -24,10 +24,13 @@ En yakın geçişin (1.9 m) bir kesişmeye denk gelmesi ŞANS — vuruş oranın
 2. **"Sönümleme" aslında takviye:** `vz = vz_nişan + 0.9·(vz_nişan − vz_gerçek)`
    araç geride kaldığı sürece hedefi 1.9 katına çıkarır; araç HEP geride.
    → `AVCI_IBVS_KVZD=0`
-3. **İntegral doyması:** elev_I yarım saniyede tavana yapışıp 6 s orada kaldı;
-   hata sıfırı geçtiğinde hâlâ doluydu → yükseliş +0.6° → −25.6° savruldu.
-   Yani "önce irtifayı eşitle" fikri doğruydu ama eşitleyici hedefin ÜSTÜNDEN
-   geçerek eşitliyordu.  → `AVCI_IBVS_AWU=1`
+3. **İntegral doyması** — ⚠ GERÇEK AMA İSTİSNAİ. Bir koşuda elev_I yarım
+   saniyede tavana yapışıp 6 s orada kaldı (yükseliş +0.6° → −25.6°). Ama
+   bütün koşular tarandığında çoğunda integral tavana HİÇ değmiyor (%0) ve
+   tutuş fazında komut yalnız karelerin %0-13'ünde rayda. Görsel faza çok
+   büyük hatayla (39-65°) yeniden girildiğinde oluşuyor. AWU ölçütte en iyi
+   sonucu verdi (0.32 m) ama MEKANİZMASI DOĞRULANMADI — 3 koşuda şans
+   olabilir.  → `AVCI_IBVS_AWU=1`, varsayılan kapalı
 
 Ayrıca **terminal kapısı boş geçiyor**: kapı `tani_onceki_elev_hata`ya bakıyor,
 o da 0.0 ile başlıyor. Iskadan sonra GPS'e dönüp YAKINDAN yeniden devrediliyor
