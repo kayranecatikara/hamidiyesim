@@ -42,6 +42,36 @@ o da 0.0 ile başlıyor. Iskadan sonra GPS'e dönüp YAKINDAN yeniden devrediliy
 altından çıkıyor (cy 316 → 461/480), 2 s kör hücum, araç 30 m yol alıyor ve
 hedefi 58° YANDAN buluyor. Gimbal gerekçesinin ikinci kanıtı.
 
+### ÇÖZÜM ADAYI — TERMİNALİN İKİ İŞİNİ AYIR (27 uçuşluk kampanyanın cevabı)
+
+Terminal iki iş birden yapıyordu ve şimdiye kadar hep ikisi birlikte açılıp
+kapanıyordu:
+
+  (a) FRENİ KALDIRMAK — tutuşun PI hız denetimi kutu büyüdükçe yavaşlıyor
+      (ölçüldü: 2.7 m'de yalnız 1.7 m/s komut). Terminal olmadan araç son
+      metrede frene basar. Bu kısım GEREKLİ.
+  (b) DİKEY YASAYI DEĞİŞTİRMEK — nazik eşitleyici yerine "hız vektörünü
+      LOS'a doğrult". Kazancı v_los·tan(), 18 m/s'de devasa. ZARARLI.
+
+`AVCI_IBVS_TERM_DIKEY_TUTUS=1` (b)'yi geri alır, (a)'yı korur.
+
+DOZ-YANIT (mekanizma kanıtı, vuruş saymaktan bağımsız):
+
+    yapılandırma             tavan   terminalde RAYDA   vuruş   dikey kaçırma
+    kontrol                  5.0     %42-57             0/3     0.84 m
+    yalnız yasa ayrımı       3.0     %14-19             1/3     0.21 m
+    yasa ayrımı + tavan 2.5  2.5     %0, %0, %39        3/3     0.07 m
+
+Pencere ±0.13 m → İLK KEZ İÇERİDEYİZ. Kazanan env:
+
+    AVCI_IBVS_TERM_DIKEY_TUTUS=1 AVCI_IBVS_VZMAX=2.5 AVCI_IBVS_KAPI_KATI=1
+
+⚠ 3/3 tek başına yetmez (daha önce 5/5 → tekrarda 2/5 olmuştu). Dayanak
+vuruş sayısı değil, ON İKİ KAT düzelen sürekli ölçüt + doz-yanıt.
+6 koşuluk doğrulama ve pay dağılımı testleri sürüyor.
+
+**Elenen:** PN — 0/3 ve dikey sürüklenmeyi hiç değiştirmedi (yanlış katman).
+
 **İlk sonuç (COMBO = VZT 2.5 + AWU + katı kapı):** elev_I bir kez bile tavana
 yapışmadı (0/227 kare; kontrolde 6 saniye yapışıktı), yükseliş medyanı **+2.4°**
 (hedef 2°) — eşitleyici İLK KEZ yakınsıyor. Salınım genliği 53° → 21°.
