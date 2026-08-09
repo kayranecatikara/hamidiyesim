@@ -265,6 +265,44 @@ class Cfg:
     MENZIL_PX_M = 160.0                                  # px·m
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
+    # ══ YATAY AÇI ROLL/PITCH TELAFİSİ — T1a (2026-08-09) ══
+    # KULLANICI GÖZLEMİ: "düz uçuşta ıskalamıyor, hedef manevra yapınca görsel
+    # güdüm sapıtıyor, yatayda çok salınım oluyor."
+    #
+    # KÖK NEDEN — bir çerçeve karışıklığı. Yatay hata şöyle okunuyordu:
+    #     eps_yaw = atan((cx − CX)/FX)      ← KAMERA çerçevesi azimutu
+    #     los_az  = iris_yaw + eps_yaw      ← "bu SEVİYE azimutudur" varsayımı
+    # Bu varsayım YALNIZ roll=0'da doğru. Kamera gövdeye 25° YUKARI vidalı;
+    # araç yattığında kamera da yatıyor ve hedefin görüntüdeki YATAY konumu
+    # kayıyor. Kodda roll telafisi hiç yoktu (roll okunuyordu ama sadece
+    # takla bekçisine gidiyordu).
+    #
+    # ÖLÇÜLDÜ — 5869 kare GERÇEK uçuş verisi (GPS logunda hedefin gerçek
+    # konumu + aracın gerçek duruşu + piksel izdüşümü birlikte var; okunan
+    # açı ile gerçek seviye azimutu doğrudan kıyaslandı):
+    #     yatış  0-9°  (4450 kare) → yatay okuma hatası ort. 0.6°
+    #     yatış 10-19° ( 821 kare) →                        2.4°
+    #     yatış 20-29° ( 313 kare) →                       11.0°
+    #     yatış 30-39° ( 210 kare) →                       13.9°
+    #     yatış 40-49° (  75 kare) →                       10.8°
+    # Teori (hedef boresight'ın 20° üstünde): 30°→9.9°, 45°→14.2° — UYUŞUYOR.
+    # Araç manevrada gerçekten 43-45°'ye (ANGLE_MAX tavanı) dayanıyor.
+    #
+    # ⚠ HATANIN İŞARETİ DÖNÜŞE KARŞI: sağa dönerken (sağa yatarken) hedef
+    # SOLA kaymış görünüyor → güdüm dönüşü kısıyor → geride kalıyor → sonra
+    # aşırı düzeltiyor. Yatay salınımın kaynağı bu.
+    #
+    # ÇÖZÜM: piksel ışını aracın KENDİ duruşuyla SEVİYE çerçevesine döndürülür
+    # (bkz. los_seviye). Girdi drone'un kendi IMU'su — canlı hedef GPS'i yok,
+    # yarışma kuralı (D0) temiz.
+    # ⚠ T1a KAPSAMI: YALNIZ YATAY kanal. Dikey kanal (piksel_elev + pitch ve
+    # tutuştaki eps_elev) BİLEREK dokunulmadan bırakıldı — uçuşta doğrulanmış
+    # dikey davranış tek değişkenli testin dışında tutuluyor.
+    # ⚠ DÜZ UÇUŞU BOZMAZ: roll<10°'de fark 0.6° (ölçüldü), yani kullanıcının
+    # "düz uçuşta ıskalamıyor" dediği davranış pratikte aynı kalır.
+    # AVCI_IBVS_ROLL=0 → eski (telafisiz) yol aynen geri gelir.
+    ROLL_TELAFI = _env_f("AVCI_IBVS_ROLL", 1.0) >= 0.5
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -276,7 +314,8 @@ _LOG_DIR = os.path.join(
 
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
-    "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
+    "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
+    "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
@@ -295,9 +334,44 @@ def piksel_elev(cy, cfg=Cfg):
                       math.cos(tilt) + math.sin(tilt) * b)
 
 
+def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
+    """Piksel + aracın KENDİ duruşu → SEVİYE çerçevesinde (azimut, yükseliş).
+
+    Neden gerekli: bkz. Cfg.ROLL_TELAFI. atan((cx−CX)/FX) KAMERA çerçevesinin
+    azimutudur; araç yattığında bu, seviye çerçevesindeki gerçek azimut DEĞİLDİR
+    (30-40° yatışta 11-14° sapma ölçüldü).
+
+    Zincir — üç adım, hepsi drone'un kendi sensörüyle (canlı GPS YOK):
+      1) piksel → kamera ışını      [sağ, aşağı, ileri] = (x, y, 1)
+      2) kamera → GÖVDE (FRD)       kamera KAMERA_TILT° yukarı vidalı: Ry(−tilt)
+      3) gövde → SEVİYE (yaw hariç) Ry(pitch)·Rx(roll) ile duruş çıkarılır
+
+    Dönüş: (azimut, yükseliş) rad — azimut BURNA GÖRE sağ+, yükseliş yukarı+.
+    Yani çağıran seviye çerçevesindeki mutlak yönü `iris_yaw + azimut` ile alır.
+
+    Doğrulama (roll=pitch=0, cx=CX): azimut=0 ve yükseliş = piksel_elev(cy).
+    """
+    x = (cx - geo.CX) / geo.FX          # kamera sağ  (CX = ana nokta)
+    y = (cy - geo.CY) / geo.FY          # kamera aşağı
+    t = math.radians(GeoCfg.KAMERA_TILT_DEG)
+    ct, st = math.cos(t), math.sin(t)
+    # 2) kamera ışını → gövde FRD
+    bx = ct + st * y                    # ileri
+    by = x                              # sağ
+    bz = ct * y - st                    # aşağı
+    # 3) gövde → seviye: önce roll, sonra pitch geri alınır
+    cr, sr = math.cos(roll), math.sin(roll)
+    y1 = by * cr - bz * sr
+    z1 = by * sr + bz * cr
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    x2 = bx * cp + z1 * sp
+    z2 = -bx * sp + z1 * cp
+    return math.atan2(y1, x2), math.atan2(-z2, math.hypot(x2, y1))
+
+
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None):
+          kapanma=None, iris_roll=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -313,7 +387,14 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     boyut = math.sqrt(max(w, 0.0) * max(h, 0.0))
 
     # YAW: yatay açı hatası → burun hedefe
-    eps_yaw = math.atan((cx - cfg.CX_NISAN) / geo.FX)
+    # ROLL/PITCH TELAFİSİ (bkz. Cfg.ROLL_TELAFI): araç yattığında kamera
+    # azimutu seviye azimutu DEĞİLDİR. Telafili yol pikseli aracın kendi
+    # duruşuyla seviye çerçevesine döndürür; hız vektörü de bu yöne gider.
+    eps_yaw_ham = math.atan((cx - cfg.CX_NISAN) / geo.FX)
+    if cfg.ROLL_TELAFI:
+        eps_yaw, _ = los_seviye(cx, cy, iris_roll, iris_pitch, cfg)
+    else:
+        eps_yaw = eps_yaw_ham
     # LEAD ÖLÇEĞİ: kalan süreyle (≈menzille) söner — bkz. Cfg.LEAD_SONUM.
     # boyut ∝ 1/menzil olduğu için REF/boyut ≈ menzil/menzil_REF.
     lead_olcek = 1.0
@@ -384,7 +465,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
-            "lead_az": lead_az, "lead_olcek": lead_olcek}
+            "lead_az": lead_az, "lead_olcek": lead_olcek,
+            "eps_yaw_ham": eps_yaw_ham}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
@@ -471,6 +553,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
           f"{hiz_I:.1f} m/s, REF={cfg.BOYUT_REF:.0f}px, tavan "
           f"{cfg.V_TOPLAM_MAX:.0f} m/s, terminal hücum >{cfg.TERMINAL_BOYUT:.0f}px, "
           f"CY_nişan={cfg.CY_NISAN:.0f}, kayıp eşiği={kayip_kare_esik} kare, "
+          f"yatay roll/pitch telafisi={'AÇIK' if cfg.ROLL_TELAFI else 'kapalı'}, "
           f"temas sensörü={'VAR' if get_temas is not None else 'yok'} "
           f"— log: {csv_yol}")
 
@@ -570,7 +653,17 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # piksel hızı kendi düzeltmemizi içerir. Atalet açısı = gövde
             # açısı + aracın kendi duruşu → gerçek LOS dönüşü kalır.
             ipitch = iris.get("pitch", 0.0)
-            los_az = normalize_angle(iyaw + math.atan((cx - cfg.CX_NISAN) / geo.FX))
+            iroll = iris.get("roll", 0.0)
+            # ⚠ Bu açı LEAD nişanının girdisi (los_hiz). Telafisiz halinde
+            # aracın YATIŞI sahte LOS dönüş hızı üretiyordu — manevrada lead
+            # de bozuluyordu. Aynı telafi burada da uygulanır.
+            if cfg.ROLL_TELAFI:
+                _az_s, _ = los_seviye(cx, cy, iroll, ipitch, cfg)
+                los_az = normalize_angle(iyaw + _az_s)
+            else:
+                los_az = normalize_angle(
+                    iyaw + math.atan((cx - cfg.CX_NISAN) / geo.FX))
+            # ⚠ T1a: DİKEY BİLEREK DOKUNULMADI (tek değişkenli test).
             los_el = piksel_elev(cy, cfg) + ipitch
             if los_az_onceki is not None and 1e-3 < dt < 0.5:
                 a_ = cfg.LEAD_EMA
@@ -605,7 +698,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
-                                                       kapanma)
+                                                       kapanma, iroll)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -630,7 +723,13 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "w": round(bw, 1), "h": round(bh, 1),
                 "boyut": round(tani["boyut"], 1), "conf": round(conf, 3),
                 "eps_yaw_deg": round(math.degrees(tani["eps_yaw"]), 1),
+                # ÖLÇÜM SÜTUNU: telafisiz okuma. Farkı (ham − telafili) roll'e
+                # karşı çizince T1a'nın uçuşta ne kadar bağladığı doğrudan
+                # görülür. Yalnız log — güdüm bunu kullanmaz.
+                "eps_yaw_ham_deg": round(math.degrees(tani["eps_yaw_ham"]), 1),
                 "eps_elev_deg": round(math.degrees(tani["eps_elev"]), 1),
+                "iris_roll_deg": round(math.degrees(iroll), 1),
+                "iris_pitch_deg": round(math.degrees(ipitch), 1),
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),

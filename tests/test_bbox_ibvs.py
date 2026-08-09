@@ -22,6 +22,7 @@ import time
 
 from vision import geometry as geo
 from control.guidance import bbox_ibvs as ib
+from control.guidance.guidance_core import Cfg as GeoCfg
 
 _sonuclar = []
 
@@ -428,6 +429,94 @@ def main():
                          (0.0, 0.0), 0.0, 0.0, 2.0)[2] - _eski) < 1e-9,
             "KAPANMA=False iken kapanma hızı verilse bile YOK SAYILIR")
 
+
+    print("=" * 60)
+    # ── T1a: YATAY AÇI ROLL/PITCH TELAFİSİ ──
+    # Kullanıcı uçuşta gördü: "düz uçuşta ıskalamıyor ama hedef manevra
+    # yapınca görsel güdüm sapıtıyor, yatayda çok salınım oluyor."
+    # Kök neden: atan((cx−CX)/FX) KAMERA azimutudur, araç yattığında SEVİYE
+    # azimutu değildir. 5869 kare gerçek uçuş verisinde ölçüldü:
+    #     yatış 0-9° → 0.6° hata,  20-29° → 11.0°,  30-39° → 13.9°
+    class _RollYok(ib.Cfg):
+        ROLL_TELAFI = False
+
+    _t = math.radians(GeoCfg.KAMERA_TILT_DEG)
+
+    def _pikselle(az, elev, roll, pitch):
+        """SEVİYE çerçevesindeki (az, elev) + duruş → (cx, cy). los_seviye'nin
+        TERSİ: yuvarlak gidiş-dönüş testi için bağımsız ileri izdüşüm."""
+        ca, sa = math.cos(az), math.sin(az)
+        ce, se = math.cos(elev), math.sin(elev)
+        lx, ly, lz = ca * ce, sa * ce, -se           # seviye çerçevesi
+        # seviye → gövde: Rx(−roll)·Ry(−pitch)
+        cp, sp = math.cos(-pitch), math.sin(-pitch)
+        bx0, by0, bz0 = lx * cp + lz * sp, ly, -lx * sp + lz * cp
+        cr, sr = math.cos(-roll), math.sin(-roll)
+        bx, by, bz = bx0, by0 * cr - bz0 * sr, by0 * sr + bz0 * cr
+        # gövde → kamera (25° yukarı tilt)
+        ct, st = math.cos(_t), math.sin(_t)
+        ileri, sag, asagi = ct * bx - st * bz, by, st * bx + ct * bz
+        return (geo.CX + geo.FX * sag / ileri,
+                geo.CY + geo.FY * asagi / ileri)
+
+    # B28: gidiş-dönüş — telafili okuma gerçek geometriyi GERİ VERİR
+    _az0, _el0, _ro, _pi = math.radians(8.0), math.radians(15.0), \
+        math.radians(40.0), math.radians(10.0)
+    _cxp, _cyp = _pikselle(_az0, _el0, _ro, _pi)
+    _azg, _elg = ib.los_seviye(_cxp, _cyp, _ro, _pi, C)
+    kontrol("B28 roll/pitch telafisi gerçek yatay yönü geri verir (gidiş-dönüş)",
+            abs(_azg - _az0) < math.radians(0.05)
+            and abs(_elg - _el0) < math.radians(0.05),
+            f"gerçek az={math.degrees(_az0):.1f}° (yatış 40°, pitch 10°) → "
+            f"telafili okuma {math.degrees(_azg):.2f}°")
+
+    # B29: GERÇEK manevra karesinde telafisiz okuma büyük sapar.
+    # Geometri loglardan: manevra koşularında kutu kadrajda YUKARIDA duruyor
+    # (cy medyan 261, p10 185) ve araç ANGLE_MAX'a (45°) dayanıyor. Hata
+    # hedefin kadraj merkezinin ne kadar ÜSTÜNDE olduğuyla büyür:
+    #     cy=300 (nişan) @40° → 3.3°   |   cy=240 @40° → 16.7°
+    #     cy=220        @40° → ~19°    |   cy=200 @40° → 27.1°
+    _cxm, _cym, _rollm = 350.0, 220.0, math.radians(40.0)
+    _az_d, _ = ib.los_seviye(_cxm, _cym, _rollm, math.radians(5.0), C)
+    _az_h = math.atan((_cxm - C.CX_NISAN) / geo.FX)
+    _sapma = abs(math.degrees(_az_d - _az_h))
+    kontrol("B29 telafisiz okuma yatışta büyük sapar (manevra bozulmasının kaynağı)",
+            _sapma > 10.0,
+            f"gerçek manevra karesi (cx={_cxm:.0f}, cy={_cym:.0f}, yatış 40°): "
+            f"telafisiz ↔ telafili arasında {_sapma:.1f}° fark "
+            f"(uçuş ölçümü 30-39° yatışta ort. 13.9°)")
+
+    # B30: DÜZ UÇUŞ BOZULMAZ — kullanıcının doğrulanmış davranışı korunmalı.
+    # roll≈0'da telafili ve telafisiz okuma pratikte aynı kalmalı.
+    _enb_duz = 0.0
+    for _cxd in (280.0, 300.0, 320.0, 340.0, 360.0):
+        for _cyd in (260.0, 300.0, 340.0):
+            _a, _ = ib.los_seviye(_cxd, _cyd, 0.0, math.radians(5.0), C)
+            _h = math.atan((_cxd - C.CX_NISAN) / geo.FX)
+            _enb_duz = max(_enb_duz, abs(math.degrees(_a - _h)))
+    kontrol("B30 düz uçuşta (yatış≈0) telafi davranışı değiştirmez",
+            _enb_duz < 2.5,
+            f"roll=0, pitch=5°, tüm kadraj: en büyük fark {_enb_duz:.2f}° "
+            f"(uçuş ölçümü: yatış<10°'de 0.6°). Kalan fark kamera 25° tilt "
+            f"eşleniği — ham formül onu da yanlış yapıyordu")
+
+    # B31: T1a YALNIZ YATAY — dikey komut bit bit aynı kalmalı (tek değişken)
+    _arg = (350.0, 220.0, 40, 40, 0.3, 14.0, 0.05)
+    _ile = ib.komut(*_arg, C, True, (0.2, 0.1), math.radians(5.0), 0.5, 2.0,
+                    _rollm)
+    _siz = ib.komut(*_arg, _RollYok, True, (0.2, 0.1), math.radians(5.0), 0.5,
+                    2.0, _rollm)
+    kontrol("B31 T1a dikey kanala DOKUNMAZ (vz birebir aynı)",
+            abs(_ile[2] - _siz[2]) < 1e-12,
+            f"yatış 40°'de vz telafili {_ile[2]:+.4f} = telafisiz "
+            f"{_siz[2]:+.4f} m/s — dikey ayrı testin konusu (T1b)")
+
+    # B32: geri dönüş yolu — AVCI_IBVS_ROLL=0 eski yatay yasayı aynen getirir
+    kontrol("B32 roll telafisi kapatılabilir (eski yatay davranış geri gelir)",
+            abs(_siz[5]["eps_yaw"] - _siz[5]["eps_yaw_ham"]) < 1e-12
+            and abs(_ile[5]["eps_yaw"] - _ile[5]["eps_yaw_ham"]) > math.radians(10.0),
+            "ROLL_TELAFI=False → eps_yaw = ham okuma; True iken 40° yatışta "
+            f"{math.degrees(abs(_ile[5]['eps_yaw'] - _ile[5]['eps_yaw_ham'])):.1f}° ayrışır")
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
