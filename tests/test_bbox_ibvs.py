@@ -327,10 +327,14 @@ def main():
                                          C, True, (0.0, 0.0), 0.0)
     vyat_e = math.hypot(vx_e, vy_e)
     elev_e = math.degrees(math.atan2(-vz_e, vyat_e)) if vyat_e > 1e-6 else 0.0
+    # Taban 14 m/s (hedefin 14.5'ine yakın — geride kalmamak için). Bu tabanla
+    # ulaşılabilen en dik açı atan(VZ_MAX_TERM/14) ≈ 19.7°; eski tavan 15.5°'ydi.
+    _ulasilabilir = math.degrees(math.atan(C.VZ_MAX_TERM / C.V_TERM_MIN))
     kontrol("B23 aşırı dikte hız tabanı bağlar (hedefi büsbütün kaçırmamak için)",
-            abs(vyat_e - C.V_TERM_MIN) < 1e-6 and elev_e > 20.0,
-            f"hedef 35° → yatay taban {vyat_e:.1f} m/s, vektör {elev_e:.0f}° "
-            f"(eski sürüm 15.5°)")
+            abs(vyat_e - C.V_TERM_MIN) < 1e-6
+            and abs(elev_e - _ulasilabilir) < 1.5 and elev_e > 15.5,
+            f"hedef 35° → yatay taban {vyat_e:.1f} m/s, vektör {elev_e:.1f}° "
+            f"(taban sınırı {_ulasilabilir:.1f}°; eski sürüm 15.5°'de takılırdı)")
 
     # ── B24: TERMİNAL DİKEY SÖNÜMLEME — "üstten geçme" önleyici ──
     # Kullanıcının manuel uçuş kaydı (log 081132): hedef TAM nişandayken

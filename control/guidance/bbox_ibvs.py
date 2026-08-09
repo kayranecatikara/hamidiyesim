@@ -198,7 +198,9 @@ class Cfg:
     # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
     V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
     # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
-    V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
+    # 10 → 14 (2026-08-09, 9 uçuşluk A/B/C ölçümü): 10 tabanı hedefin hızının
+    # (14.5) ALTINDA kalıyordu, dik açılarda geride kalıyorduk.
+    V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 14.0)   # m/s; hücum hız tabanı
 
     # ⚠ LEAD MENZİLLE SÖNER (2026-08-09, kullanıcı gözlemi: "çarpacakken
     # birden yukarı itki verip kaçırıyoruz").
@@ -233,7 +235,17 @@ class Cfg:
     #     vz = vz_nişan + K_VZ_D · (vz_nişan − vz_gerçek)
     # Zaten gerekenden hızlı tırmanıyorsak komut azalır/ters döner.
     # Girdi drone'un KENDİ sensörü — yarışma kuralı serbest.
-    K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.6)   # dikey sönümleme kazancı
+    # 0.6 → 0.9 (2026-08-09, 9 uçuşluk A/B/C ölçümü).
+    # ⚠ ÖLÇÜMÜN ASIL DERSİ: iki değişiklik TEK BAŞINA İŞE YARAMIYOR, hatta
+    # hız tabanı tek başına TABANDAN KÖTÜ. Ancak BİRLİKTE çalışıyorlar:
+    #   yapılandırma        kutu kayması medyanı   çarpışma rotasında
+    #   taban (10 / 0.6)          49 px                2/8
+    #   A: yalnız taban 14        96 px                1/12   ← kötüleşti
+    #   B: yalnız sönüm 0.9       56 px                1/5
+    #   C: İKİSİ BİRLİKTE         13 px                3/3    ✓
+    # Fiziksel anlamı: taban geometrinin bozulmasını engelliyor, sönüm de
+    # aşırı-salınımı kesiyor; biri olmadan diğeri yeni bir dengesizlik açıyor.
+    K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.9)   # dikey sönümleme kazancı
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
     # ── KUTU GEÇERLİLİĞİ ──
