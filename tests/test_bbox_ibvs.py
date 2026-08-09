@@ -43,23 +43,23 @@ def main():
     # için: cy = CY + FY·tan(kamera_tilt − ELEV_HEDEF).
     _cy_nisan_atalet = geo.CY + geo.FY * math.tan(
         math.radians(25.0 - C.ELEV_HEDEF_DEG))
-    vx, vy, vz, yaw, _I, t = ib.komut(CX, _cy_nisan_atalet, 40, 40, 0.0, 0.0,
+    vx, vy, vz, yaw, _I, t, _eI = ib.komut(CX, _cy_nisan_atalet, 40, 40, 0.0, 0.0,
                                       0.05, C)
     kontrol("B1  nişan noktasında: yaw≈0, vz≈0",
             abs(math.degrees(yaw)) < 0.5 and abs(vz) < 0.05,
             f"yaw={math.degrees(yaw):.2f}° vz={vz:.3f}")
 
     # ── B2: hedef SAĞDA (cx>CX) → yaw komutu POZİTİF (sağa dön) ──
-    vx, vy, vz, yaw_sag, _I, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
-    _, _, _, yaw_sol, _, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
+    vx, vy, vz, yaw_sag, _I, t, _eI = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
+    _, _, _, yaw_sol, _, _, _eI = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
     kontrol("B2  hedef sağda → yaw>0, solda → yaw<0",
             yaw_sag > 0.05 and yaw_sol < -0.05,
             f"sağ yaw={math.degrees(yaw_sag):+.1f}° sol yaw={math.degrees(yaw_sol):+.1f}°")
 
     # ── B3: HIZ — küçük kutu (uzak) hızlı, REF'te integral kadar, yakın geri ──
-    _, _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 0.0, 0.05, C)
-    _, _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05, C)
-    _, _, _, _, _, t_denge = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
+    _, _, _, _, _, t_uzak, _eI = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 0.0, 0.05, C)
+    _, _, _, _, _, t_yakin, _eI = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05, C)
+    _, _, _, _, _, t_denge, _eI = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
                                       0.0, 0.0, 0.05, C)
     # Yakın kutuda hız 0'a iner ama NEGATİF OLMAZ (V_MIN=0, geri gitme yok —
     # 2026-08-08 kullanıcı kararı: fren vuruşu engelliyordu).
@@ -70,8 +70,8 @@ def main():
             f"{t_denge['v_los']:+.1f}  60px→{t_yakin['v_los']:+.1f} m/s")
 
     # ── B4: DİKEY — hedef kadrajda AŞAĞIDA (cy>nişan) → ALÇAL (vz>0, NED down+) ──
-    _, _, vz_asa, _, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, 0.0, 0.05, C)
-    _, _, vz_yuk, _, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, 0.0, 0.05, C)
+    _, _, vz_asa, _, _, _, _eI = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, 0.0, 0.05, C)
+    _, _, vz_yuk, _, _, _, _eI = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, 0.0, 0.05, C)
     kontrol("B4  hedef altta → vz>0 (alçal), üstte → vz<0 (tırman)",
             vz_asa > 0.1 and vz_yuk < -0.1,
             f"altta vz={vz_asa:+.2f}  üstte vz={vz_yuk:+.2f}")
@@ -166,15 +166,15 @@ def main():
     # ~8 m/s üretiyordu; hedef 15 m/s → drone geride kaldı, faz 3.5 s'de koptu.
     # Taşıyıcıyla toplam hız hedefin hızını AŞMALI (aksi halde asla kapanmaz).
     HEDEF_V = 15.0
-    vx0, vy0, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, 0.0, 0.05, C)
-    vx1, vy1, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, HEDEF_V, 0.05, C)
+    vx0, vy0, _, _, _, _, _eI = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, 0.0, 0.05, C)
+    vx1, vy1, _, _, _, _, _eI = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, HEDEF_V, 0.05, C)
     kontrol("B10 integral sıcak başlangıcı: hedefin hızını aşan komut",
             math.hypot(vx0, vy0) < HEDEF_V and math.hypot(vx1, vy1) > HEDEF_V,
             f"I=0 → {math.hypot(vx0, vy0):.1f} m/s  |  "
             f"I=15 → {math.hypot(vx1, vy1):.1f} m/s  (hedef {HEDEF_V:.0f})")
 
     # ── B11: toplam yatay hız tavanı bağlar ──
-    vx2, vy2, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 17.0, 0.05, C)
+    vx2, vy2, _, _, _, _, _eI = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 17.0, 0.05, C)
     kontrol("B11 toplam hız V_TOPLAM_MAX ile tavanlı",
             math.hypot(vx2, vy2) <= C.V_TOPLAM_MAX + 1e-6,
             f"17+kapanma → {math.hypot(vx2, vy2):.2f} ≤ {C.V_TOPLAM_MAX}")
@@ -210,9 +210,9 @@ def main():
 
     # ── B13: TERMİNAL HÜCUM — fren yok, tam taahhüt ──
     # Kullanıcı kararı (2026-08-08): "o freni koymasan aracı vurabiliyoruz."
-    _, _, _, _, _, t_tut = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
+    _, _, _, _, _, t_tut, _eI = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
                                     C, False)
-    _, _, _, _, _, t_ter = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
+    _, _, _, _, _, t_ter, _eI = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
                                     C, True)
     kontrol("B13 terminalde fren yok: v = V_TERMINAL (tut modunda ise 0)",
             abs(t_ter["v_los"] - C.V_TERMINAL) < 1e-6 and t_tut["v_los"] < 1.0,
@@ -281,9 +281,9 @@ def main():
     # 2026-08-08 ölçümü: ıskanın baskın bileşeni DİKEYDİ (0.5-1.1 m). Sebep:
     # terminalde bile dikey kanal "tutuş" yasasıydı → hedefin altından geçiyorduk.
     cy_ust = geo.CY + geo.FY * math.tan(math.radians(15))   # hedef 10° yukarıda
-    _, _, vz_tut, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
+    _, _, vz_tut, _, _, _, _eI = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
                                      False, (0.0, 0.0), 0.0)
-    _, _, vz_ter, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
+    _, _, vz_ter, _, _, _, _eI = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
                                      True, (0.0, 0.0), 0.0)
     # hedef 10° yukarıda → kesişim için TIRMANMALI (vz<0, NED)
     kontrol("B18 terminalde hedef yukarıdayken TIRMANIR (tutuş modu tırmanmıyordu)",
@@ -291,11 +291,11 @@ def main():
             f"tutuş vz={vz_tut:+.2f}  →  terminal vz={vz_ter:+.2f} m/s")
 
     # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken ──
-    _, _, _, yaw_ldsz, _, t_ldsz = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+    _, _, _, yaw_ldsz, _, t_ldsz, _eI = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
                                             0.05, C, True, (0.0, 0.0), 0.0)
-    _, _, _, yaw_ld, _, t_ld = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+    _, _, _, yaw_ld, _, t_ld, _eI = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
                                         0.05, C, True, (0.5, 0.0), 0.0)
-    _, _, _, _, _, t_tut2 = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
+    _, _, _, _, _, t_tut2, _eI = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
                                      0.05, C, False, (0.5, 0.0), 0.0)
     kontrol("B19 lead: LOS dönerken terminalde nişan öne alınır, tutuşta ALINMAZ",
             abs(t_ldsz["lead_az"]) < 1e-9 and t_ld["lead_az"] > 0.1
@@ -317,7 +317,7 @@ def main():
     # 20° — eski sürümün 15.5° tavanının ÜSTÜNDE, ama hız tabanının bağladığı
     # noktanın altında: vektör hedefe TAM bakabilmeli.
     cy20 = _cy_icin(20.0)
-    vx_d, vy_d, vz_d, _, _, _ = ib.komut(CX, cy20, 30, 30, 0.0, 10.0, 0.05,
+    vx_d, vy_d, vz_d, _, _, _, _eI = ib.komut(CX, cy20, 30, 30, 0.0, 10.0, 0.05,
                                          C, True, (0.0, 0.0), 0.0)
     vyatay = math.hypot(vx_d, vy_d)
     elev_vektor = math.degrees(math.atan2(-vz_d, vyatay)) if vyatay > 1e-6 else 0.0
@@ -328,7 +328,7 @@ def main():
 
     # 35° — taban bağlar; vektör hedefe tam bakamaz ama eski 15.5°'den DİK
     cy35 = _cy_icin(35.0)
-    vx_e, vy_e, vz_e, _, _, _ = ib.komut(CX, cy35, 30, 30, 0.0, 10.0, 0.05,
+    vx_e, vy_e, vz_e, _, _, _, _eI = ib.komut(CX, cy35, 30, 30, 0.0, 10.0, 0.05,
                                          C, True, (0.0, 0.0), 0.0)
     vyat_e = math.hypot(vx_e, vy_e)
     elev_e = math.degrees(math.atan2(-vz_e, vyat_e)) if vyat_e > 1e-6 else 0.0
@@ -347,9 +347,9 @@ def main():
     # yani hedefin üstünden geçildi. Sebep: dikey kanalda türev/sönümleme
     # terimi yoktu, araç tırmanma momentumu kazanıp geç sönüyordu.
     cy_bir_az_ust = geo.CY + geo.FY * math.tan(math.radians(25 - 8))
-    _, _, vz_durgun, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
+    _, _, vz_durgun, _, _, _, _eI = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
                                         0.05, C, True, (0.0, 0.0), 0.0, 0.0)
-    _, _, vz_tirmanan, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
+    _, _, vz_tirmanan, _, _, _, _eI = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
                                           0.05, C, True, (0.0, 0.0), 0.0, -4.0)
     kontrol("B24 zaten tırmanan araçta dikey komut GERİ ÇEKİLİR (sönümleme)",
             vz_durgun < -2.0 and vz_tirmanan > vz_durgun + 1.5,
@@ -361,10 +361,10 @@ def main():
     # Aynı PİKSEL, farklı gövde pitch'i → FARKLI gerçek yükseliş. Eski yasa
     # (sabit piksel) bunu göremiyordu; dikey limit çevriminin kaynağı buydu.
     _cy_test = geo.CY + geo.FY * math.tan(math.radians(25.0 - C.ELEV_HEDEF_DEG))
-    _, _, vz_p0, _, _, t_p0 = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
+    _, _, vz_p0, _, _, t_p0, _eI = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
                                        False, (0.0, 0.0), 0.0, 0.0)
     # aynı piksel ama araç 10° burun YUKARI → hedef gerçekte 10° daha yukarıda
-    _, _, vz_p10, _, _, t_p10 = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
+    _, _, vz_p10, _, _, t_p10, _eI = ib.komut(CX, _cy_test, 40, 40, 0.0, 0.0, 0.05, C,
                                          False, (0.0, 0.0), math.radians(10.0), 0.0)
     kontrol("B25 aynı piksel + burun yukarı → TIRMANMA komutu (pitch hesaba katılıyor)",
             abs(vz_p0) < 0.05 and vz_p10 < -0.5,

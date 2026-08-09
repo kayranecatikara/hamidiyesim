@@ -145,6 +145,17 @@ class Cfg:
     # üstünde kalır (gökyüzü zemini korunur) ama 6 m'de yalnız 0.2 m fark eder
     # — pratikte "aynı irtifa".
     ELEV_HEDEF_DEG = _env_f("AVCI_IBVS_ELEV_HEDEF", 2.0)   # °; tutuşta yükseliş
+
+    # ── DİKEY İNTEGRAL (2026-08-09) ──
+    # ⚠ NEDEN: irtifa eşitleyici SADECE ORANTILI idi ve yakınsamıyordu —
+    # ölçüldü: yükseliş hatası tutuş fazında 8-9° → 8-12° (kapanmıyor, bazen
+    # büyüyor). Orantılı kontrol kalıcı hatayı kapatamaz; burada kalıcı hatanın
+    # kaynağı hedefin SÜREKLİ TIRMANIŞI (~0.1-0.3 m/s) ve drone'un kendi eğim
+    # değişimi. İntegral bu sabit "yükü" öğrenir ve hatayı sıfıra çeker —
+    # yatay hızda (hiz_I) zaten işe yarayan çözümün dikey karşılığı.
+    # Terminal sırasında DONDURULUR (orada farklı yasa çalışıyor, windup olmasın).
+    K_ELEV_I = _env_f("AVCI_IBVS_KELEVI", 4.0)   # (m/s)/(rad·s)
+    ELEV_I_MAX = 3.0                             # m/s; integral penceresi
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -290,7 +301,7 @@ _LOG_DIR = os.path.join(
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "elev_atalet_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "elev_atalet_deg", "elev_I", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -309,7 +320,7 @@ def piksel_elev(cy, cfg=Cfg):
 
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
-          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0):
+          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0, elev_I=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -390,7 +401,11 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # yanlış irtifaya sürüklenmez — dikey limit çevriminin kaynağı buydu.
         elev_atalet = piksel_elev(cy, cfg) + iris_pitch
         hata_elev = elev_atalet - math.radians(cfg.ELEV_HEDEF_DEG)
-        vz_nisan = -cfg.K_VZ * cfg.V_NOM * hata_elev
+        # İNTEGRAL: hedefin sürekli tırmanışı gibi SABİT yükü öğrenir; orantılı
+        # terim tek başına kalıcı hatayı kapatamıyordu (bkz. Cfg.K_ELEV_I).
+        elev_I = clamp(elev_I + cfg.K_ELEV_I * hata_elev * dt,
+                       -cfg.ELEV_I_MAX, cfg.ELEV_I_MAX)
+        vz_nisan = -(cfg.K_VZ * cfg.V_NOM * hata_elev + elev_I)
         # Terminaldeki ile aynı türev sönümlemesi (salınımı kesen terim).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX, cfg.VZ_MAX)
@@ -401,11 +416,11 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     # Terminal kapısı için atalet yükselişi (çağıran karar verir)
     elev_atalet_tani = piksel_elev(cy, cfg) + iris_pitch
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
-            "elev_atalet": elev_atalet_tani,
+            "elev_atalet": elev_atalet_tani, "elev_I": elev_I,
             "elev_hata": elev_atalet_tani - math.radians(cfg.ELEV_HEDEF_DEG),
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "lead_az": lead_az, "lead_olcek": lead_olcek}
-    return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
+    return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani, elev_I
 
 
 def _kutu_gecerli(pose, cfg):
@@ -471,6 +486,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     cmd_yaw = None
     kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
     tani_onceki_elev_hata = 0.0   # terminal kapısı için (bir önceki turdan)
+    elev_I = 0.0              # dikey integral (irtifa eşitleyici)
     irtifa_bekleme_yazildi = False
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
@@ -622,11 +638,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                         print(f"[IBVS] menzil hazır ama İRTİFA OTURMADI "
                               f"(yükseliş hatası {_eh:.1f}° > "
                               f"{cfg.TERMINAL_ELEV_ESIK:.0f}°) — önce eşitleniyor")
-            vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
-                                                       hiz_I, dt, cfg,
-                                                       terminal_mandal,
-                                                       tuple(los_hiz), ipitch,
-                                                       float(iris.get("vz", 0.0) or 0.0))
+            vx, vy, vz, yaw_hedef, hiz_I, tani, elev_I = komut(
+                cx, cy, bw, bh, iyaw, hiz_I, dt, cfg, terminal_mandal,
+                tuple(los_hiz), ipitch, float(iris.get("vz", 0.0) or 0.0),
+                elev_I)
             tani_onceki_elev_hata = tani.get("elev_hata", 0.0)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
@@ -658,6 +673,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "elev_atalet_deg": round(math.degrees(tani["elev_atalet"]), 2),
+                "elev_I": round(tani.get("elev_I", 0.0), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),
