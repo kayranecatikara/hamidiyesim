@@ -993,7 +993,7 @@ komut TERSİNE DÖNDÜKTEN SONRA yapıyor</p></div>
   <div class="kart">
     <div class="kart-ust">
       <h3>PN — orantılı seyrüsefer</h3>
-      <span class="damga d-kismi">Test ediliyor</span>
+      <span class="damga d-red">Elendi</span>
       <span class="tarih">09 Ağu</span>
     </div>
     <div class="satir"><span class="etiket">Fikir</span>
@@ -1008,9 +1008,19 @@ komut TERSİNE DÖNDÜKTEN SONRA yapıyor</p></div>
       kilitli kalırken hız vektörü öne alınabiliyor</b>. Böylece kutu kadraj
       merkezinde kalıyor (görsel temas yarışma kuralının can damarı), hız
       vektörü ayrı olarak çarpışma rotasına oturuyor.</p></div>
-    <div class="satir"><span class="etiket">Durum</span>
-      <p>Kod ve 6 birim testi hazır (B27-B32), uçuş testi sürüyor.
-      <code>AVCI_IBVS_PN=0</code> ile eski yasa aynen geri geliyor.</p></div>
+    <div class="satir"><span class="etiket">Ölçüm — 3 uçuş</span>
+      <p class="olcum">vuruş                    <span class="kotu">0/3</span>  (kontrol de 0/3)
+yükseliş sürüklenmesi    <span class="kotu">−40°</span>  (kontrol −29° / −34° — <b>aynı</b>)
+terminal salınım genliği  34°  (kontrol 62°, ama dikey tavan tek başına 26° veriyor)</p></div>
+    <div class="satir"><span class="etiket">Karar</span>
+      <p>Fikir doğru, ama <b>asıl sorunu çözmüyor.</b> PN görüş hattının
+      dönüşünü sıfırlamaya çalışıyor — oysa araç zaten kendisine verilen
+      dikey komutu uygulayamıyor. Yanlış katmanı düzeltiyorduk.
+      Varsayılan KAPALI'ya çevrildi; kod ve 6 testi (B27-B32) duruyor,
+      <code>AVCI_IBVS_PN=1</code> ile açılıyor.</p></div>
+    <div class="satir"><span class="etiket">Ders</span>
+      <p>Bir şeyin varsayılan olması ölçümle hak edilir. PN'i açık bırakmak
+      kolaydı ("teorik olarak daha iyi"), ama uçuş desteklemedi.</p></div>
   </div>
 </section>
 
