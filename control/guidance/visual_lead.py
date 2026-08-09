@@ -387,6 +387,11 @@ def run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg,
         # Terminal yukarı yanlılığı — 08-08 teşhisinde baş şüpheli
         # (drone ÜSTTE biten 6 fazın 6'sı ıska). A/B kolları ayrılsın.
         f"COALT={cfg.TERMINAL_COALT_DEG}",
+        # 08-09 faz geçişi A/B'sinin İKİ kolu. Damgada olmazsa hangi kolun
+        # uçtuğu logdan doğrulanamaz — 08-05'te tam bu yüzden bir deney
+        # tekrarlanmak zorunda kalmıştı.
+        f"ILK_KARE={'on' if cfg.ILK_KARE_LIMIT else 'off'}",
+        f"TAM_DUR={'on' if cfg.BITIR_TAM_DUR else 'off'}",
         f"FLYPAST={cfg.FLYPAST_MENZIL}/{cfg.FLYPAST_BUYUME_M}",
     ])
     _yapilandirma_yazildi = False

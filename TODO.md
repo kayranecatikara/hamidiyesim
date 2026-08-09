@@ -47,6 +47,21 @@ Kodda ve ölçülmüş. Kanıtı yanında; ayrıntı DURUM.md'de.
     ötelenme onun bedeliydi, amacı değil. Artık `vuruldu`/`durduruldu` →
     tam duruş (doğru), `kayip` → ötelenme korunur, yalnız yaw dondurulur.
     Kill-switch `AVCI_IBVS_BITIR_TAM_DUR=on`. Testler T62/T67/T68.
+- **GPS fazında vuruş raporlanıyor** (kullanıcı isteği). Vuruş hep görsel
+  fazdan sonra olur — ama avcı hedefe kameranın göremeyeceği kadar yaklaşınca
+  faz `kayip` ile biter ve **çarpma GPS fazına düşer**; o pencerede olan temas
+  hiçbir yerde raporlanmıyordu, görev sonsuza kadar dönüyordu. `supervisor`'ın
+  `izci` thread'i artık GPS fazı boyunca `carpisma_state`'i izliyor.
+  **Ölçüt yalnız Gazebo contact sensörü** (`kaynak_var()` + `temas_var()`);
+  yakınlık yedeği BİLEREK yok — GPS fazı hedefin 8-10 m gerisinde durmak üzere
+  kurulu, mesafeye bakmak sahte vuruş üretirdi. GPS koduna dokunulmadı.
+  Kill-switch `AVCI_GPS_VURUS=off`. Testler S1-S5 (`tests/test_supervisor.py`,
+  supervisor'ın ilk test dosyası).
+- **`ab_gecerli_mi.py` yapılandırma damgalarını da kıyaslıyor.** İki kol
+  sınanan değişkenden başka bir alanda da farklıysa A/B tek değişkenli
+  değildir. İlk yakaladığı: 08-09'un iki koşusunda `TRACKER`/`LOCK` bir kolda
+  on, diğerinde off'tu. Tavsiye metni artık teşhise ÖZGÜ (eskiden her sorunda
+  "DÜZ senaryo kullan" diyordu; kullanıcı düz uçtuğu hâlde bunu gördü).
 - **Damga yalanı düzeltildi.** `visual_lead.py`'de `GPS_RANGE` varsayılanı elle
   `'11.0'` yazılıydı; gerçek değer `gps_guidance.Cfg.RANGE_SET`'te 08-08'de
   8'e inmişti. Araç 8 ile uçarken **log 11 yazıyordu**. Artık kaynağından
@@ -211,10 +226,21 @@ Hepsi "değişmedi" sonucu vermişti; o sonuçlara güvenilemez.
 - [ ] `AVCI_IBVS_PN_YATAY_MAX` 20 vs 60. *Sonuç:*
 - [ ] `AVCI_IBVS_IVME_TAVAN` 4 vs 8. *Sonuç:*
 
-**Yöntem (zorunlu):** DÜZ senaryo · her kol için
-`bash scripts/start_harmonic.sh yeniden` (Ctrl+C YOK, süreçler `setsid` ile
-ayrılmış) · kıyastan önce `tools/ab_gecerli_mi.py` **YEŞİL** demeli ·
-`tools/parm_denetle.py` ile kolun uygulandığı doğrulanmalı.
+**Yöntem (zorunlu):**
+
+1. **DÜZ senaryo** — dairede hedef hiç oturmuyor (+35…+92 m/dk).
+2. **Gaz slider'ı iki kolda AYNI değerde.** (08-09'da öğrenildi:) hedefin
+   irtifasını slider belirliyor — `scenario_duz` `pitch=0` ile seviye uçuyor,
+   fazla itki tırmanışa gidiyor (`run_plane_scenario.py:207-215` →
+   `gcs_throttle()`). Aynı gün iki koşu bu yüzden 19 m ve 74 m'de uçtu.
+   Ölçülen tavan **133.8 m**.
+3. **Aynı `gcs.sh` preset'i** — `bbox` `TRACKER`/`LOCK`'u off'a, `takip` on'a
+   ZORLAR (`gcs.sh:28-30`). 08-09'un iki koşusu bu yüzden de ayrışmıştı.
+4. Her kol için `bash scripts/start_harmonic.sh yeniden`
+   (**Ctrl+C YOK** — süreçler `setsid` ile ayrılmış, ulaşmıyor; komut zaten
+   kendi içinde durduruyor).
+5. Kıyastan önce `tools/ab_gecerli_mi.py` **YEŞİL** demeli; ArduPilot kolu
+   varsa `tools/parm_denetle.py` ile uygulandığı doğrulanmalı.
 
 ### 4 — Terminal dikey geometri: drone ÜSTTE kalıyor
 
@@ -347,7 +373,6 @@ agresif manevrada zayıflıyor — limit çevrimi imzası.
   biri env'den değişirse CSV etiketi gerçek kararla sessizce ayrışır.
 - **35 m'den dar daireler** hiç denenmedi — orada `IC_KAYMA=14 m` yarıçapın
   %40'ı olur, radyal bedel baskın olabilir.
-- **GPS fazında vuruş tespiti yok** — hasar modülü bağımsız izliyor.
 - **A2 — MAVLink kuyruk boşaltma.** (İris tarafında `BATCH=500` drenajı var;
   `mavlink_listener` tarafı kontrol edilmedi.)
 - **A3 — hedef hızı aracın KENDİ saatinden** (şu an GCS varış zamanından).

@@ -67,6 +67,29 @@ def _yasa(rows):
     return "bilinmiyor"
 
 
+def _damga(dosyalar):
+    """Görsel fazın yapılandırma damgasını {alan: değer} olarak çöz.
+
+    Damga yalnız CSV'nin İLK veri satırında var (`visual_lead.py:344-382`).
+    A/B'de iki kolun YALNIZ sınanan değişkende ayrılması gerekir; başka bir
+    alan da farklıysa deney iki değişkenlidir ve sonuç yorumlanamaz.
+    """
+    for tip, _p, rows in dosyalar:
+        if tip != "vis" or not rows:
+            continue
+        ham = rows[0].get("yapilandirma")
+        if not ham:
+            continue
+        d = {}
+        for parca in ham.split(","):
+            if "=" in parca:
+                k, v = parca.split("=", 1)
+                d[k.strip()] = v.strip()
+        if d:
+            return d
+    return {}
+
+
 def _ozet(etiket, dosyalar):
     """Bir UÇUŞUN (tüm fazları birlikte) A/B geçerliliği açısından özeti."""
     ts, alt = [], []
@@ -126,6 +149,7 @@ def main(argv):
         print("  Bir A/B iki AYRI uçuş ister; tek uçuşun fazları kol değildir.")
         return 1
 
+    damgalar = [_damga(d) for _e, d in secili]
     ozetler = [_ozet(e, d) for e, d in secili]
     if any(o is None for o in ozetler):
         print("⚠ uçuşlardan biri boş/kısa — kıyas yok")
@@ -138,24 +162,70 @@ def main(argv):
         print(f"{ad:<8}{o['etiket']:<18}{o['sure']:>9.1f}{o['faz']:>9}"
               f"{o['irtifa']:>16.1f}{o['tirmanma']:>15.1f}{o['yasa']:>13}")
 
+    # (sorun metni, o soruna ÖZGÜ tavsiye) — tavsiye teşhise göre değişmeli.
+    # ⚠ 2026-08-09: ilk sürüm her sorunda aynı sabit metni basıyordu ("DÜZ
+    # senaryo kullan"). Kullanıcı düz uçtuğu hâlde bunu gördü ve haklı olarak
+    # "saçma çıktı" dedi. Tavsiye teşhisten türemezse araca güven kalmıyor.
     sorunlar = []
     d_irt = abs(a["irtifa"] - b["irtifa"])
     if d_irt > IRTIFA_ESIK_M:
-        sorunlar.append(f"hedef irtifası {d_irt:.1f} m farklı "
-                        f"(eşik {IRTIFA_ESIK_M:.0f} m) — kollar aynı "
-                        f"geometride uçmamış")
+        sorunlar.append((
+            f"hedef irtifası {d_irt:.1f} m farklı "
+            f"({a['irtifa']:.0f} m ↔ {b['irtifa']:.0f} m, eşik "
+            f"{IRTIFA_ESIK_M:.0f} m) — kollar aynı geometride uçmamış",
+            "Hedefin irtifasını ARAYÜZDEKİ GAZ SLIDER'I belirliyor: "
+            "scenario_duz pitch=0 (seviye) uçuyor, fazla itki tırmanışa "
+            "gidiyor (run_plane_scenario.py:207-215, hold(...) → "
+            "gcs_throttle()). İki kolda da SLIDER'I AYNI DEĞERE koy; "
+            "ölçülen tavan 133.8 m."))
     for o in (a, b):
         if o["sure"] < ASGARI_SURE_S:
-            sorunlar.append(f"{o['etiket']} yalnız {o['sure']:.0f} s sürmüş "
-                            f"(asgari {ASGARI_SURE_S:.0f} s)")
+            sorunlar.append((
+                f"{o['etiket']} yalnız {o['sure']:.0f} s sürmüş "
+                f"(asgari {ASGARI_SURE_S:.0f} s)",
+                "Kolu daha uzun uçur; kısa koşuda faz sayısı örneklem "
+                "oluşturmuyor."))
         if abs(o["tirmanma"]) > TIRMANMA_ESIK_MDK:
-            sorunlar.append(
+            sorunlar.append((
                 f"{o['etiket']}: hedef {o['tirmanma']:+.0f} m/dk ile irtifa "
-                f"değiştiriyor (eşik ±{TIRMANMA_ESIK_MDK:.0f}) — geometri koşu "
-                f"boyunca kayıyor, plato beklenmemiş")
+                f"değiştiriyor (eşik ±{TIRMANMA_ESIK_MDK:.0f}) — geometri "
+                f"koşu boyunca kayıyor",
+                "DAİRE senaryosunda hedef hiç oturmuyor (+35…+92 m/dk); "
+                "A/B için DÜZ senaryo kullan. Düzde de tırmanıyorsa gaz "
+                "slider'ını düşür ya da hedefi tavana (133.8 m) oturt."))
     kisa, uzun = sorted((a["sure"], b["sure"]))
     if uzun > 0 and kisa / uzun < SURE_ORAN_ESIK:
-        sorunlar.append(f"süreler çok farklı ({kisa:.0f} s ↔ {uzun:.0f} s)")
+        sorunlar.append((
+            f"süreler çok farklı ({kisa:.0f} s ↔ {uzun:.0f} s)",
+            "İki kolu yaklaşık aynı süre uçur."))
+
+    # ── Yapılandırma farkı: A/B YALNIZ tek değişkende ayrılmalı ──
+    da, db = damgalar
+    if da and db:
+        farklar = sorted(k for k in set(da) | set(db)
+                         if da.get(k) != db.get(k))
+        print()
+        if not farklar:
+            print("yapılandırma damgası: iki kol AYNI "
+                  "(sınanan değişken damgada değilse elle doğrula)")
+        else:
+            print(f"yapılandırma farkı ({len(farklar)} alan):")
+            for k in farklar:
+                print(f"    {k:<12} A={da.get(k, '—'):<10} B={db.get(k, '—')}")
+            if len(farklar) > 1:
+                sorunlar_damga = True
+            else:
+                sorunlar_damga = False
+    else:
+        sorunlar_damga = False
+        print("\n⚠ görsel damga okunamadı — kolların ayarı doğrulanamıyor")
+    if sorunlar_damga:
+        sorunlar.append((
+            f"iki kol {len(farklar)} ayarda birden farklı "
+            f"({', '.join(farklar)}) — A/B tek değişkenli DEĞİL",
+            "Kolları yalnız SINANAN değişkende ayır. Presetlere dikkat: "
+            "`scripts/gcs.sh bbox` TRACKER/LOCK'u off'a, `takip` on'a ZORLAR "
+            "(gcs.sh:28-30); iki kolda da aynı preset'i kullan."))
 
     print()
     if a["yasa"] != b["yasa"]:
@@ -164,11 +234,17 @@ def main(argv):
         print()
     if sorunlar:
         print("KIRMIZI — bu A/B KIYASLANAMAZ:")
-        for s in sorunlar:
+        for s, _ in sorunlar:
             print(f"  ✗ {s}")
-        print("\nNe yapmalı: her kol için simi baştan kur")
-        print("  bash scripts/start_harmonic.sh yeniden")
-        print("ve DÜZ senaryo kullan (dairede hedef sürekli tırmanıyor).")
+        print("\nNe yapmalı:")
+        gorulen = set()
+        for _, tavsiye in sorunlar:
+            if tavsiye in gorulen:
+                continue
+            gorulen.add(tavsiye)
+            print(f"  → {tavsiye}")
+        print("  → Her kol için simi baştan kur: "
+              "bash scripts/start_harmonic.sh yeniden")
         return 1
     print("YEŞİL — kollar kıyaslanabilir. (Bu yalnız GEOMETRİ denetimidir;")
     print("değişikliğin etkisi ayrıca ölçülmeli: tools/gudum_karne.py --kiyasla)")

@@ -26,6 +26,7 @@ import collections
 import os
 import threading
 
+from control import carpisma_state          # GERÇEK temas — GPS fazı vuruşu
 from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
@@ -89,6 +90,14 @@ class SupCfg:
     # 20 m'de kutu ~7 px hâlâ küçük; pose asıl 10-12 m'de sağlam. GPS istasyonu
     # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
+
+    # ── GPS FAZINDA VURUŞ RAPORLAMA (2026-08-09) ──
+    # Vuruş görsel fazdan sonra olur; ama avcı hedefe kameranın göremeyeceği
+    # kadar yaklaşınca faz 'kayip' ile biter ve ÇARPMA GPS fazına düşer.
+    # O pencerede olan temas eskiden hiçbir yerde raporlanmıyordu.
+    # Ölçüt YALNIZ Gazebo contact sensörü (carpisma_state); yakınlık yedeği
+    # BİLEREK yok — GPS fazı hedefin 8-10 m gerisinde durmak üzere kurulu.
+    GPS_VURUS = os.environ.get("AVCI_GPS_VURUS", "on").lower() not in ("0", "off")
 
     # ── GT MODUNDA GÖRSEL KİLİDİ ATLA — DENENDİ VE GERİ ALINDI (2026-08-04) ──
     # Gerekçe mantıklıydı: GT modunda güdüm pose'a bakmıyor, o hâlde geçişi
@@ -155,12 +164,33 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         status["faz"] = "GPS"
         faz_stop = threading.Event()
         _kopru(stop_event, faz_stop)
-        tetik = {"gorsel": False}
+        tetik = {"gorsel": False, "vuruldu": False}
 
         def izci():
             pencere = collections.deque(maxlen=sup_cfg.KILIT_PENCERE)
             son_seq = 0
             while not faz_stop.is_set():
+                # ── GPS FAZINDA VURUŞ (2026-08-09, kullanıcı isteği) ──
+                # Vuruş hep görsel fazdan sonra olur — AMA avcı hedefe öyle
+                # yaklaşır ki kamera onu göremez, faz 'kayip' ile biter ve
+                # ÇARPMA GPS fazına düşer. 08-09 uçuşunda 22 görsel fazın
+                # 17'si fly-past ile bitti, bir kısmı 0.43-1.1 m'ye kadar
+                # kapatmıştı. Bu pencerede gerçekleşen temas hiçbir yerde
+                # raporlanmıyordu — görev sonsuza kadar dönüyordu.
+                #
+                # ⚠ ÖLÇÜT YALNIZ GERÇEK TEMAS: kaynak_var() dinleyicinin
+                # ÇALIŞTIĞINI, temas_var() Gazebo contact sensöründen GERÇEK
+                # çarpma geldiğini söyler. Yakınlık YEDEĞİ burada BİLEREK YOK:
+                # GPS fazı zaten hedefin 8-10 m gerisinde durmak üzere
+                # kurulu, mesafeye bakmak sahte vuruş üretirdi (görsel fazda
+                # tek koşuda 6 sahte vuruş ölçülmüştü — bkz. _vurus_oldu).
+                # Kullanıcı şartı buydu: "vuruldu saysın EĞER GERÇEKTEN
+                # ÇARPMA VE HASAR TESPİTİ DOĞRU ÇALIŞIYORSA".
+                if (sup_cfg.GPS_VURUS and carpisma_state.kaynak_var()
+                        and carpisma_state.temas_var()):
+                    tetik["vuruldu"] = True
+                    faz_stop.set()
+                    return
                 kayit = wait_kare(son_seq, timeout=0.5)
                 if kayit is None:
                     continue
@@ -190,6 +220,13 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
               f"{sup_cfg.KILIT_N}/{sup_cfg.KILIT_PENCERE} kare"
               f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
         run_gps_guidance(conn, get_plane, get_iris, faz_stop)
+
+        if tetik["vuruldu"]:
+            status["faz"] = "VURULDU"
+            status["son_sebep"] = "vuruldu_gps"
+            print("[SUPERVISOR] ✓✓ HEDEF VURULDU (GPS fazında gerçek temas) — "
+                  "görev tamamlandı.")
+            return
 
         if stop_event.is_set() or not tetik["gorsel"]:
             break
