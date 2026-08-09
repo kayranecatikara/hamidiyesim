@@ -195,6 +195,30 @@ sleep 3
 # SIRA ÖNEMLİ: avci_copter.parm en sonda kalmalı ki proje değerleri
 # (ANGLE_MAX, WPNAV_SPEED, FS_*) üstte kalsın.
 echo "[HARMONIC] ArduCopter (gazebo-iris --model JSON) başlatılıyor..."
+
+# ── A/B YAMASI: AVCI_PARM_EK ────────────────────────────────────────────────
+# Parametre A/B'si yaparken avci_copter.parm'ı elle düzenlemek iki hataya
+# davetiye: (a) kolu çevirmeyi unutmak, (b) hangi kolun ne olduğunu sonradan
+# bilememek. Bu kanca ile kol TEK ORTAM DEĞİŞKENİ:
+#
+#   AVCI_PARM_EK="ATC_RAT_YAW_NEF 8" bash scripts/start_harmonic.sh yeniden
+#   AVCI_PARM_EK="ATC_RAT_YAW_NEF 8;ATC_RAT_YAW_P 0.2" ...   (';' ile çoklu)
+#
+# Boşsa hiçbir şey değişmez → A kolu tam olarak depodaki hâldir.
+# Yazılan dosya logs/ab_yama.parm'da kalır; hangi kolun uçtuğu sonradan
+# oradan ve SITL dökümünden (tools/parm_denetle.py) doğrulanabilir.
+# Sıra: avci_copter.parm'dan SONRA gelir, yani onu da ezer.
+EK_PARM_ARG=""
+: > "$LOG/ab_yama.parm"
+if [ -n "${AVCI_PARM_EK:-}" ]; then
+    echo "$AVCI_PARM_EK" | tr ';' '\n' | sed 's/^ *//; s/ *$//; /^$/d' > "$LOG/ab_yama.parm"
+    EK_PARM_ARG="--add-param-file=$LOG/ab_yama.parm"
+    echo "[HARMONIC] ⚙ A/B YAMASI ETKİN:"
+    sed 's/^/[HARMONIC]     /' "$LOG/ab_yama.parm"
+else
+    echo "[HARMONIC] A/B yaması yok (A kolu = depo hâli)"
+fi
+
 # Logları ÖNCE boşalt: hazır-bekleme döngüsü bu dosyalarda işaret arıyor,
 # önceki koşunun işareti kalırsa anında "hazır" sanır.
 : > "$LOG/copter_harmonic.log"; : > "$LOG/plane_harmonic.log"
@@ -203,6 +227,7 @@ echo "[HARMONIC] ArduCopter (gazebo-iris --model JSON) başlatılıyor..."
     --add-param-file="$APT/default_params/copter.parm" \
     --add-param-file="$APT/default_params/gazebo-iris.parm" \
     --add-param-file="$PROJ/sim/ardupilot_params/avci_copter.parm" \
+    ${EK_PARM_ARG:+"$EK_PARM_ARG"} \
     --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
     --mavproxy-args="--daemon --streamrate=25" ) > "$LOG/copter_harmonic.log" 2>&1 < /dev/null &
 
