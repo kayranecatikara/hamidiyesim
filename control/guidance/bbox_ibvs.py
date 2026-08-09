@@ -234,6 +234,35 @@ class Cfg:
     # Zaten gerekenden hızlı tırmanıyorsak komut azalır/ters döner.
     # Girdi drone'un KENDİ sensörü — yarışma kuralı serbest.
     K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.6)   # dikey sönümleme kazancı
+
+    # ══ DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR (2026-08-09) ══
+    # KULLANICI GÖZLEMİ (uçuş kaydı): "tam vuracağı sırada yukarı manevra
+    # yapıp aracın üstünden geçiyoruz."
+    #
+    # KÖK NEDEN — tek bir çarpan. Terminal dikey yasası şuydu:
+    #     vz = −v_los · tan(yükseliş)          v_los = DRONE'un hızı (18 m/s)
+    # Oysa dikey farkı "varana kadar" kapatmak gerekir; "varana kadar"ki süreyi
+    # belirleyen şey KAPANMA hızıdır, drone'un yer hızı değil. Hedef 15 m/s ile
+    # kaçtığı için mesafe saniyede 18 m değil ~2 m kapanıyor. Doğrusu:
+    #     vz = −ṙ · tan(yükseliş)              ṙ = kapanma hızı
+    #
+    # ÖLÇÜLDÜ (kullanıcının 4 hücumu, üçünde de aynı):
+    #     menzil 3.67 m, dikey fark 0.89 m altta
+    #     komut −5.00 m/s   ·   gereken −0.37 m/s   →  13.7 KAT fazla
+    # Araç yukarı ivmeleniyor, komut sonra tersine dönüyor ama momentum
+    # kalıyor → hedefin üstünden geçiliyor. Gün boyu kovaladığım dikey
+    # salınımın açıklaması da bu: mimari değil, çarpan.
+    #
+    # ṙ GÖRÜNTÜDEN ölçülür (GPS YOK, yarışma kuralı temiz):
+    #     R = MENZIL_PX_M / boyut   ⇒   ṙ = −dR/dt = R · (dboyut/dt) / boyut
+    # Kutu boyutu titrer → EMA ile yumuşatılır; taban konur ki kapanma
+    # durduğunda dikey düzeltme büsbütün ölmesin.
+    # AVCI_IBVS_KAPANMA=0 → eski davranış (v_los ile ölçekleme) aynen geri.
+    KAPANMA = _env_f("AVCI_IBVS_KAPANMA", 1.0) >= 0.5
+    KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
+    KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
+    # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
+    MENZIL_PX_M = 160.0                                  # px·m
     MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
 
     # ── KUTU GEÇERLİLİĞİ ──
@@ -267,7 +296,8 @@ def piksel_elev(cy, cfg=Cfg):
 
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
-          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0):
+          los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
+          kapanma=None):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -331,12 +361,19 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # ÇÖZÜM: dikey tavan yetmiyorsa YATAYI KIS — böylece vektör hedefe
         # bakabilir. Yavaşlamak yaklaşmayı geciktirir ama ıskalamaktan iyidir;
         # V_TERM_MIN altına inilmez (hedefi büsbütün kaçırmamak için).
+        # AÇIYI DİKEY HIZA ÇEVİREN ÖLÇEK (bkz. Cfg.KAPANMA): kapanma hızı.
+        # ⚠ Dikey bütçe kısıtı da AYNI ölçeği kullanmalı — yoksa yatayı,
+        # artık var olmayan bir dikey talep yüzünden kısar (yani boşuna
+        # frene basar). İki yer tek kavram.
+        v_dikey = v_los
+        if cfg.KAPANMA and kapanma is not None:
+            v_dikey = clamp(kapanma, cfg.KAPANMA_MIN, max(cfg.KAPANMA_MIN, v_los))
         t_ = abs(math.tan(nisan_elev))
-        if t_ > 1e-6 and v_los * t_ > cfg.VZ_MAX_TERM:
+        if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:
             v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
             vx_ned = v_los * math.cos(yaw_cmd)
             vy_ned = v_los * math.sin(yaw_cmd)
-        vz_nisan = -v_los * math.tan(nisan_elev)
+        vz_nisan = -v_dikey * math.tan(nisan_elev)
         # TÜREV SÖNÜMLEMESİ: aracın kendi dikey hızı nişanın ötesine geçtiyse
         # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
@@ -416,6 +453,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
+    boyut_onceki = None       # kapanma hızı için (bkz. Cfg.KAPANMA)
+    kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
 
     def _vuruldu():
         if get_temas is None:
@@ -540,6 +579,22 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 los_hiz[1] = (a_ * ((los_el - los_el_onceki) / dt)
                               + (1 - a_) * los_hiz[1])
             los_az_onceki, los_el_onceki = los_az, los_el
+
+            # ── KAPANMA HIZI, GÖRÜNTÜDEN (bkz. Cfg.KAPANMA) ──
+            # R = MENZIL_PX_M/boyut  ⇒  ṙ = −dR/dt = R·(dboyut/dt)/boyut
+            # GPS YOK: yalnız kutu boyutunun büyüme hızı. Kutu titrediği için
+            # EMA'lanır; ilk karede geçmiş yok, None kalır (komut o turda
+            # eski davranışa düşer — güvenli taraf).
+            boyut_simdi = math.sqrt(bw * bh)
+            if (boyut_onceki is not None and boyut_simdi > 1e-6
+                    and 1e-3 < dt < 0.5):
+                _R = cfg.MENZIL_PX_M / boyut_simdi
+                _rdot = _R * ((boyut_simdi - boyut_onceki) / dt) / boyut_simdi
+                _rdot = clamp(_rdot, -30.0, 30.0)      # gürültü kalkanı
+                kapanma = (_rdot if kapanma is None else
+                           cfg.KAPANMA_EMA * _rdot
+                           + (1.0 - cfg.KAPANMA_EMA) * kapanma)
+            boyut_onceki = boyut_simdi
             # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt, geri dönüş yok
             if not terminal_mandal and math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT:
                 terminal_mandal = True
@@ -549,7 +604,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
-                                                       float(iris.get("vz", 0.0) or 0.0))
+                                                       float(iris.get("vz", 0.0) or 0.0),
+                                                       kapanma)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.

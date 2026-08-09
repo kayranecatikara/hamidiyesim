@@ -33,7 +33,7 @@ def kontrol(ad, kosul, detay=""):
 
 def main():
     print("SAF bbox IBVS kabul kriterleri")
-    print("=" * 60)
+
     C = ib.Cfg
     CX, CY, FX, FY = geo.CX, geo.CY, geo.FX, geo.FY
 
@@ -394,6 +394,41 @@ def main():
             f"LOS=50 rad/s → tavan {C.LEAD_MAX_DEG:.0f}°")
 
     print("=" * 60)
+    # ── B25: DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR ──
+    # Kullanıcı uçuşta gördü: "tam vuracağı sırada yukarı manevra yapıp
+    # aracın üstünden geçiyoruz." Kök neden tek çarpandı: dikey komut
+    # DRONE'un hızıyla (18 m/s) ölçekleniyordu, oysa dikey farkı kapatmak
+    # için olan süreyi KAPANMA hızı belirler (hedef kaçtığı için ~2 m/s).
+    # Ölçüldü (4 hücum): 3.67 m'de 0.89 m'lik fark için −5.00 m/s komut
+    # ediliyordu, gereken −0.37 m/s — 13.7 KAT fazla.
+    class _Eski(ib.Cfg):
+        KAPANMA = False
+    _cy_yukari = geo.CY + geo.FY * math.tan(math.radians(11.0))   # hedef yukarıda
+    _eski = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, _Eski, True,
+                     (0.0, 0.0), 0.0, 0.0)[2]
+    _yeni = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, C, True,
+                     (0.0, 0.0), 0.0, 0.0, 2.0)          # ṙ = 2 m/s
+    _vz = _yeni[2]
+    kontrol("B25 dikey komut KAPANMA hızıyla ölçeklenir (üstten geçme kök nedeni)",
+            abs(_vz) < abs(_eski) / 3.0 and abs(_vz) > 0.05,
+            f"aynı geometri: eski yasa {_eski:+.2f} m/s → kapanma hızıyla "
+            f"{_vz:+.2f} m/s (ṙ=2 m/s). Eski yasa drone'un 18 m/s'siyle "
+            f"ölçekliyordu.")
+
+    # B26: ölçek tabanı — kapanma dursa bile dikey düzeltme büsbütün ölmesin
+    _dur = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, C, True,
+                    (0.0, 0.0), 0.0, 0.0, 0.0)[2]        # ṙ = 0
+    kontrol("B26 kapanma dursa bile dikey düzeltme ölmez (taban)",
+            abs(_dur) > 0.05,
+            f"ṙ=0 → vz {_dur:+.2f} m/s (taban {C.KAPANMA_MIN} m/s ile)")
+
+    # B27: geri dönüş yolu — AVCI_IBVS_KAPANMA=0 eski davranışı aynen getirir
+    kontrol("B27 kapanma ölçeklemesi kapatılabilir (eski davranış geri gelir)",
+            abs(ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, _Eski, True,
+                         (0.0, 0.0), 0.0, 0.0, 2.0)[2] - _eski) < 1e-9,
+            "KAPANMA=False iken kapanma hızı verilse bile YOK SAYILIR")
+
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
