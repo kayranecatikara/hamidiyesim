@@ -23,7 +23,11 @@ function tstamp(){
   return [d.getHours(), d.getMinutes(), d.getSeconds()]
     .map(n => String(n).padStart(2, '0')).join(':');
 }
+// GÖREV KAYDI paneli KALDIRILDI. addLog 33 yerden çağrılıyor; çağrıları tek
+// tek sökmek yerine kapı burada kapatıldı. Paneli geri istersen: index.html'e
+// logbody bölümünü ekle, aşağıdaki erken dönüşü sil — başka değişiklik gerekmez.
 function addLog(cls, tag, msg){
+  if (!logBody) return;
   const atBottom = logBody.scrollHeight - logBody.scrollTop - logBody.clientHeight < 40;
   const row = document.createElement('div');
   row.className = 'logrow ' + cls;
@@ -137,7 +141,7 @@ function setAnaFeed(on){
   } else {
     const old = $('fpvImg');
     if (old){ old.src = ''; old.remove(); }
-    noFeed.textContent = 'KAPALI — sağ üstteki dairesine basarak açın';
+    noFeed.textContent = 'KAPALI';
     noFeed.hidden = false;
   }
   camDotDurum();
@@ -149,15 +153,31 @@ function setAnaFeed(on){
 // penceresi açık, başlıkta ne yazacak.
 function camDotDurum(){
   for (const b of camDock.children){
+    // KONUM dairesi CAMS'te yok (kamera değil) — kendi kuralıyla işlenir.
+    // Anahtar burada düz metin: bu döngü POS_DOT sabiti ilklenmeden de
+    // çalışabilir ve sabite dokunmak TDZ hatası verirdi.
+    if (b.dataset.cam === '__pos'){
+      const acik = !!document.querySelector('#posPanel.pencere');
+      b.setAttribute('aria-pressed', String(acik));
+      b.title = 'Konum İzleme — ' + (acik ? 'basınca panele geri döner' : 'basınca pencereye alınır');
+      b.setAttribute('aria-label', b.title);
+      continue;
+    }
     const c = CAMS.find(x => x.key === b.dataset.cam);
     const ana = c.key === camAnaKey();
-    const acik = ana ? anaAcik : camWins.has(c.key);
+    // .fpvpanel DOM'dan okunuyor: camDotDurum açılışta, CAMS döngüsünün hemen
+    // ardından çalışıyor ve FPV blokundaki const'lar (fpvPanel/fpvPencereMi)
+    // o an henüz ilklenmemiş oluyor — onlara dokunmak TDZ hatası verirdi.
+    const pencerede = !!document.querySelector('.fpvpanel.pencere');
+    const acik = ana ? pencerede : camWins.has(c.key);
     b.classList.toggle('ana', ana);
     b.setAttribute('aria-pressed', String(acik));
     b.title = ana
-      ? `${c.ad} — ANA EKRAN` + (acik ? ' · basınca kapanır' : ' · KAPALI, basınca açılır')
+      ? `${c.ad} — ANA EKRAN` + (acik ? ' · basınca panele geri döner' : ' · basınca pencereye alınır')
       : `${c.ad} — ${c.alt}` + (acik ? ' · basınca pencere kapanır' : ' · basınca pencerede açılır');
-    b.setAttribute('aria-label', ana ? `${c.ad} — ana ekran` : `${c.ad} penceresi`);
+    b.setAttribute('aria-label', ana
+      ? `${c.ad} — takip ekranını ${acik ? 'panele geri koy' : 'pencereye al'}`
+      : `${c.ad} penceresi`);
   }
 }
 
@@ -195,10 +215,17 @@ function camMax(win, buyut){
 // Sürükleme ve boyutlandırma tek kalıp: pointer capture ile — imleç pencere
 // dışına taşsa da olaylar gelmeye devam eder (manuel çubuktaki yaklaşımla aynı).
 // mode: 'move' | yön dizgesi ('n','s','e','w','ne','nw','se','sw').
-function camDrag(win, handle, mode){
+// izin: opsiyonel kapı — false dönerse sürükleme başlamaz. Ana FPV paneli için
+// gerekli: o panel yalnız PENCERE modunda taşınır, grid içindeyken tutamakları
+// sessiz kalmalı (kamera pencereleri bu parametreyi vermez, davranışı aynı).
+// kelepce: opsiyonel taşıma sınırı (L,T,w,h) → {L,T}. Verilmezse "pencere
+// tamamen ekranda kalır" kuralı işler; büyük FPV paneli için yetersiz kaldığı
+// için orada masaüstü kuralı geçiliyor (bkz. çağrı yeri).
+function camDrag(win, handle, mode, izin, kelepce){
   let sx = 0, sy = 0, x0 = 0, y0 = 0, w0 = 0, h0 = 0, on = false;
   handle.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
+    if (izin && !izin(e)) return;
     // Büyütülmüş pencereyi sürüklemek/boyutlandırmak onu eski boyutuna
     // döndürür — "kilitlendi" hissi vermesin diye.
     if (win.classList.contains('max')) camMax(win, false);
@@ -214,9 +241,15 @@ function camDrag(win, handle, mode){
     if (!on) return;
     const dx = e.clientX - sx, dy = e.clientY - sy;
     if (mode === 'move'){
-      // Pencere tamamen ekranda kalır — kaybolup geri getirilememesin.
-      win.style.left = clamp(x0 + dx, 0, Math.max(0, innerWidth  - w0)) + 'px';
-      win.style.top  = clamp(y0 + dy, 0, Math.max(0, innerHeight - h0)) + 'px';
+      let L = x0 + dx, T = y0 + dy;
+      if (kelepce) ({ L, T } = kelepce(L, T, w0, h0));
+      else {
+        // Pencere tamamen ekranda kalır — kaybolup geri getirilememesin.
+        L = clamp(L, 0, Math.max(0, innerWidth  - w0));
+        T = clamp(T, 0, Math.max(0, innerHeight - h0));
+      }
+      win.style.left = L + 'px';
+      win.style.top  = T + 'px';
       return;
     }
     // Boyutlandırma sekiz yönden. Sol/üst kenar çekilirken pencere hem
@@ -328,13 +361,28 @@ for (const c of CAMS){
   b.className = 'camdot';
   b.dataset.cam = c.key;
   b.textContent = c.kod;
-  // ANA ekrandaki görüşün dairesi akışı aç/kapat yapar (pencerede İKİNCİ kez
-  // açmanın anlamı yok — zaten ekranda). Diğerleri pencere aç/kapat.
+  // ANA ekrandaki görüşün dairesi (varsayılan sekmede AV — Avcı Drone Kamerası)
+  // TAKİP EKRANINI pencereye alır / panele geri koyar. Diğer daireler eskisi
+  // gibi kendi kamera penceresini açar/kapatır — böylece dört dairenin dördü de
+  // "bu görüşü pencerede aç" demek oluyor.
   b.addEventListener('click', () => {
-    if (c.key === camAnaKey())        setAnaFeed(!anaAcik);
+    if (c.key === camAnaKey())        setFpvPencere(!document.querySelector('.fpvpanel').classList.contains('pencere'));
     else if (camWins.has(c.key))      closeCamWin(c.key);
     else                              openCamWin(c.key);
   });
+  camDock.appendChild(b);
+}
+// 5. DAİRE — KONUM İZLEME. CAMS'e eklenmedi bilerek: orada olsaydı openCamWin
+// /camAnaKey/video_feed onu bir kamera sanardı. Aynı .camdot görünümünü
+// paylaşır, ayrı anahtarla (POS_DOT) ayırt edilir.
+const POS_DOT = '__pos';
+{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'camdot';
+  b.dataset.cam = POS_DOT;
+  b.textContent = 'KNM';
+  b.addEventListener('click', () => posPen.ayarla(!posPen.pencereMi()));
   camDock.appendChild(b);
 }
 camDotDurum();   // açılıştaki durum (ana ekran dairesi dolu başlar)
@@ -391,6 +439,10 @@ function onTelemetry(d){
     const r = (rGz !== null && rGz !== undefined)
               ? rGz : Math.hypot(pl.x - ir.x, pl.y - ir.y, pl.z - ir.z);
     const now = performance.now();
+    // NOT: st.rangeRate şu an EKRANDA GÖSTERİLMİYOR — tek tüketicisi silinen
+    // "Hedef Mesafe" kartının "yaklaşıyor/uzaklaşıyor" alt satırıydı. Hesap
+    // bilerek bırakıldı: yaklaşma/uzaklaşma işaretini üreten tek yer burası ve
+    // maliyeti iki çarpma. Gösterecek yeni bir alan olursa hazır.
     if (lastRange !== null && now > lastRangeT){
       const rate = (r - lastRange) / ((now - lastRangeT) / 1000);
       st.rangeRate = st.rangeRate === null ? rate : st.rangeRate * 0.8 + rate * 0.2;
@@ -430,13 +482,7 @@ function renderTelemetryPanels(){
   }
   if (st.range !== null){
     $('oRng').textContent = st.range.toFixed(0);
-    $('sRng').textContent = st.range.toFixed(0);
     $('posRng').textContent = 'MENZİL ' + st.range.toFixed(0) + ' m';
-    if (st.rangeRate !== null){
-      const r = st.rangeRate;
-      $('sRngCap').textContent = (r < -0.3 ? 'yaklaşıyor · ' : r > 0.3 ? 'uzaklaşıyor · ' : 'sabit · ')
-        + r.toFixed(1) + ' m/s';
-    }
   }
 }
 
@@ -544,6 +590,8 @@ function niceStep(raw){
 }
 
 function drawScene(){
+  // Konum paneli yalnız pencere modunda görünür; gizliyken çizim boşa CPU.
+  if (document.getElementById('posPanel')?.hidden) return;
   const c = SC.cx, w = SC.c._w, h = SC.c._h;
   if (!w || !h) return;
   c.clearRect(0, 0, w, h);
@@ -1016,19 +1064,19 @@ function renderStatus(){
   // ── Güdüm tipi: supervisor fazı ne diyorsa o ──
   //   GPS fazı    → detection modeli, hedefin GPS pozuna göre kadraj merkezleme
   //   Görsel faz  → pose modeli, kameradan lead pursuit
-  let key, main, model, tel, mdl, col, cap;
+  let key, main, model, tel, mdl, col;
   if (st.imha || faz === 'VURULDU'){
     key = 'hit'; main = 'HEDEF VURULDU'; model = 'GÖREV TAMAM';
-    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--red)'; cap = 'fiziksel temas doğrulandı';
+    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--red)';
   } else if (faz === 'VISUAL'){
     key = 'vision'; main = 'GÖRSEL GÜDÜM'; model = 'POSE MODELİ';
-    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--green)'; cap = 'pose modeli · lead pursuit';
+    tel = 'GÖRSEL'; mdl = 'POSE'; col = 'var(--green)';
   } else if (faz === 'GPS'){
     key = 'gps'; main = 'GPS GÜDÜM'; model = 'DETECTION MODELİ';
-    tel = 'GPS'; mdl = 'DETECTION'; col = 'var(--amber)'; cap = 'detection modeli · kadraj merkezleme';
+    tel = 'GPS'; mdl = 'DETECTION'; col = 'var(--amber)';
   } else {
     key = 'idle'; main = 'GÜDÜM BEKLEMEDE'; model = 'MODEL PASİF';
-    tel = '—'; mdl = 'PASİF'; col = 'var(--muted)'; cap = 'güdüm bekliyor';
+    tel = '—'; mdl = 'PASİF'; col = 'var(--muted)';
   }
   // ── Kaçıncı GPS→görsel GEÇİŞİ (eski arayüzden geri getirildi) ──
   // 1 ideal. Yüksek sayı görsel temasın kopup kopup yeniden kurulduğunu,
@@ -1052,7 +1100,6 @@ function renderStatus(){
     ge.textContent = gec ? `${gec}.` : '—';
     ge.className = 'tv' + (gec === 0 ? ' muted' : gec <= 2 ? ' green' : gec <= 4 ? '' : ' red');
   }
-  $('sTermCap').textContent = cap + (gec ? ` · ${gec}. geçiş` : '');
   if (faz && faz !== lastFaz){
     lastFaz = faz;
     if (faz === 'GPS') addLog('gps', 'GÜDÜM', 'GPS fazı — detection modeliyle kadraj merkezleme.');
@@ -1061,31 +1108,27 @@ function renderStatus(){
     else if (faz === 'DURDU') addLog('sys', 'GÜDÜM', 'Güdüm durdu.');
   }
 
-  // ── Terminal mod kartı ──
+  // ── Terminal mod metni (sağ paneldeki tTerm + avcı satırı aTerm) ──
   const termTxt = st.imha ? 'VURULDU'
     : faz === 'VISUAL' ? 'GÖRSEL FAZ'
     : faz === 'GPS' ? 'GPS FAZI'
     : faz === 'DURDU' ? 'DURDU'
     : st.mission ? 'TAKİP' : 'HAZIR';
-  $('sTerm').textContent = termTxt;
   $('tTerm').textContent = termTxt;
   $('aTerm').textContent = termTxt;
   $('aTerm').className = 'tv' + (st.mission ? ' green' : ' muted');
 
   // ── Kilit durumu: görüş hattının GERÇEK çıktısından ──
-  let lockTxt, lockCls, lockCap;
-  if (st.imha){ lockTxt = 'VURULDU'; lockCls = 'hit'; lockCap = 'hedef imha edildi'; }
-  else if (!st.mission){ lockTxt = 'BEKLEMEDE'; lockCls = 'idle'; lockCap = 'görev başlatılmadı'; }
+  let lockTxt, lockCls;
+  if (st.imha){ lockTxt = 'VURULDU'; lockCls = 'hit'; }
+  else if (!st.mission){ lockTxt = 'BEKLEMEDE'; lockCls = 'idle'; }
   else if (p && p.pose_var){
     lockTxt = 'KİLİT'; lockCls = '';
-    lockCap = `pose ${p.pose_conf ?? '--'}${p.kanat_gorunur ? '' : ' · kanat yok'}`;
   } else if (p && p.tespit_var){
-    lockTxt = 'TESPİT'; lockCls = 'searching'; lockCap = `detection ${p.tespit_conf ?? '--'}`;
-  } else { lockTxt = 'ARANIYOR'; lockCls = 'searching'; lockCap = 'hedef kadrajda yok'; }
+    lockTxt = 'TESPİT'; lockCls = 'searching';
+  } else { lockTxt = 'ARANIYOR'; lockCls = 'searching'; }
   $('lockBadge').className = 'lockbadge ' + lockCls;
   $('lockBadge').textContent = lockTxt;
-  $('sLock').textContent = lockTxt;
-  $('sLockCap').textContent = lockCap;
   $('tLock').textContent = lockTxt;
   $('aLock').textContent = lockTxt;
   $('aLock').className = 'tv' + (lockTxt === 'KİLİT' ? ' green' : lockTxt === 'BEKLEMEDE' ? ' muted' : ' amber');
@@ -1139,7 +1182,11 @@ function renderStatus(){
          kd.pencere_ok ? 'ok' : '');
     const bar = $('kpKumBar');
     if (bar) bar.style.width = (kum != null ? Math.max(0, Math.min(100, 100 * kum / hed)) : 0) + '%';
-    setk('kpKes', kd.kesintisiz_s != null ? kd.kesintisiz_s.toFixed(1) + ' s' : '-- s');
+    // Kesintisiz: hedef 3.0 s açıkça gösterilir; >=3 olunca YEŞİL (kesintisiz_ok).
+    // Angajmanda (STRIKE dalışı) değer sıfırlanmaz → 3 s vuruşa dek görünür kalır.
+    setk('kpKes',
+         (kd.kesintisiz_s != null ? kd.kesintisiz_s.toFixed(1) : '--') + ' / 3.0 s',
+         kd.kesintisiz_ok ? 'ok' : '');
     setk('kpDogr', kd.tespit_dogrulandi ? 'EVET' : 'hayır', kd.tespit_dogrulandi ? 'ok' : 'no');
     setk('kpRef', mt.menzil_ref != null ? mt.menzil_ref.toFixed(1) + ' m' : '-- m');
 
@@ -1163,15 +1210,6 @@ function renderStatus(){
 
 // ══ PANEL DÜZENİ (büyüt / daralt) ══════════════════════════════════════
 const appEl = document.querySelector('.app');
-let posBig = false;
-$('posExpand').addEventListener('click', () => {
-  posBig = !posBig;
-  if (posBig){ $('centerCol').appendChild($('posPanel')); appEl.classList.add('split');
-               $('posExpand').textContent = '⤡'; $('posExpand').title = 'Küçült'; }
-  else { $('rightCol').appendChild($('posPanel')); appEl.classList.remove('split');
-         $('posExpand').textContent = '⤢'; $('posExpand').title = 'Büyüt'; }
-  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
-});
 let ctrlOpen = true;
 $('ctrlToggle').addEventListener('click', () => {
   ctrlOpen = !ctrlOpen;
@@ -1182,30 +1220,162 @@ $('ctrlToggle').addEventListener('click', () => {
   requestAnimationFrame(() => dispatchEvent(new Event('resize')));
 });
 
-// ══ ANA EKRANI BÜYÜT/KÜÇÜLT ════════════════════════════════════════════
-// Kamera pencerelerindeki ▢ ile aynı davranış, ana FPV paneli için: düğme,
-// başlığa çift tıklama ve Esc. Boyut değişince 'resize' yayınlanır — parazit
-// ve mini harita canvas'ları kendilerini yalnız bu olayda ölçüyor (mkCanvas).
 const fpvPanel = document.querySelector('.fpvpanel');
-function setFpvMax(buyut){
-  fpvPanel.classList.toggle('max', buyut);
-  const b = $('fpvMax');
-  b.textContent = buyut ? '❐' : '▢';
-  b.title = buyut ? 'Ana ekranı küçült (çift tıklama da olur)'
-                  : 'Ana ekranı büyüt (çift tıklama da olur)';
-  b.setAttribute('aria-label', b.title);
-  b.setAttribute('aria-pressed', String(buyut));
-  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
-  addLog('sys', 'SYS', `Ana ekran ${buyut ? 'büyütüldü' : 'eski boyutuna döndü'}.`);
+const posPanel = $('posPanel');
+
+// ══ PANELİ PENCEREYE AL — ORTAK ALTYAPI ════════════════════════════════
+// Bir panel, kamera pencereleriyle aynı davranışa geçer: ekranda istenen yere
+// taşınır, sekiz tutamaktan boyutlandırılır. Fark, panelin DOM'da YERİNDE
+// kalması — yalnız position:fixed'e geçer; böylece içindeki <img> (MJPEG) ve
+// canvas'lar yeniden kurulmaz, akış/çizim kopmaz.
+// Hem FPV takip ekranı hem Konum İzleme bunu kullanır; panele özgü işler
+// (kilit panelini taşımak, yer tutucuyu göstermek) hook'larla verilir.
+//
+function pencereKur(panel, o){
+  const pencereMi = () => panel.classList.contains('pencere');
+  const olcuEl = o.olcuEl || panel;
+  function ayarla(ac){
+    if (ac === pencereMi()) return;
+    if (ac){
+      o.girerken?.();
+      // Açılış geometrisi iki yoldan biriyle:
+      //  • o.acilis() varsa onun verdiği BELİRLİ pencere boyutu/konumu. Dar
+      //    sütunlardaki paneller için şart: panel zaten ekrana sığdığı için
+      //    "bulunduğu yerden" açılış onu AYNI yerde AYNI boyutta bırakır ve
+      //    kullanıcı pencereye geçtiğini anlamaz (konum panelinde birebir bu oldu).
+      //  • yoksa panelin bulunduğu yerden, ama ekrandan belirgin KÜÇÜK: grid'deki
+      //    panel neredeyse tam ekran yüksekliğinde olabiliyor; birebir aynı
+      //    boyutta açılsa taşıma payı 20-30 px'e düşer ve "taşınamıyor" hissi
+      //    verir (tarayıcı testinde birebir bu çıktı).
+      let g;
+      if (o.acilis){
+        g = o.acilis();
+      } else {
+        const r = panel.getBoundingClientRect();
+        const w = clamp(Math.round(Math.min(r.width,  innerWidth  * o.enOran)),  CW_MIN_W, Math.max(CW_MIN_W, innerWidth  - 16));
+        const h = clamp(Math.round(Math.min(r.height, innerHeight * o.boyOran)), CW_MIN_H, Math.max(CW_MIN_H, innerHeight - 16));
+        g = { w, h,
+              l: clamp(Math.round(r.left), 0, Math.max(0, innerWidth  - w)),
+              t: clamp(Math.round(r.top),  0, Math.max(0, innerHeight - h)) };
+      }
+      panel.style.width  = g.w + 'px';
+      panel.style.height = g.h + 'px';
+      panel.style.left   = g.l + 'px';
+      panel.style.top    = g.t + 'px';
+      panel.classList.add('pencere');
+      panel.style.zIndex = ++camZ;                    // kamera pencereleriyle ortak z sırası
+    } else {
+      o.cikarken?.();
+      // Sütuna dönüş: pencere modunun BÜTÜN kalıntıları temizlenir, yoksa panel
+      // yerinde inline width/height ile yanlış boyutta oturur.
+      panel.classList.remove('pencere', 'busy', 'dragging', 'resizing', 'front');
+      for (const k of ['left', 'top', 'width', 'height', 'zIndex']) panel.style[k] = '';
+    }
+    o.sonra?.(ac);
+    camDotDurum();                                    // daireler bu modun düğmesi
+    requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+    addLog('sys', 'SYS', `${o.ad} ${ac ? 'pencereye alındı' : 'panele geri kondu'}.`);
+  }
+  // Taşıma + sekiz yönlü boyutlandırma: kamera pencerelerinin AYNI camDrag'i.
+  // İzin kapısı, panel sütunundayken başlığa/tutamaklara basmanın hiçbir şey
+  // yapmamasını sağlar.
+  // Başlıktaki düğmeler sürükleme başlatmasın: pointerdown'da preventDefault
+  // çağrıldığı için düğmenin kendi click'i düşebiliyor (konum panelinin
+  // başlığında ⤢ düğmesi var).
+  const tasinabilir = e => pencereMi() && !e.target.closest('button');
+  // Taşıma sınırı MASAÜSTÜ kuralı: pencere kenarlardan taşabilir, ama üstten
+  // taşmaz ve en az PEN_GORUNUR kadar genişliği ekranda kalır → başlık her
+  // zaman yakalanabilir, pencere kaybolamaz. Kamera pencerelerinin "tamamen
+  // ekranda kal" kuralı burada YETMİYOR: paneller büyük olduğu için (713 px /
+  // 914 px viewport) dikey pay 201 px'e düşüyordu ve tarayıcı testinde pencere
+  // aşağı taşınamıyordu. Boyutlandırma tutamakları kendi sınırında kalır.
+  const PEN_GORUNUR = 150, PEN_BASLIK = 44;
+  camDrag(panel, panel.querySelector(o.basSec), 'move', tasinabilir, (L, T, w) => ({
+    L: clamp(L, -(w - PEN_GORUNUR), innerWidth - PEN_GORUNUR),
+    T: clamp(T, 0, Math.max(0, innerHeight - PEN_BASLIK)),
+  }));
+  for (const h of panel.querySelectorAll('.cw-rs')) camDrag(panel, h, h.dataset.yon, pencereMi);
+  // Öne al — kamera pencereleri ve diğer panel penceresiyle ortak z sırası.
+  panel.addEventListener('pointerdown', () => {
+    if (!pencereMi()) return;
+    panel.style.zIndex = ++camZ;
+    panel.classList.add('front');
+    for (const { win } of camWins.values()) win.classList.remove('front');
+    for (const d of document.querySelectorAll('.pencere')) if (d !== panel) d.classList.remove('front');
+  });
+  // Tarayıcı penceresi küçülünce erişilemez yere düşmesin. Taşımadaki AYNI
+  // kelepçe — tam kapsama zorlansaydı kasten kenardan taşırılan pencere her
+  // ekran boyu değişiminde geri sıçrardı.
+  addEventListener('resize', () => {
+    if (!pencereMi()) return;
+    const r = panel.getBoundingClientRect();
+    panel.style.left = clamp(r.left, -(r.width - PEN_GORUNUR), innerWidth - PEN_GORUNUR) + 'px';
+    panel.style.top  = clamp(r.top, 0, Math.max(0, innerHeight - PEN_BASLIK)) + 'px';
+  });
+  // Boyut her değiştiğinde (sürükleyerek de) 'resize' yayınla: parazit ve mini
+  // harita canvas'ları kendilerini YALNIZ bu olayda ölçüyor (bkz. mkCanvas), ve
+  // camDrag olay yayınlamıyor — bu gözlemci olmadan canvas'lar bulanık kalırdı.
+  {
+    let sonOlcu = '';
+    new ResizeObserver(() => {
+      const r = olcuEl.getBoundingClientRect();
+      const k = Math.round(r.width) + 'x' + Math.round(r.height);
+      if (k === sonOlcu) return;                      // aynı ölçüde tekrar yayınlamayalım
+      sonOlcu = k;
+      requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+    }).observe(olcuEl);
+  }
+  // Esc: pencere kenara çekilmiş olsa bile panele dönmenin klavye yolu.
+  addEventListener('keydown', e => { if (e.key === 'Escape' && pencereMi()) ayarla(false); });
+  return { ayarla, pencereMi };
 }
-$('fpvMax').addEventListener('click', () => setFpvMax(!fpvPanel.classList.contains('max')));
-// Başlığa çift tıklama — düğmenin kendisi hariç (çift tıklarsa iki kez dönmesin).
-$('fpvHead').addEventListener('dblclick', e => {
-  if (e.target.closest('#fpvMax')) return;
-  setFpvMax(!fpvPanel.classList.contains('max'));
+
+// ── TAKİP EKRANI (FPV) ──
+// Başlıkta düğme YOK (▢ ve ◉ kaldırıldı); tetikleyici üst çubuktaki AV dairesi.
+const fpvDock = $('fpvDock');
+const fpvPen = pencereKur(fpvPanel, {
+  ad: 'Takip ekranı', basSec: '#fpvHead',
+  olcuEl: $('fpvwrap'),
+  // Sütundayken video sütunu TAM doldurur; pencereye alınınca ~740 px'e
+  // (video ~738x554) küçülür — "küçük hâli" bilinçli olarak bu ölçü.
+  // Panelin bulunduğu yerin ORTASINDA açılır ki göz onu kaybetmesin.
+  acilis: () => {
+    const r = fpvPanel.getBoundingClientRect();
+    const w = Math.min(740, innerWidth  - 32);
+    const h = Math.min(600, innerHeight - 32);
+    return { w, h,
+      l: clamp(Math.round(r.left + (r.width - w) / 2), 0, Math.max(0, innerWidth  - w)),
+      t: clamp(Math.round(r.top), 0, Math.max(0, innerHeight - h)) };
+  },
+  // Kilit paneli artık SOL SÜTUNDA (Avcı Drone sekmesi) — pencere moduyla
+  // taşınmıyor, hep aynı yerde duruyor.
+  sonra: ac => { fpvDock.hidden = !ac; },
 });
-addEventListener('keydown', e => {
-  if (e.key === 'Escape' && fpvPanel.classList.contains('max')) setFpvMax(false);
+const setFpvPencere = fpvPen.ayarla, fpvPencereMi = fpvPen.pencereMi;
+$('fpvDockBtn').addEventListener('click', () => setFpvPencere(false));
+
+// ── KONUM İZLEME ──
+// Sütunda YER KAPLAMAZ: HTML'de hidden duruyor, yalnız üst çubuktaki KNM
+// dairesine basılınca pencere olarak açılır, kapanınca yeniden gizlenir.
+const posPen = pencereKur(posPanel, {
+  ad: 'Konum izleme', basSec: '.phead',
+  olcuEl: posPanel.querySelector('.scenewrap'),
+  // Kamera pencereleriyle AYNI açılış: belirli bir boyut, dock'un altında,
+  // kademeli. "Bulunduğu yerden" açılsaydı sağ sütundaki 288 px'lik panel
+  // aynı yerde aynı boyutta kalır, pencereye geçtiği ANLAŞILMAZDI.
+  acilis: () => {
+    const w = Math.min(560, innerWidth  - 32);
+    const h = Math.min(430, innerHeight - 32);
+    const dock = camDock.getBoundingClientRect();     // daireler üst çubukta
+    const off = (camCascade++ % 5) * 26;              // üst üste binmesin
+    return { w, h,
+      l: clamp(Math.round(innerWidth - w - 40 - off), 0, Math.max(0, innerWidth  - w)),
+      t: clamp(Math.round(dock.bottom + 14 + off),    0, Math.max(0, innerHeight - h)) };
+  },
+  // Panel sütunda hidden duruyor; pencere açılırken görünür olmalı ki
+  // getBoundingClientRect/canvas ölçümü sıfır çıkmasın.
+  girerken: () => { posPanel.hidden = false; },
+  cikarken: () => { posPanel.hidden = true; },
 });
 
 // ══ ÇİZİM DÖNGÜSÜ ══════════════════════════════════════════════════════

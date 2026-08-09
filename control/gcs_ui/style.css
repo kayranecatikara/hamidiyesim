@@ -14,7 +14,11 @@
 *{box-sizing:border-box}
 body{margin:0}
 .app{
-  min-height:100vh;
+  /* Sayfa artık KAYMAZ: altta duran "Görev Kaydı" paneli kaldırıldığı için
+     aşağıda gösterilecek bir şey kalmadı; eskisi gibi min-height olsaydı
+     boşluğa doğru ~55 px kayıyordu. Yükseklik ekrana sabit, .main kalanı alır,
+     yan sütunlar kendi içinde kayar. */
+  height:100vh;
   background:
     radial-gradient(1100px 520px at 82% -8%, #10202b 0%, transparent 58%),
     radial-gradient(800px 480px at -4% 108%, #14100b 0%, transparent 52%),
@@ -49,18 +53,9 @@ body{margin:0}
   text-decoration:none;border:1px solid var(--line2);border-radius:6px;padding:6px 9px;transition:.15s}
 .hlink:hover{color:var(--text);border-color:var(--blue)}
 
-/* stat cards */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.stat{border-left:2px solid var(--line2);padding:8px 14px}
-.stat .label{margin-bottom:4px;font-size:9px}
-.stat .big{font-family:var(--mono);font-size:17px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
-.stat .cap{font-size:9.5px;color:var(--muted);margin-top:4px;letter-spacing:.03em}
-.stat.lock{border-left-color:var(--red)} .stat.lock .big{color:var(--red)}
-.stat.rng{border-left-color:var(--amber)} .stat.rng .big{color:var(--amber)}
-.stat.term{border-left-color:var(--green)} .stat.term .big{color:var(--green)}
 
 /* main */
-.main{display:grid;grid-template-columns:284px minmax(0,1fr) 288px;gap:8px;align-items:stretch}
+.main{display:grid;grid-template-columns:284px minmax(0,1fr) 288px;gap:8px;align-items:stretch;flex:1;min-height:0}
 .col{display:flex;flex-direction:column;min-width:0;gap:8px}
 /* YALNIZ yan sütunlar kendi içinde kayar (2026-08-05).
    - Sayfa normal kayar: ortadan aşağı inip Görev Kaydı'na ulaşılır.
@@ -69,7 +64,9 @@ body{margin:0}
      kısaysa eskisi gibi esner (align-items:stretch korunuyor).
    - overscroll-behavior:contain → panelin sonuna gelince kaydırma sayfaya
      zincirlenmez; tekerlek panelde kalır. */
-#leftCol,#rightCol{min-height:0;max-height:calc(100vh - 24px);
+/* max-height artık .main'in verdiği yüksekliğe göre (%100) — sabit
+   calc(100vh - 24px) üst çubuğun payını saymadığı için taşıyordu. */
+#leftCol,#rightCol{min-height:0;max-height:100%;
                    overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #leftCol::-webkit-scrollbar,#rightCol::-webkit-scrollbar{width:8px}
 #leftCol::-webkit-scrollbar-thumb,#rightCol::-webkit-scrollbar-thumb{
@@ -96,6 +93,36 @@ body{margin:0}
 .scn .manuel.open{background:#1c0d0d;border-color:#5a1f1f;color:var(--red);font-weight:700}
 .scn button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .scn button[disabled]{opacity:.55;cursor:progress}
+
+/* ── SOL PANEL (Görev ve Kontrol) YAZI ÖLÇEĞİ ──────────────────────────
+   Sütun dar (284 px) ama yazılar ana gövde ölçeğindeydi: Faz 16 px, Görevi
+   Başlat ve kilit değerleri 14 px, satır değerleri 13 px... Sütuna göre
+   büyük duruyordu. Hepsi hiyerarşi korunarak ~%12 indirildi; en küçük
+   metin 9.5 px'in altına DÜŞÜRÜLMEDİ (altında okunurluk bozuluyor).
+   Kapsam #ctrlPanel: sağdaki telemetri sütunu aynı sınıfların bir kısmını
+   kullanıyor, oraya sızmasın. */
+#ctrlPanel .ptitle{font-size:9.5px}
+#ctrlPanel .seg button{font-size:10.5px}
+#ctrlPanel .label{font-size:9.5px}
+#ctrlPanel .scn button{font-size:11.5px}
+#ctrlPanel .scn button svg{width:15px;height:15px}
+#ctrlPanel .startbtn{font-size:12px;letter-spacing:.12em}
+#ctrlPanel .hint{font-size:9.5px}
+#ctrlPanel .trow .tk{font-size:10.5px}
+#ctrlPanel .trow .tv{font-size:11.5px}
+/* Bu satır dosyada DAHA SONRA gelen #viewAvci .kp-faz{16px} kuralını
+   yenmek zorunda — aynı özgüllükte olsaydı sonraki kazanırdı. */
+#ctrlPanel #viewAvci .kp-faz{font-size:13px}
+#ctrlPanel .kp-title{font-size:10px}
+#ctrlPanel .kp-k{font-size:10.5px}
+#ctrlPanel .kp-v{font-size:12px}
+#ctrlPanel .kp-note{font-size:9.5px}
+#ctrlPanel .sec .slabel{font-size:10px}
+#ctrlPanel .slrow .sk{font-size:10px}
+#ctrlPanel .slrow .sv{font-size:12px}
+#ctrlPanel .scale{font-size:9.5px}
+#ctrlPanel .readout{font-size:11px}
+#ctrlPanel .sig{font-size:10px}
 
 /* manual panel */
 .manwrap{display:flex;flex-direction:column;gap:14px;border:1px dashed #33414f;border-radius:8px;padding:14px 12px;background:rgba(9,14,20,.5)}
@@ -147,19 +174,24 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .avcinfo .tk{color:var(--muted)} .avcinfo .tv{font-family:var(--mono);font-weight:600}
 
 /* center FPV */
-.fpvpanel{flex:1}
+/* 900 px tavan — sütunun 996 px'ine göre bir tık küçük. Daha küçük görmek
+   için üst çubuktaki AV dairesiyle pencereye alınır (~740 px).
+   .pencere'de tavan KALKMALI: orada genişliği inline geometri belirler,
+   yoksa pencere 900 px'in üstüne büyütülemezdi. */
+.fpvpanel{flex:1;width:100%;max-width:900px;align-self:center}
+.fpvpanel.pencere{max-width:none;align-self:auto}
 /* FPV alanı yatay ikiye bölünür: SOL kilit paneli + SAĞ 4:3 video sahnesi.
    Sahne 4:3 (aspect-ratio) ve object-fit:contain → gerilme YOK; sahnenin
    solunda kalan (pillarbox) alanı kilit paneli doldurur. */
-.fpvwrap{position:relative;display:flex;flex-direction:row;width:100%;aspect-ratio:16/9;min-height:480px;background:#05080b;border-radius:0 0 9px 9px;overflow:hidden}
-.fpvstage{position:relative;flex:0 0 auto;height:100%;aspect-ratio:4/3;margin-left:auto;background:#000;overflow:hidden}
+.fpvwrap{position:relative;display:flex;flex-direction:row;width:100%;aspect-ratio:4/3;min-height:340px;max-height:100%;margin:auto 0;background:#05080b;border-radius:8px;overflow:hidden}
+.fpvstage{position:relative;flex:0 1 auto;height:100%;aspect-ratio:4/3;margin:0 auto;background:#000;overflow:hidden}
 .fpvwrap #fpvImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
 .fpvwrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
 /* Kilit kutuları katmanı — img ile aynı 4:3 kutuya oturur, birlikte ölçeklenir */
 #avOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 /* SOL dikey kilitlenme paneli */
-.kilitpanel{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:9px;padding:14px 15px;overflow:auto;
-  background:linear-gradient(180deg,rgba(10,15,21,.6),rgba(6,9,13,.6));border-right:1px solid var(--line)}
+.kilitpanel{display:flex;flex-direction:column;gap:9px;padding:12px 13px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px}
 .kp-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.18em;color:#9fb0bf}
 .kp-faz{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:.06em;color:var(--text);padding:2px 0 4px}
 .kp-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
@@ -169,7 +201,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .kp-cum{display:flex;flex-direction:column;gap:6px;padding:4px 0}
 .kp-bar{height:7px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
 .kp-fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber),var(--green));transition:width .25s}
-.kp-note{margin-top:auto;font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
+.kp-note{margin-top:2px;font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
 /* Avcı Drone bölümü — faz durumu (Takip Modu — Otonom başlığı altında) */
 .avci-faz{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 10px;
   padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -214,10 +246,17 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 
 /* position tracker (3D scene) */
 #posPanel{flex:1;min-height:0}
+/* Konum paneli: sütunda gizli durur, yalnız KNM dairesiyle pencere olarak
+   açılır. display burada tanımlı ki [hidden] gerçekten gizleyebilsin. */
+.posPanel{display:flex;flex-direction:column}
+.posPanel[hidden]{display:none}
 .scenewrap{position:relative;flex:1;min-height:230px;background:radial-gradient(700px 360px at 50% 100%,#0e1a24 0%,#080c11 70%);border-radius:0 0 9px 9px;overflow:hidden}
 .scenewrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
 .scenewrap canvas:active{cursor:grabbing}
-.draghint{position:absolute;bottom:10px;right:12px;font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.1em;pointer-events:none}
+/* max-width: dar pencerede (560 px) sol alttaki efsane ile üst üste biniyordu;
+   sarmasına izin verilir, efsanenin üstünden geçmez. */
+.draghint{position:absolute;bottom:10px;right:12px;max-width:46%;text-align:right;line-height:1.6;
+  font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.1em;pointer-events:none}
 .viewbtns{position:absolute;top:10px;right:12px;display:flex;gap:3px;background:rgba(8,12,17,.72);border:1px solid var(--line);border-radius:6px;padding:3px}
 .viewbtns button{border:0;background:transparent;color:var(--muted);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;padding:4px 7px;border-radius:4px;cursor:pointer;transition:.12s}
 .viewbtns button:hover{color:var(--text)}
@@ -225,12 +264,6 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .iconbtn{border:1px solid var(--line2);background:var(--panel2);color:var(--muted);min-width:24px;height:22px;padding:0 7px;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:.15s;font-family:var(--sans)}
 .iconbtn:hover{color:var(--text);background:var(--card)}
 .iconbtn:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
-/* split view: FPV ve konum yan yana (~yarı yarıya) */
-.split #centerCol{flex-direction:row;min-height:470px;align-items:stretch}
-.split .fpvpanel{flex:1;min-width:0;min-height:0}
-.split .fpvwrap{aspect-ratio:auto;min-height:230px;flex:1}
-.split #posPanel{flex:1;min-width:0}
-@media (max-width:900px){.split #centerCol{flex-direction:column}}
 /* control panel collapse */
 @media (min-width:1081px){.ctrl-collapsed .main{grid-template-columns:44px minmax(0,1fr) 288px}}
 .ctrl-collapsed #ctrlPanel .ptitle{display:none}
@@ -252,35 +285,59 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .tv.green{color:var(--green)} .tv.red{color:var(--red)} .tv.amber{color:var(--amber)} .tv.muted{color:var(--muted)}
 
 /* log */
-.logbody{padding:10px 14px 12px;display:flex;flex-direction:column;font-family:var(--mono);font-size:12px;max-height:168px;overflow-y:auto}
-.logrow{display:grid;grid-template-columns:64px 58px 1fr;gap:12px;padding:5px 0;align-items:baseline}
-.logrow .tm{color:var(--dim)}
-.logrow .tag{font-size:10px;font-weight:700;letter-spacing:.06em}
-.logrow .msg{word-break:break-word}
-.logrow.guide .tag{color:var(--red)} .logrow.guide .msg{color:#f2b8b8}
-.logrow.vision .tag{color:var(--green)} .logrow.vision .msg{color:#a9e6d3}
-.logrow.gps .tag{color:var(--amber)} .logrow.gps .msg{color:#e6d3a1}
-.logrow.sys .tag{color:var(--blue)} .logrow.sys .msg{color:#9db9e6}
-.logrow.err .tag{color:var(--red)} .logrow.err .msg{color:#ff9a9a}
 
 /* ── ANA EKRANI BÜYÜT ────────────────────────────────────────────────────
    FPV paneli tüm görünüm alanını kaplar. z-index 55: kamera pencerelerinin
    (60+) ALTINDA kalır — büyütülmüş ana ekranın üstünde pencereler görünmeye
    devam etsin diye. Daireler sahnenin içinde olduğundan panelle birlikte
    büyür, erişilebilir kalır. */
-.fpvpanel.max{position:fixed;inset:8px;z-index:55;margin:0;border-radius:9px}
+/* ── PANEL PENCERE MODU (takip ekranı + konum izleme) ──────────────────
+   Kamera pencereleriyle AYNI kalıp: position:fixed + inline geometri (left/
+   top/width/height JS'ten), taşıma başlıktan, boyutlandırma .cw-rs
+   tutamaklarından — ikisi de camDrag ile. Tutamak sınıfları kamera
+   penceresinden yeniden kullanılıyor, kopya CSS yazılmadı. */
+.panel .cw-rs{display:none}                    /* sütundayken tutamak yok */
+.panel.pencere .cw-rs{display:block}
+.pencere{position:fixed;z-index:60;margin:0;border-radius:9px;
+  box-shadow:0 18px 46px rgba(0,0,0,.62)}
+.pencere.front{border-color:var(--blue)}
+/* Başlık pencere modunda tutamaktır: sürüklerken başlık metni seçilmesin
+   (seçim mavi vurgu bırakıp sürüklemeyi kirletiyordu). */
+.pencere .phead{cursor:grab;user-select:none}
+.pencere.dragging .phead{cursor:grabbing}
+/* Sürükleme/boyutlandırma sırasında gövde olayları yemesin (kamera
+   penceresindeki .camwin.busy ile aynı gerekçe: img/canvas üzerine kaçmasın) */
+.pencere.busy .fpvwrap,.pencere.busy .scenewrap{pointer-events:none}
+.panel.pencere:hover .cw-grip{background:linear-gradient(135deg,transparent 48%,var(--blue) 48%,var(--blue) 60%,
+  transparent 60%,transparent 72%,var(--blue) 72%,var(--blue) 84%,transparent 84%)}
+/* Pencerede 16/9 oranı ve 480 px tabanı kilit olmamalı — gövde panel
+   yüksekliğini doldurur. */
+.fpvpanel.pencere .fpvwrap{aspect-ratio:auto;min-height:0;flex:1;height:auto;border-radius:0 0 9px 9px}
+/* Pencerede kilit paneli yok (orta sütuna taşınıyor) → sahne gövdenin TAMAMINI
+   doldurur. 4:3 kutusu bırakılıyor: video object-fit:contain, overlay
+   preserveAspectRatio="meet" olduğu için sahne 4:3 olmasa da görüntü ve kilit
+   kutuları AYNI şekilde letterbox olur — hizalama bozulmaz. */
+.fpvpanel.pencere .fpvstage{flex:1 1 auto;max-width:100%;margin:0}
+/* Konum sahnesinin 230 px tabanı pencerede küçülmeyi erken durdururdu;
+   sınırı CW_MIN_H belirlesin. */
+.posPanel.pencere .scenewrap{min-height:0}
+.fpvdock{flex:1;display:flex;flex-direction:column;min-height:0}
+.fpvdock[hidden]{display:none}
+.fpvdock .phead{gap:10px}
+.fpvdock .iconbtn{width:auto;height:auto;padding:5px 10px;font-size:10.5px;font-weight:700;letter-spacing:.06em}
+
 /* Büyükken 16/9 oranı kilit olmamalı — panel yüksekliği ne ise sahne onu
-   doldurur (.split varyantıyla aynı gerekçe). */
-.fpvpanel.max .fpvwrap{aspect-ratio:auto;flex:1;min-height:0;height:auto}
-.fpvpanel.max #fpvMax{color:#fff;background:var(--blue);border-color:var(--blue)}
-.fpvpanel.max .phead{cursor:zoom-out}
-.fpvpanel .phead{cursor:zoom-in}
+   doldurur. */
 
 /* ── KAMERA SEÇİCİ (daireler) ────────────────────────────────────────────
    FPV sahnesinin SAĞ üst köşesinde, ALT/SPD overlay'inin ALTINDA durur
    (top:62px — .ov.tr iki satır + nefes payı). Ana ekrandaki görüşün dairesi
    o akışı aç/kapat yapar; diğerleri pencere açar. */
-.camdock{position:absolute;top:62px;right:16px;display:flex;gap:8px;z-index:5}
+/* ÜST ÇUBUKTA duruyor (eskiden .fpvstage içinde position:absolute idi ve takip
+   ekranı pencereye alınınca pencereyle birlikte hareket ediyordu). */
+.camsel{display:flex;align-items:center;gap:9px}
+.camsel .k{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600}
+.camdock{display:flex;gap:8px}
 .camdot{width:34px;height:34px;border-radius:50%;flex:none;cursor:pointer;
   border:1px solid var(--line2);background:rgba(8,12,18,.72);backdrop-filter:blur(3px);
   color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.02em;
@@ -325,7 +382,12 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .cw-body{position:relative;flex:1;min-height:0;background:#000}
 .cw-body img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
 /* Sürükleme/boyutlandırma sırasında imleç pencere içine girince <img> olayı
-   yakalamasın — aksi halde hızlı harekette sürükleme "düşer". */
+   yakalamasın — aksi halde hızlı harekette sürükleme "düşer".
+   ⚠ Bu satırın ÜSTÜNDE blok dışında kalmış bir `font-variant-numeric:
+   tabular-nums` bildirimi vardı; ayrıştırıcı onu aşağıdaki kuralın
+   SEÇİCİSİNE katıyor, seçici geçersiz oluyor ve kural SESSİZCE DÜŞÜYORDU.
+   Yaslama geri alınırken bu tek satırlık düzeltme KORUNDU — geri konsa
+   aşağıdaki kural yeniden ölü kalırdı. */
 .camwin.busy .cw-body{pointer-events:none}
 .cw-nofeed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--dim);
@@ -350,5 +412,5 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 /* Tam ekran büyütülmüş pencerede köşe işareti anlamsız — gizlenir. */
 .camwin.max .cw-grip{display:none}
 
-@media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}.stats{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}
+@media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}}
