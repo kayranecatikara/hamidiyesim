@@ -105,3 +105,57 @@ Dinamik istasyon yükselişi (`403131f`) bu yöntemle doğrulandı: 402 kare +
 menzil değişmedi. Aynı koşuda yöntem, tabandaki "kare kenarı 14 m"
 değerinin en-iyi-an okuması olduğunu da ortaya çıkardı (dürüst medyan ~22 m,
 eski uçuşta da öyleymiş). Video: `logs/ucus_20260808_1212_kamera.mp4`.
+
+## Çok koşulu kampanya (2026-08-09'da eklendi)
+
+Tek uçuş bir şey kanıtlamaz. Vuruş/ıska **ikili ve gürültülü**: oran %30-50
+bandındayken 3-5 koşu hiçbir şeyi ayırt edemez (5/5 çıkan bir yapılandırma
+tekrarda 2/5 verdi). Kampanya, aynı yapılandırmayı **tam sim yeniden
+kurulumuyla** N kez uçurur ve sonuçları tek bir JSONL'de biriktirir.
+
+```bash
+SCR=<scratchpad>                       # kampanya dosyaları buraya
+cat > $SCR/plan.txt <<'PLAN'
+ETIKET|AVCI_IBVS_XXX=deger AVCI_IBVS_YYY=deger|KOSU_SAYISI
+PLAN
+bash $SCR/kampanya.sh $SCR/plan.txt    # arka planda; her koşu sim'i baştan kurar
+python3 $SCR/kampanya_ozet.py          # yapılandırma bazında özet + sıralama
+python3 $SCR/kampanya_yenile.py        # yeni ölçüt eklendiyse JSONL'i baştan üretir
+```
+
+**Neden her koşuda sim baştan kurulur:** vuruştan sonra hedef uçak imha olup
+düşüyor; aynı simde ikinci koşu kalkamıyor ve "ıska" gibi görünüyor.
+
+### Hangi ölçüte bakılır (sırayla)
+
+| ölçüt | ne der | neden güvenilir |
+|---|---|---|
+| `salinim_genlik_term` | terminalde yükseliş salınımının genliği (°) | sürekli büyüklük; 3 koşuda bile eğilim gösterir |
+| `menzil_min` | en yakın geçiş (m), **kutu boyutundan**: R ≈ 160/px | tek kare, tek sensör → zaman-hizalı |
+| `faz_sayisi` | kaç kez görsel temas koptu | yarışma kuralı açısından da kritik |
+| `vuruldu` | temas sensörü | doğru ama gürültülü; **tek başına karar verdirmez** |
+
+⚠ **Telemetriden hesaplanan mesafeyi (`en_yakin`) metre ölçeğinde KULLANMA.**
+İki aracın konumu AYRI MAVLink akışlarından geliyor; ~1-2 m kayıyor.
+Ölçüldü: 0.25 m "kaçırma" ıska çıktı, 2.38 m "kaçırma" vuruş çıktı.
+
+⚠ **Bir koşu = BİRDEN ÇOK güdüm logu.** Temas her koptuğunda yeni bir
+`bbox_ibvs_*.csv` açılıyor. "En yeni logu al" yanlış: bir koşuda en yeni log
+22 satırlık bir kurtarma kalıntısıydı, asıl hücum bir öncekindeydi.
+`kampanya_kayit.py` koşunun zaman penceresindeki TÜM logları toplar.
+
+### Görsel fazın deneme anahtarları
+
+Hepsi **varsayılan kapalı**; ölçülmeden hiçbiri davranışı değiştirmez.
+
+| env | ne yapar |
+|---|---|
+| `AVCI_IBVS_VZT` | terminal dikey tavanı (varsayılan 5 — araç ancak 2.5 yapıyor) |
+| `AVCI_IBVS_VZMAX` | tutuş fazı dikey tavanı (varsayılan 3) |
+| `AVCI_IBVS_KVZD=0` | "sönümleme" adlı 1.9× takviyeyi kapatır |
+| `AVCI_IBVS_AWU=1` | integral doyma koruması (anti-windup) |
+| `AVCI_IBVS_KAPI_KATI=1` | terminal kapısı sahte 0° ile açılmasın |
+| `AVCI_IBVS_TERM_VZDON=1` | terminalde dikey hızı mandal anında dondur |
+| `AVCI_IBVS_TERM_BIRAK=0.6` | menzil açılınca terminal mandalını bırak |
+| `AVCI_IBVS_TERM_BIAS` | nişanı LOS'un altına al (hedefin altından yaklaş) |
+| `AVCI_IBVS_PN=1` | orantılı seyrüsefer (ölçüldü: yardım etmedi) |
