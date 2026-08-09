@@ -182,7 +182,11 @@ class Cfg:
     #
     # PN_BETA: saf PN yavaşça sürüklenebilir (λ̇ ölçümü gürültülü). Küçük bir
     # oranla LOS'a geri çekilir — klasik "PN + pursuit bias".
-    PN = _env_f("AVCI_IBVS_PN", 1.0) >= 0.5      # 0 = eski nişanlama yasası
+    # ⚠ VARSAYILAN KAPALI (2026-08-09 ölçümü): PN 3 uçuşta 0/3 vurdu ve
+    # kaçırmanın asıl sebebi olan dikey salınımı düzeltmedi (yükseliş
+    # sürüklenmesi −40°, kontrolle aynı). Ölçüm desteklemediği için varsayılan
+    # olmaya hak kazanmadı; AVCI_IBVS_PN=1 ile açılır. Bkz. dikey döngü teşhisi.
+    PN = _env_f("AVCI_IBVS_PN", 0.0) >= 0.5      # 1 = orantılı seyrüsefer
     PN_N = _env_f("AVCI_IBVS_PN_N", 3.0)         # seyrüsefer sabiti (klasik 3-5)
     PN_BETA = _env_f("AVCI_IBVS_PN_BETA", 0.10)  # LOS'a geri çekme oranı
     PN_HOLD = _env_f("AVCI_IBVS_PN_HOLD", 0.0) >= 0.5   # tutuş fazında da PN

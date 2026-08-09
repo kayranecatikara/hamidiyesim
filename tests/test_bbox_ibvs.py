@@ -428,14 +428,17 @@ def main():
             <= math.radians(C.LEAD_MAX_DEG) + 1e-9,
             f"LOS=50 rad/s → tavan {C.LEAD_MAX_DEG:.0f}°")
 
-    # ══ B27-B31: PN (ORANTILI SEYRÜSEFER) ══
+    class _PnCfg(ib.Cfg):
+        PN = True     # PN varsayılan KAPALI (ölçüm desteklemedi); testler açar
+
+    # ══ B27-B32: PN (ORANTILI SEYRÜSEFER) ══
     # PN'nin bekçiliği: eski yasalar LOS AÇISINI kontrol ediyordu; çarpışma
     # koşulu ise açının SABİT kalması. PN hız vektörünü λ̇'nın N katıyla döndürür.
 
     # B27: λ̇ = 0 (kutu kaymıyor = zaten çarpışma rotası) → yön DEĞİŞMEZ
     _pn = None
     for _ in range(20):
-        *_r, _pn = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+        *_r, _pn = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _PnCfg, True,
                             (0.0, 0.0), 0.0, 0.0, 0.0, _pn)
     _sapma = math.degrees(abs(ib.normalize_angle(_pn[0] - 0.0)))
     kontrol("B27 PN: LOS sabitken (λ̇=0) hız yönü kaymaz — rota korunur",
@@ -447,28 +450,28 @@ def main():
     _LR = 0.20                       # rad/s LOS dönüşü
     _N_KARE, _DT = 10, 0.05
     for _ in range(_N_KARE):
-        *_r, _pn = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, _DT, C, True,
+        *_r, _pn = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, _DT, _PnCfg, True,
                             (_LR, 0.0), 0.0, 0.0, 0.0, _pn)
     # ilk kare kilitlenme, kalan (N_KARE-1) kare entegrasyon; BETA geri çeker
-    _bekle = C.PN_N * _LR * _DT * (_N_KARE - 1)
+    _bekle = _PnCfg.PN_N * _LR * _DT * (_N_KARE - 1)
     kontrol("B28 PN: LOS dönüyorken hız vektörü N katı döner (öne alma)",
             _pn[0] > 0.35 * _bekle and _pn[0] < 1.05 * _bekle,
             f"λ̇={_LR} rad/s, {_N_KARE} kare → dönüş {math.degrees(_pn[0]):.1f}° "
-            f"(saf N·λ̇·t = {math.degrees(_bekle):.1f}°, BETA={C.PN_BETA} geri çeker)")
+            f"(saf N·λ̇·t = {math.degrees(_bekle):.1f}°, BETA={_PnCfg.PN_BETA} geri çeker)")
 
     # B29: ilk terminal karesinde yön LOS'a KİLİTLENİR (sıçrama yok)
     _yaw0 = 0.7
-    *_r, _pn0 = ib.komut(CX + 40, C.CY_NISAN, 30, 30, _yaw0, 10.0, 0.05, C, True,
+    *_r, _pn0 = ib.komut(CX + 40, _PnCfg.CY_NISAN, 30, 30, _yaw0, 10.0, 0.05, _PnCfg, True,
                          (0.0, 0.0), 0.0, 0.0, 0.0, None)
     _los0 = _yaw0 + math.atan(40.0 / geo.FX)
     # B29b: burun hedefte kalır ama hız vektörü öne alınır (ayrışma)
-    class _PnYawPn(ib.Cfg):
+    class _PnYawPn(_PnCfg):
         PN_YAW_LOS = False
     _pn_a = _pn_b = None
     for _ in range(10):
-        *_ra, _pn_a = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+        *_ra, _pn_a = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _PnCfg, True,
                                (0.30, 0.0), 0.0, 0.0, 0.0, _pn_a)
-        *_rb, _pn_b = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _PnYawPn,
+        *_rb, _pn_b = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _PnYawPn,
                                True, (0.30, 0.0), 0.0, 0.0, 0.0, _pn_b)
     _yaw_los, _yaw_pn = _ra[3], _rb[3]
     _hiz_ayni = (abs(_ra[0] - _rb[0]) < 1e-6 and abs(_ra[1] - _rb[1]) < 1e-6)
@@ -490,16 +493,16 @@ def main():
                                            True, (0.0, 0.6), 0.0, 0.0, 0.0, _pn)
         _asim = max(_asim, abs(_vz))
     kontrol("B30 PN: dikey hız tavanı aşılmaz (araç zarfı korunur)",
-            _asim <= C.VZ_MAX_TERM + 1e-6,
+            _asim <= _PnCfg.VZ_MAX_TERM + 1e-6,
             f"dik LOS + λ̇_el=0.6 rad/s → en büyük |vz| {_asim:.2f} ≤ "
-            f"{C.VZ_MAX_TERM:.1f} m/s")
+            f"{_PnCfg.VZ_MAX_TERM:.1f} m/s")
 
     # B31: AVCI_IBVS_PN=0 eski yasayı GERİ getirir (geri dönüş yolu açık)
-    _t_pn = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
+    _t_pn = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _PnCfg, True,
                      (0.5, 0.0), 0.0)[5]
-    _t_esk = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _EskiCfg, True,
+    _t_esk = ib.komut(CX, _PnCfg.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, _EskiCfg, True,
                       (0.5, 0.0), 0.0)[5]
-    kontrol("B31 PN kapatılabilir — eski nişanlama yasası aynen geri gelir",
+    kontrol("B31 PN varsayılan KAPALI; açılınca yasa değişir",
             _t_pn.get("lead_olcek") == 1.0 and _t_esk.get("lead_olcek") != 1.0,
             f"PN açık lead_olcek={_t_pn.get('lead_olcek')}, "
             f"kapalı={_t_esk.get('lead_olcek'):.2f}")
