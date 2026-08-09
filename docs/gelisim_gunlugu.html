@@ -1111,24 +1111,60 @@ DİKEY tolerans  ≈ <span class="kotu">±0.10 m</span>  (gövde yüksekliğinin
   <h2>Şu anki durum ve açık işler</h2>
 
   <div class="uyari">
-    <p><strong>Dürüst durum (9 Ağustos):</strong> Düz uçan hedefte vuruş oluyor
-    ama <strong>tekrarlanabilir değil</strong> — yaklaşık üç koşuda iki. Aynı
-    yapılandırma bir koşuda 0.2 metreye kadar yaklaşıp ıskalıyor, diğerinde
-    vuruyor. Dikey salınım azaldı ama tamamen bitmedi.</p>
+    <p><strong>Dürüst durum (9 Ağustos, 21 uçuşluk kampanyadan sonra):</strong>
+    Vuruş hâlâ tekrarlanabilir değil — ama artık <strong>NEDEN olmadığını
+    sayıyla biliyoruz</strong>, ve sebep tahmin ettiğimiz yerde değildi.</p>
+    <p>Kaçırma yatayda değil <strong>dikeyde</strong>: en yakın anda yatay sapma
+    0.03-0.27 m (pencere ±0.65 m — bol bol içeride), dikey sapma ise
+    <strong>~1 m</strong> (pencere ±0.14 m). Yani tek bir eksende, yaklaşık
+    yedi kat dışarıdayız.</p>
+    <p>Sebebi de ölçüldü: <strong>güdüm, aracın uygulayamayacağı dikey komutlar
+    veriyor.</strong> Araç 2.5 m/s² ile tırmanabiliyor, güdüm ±5 m/s istiyor;
+    komutun uygulanması 4 saniye sürüyor, hücum ise 1-2 saniye. Döngü
+    yakınsamıyor, salınıyor — ve hangi salınım fazında karşılaştığımız
+    vuruşu belirliyor. Vuruş oranının şansa benzemesinin sebebi bu.</p>
   </div>
 
-  <h3>Sıradaki büyük karar: PN (orantılı seyrüsefer)</h3>
+  <h3>Şimdiye kadar ölçülenler (her biri 3 uçuş, tam sim yeniden kurulumu)</h3>
+  <div class="tablo-sar">
+    <table>
+      <thead><tr><th>Yapılandırma</th><th>Vuruş</th><th>|dikey sapma|</th>
+      <th>Görsel faz sayısı</th><th>Karar</th></tr></thead>
+      <tbody>
+        <tr><td>Kontrol (mevcut sistem)</td><td>0/3</td><td>1.02 m</td><td>5</td><td>temel</td></tr>
+        <tr><td>PN (orantılı seyrüsefer)</td><td>0/3</td><td>1.02 m</td><td>5</td><td><b>elendi</b></td></tr>
+        <tr><td>Dikey tavan 5 → 2.5 m/s</td><td>1/3</td><td>0.93 m</td><td><b>1</b></td><td>umut verici</td></tr>
+        <tr><td>+ doyma koruması + katı kapı</td><td>1/3</td><td>1.00 m</td><td>2</td><td>umut verici</td></tr>
+      </tbody>
+    </table>
+  </div>
   <p>
-    Şu an hem yaklaşmada hem hücumda <strong>açıyı</strong> kontrol ediyoruz.
-    Ama çarpışmanın şartı açının belli bir değerde olması değil, <strong>açının
-    sabit kalması</strong>. Kontrol ettiğimiz büyüklükle başarı ölçütümüz farklı
-    şeyler — bu yüzden her yamada bir yerden bastırıp başka yerden kaçıyor.
+    En sağlam kazanç <strong>görsel temasın korunması</strong>: kontrolde temas
+    koşu başına 5 kez kopuyordu, dikey tavan düzeltilince 1'e indi. Bu yarışma
+    kuralı açısından da doğrudan değerli. Ama <strong>dikey sapmayı hiçbiri
+    anlamlı ölçüde küçültmedi</strong> — asıl iş orada.
+  </p>
+
+  <h3>Sıradaki: dikey hatayı terminale BIRAKMAMAK</h3>
+  <p>
+    Geometrinin söylediği şu: 2 metre menzilde 1 metre dikey hatayla vuruş
+    <em>fiziksel olarak imkânsız</em> — kapatmak için 9 m/s dikey hız gerekir,
+    aracın tavanı 5 (gerçekte 2.5). Yani hata terminalde düzeltilemez;
+    <strong>tutuş fazında sıfırlanıp hücum boyunca korunmalı</strong>.
   </p>
   <p>
-    PN, güdümlü füzelerin altmış yıldır kullandığı yasa: "hedefe doğrult" yerine
-    <strong>"bakış açısının dönmesini sıfırla"</strong> der. Yani bizim kutu-kayması
-    ölçütümüzle <em>aynı büyüklüğü</em> hedefler ve doğası gereği sönümlüdür.
-    Gereken veriyi zaten ölçüyoruz.
+    Bunun iki denemesi sırada: tutuş fazının yükseliş hedefini 2°'den
+    <strong>0°'ye</strong> çekmek (2° zaten 6.4 m'de 0.22 m ofset demek — hücum
+    başlamadan pencerenin dışındayız), ve hücum başlarken dikey hızı
+    <strong>dondurmak</strong> (düzeltmeye çalışmak, ancak hücum bittikten sonra
+    etki eden bir komut üretiyor).
+  </p>
+  <p>
+    Bir de araç tarafında bir seçenek var: <code>WPNAV_ACCEL_Z</code> şu an
+    2.5 m/s². Bu fiziksel bir sınır değil, ayar tercihi — Iris'in itki/ağırlık
+    oranı ~2, yani yukarı ~9.8 m/s² üretebiliyor. Yükseltmek gecikmeyi yarıya
+    indirir. <strong>Bu araç değişikliği olduğu için karar sizin</strong>;
+    ölçüm yapıp getirebilirim.
   </p>
 
   <h3>Bekleyen diğer işler</h3>
