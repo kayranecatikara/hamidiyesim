@@ -940,6 +940,47 @@ document.querySelectorAll('.mod-btn').forEach(btn => {
 fetch('/api/chase_status').then(r => r.json())
   .then(d => { if (d.mode) modVurgula(d.mode); }).catch(() => {});
 
+// ══ UÇUŞ KAYDI (⏺ video + durum) ═══════════════════════════════════════
+// kayramin_super_gudumu'ndan taşındı (2026-08-09): sunucu ucu (/api/kayit/*)
+// merge'le gelmişti, düğmesi eski arayüzde kalmıştı. Durum HER ZAMAN
+// sunucudan okunur — buton yerel bayrağa güvenirse, sunucu yeniden başlatınca
+// arayüz "kayıtta" görünüp aslında hiçbir şey yazmaz.
+const kayitBtn = $('kayitBtn');
+let kayitAktif = false;
+
+async function kayitTazele(){
+  try {
+    const d = await (await fetch('/api/kayit/durum')).json();
+    kayitAktif = !!d.aktif;
+    if (!kayitBtn) return;
+    kayitBtn.setAttribute('aria-pressed', kayitAktif ? 'true' : 'false');
+    $('kayitLbl').textContent = kayitAktif ? 'Kaydı Durdur' : 'Video Kaydı Al';
+    $('kayitNot').textContent = kayitAktif
+      ? `${d.kare} kare · ${Math.round(d.gecen_s)} s` : '';
+  } catch (e){ /* sunucu yok — sessiz geç, 2 s sonra yine denenir */ }
+}
+
+if (kayitBtn){
+  kayitBtn.addEventListener('click', async () => {
+    const yol = kayitAktif ? '/api/kayit/dur' : '/api/kayit/basla';
+    try {
+      const d = await (await fetch(yol, { method: 'POST' })).json();
+      if (d.status === 'success'){
+        addLog('sys', 'KAYIT', kayitAktif
+          ? `Kayıt durdu — ${d.kare} kare → ${d.dizin}`
+          : `Kayıt başladı → ${d.dizin}`);
+      } else {
+        addLog('err', 'KAYIT', d.message || 'Kayıt komutu reddedildi.');
+      }
+    } catch (e){
+      addLog('err', 'KAYIT', 'Kayıt isteği başarısız: ' + e);
+    }
+    kayitTazele();
+  });
+  setInterval(kayitTazele, 2000);
+  kayitTazele();
+}
+
 // ══ AÇILIŞ ═════════════════════════════════════════════════════════════
 markScenario();
 drawKnob();

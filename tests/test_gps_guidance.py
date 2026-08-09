@@ -21,6 +21,7 @@ import threading
 import time
 
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
+from control.guidance.common import normalize_angle as normalize_angle_test
 from control.guidance import gps_guidance as gg
 
 # Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
@@ -433,6 +434,43 @@ def main():
             _d_arka(db, 0.30, C.ARKA_KISALT) == db
             and _d_arka(db, 0.0, C.ARKA_KISALT) == db,
             f"ω=0.30 → {_d_arka(db, 0.30, C.ARKA_KISALT):.2f} m (= {db:.2f})")
+
+    # ── G16: FAZ GİRİŞİNDE YAW SIÇRAMASI YOK (takla önleyici) ──
+    # 2026-08-08: görsel fazdan GPS'e dönüşte cmd_yaw doğrudan bearing'e
+    # atanıyordu → hedef arkadaysa tek karede 100-160° komut sıçraması →
+    # yaw doyumu → motorlarda roll/pitch yetkisi kalmıyor → TAKLA.
+    # Ölçüldü: 12 faz girişinin 6'sında sıçrama >60°.
+    class _FakeMav2:
+        def __init__(s): s.ilk = None
+        def set_position_target_local_ned_send(s, *a):
+            if s.ilk is None:
+                s.ilk = a
+
+    class _FakeConn2:
+        target_system = 1; target_component = 1
+        def __init__(s): s.mav = _FakeMav2()
+
+    conn2 = _FakeConn2()
+    IRIS_YAW = math.radians(30.0)          # aracın burnu +30°
+    T2 = [0.0, 0.0, -50.0]                 # hedef ARKADA (drone +100 x'te)
+    def gp2():
+        return {"x": T2[0], "y": T2[1], "z": T2[2], "yaw": 0.0, "frozen": False}
+    def gi2():
+        return {"x": 100.0, "y": 0.0, "z": -50.0, "roll": 0.0, "pitch": 0.0,
+                "yaw": IRIS_YAW, "vx": 0.0, "vy": 0.0, "vz": 0.0}
+    stop2 = threading.Event()
+    th2 = threading.Thread(target=gg.run_gps_guidance,
+                           args=(conn2, gp2, gi2, stop2), daemon=True)
+    th2.start(); time.sleep(0.5); stop2.set(); th2.join(2.0)
+    ilk = conn2.mav.ilk
+    yaw0 = ilk[14] if ilk else None          # ilk gönderilen yaw komutu
+    sicrama = (abs(math.degrees(normalize_angle_test(yaw0 - IRIS_YAW)))
+               if yaw0 is not None else 999)
+    # hedef tam arkada (bearing 180°) — eski kod 150° sıçrama üretirdi
+    kontrol("G16 faz girişinde yaw komutu araç yönünden başlar (takla önleyici)",
+            yaw0 is not None and sicrama < 15.0,
+            f"ilk komut {math.degrees(yaw0):+.0f}° vs araç {math.degrees(IRIS_YAW):+.0f}° "
+            f"→ sıçrama {sicrama:.0f}° (eski kod ~150° üretirdi)")
 
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

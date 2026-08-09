@@ -38,6 +38,7 @@ from control.guidance.common import (
     clamp, normalize_angle, limit_acceleration, send_velocity,
 )
 from control.guidance.guidance_core import hedef_kadraj_hatasi
+from control.guidance.kurtarma import Kurtarma
 
 
 def _env_f(name, default):
@@ -350,9 +351,15 @@ class Cfg:
 
 
 # Telemetri/arayüz için son durum (gcs_server + supervisor.izci okur; salt gözlem)
+#
+# tgt_vx/vy/vz (2026-08-08): hedefin GPS'ten kestirilen hız vektörü. Supervisor
+# bunu DEVİR ANINDA bir kez okuyup görsel faza DONDURULMUŞ taşıyıcı olarak verir
+# (bkz. bbox_ibvs.Cfg / D0 yarışma kuralı). Görsel faz boyunca bu değer bir daha
+# okunmaz — görsel döngüye canlı GPS erişimi YOKTUR (yapısal garanti).
 status = {
     "durum": "WARMUP", "d_h": None, "menzil": None,
     "kadraj_yaw_deg": None, "kadraj_elev_deg": None, "none_count": 0,
+    "tgt_vx": None, "tgt_vy": None, "tgt_vz": None,
 }
 
 _LOG_DIR = os.path.join(
@@ -409,6 +416,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
     prev_time = None
     loop_count = 0
     pitch_ema = None               # gövde pitch EMA (rad) — dinamik yükseliş girdisi
+    kurt = Kurtarma()              # duruş bekçisi (normal uçuşta hiç tetiklenmez)
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR, time.strftime("gps_guidance_%Y%m%d_%H%M%S.csv"))
@@ -453,6 +461,19 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             iroll = iris.get("roll", 0.0)
             ipitch = iris.get("pitch", 0.0)
             iyaw = iris.get("yaw", 0.0)
+
+            # ── KURTARMA BEKÇİSİ (güdümden bağımsız emniyet; bkz. kurtarma.py) ──
+            # Araç takla atıyor/kaçak dönüyorsa güdüm komutu KESİLİR: hız sıfır,
+            # yaw olduğu yerde tutulur → araç toparlanır, uçuş kurtulur.
+            # Normal uçuşta tetiklenmez (eşikler ölçülen zarfın çok üstünde).
+            if kurt.guncelle(iroll, ipitch, iyaw, now):
+                send_velocity(conn, 0.0, 0.0, 0.0, iyaw)
+                vx_prev = vy_prev = vz_prev = 0.0
+                cmd_yaw = iyaw          # güdüm devralınca sıçrama olmasın
+                status.update(durum="KURTARMA")
+                loop_count += 1
+                _sleep(now, loop_period)
+                continue
 
             # ── DİNAMİK İSTASYON YÜKSELİŞİ: elev = tilt + pitch (bkz. Cfg) ──
             pitch_ema = ipitch if pitch_ema is None else (
@@ -684,9 +705,27 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                     adim = 0.0
                 cmd_yaw = normalize_angle(iyaw + adim)
             else:
-                # ── VARSAYILAN: Kayra'nın hattı. Bu üç satır DEĞİŞMEDİ. ──
+                # ── VARSAYILAN: Kayra'nın hattı, SATIRI SATIRINA onun dalından.
+                # ⚠ MERGE (2026-08-09): burası artık `cmd_yaw = bearing` DEĞİL,
+                # `cmd_yaw = iyaw` — aşağıdaki gerekçe Kayra'nın. Not: bu,
+                # çıpalama kolunun fikrinin FAZ GİRİŞİNE uygulanmış hâli;
+                # çıpalama kolu aynı demirlemeyi HER karede yapar. Yani iki kol
+                # artık aynı yerden başlıyor, A/B yalnız "her karede demirlemek
+                # ek fayda veriyor mu"yu ölçüyor. ──
                 if cmd_yaw is None:
-                    cmd_yaw = bearing
+                    # ⚠ FAZ GİRİŞİNDE ARACIN MEVCUT YÖNÜNDEN BAŞLA (2026-08-08).
+                    # Eskiden doğrudan `bearing` atanıyordu; görsel fazdan sonra
+                    # GPS'e dönüldüğünde hedef genelde ARKADA kalıyor ve bu, tek
+                    # karede 100-160°'lik bir yaw KOMUT SIÇRAMASI demek oluyordu.
+                    # Ölçüldü: 12 faz girişinin 6'sında sıçrama >60° (en büyük 160°).
+                    # Araç bu adımı yakalamak için yaw'ı doyuruyor, motorlar yaw
+                    # torkuna gidince roll/pitch yetkisi kalmıyor ve TAKLA atıyor
+                    # (8 koşuluk veri: takla YAŞANMAYAN 2 koşunun İKİSİ de ilk
+                    # denemede vurdu; takla yaşanan 3 koşuda 1 vuruş).
+                    # Mevcut yaw'dan başlayınca YAW_RATE_MAX (120°/s) devreye
+                    # girer ve komut hedefe yumuşak yürür. Normal takipte fark
+                    # YOK: burun zaten hedefteyken mevcut yaw ≈ bearing.
+                    cmd_yaw = iyaw
                 yaw_err = normalize_angle(bearing - cmd_yaw)
                 if abs(yaw_err) > cfg.YAW_DEADBAND:
                     step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
@@ -706,7 +745,9 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             durum = "KILIT" if d_h < cfg.HANDOFF_RANGE else "ARAMA"
             status.update(durum=durum, d_h=round(d_h, 1), menzil=round(menzil, 1),
                           kadraj_yaw_deg=round(math.degrees(kad["yaw_hata"]), 1),
-                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1))
+                          kadraj_elev_deg=round(math.degrees(kad["elev"]), 1),
+                          tgt_vx=round(vel_x, 2), tgt_vy=round(vel_y, 2),
+                          tgt_vz=round(vel_z, 2))
 
             w.writerow({
                 "t": round(now, 3), "dt": round(dt, 4), "durum": durum,

@@ -92,3 +92,9 @@ kapat.
 
 - Her koşuda TEK değişken; A/B gerekiyorsa kill-switch env ile aynı oturumda.
 - Süreçleri kapatmadan önce kullanıcıya sor — kendi uçuşunu yapmak isteyebilir.
+- ⚠ **gcs_server'ı TEK BAŞINA yeniden başlatma** (Gazebo+SITL ayaktayken):
+  chase/scenario komut bağlantısı `udpin:14541/14542`'de heartbeat alamıyor
+  (pasif telem dinleyici port çakışması). gcs-import'lu bir modülde (bbox_ibvs,
+  gps_guidance, supervisor…) KOD değiştiyse TAM restart gerekir. Yalnız env
+  değişikliği + davranış aynıysa bile chase kopabilir — güvenli yol tam restart.
+  Env-only A/B için env'i baştan (tam restart'ta) ver.

@@ -87,6 +87,40 @@ def main():
 
     threading.Thread(target=akis_okuyucu, daemon=True).start()
 
+    # ── HIZLI TELEMETRİ (10 Hz) — ayrı dosya, kare kaydından bağımsız ──
+    # ⚠ NEDEN: 1 Hz kare örneklemesi terminal hücumu ÖLÇEMEZ. 24 m/s kapanma
+    # hızında iki örnek arası 24 m; "en yakın 0.8 m" gibi sayılar gerçek en
+    # yakın an DEĞİL, sadece rastgele bir örnek. Isabet/ıska payını görmek
+    # için 10 Hz şart (2.4 m çözünürlük).
+    dur_bayrak = {"dur": False}
+
+    def hizli_telem():
+        yol = os.path.join(cikti, "telem.csv")
+        with open(yol, "w", newline="") as g:
+            tw = csv.DictWriter(g, fieldnames=[
+                "wall_t", "mesafe", "faz", "plane_x", "plane_y", "plane_z",
+                "iris_x", "iris_y", "iris_z"])
+            tw.writeheader()
+            while not dur_bayrak["dur"]:
+                t = time.time()
+                ch = getir("/api/chase_status")
+                tel = getir("/api/debug/telem").get("telemetry_state", {})
+                p = tel.get("plane", {}) or {}
+                i = tel.get("iris", {}) or {}
+                if ch:
+                    tw.writerow({
+                        "wall_t": round(t, 3), "mesafe": ch.get("distance"),
+                        "faz": (ch.get("supervisor") or {}).get("faz"),
+                        "plane_x": p.get("x"), "plane_y": p.get("y"),
+                        "plane_z": p.get("z"), "iris_x": i.get("x"),
+                        "iris_y": i.get("y"), "iris_z": i.get("z")})
+                    g.flush()
+                kalan = 0.1 - (time.time() - t)
+                if kalan > 0:
+                    time.sleep(kalan)
+
+    threading.Thread(target=hizli_telem, daemon=True).start()
+
     meta_yol = os.path.join(cikti, "meta.csv")
     alanlar = ["kare", "wall_t", "kare_yasi_s", "mesafe", "chase_aktif",
                "senaryo", "plane_spd", "iris_spd",
@@ -129,8 +163,10 @@ def main():
         if n % 30 == 0:
             print(f"[KAYIT] {n} kare, mesafe={chase.get('distance')}", flush=True)
 
+    dur_bayrak["dur"] = True
+    time.sleep(0.2)
     f.close()
-    print(f"[KAYIT] bitti: {n} kare → {cikti}", flush=True)
+    print(f"[KAYIT] bitti: {n} kare + 10 Hz telem.csv → {cikti}", flush=True)
 
 
 if __name__ == "__main__":

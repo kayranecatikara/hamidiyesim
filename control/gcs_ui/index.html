@@ -66,6 +66,19 @@
               </div>
             </div>
 
+            <!-- UÇUŞ KAYDI — kayramin_super_gudumu'ndan taşındı (2026-08-09).
+                 Sunucu tarafı (/api/kayit/*) merge'le zaten gelmişti; yalnız
+                 düğmesi eski arayüzde kalmıştı. Saniyede 1 kare + tam durum
+                 (faz, mesafe, güdüm modu, manuel kumanda konumları) yazar —
+                 "o an ne yapıyordun" bilgisi olmadan video yorumlanamıyor. -->
+            <div class="grp">
+              <span class="label">Uçuş Kaydı</span>
+              <div class="scn">
+                <button id="kayitBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg><span id="kayitLbl">Video Kaydı Al</span></button>
+              </div>
+              <span class="hint" id="kayitNot"></span>
+            </div>
+
             <!-- Manuel kumanda: yalnız manuel modda görünür -->
             <div class="manwrap" id="manwrap" hidden>
               <div class="stick" id="stick" tabindex="0" role="slider" aria-label="Manuel uçuş çubuğu — WASD veya sürükle" aria-valuetext="merkez">

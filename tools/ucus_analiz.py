@@ -115,9 +115,67 @@ def analiz(yol):
                   " tek başına güvenme, koşuyu yinele.")
 
 
+def gorsel_geometri(meta_yol):
+    """meta.csv'den ASPECT AÇISI + MESAFE EĞİLİMİ — görsel faz sağlık ölçütü.
+
+    ⚠ NEDEN VAR (2026-08-08, pahalı ders): bbox-IBVS'in ilk sürümü "160 s
+    kesintisiz faz, mesafe medyanı 7.2 m" diye RAPOR EDİLDİ ve iyi sanıldı.
+    Kullanıcı videodan yakaladı: drone hedefi YANDAN görüyordu ve mesafe
+    sürekli AÇILIYORDU. Medyan bunu gizler; aspect ve eğilim gizlemez.
+
+    aspect = hedefin KUYRUK yönü ile hedef→drone vektörü arasındaki açı:
+        0°  = tam kuyrukta (IBVS için ideal)
+        90° = tam yanda (bbox-IBVS burada hedefi kaçırır)
+    """
+    rows = [r for r in csv.DictReader(open(meta_yol))
+            if r.get("chase_aktif") == "True"
+            and r.get("plane_x") not in ("", None)]
+    if len(rows) < 20:
+        print(f"{meta_yol}: yetersiz kayıt")
+        return
+
+    def g(r, k):
+        return float(r[k])
+
+    ornek = []
+    for a, b in zip(rows, rows[3:]):          # ~3 s'lik taban çizgisi
+        dt = g(b, "wall_t") - g(a, "wall_t")
+        if dt <= 0:
+            continue
+        hdg = math.atan2(g(b, "plane_y") - g(a, "plane_y"),
+                         g(b, "plane_x") - g(a, "plane_x"))
+        rx = g(b, "iris_x") - g(b, "plane_x")
+        ry = g(b, "iris_y") - g(b, "plane_y")
+        kuy = math.atan2(-math.sin(hdg), -math.cos(hdg))     # kuyruk yönü
+        asp = abs((math.atan2(ry, rx) - kuy + math.pi) % (2 * math.pi) - math.pi)
+        ornek.append((g(b, "wall_t"), math.degrees(asp),
+                      float(b["mesafe"]) if b["mesafe"] not in ("", "None") else None))
+
+    if not ornek:
+        return
+    t0 = ornek[0][0]
+    asps = [a for _, a, _ in ornek]
+    ms = [m for _, _, m in ornek if m is not None]
+    ilk = [m for t, _, m in ornek if m is not None and t - t0 < (ornek[-1][0] - t0) / 3]
+    son = [m for t, _, m in ornek if m is not None and t - t0 > 2 * (ornek[-1][0] - t0) / 3]
+    print(f"\n══ GÖRSEL GEOMETRİ — {meta_yol}")
+    print(f"  aspect: med {st.median(asps):.0f}°  ilk %10 {sorted(asps)[len(asps)//10]:.0f}°  "
+          f"son çeyrek med {st.median(asps[3*len(asps)//4:]):.0f}°   "
+          f"(0=kuyruk, 90=yan)")
+    if ilk and son:
+        yon = "AÇILIYOR ⚠" if st.median(son) > st.median(ilk) + 1.0 else "kapanıyor/sabit"
+        print(f"  mesafe: ilk üçte bir med {st.median(ilk):.1f} m → "
+              f"son üçte bir med {st.median(son):.1f} m  → {yon}")
+    if st.median(asps[3*len(asps)//4:]) > 45:
+        print("  ⚠ SON ÇEYREKTE YAN GEOMETRİ — bbox-IBVS bu pozdan hedefi kaçırır.")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__)
         raise SystemExit(1)
     for yol in sys.argv[1:]:
-        analiz(yol)
+        if yol.endswith("meta.csv"):
+            gorsel_geometri(yol)
+        else:
+            analiz(yol)

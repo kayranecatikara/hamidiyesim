@@ -31,6 +31,12 @@ from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
 from control.guidance.visual_lead import run_visual_lead
+from control.guidance.bbox_ibvs import run_bbox_ibvs, Cfg as IbvsCfg
+
+# GÖRSEL FAZ SEÇİMİ (2026-08-08, D0 yarışma kuralı):
+#   bbox : SAF bbox IBVS — GPS'siz, kural uyumlu (VARSAYILAN)
+#   lead : eski visual_lead (pose/truth-menzil zamanı; ARŞİV, kural dışı FF içerir)
+_GORSEL_YASA = os.environ.get("AVCI_VISUAL", "bbox").strip().lower()
 
 
 class SupCfg:
@@ -84,11 +90,22 @@ class SupCfg:
     # guidance_core'daki o iki sabite bakmalı.
     KAYIP_M = 20
     POSE_CONF_MIN = 0.5
-    GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
-    # Devir menzili: GPS handoff bayrağı 40 m'de açılıyor ama orada kutu ~7 px,
-    # pose güvenilmez (uzakta devralınca hedef hemen kaçtı — 2026-07-24 log).
-    # 20 m'de kutu ~7 px hâlâ küçük; pose asıl 10-12 m'de sağlam. GPS istasyonu
-    # 10 m; kapı 20 → GPS yaklaşırken pose kilidini bu banda çeker.
+
+    # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
+    #
+    # Kural: görsel temas kurulunca (tespit sürekliliği) GPS ile güdüm YASAK.
+    # Menzil kapısı tam bunu ihlal ediyordu: 30 m'de hedef kesintisiz
+    # görülürken kapı "henüz 20 m değil" deyip GPS güdümünü SÜRDÜRÜYORDU.
+    # Kapıyı 20 → 12 m'ye çekmek ihlali BÜYÜTÜR (GPS'te daha uzun kalınır);
+    # 2026-08-08'de bunu yaptım, kullanıcı yakaladı — yanlış refleksti.
+    #
+    # DOĞRU ÇÖZÜM: kapıyı kaldır, görsel fazı uzak menzilde de ÇALIŞIR yap.
+    # Uzakta çalışamamasının kök nedeni kapı değil HIZDI: saf kutu-boyutu
+    # modeli 8 m/s üretiyordu, hedef 15 m/s. Dondurulmuş taşıyıcı (bkz.
+    # bbox_ibvs) bunu kapatıyor → devir artık her menzilde yaşanabilir.
+    #
+    # Geri açmak (deney amaçlı): AVCI_HYBRID_GATE=1
+    GATE_KILIT = os.environ.get("AVCI_HYBRID_GATE", "0") == "1"
     GATE_MENZIL = float(os.environ.get("AVCI_HYBRID_GATE_MENZIL", 20.0))
 
     # ── GPS FAZINDA VURUŞ RAPORLAMA (2026-08-09) ──
@@ -235,11 +252,34 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         status["faz"] = "VISUAL"
         status["gecis_sayisi"] += 1
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
-              f"(geçiş #{status['gecis_sayisi']})")
-        sebep = run_visual_lead(conn, wait_kare, get_plane_truth, stop_event,
-                                cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                get_temas=get_temas, get_menzil=get_menzil,
-                                get_gt=get_gt)
+              f"(geçiş #{status['gecis_sayisi']}, yasa={_GORSEL_YASA.upper()})")
+        if _GORSEL_YASA == "bbox":
+            # bbox IBVS — CANLI GPS girmez (yarışma kuralı D0).
+            # get_plane_truth/get_menzil/get_gt KASITEN geçilmez.
+            #
+            # DONDURULMUŞ TAŞIYICI: hedefin son GPS hız kestirimi BURADA, yani
+            # görsel faz BAŞLAMADAN önce bir kez okunur ve sayı olarak geçilir.
+            # Görsel döngü canlı GPS'e erişemez (callback değil, üçlü sayı).
+            ff = (_ga.status.get("tgt_vx") or 0.0,
+                  _ga.status.get("tgt_vy") or 0.0,
+                  _ga.status.get("tgt_vz") or 0.0)
+            print(f"[SUPERVISOR] taşıyıcı donduruldu: "
+                  f"({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
+                  f"— görsel faz boyunca GPS'e bir daha bakılmayacak")
+            # get_temas: Talon çarpma sensörü — SONUÇ sinyali (vuruş kararı),
+            # güdüm girdisi değil; hedefin yerini/hızını taşımaz.
+            # ⚠ MERGE (2026-08-09): kayramin_super_gudumu'nda köprü hâlâ POSE
+            # devrindeydi (wait_pose / kayit["pose"]). Bu dalda pose çıkarıldı,
+            # köprü KARE köprüsü oldu (wait_kare / kayit["det"]); adlar buna
+            # göre çevrildi — aynı akış, tek isim düzlemi.
+            sebep = run_bbox_ibvs(conn, get_iris, wait_kare, stop_event,
+                                  cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                  ff_hiz=ff, get_temas=get_temas)
+        else:
+            sebep = run_visual_lead(conn, wait_kare, get_plane_truth, stop_event,
+                                    cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                    get_temas=get_temas, get_menzil=get_menzil,
+                                    get_gt=get_gt)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"

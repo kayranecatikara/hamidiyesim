@@ -16,7 +16,69 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
-## DURUM — 2026-08-06 (GPS fazı; en güncel — aşağıdaki 08-02 bölümü görsel faz dönemine ait)
+## DURUM — 2026-08-09 · MANEVRA (en güncel)
+
+Kullanıcı gözlemi: "düz uçuşta ıskalamıyor, hedef **manevra** yapınca görsel
+güdüm sapıtıyor, yatayda çok salınım oluyor."
+
+Altı uçuş koşuldu (daire senaryosu, 210 s, aynı profil, koşu başına TEK
+değişken). Hepsi geçerli: hedef 20-250 m bandında, hız 14.8-15.1 m/s.
+Videolar `logs/manevra_*.mp4`, ölçüm aracı `manevra.py` + `kayip.py`.
+
+### M1 — Yatay roll/pitch telafisi (T1a) · UÇUŞTA DOĞRULANDI ✓ · varsayılan AÇIK
+
+`AVCI_IBVS_ROLL=0` → eski yol. Kök neden ae2c600'de.
+
+| ölçüt | A1 telafisiz | A2 telafisiz | B1 **telafili** | B2 **telafili** |
+|---|---|---|---|---|
+| yatay hata medyan | 66.5 px | 53.0 px | **50.2** | **44.5** |
+| salınım (işaret değişimi/s) | 0.104 | 0.143 | **0.000** | **0.057** |
+| görsel temas oranı | %53.6 | %36.7 | **%64.4** | **%56.2** |
+| İMHA | ✗ | ✗ | **✓** | ✗ |
+
+Üç ölçüt de her iki çiftte telafi lehine (6/6). **Ama manevrayı ÇÖZMÜYOR:**
+210 s'de hâlâ ~12 temas kopuşu, 2 koşuda 1 vuruş.
+
+### M2 — Tespit eşiği 0.35 → 0.15 · ÖLÇÜLDÜ, HENÜZ VARSAYILAN DEĞİL
+
+Kopuşların **%100'ünde hedef hâlâ kadrajın İÇİNDE**; kopuştan önceki 5 karede
+güven medyanı 0.39, min 0.35 = `CONF_MIN`. Yani dedektör görüyor, güdüm eşikte
+atıyor. `AVCI_POSE_CONF=0.15 AVCI_IBVS_CONF=0.15` ile:
+
+| ölçüt | B1/B2 (0.35) | C1/C2 (**0.15**) |
+|---|---|---|
+| yatay hata medyan | 50.2 / 44.5 px | **17.0 / 15.5** |
+| yatay hata p90 | 197 / 154 px | **102.5 / 54.5** |
+| toplam temas süresi | 37 / 53 s | **88 / 111 s** |
+| İMHA | 1/2 | 0/2 |
+
+Takip 3× iyi, temas 2× uzun — **ama vuruş yok.** Varsayılan yapılmadı: (a) düz
+uçuş gerilemesi ölçülmedi, (b) düz eşik yerine histerezis olmalı (yakala 0.35,
+tut 0.20), (c) vuruşu engelleyen darboğaz M3.
+
+### M3 — SIRADAKİ: lead tam gerektiği anda sıfırlanıyor
+
+C koşularında ≤10 m'deki 91 kare:
+
+    cx medyan 453 (merkez 320)   yatay açı medyan 39.6°, p90 63.3°
+    LOS oranı medyan 1.47 rad/s (84°/s), p90 4.81 rad/s
+    tutmak için gereken: 15 m/s ÷ 8 m = 1.87 rad/s (107°/s)
+    lead açısı medyan 0.00°   ← ÇALIŞMIYOR
+    durum: 91 karenin yalnız 21'i TERMINAL
+
+İki yapısal sebep, ikisi de kodda:
+1. `lead_az` YALNIZ `terminal` iken uygulanıyor → yakın karelerin %77'sinde yok.
+2. `lead_olcek = clamp(BOYUT_REF/boyut, 0, 1)` → hedef büyüdükçe (yaklaştıkça)
+   lead SÖNÜYOR. Düz takipte doğru (LOS oranı ≈ 0), **dönüşte tam tersi**.
+
+Yani yakın menzilde saf takip hedefin BULUNDUĞU yeri gösteriyor, hedef 40-63°
+yanda ve LOS 84-276°/s süpürüyor. Saf takip bu geometriyi kapatamaz.
+Öneri: lead'i menzille söndürmek yerine **LOS oranıyla ölçekle** (gerçek PN) ve
+TERMINAL kapısından çıkar. ⚠ Kullanıcı onayı alınmadan uygulanmayacak.
+
+---
+
+## DURUM — 2026-08-06 (GPS fazı; aşağıdaki 08-02 bölümü görsel faz dönemine ait)
 
 **Kararlı hal:** `KARARLI_HAL.md` + `gps_kararli_hal` dalı + `kararli-gps-gudumu`
 etiketi. Ölçülen: düz 13-14 m, daireler 15-17 m, kare kenar 14 / köşe 21 m.
@@ -68,6 +130,36 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   uçağı ~0.9 m/s tırmandırıyor, uzun koşuda 250 m tavanı aşılıyor. Sayılar
   irtifadan bağımsız çıktı (⌀41: 9.5 @300-388 m vs 10.4 @175-263 m) ama
   KÖK NEDEN backlog'da: senaryo pitch trimi irtifa tutacak şekilde ayarlanmalı.
+
+### E — bbox-IBVS görsel faz İNŞA (2026-08-08, devam ediyor)
+
+- `control/guidance/bbox_ibvs.py` yazıldı: saf görüntü, GPS'siz (D0 uyumlu).
+  komut(cx,cy,w,h,iris_yaw): yaw←yatay px, vz←dikey px, ileri←kutu boyutu.
+  9 birim test (test_bbox_ibvs). supervisor AVCI_VISUAL=bbox varsayılan.
+- Kademeli uçuş testi (Claude koşacak):
+  1. DÜZ uçuşta devir — en kolay giriş, kuyruktan yaklaşma. [SIRADA]
+  2. DÖNÜŞte devir — kritik: 66° kuyruk girişinden pure-pursuit kuyruğa
+     süzülebiliyor mu?
+  3. Kayıp → GPS → yeniden devir döngüsü.
+- ✅ **ÇALIŞTI (2026-08-08, log 184748 / video ucus_20260808_gorsel_faz.mp4):**
+  düz uçuşta TEK devir, **160 s kesintisiz görsel faz**, kutu kaybı %0.4.
+  Truth MESAFE med **7.2 m** (p10 5.3, min 4.8, temas yok). Kutu 14 px,
+  conf 0.86, cy 300 ≈ nişan 301 (dikey kanal oturmuş).
+- Üç düzeltme birlikte çalıştı:
+  1. **Dikey nişan** 210 → ≈300 (25° tilt geometrisi; 210 "8 m alta dal"dı).
+  2. **DONDURULMUŞ TAŞIYICI** — devir anındaki son GPS hız kestirimi sayı
+     olarak görsel faza geçilir, faz boyunca güncellenmez. Kutu boyutu
+     MENZİL vekilidir HIZ vekili değil; taşıyıcısız yasa 8 m/s üretip
+     15 m/s hedefin gerisinde kalıyordu. Ölçüldü: ff=(10.0,-10.5,-0.3),
+     kapanma med +3.8 m/s → toplam ~18 m/s.
+  3. **İvme sınırlayıcı drone'un gerçek hızından başlatıldı** (0'dan değil) —
+     devirde 1.25 s'lik sahte fren kalktı.
+- ⚠ **MENZİL KAPISI KALDIRILDI (kural düzeltmesi):** kapı, görsel temas
+  varken GPS güdümünü sürdürerek D0'ı ihlal ediyordu; 20→12 m çekmek ihlali
+  BÜYÜTÜYORDU (kullanıcı yakaladı). Artık tek şart tespit sürekliliği.
+  Devir 34 m'de gerçekleşti ve görsel faz oradan 5 m'ye kadar taşıdı.
+- Sıradaki: (2) dönüşte devir, (3) kayıp→GPS→yeniden devir döngüsü.
+  Açık kalibrasyon: BOYUT_REF=25px (≈6 m denge), K_FWD, V_KAPANMA_MAX.
 
 ### D — Görsel faza devir: BAĞLAYICI tasarım kararları (2026-08-08)
 

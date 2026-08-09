@@ -968,6 +968,103 @@ def _hasar_izleyici():
         time.sleep(0.2)
 
 
+def _kayit_dongusu():
+    """Saniyede 1: kamera karesi + tam durum satırı. Kayıt durana dek sürer."""
+    import csv as _csv
+    d = _kayit["dizin"]
+    kare_dizin = os.path.join(d, "frames")
+    os.makedirs(kare_dizin, exist_ok=True)
+    f = open(os.path.join(d, "kayit.csv"), "w", newline="")
+    w = _csv.DictWriter(f, fieldnames=[
+        "kare", "t", "gecen_s", "gudum_modu", "faz", "mesafe_telem",
+        "mesafe_gercek", "tespit_conf", "manuel_aktif", "manuel_aileron",
+        "manuel_elevator", "manuel_throttle", "hedef_gaz", "senaryo",
+        "plane_x", "plane_y", "plane_z", "plane_hiz",
+        "iris_x", "iris_y", "iris_z", "iris_hiz", "imha"])
+    w.writeheader()
+    _kayit["csv"], _kayit["dosya"] = w, f
+    n = 0
+    t0 = _kayit["t0"]
+    while _kayit["aktif"]:
+        dongu_bas = time.time()
+        n += 1
+        kare = latest_frames["iris"]["data"]
+        if kare:
+            with open(os.path.join(kare_dizin, f"f{n:04d}.jpg"), "wb") as g:
+                g.write(kare)
+        det = get_detection()
+        p, i = telemetry_state["plane"], telemetry_state["iris"]
+        try:
+            m_ger = sim_truth.menzil()
+        except Exception:
+            m_ger = None
+        w.writerow({
+            "kare": n, "t": round(dongu_bas, 2),
+            "gecen_s": round(dongu_bas - t0, 1),
+            "gudum_modu": _guidance_mode,
+            "faz": _supervisor_mod.status.get("faz"),
+            "mesafe_telem": round(math.sqrt(
+                (p["x"] - i["x"]) ** 2 + (p["y"] - i["y"]) ** 2
+                + (p["z"] - i["z"]) ** 2), 2),
+            "mesafe_gercek": round(m_ger, 2) if m_ger else None,
+            "tespit_conf": round(det["conf"], 3) if det else None,
+            # ⚠ MANUEL KUMANDA KONUMLARI: kullanıcı manuel uçarken videoyu
+            # yorumlayabilmek için şart ("o an ne yapıyordun" sorusu).
+            "manuel_aktif": int(_manual_active),
+            "manuel_aileron": _manual_aileron,
+            "manuel_elevator": _manual_elevator,
+            "manuel_throttle": _manual_throttle,
+            "hedef_gaz": _plane_throttle,
+            "senaryo": _scenario_name,
+            "plane_x": p["x"], "plane_y": p["y"], "plane_z": p["z"],
+            "plane_hiz": p.get("speed"),
+            "iris_x": i["x"], "iris_y": i["y"], "iris_z": i["z"],
+            "iris_hiz": i.get("speed"),
+            "imha": int(bool(hasar_durumu.get("imha"))),
+        })
+        f.flush()
+        _kayit["kare"] = n
+        kalan = 1.0 - (time.time() - dongu_bas)
+        if kalan > 0:
+            time.sleep(kalan)
+    f.close()
+    print(f"[KAYIT] durdu — {n} kare + kayit.csv → {d}")
+
+
+@app.post("/api/kayit/basla")
+def kayit_basla():
+    with _kayit_kilit:
+        if _kayit["aktif"]:
+            return {"status": "error", "message": "Kayıt zaten sürüyor",
+                    "dizin": _kayit["dizin"]}
+        d = os.path.join(_KAYIT_KOK, time.strftime("ucus_%Y%m%d_%H%M%S"))
+        os.makedirs(d, exist_ok=True)
+        _kayit.update(aktif=True, dizin=d, kare=0, t0=time.time())
+        t = threading.Thread(target=_kayit_dongusu, daemon=True)
+        _kayit["thread"] = t
+        t.start()
+    print(f"[KAYIT] başladı → {d}")
+    return {"status": "success", "dizin": d}
+
+
+@app.post("/api/kayit/dur")
+def kayit_dur():
+    with _kayit_kilit:
+        if not _kayit["aktif"]:
+            return {"status": "error", "message": "Kayıt zaten kapalı"}
+        _kayit["aktif"] = False
+        d, n = _kayit["dizin"], _kayit["kare"]
+    return {"status": "success", "dizin": d, "kare": n}
+
+
+@app.get("/api/kayit/durum")
+def kayit_durum():
+    return {"aktif": _kayit["aktif"], "dizin": _kayit["dizin"],
+            "kare": _kayit["kare"],
+            "gecen_s": round(time.time() - _kayit["t0"], 1)
+            if _kayit["aktif"] and _kayit["t0"] else 0}
+
+
 @app.get("/api/hasar")
 def hasar_get():
     """Hasar durumu — arayüz/otomasyon için."""
@@ -1286,6 +1383,21 @@ latest_frames = {
     "iris":  {"data": None, "id": 0},
     "plane": {"data": None, "id": 0}
 }
+
+# ══════════════════════════════════════════════════════════════════════
+#  UÇUŞ KAYDI (arayüzdeki "KAYIT" butonu) — 2026-08-09, kullanıcı isteği
+# ══════════════════════════════════════════════════════════════════════
+# Kullanıcının MANUEL uçuşlarını da inceleyebilmek için: saniyede 1 kamera
+# karesi + o anki tam durum (faz, mesafe, telemetri, GÜDÜM MODU ve MANUEL
+# KUMANDA konumları) tek dizine yazılır. Otomatik testlerde bunu araç
+# (tools/ucus_kaydi.py) yapıyordu; manuel uçuşta panelden tetiklenir.
+# Kumanda konumları kayda giriyor çünkü "o anda ne yapıyordun" sorusunun
+# cevabı olmadan manuel uçuş videosu yorumlanamıyor.
+_kayit = {"aktif": False, "dizin": None, "kare": 0, "t0": None,
+          "thread": None, "csv": None, "dosya": None}
+_kayit_kilit = threading.Lock()
+_KAYIT_KOK = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "kayit")
 
 _yolo_detector = None   # startup'ta yüklenir (AVCI_DETECTOR=yolo, varsayılan açık)
 _talon_tracker = None   # startup'ta yüklenir (AVCI_TRACKER=off kapatır; HybridSORT)
