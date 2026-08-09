@@ -116,6 +116,38 @@ def test_kesintisiz_3s_kapisi():
     assert any("reddedildi: kesintisiz" in x for x in s.kayit)
 
 
+# ── Senaryo 3b: STRIKE için İKİSİ BİRDEN dolu olmalı (kümülatif>=5 VE kesintisiz>=3) ──
+def test_strike_ikisi_birden_dolu_olmali():
+    """ENGAGE'de kayan 10 sn penceresi kümülatifi 5'in ALTINA düşürürse, kesintisiz
+    3'ü geçse bile STRIKE OLMAZ. Kümülatif tekrar 5'i bulunca (kesintisiz hâlâ >=3)
+    STRIKE olur. 3 sn, 5 sn'nin içinde olabilir; ama vuruş anında ikisi de dolu olmalı.
+
+    Süreler doğrudan Girdi'ye verilir (kayan-pencere kenar durumunu KilitSure'dan
+    üretmek yerine deterministik kur)."""
+    fsm = GorevFSM(log_fn=lambda s: None, reject_log_dt=0.0)
+    t = kum = kes = 0.0
+    while fsm.state is not State.ENGAGE:            # sürekli kilitle ENGAGE'e getir
+        t = round(t + DT, 6); kum = round(kum + DT, 6); kes = round(kes + DT, 6)
+        fsm.step(Girdi(t=t, tespit_var=True, anlik_kilit=True,
+                       kumulatif_sn=kum, kesintisiz_sn=kes))
+        assert t < 8.0
+    # ENGAGE'deyiz. Kümülatif<5 (pencere düştü), kesintisiz>=3 → STRIKE YOK.
+    t = round(t + DT, 6)
+    fsm.step(Girdi(t=t, tespit_var=True, anlik_kilit=True,
+                   kumulatif_sn=4.80, kesintisiz_sn=3.50))
+    assert fsm.state is State.ENGAGE
+    # Ters durum: kümülatif>=5 ama kesintisiz<3 → yine STRIKE YOK.
+    t = round(t + DT, 6)
+    fsm.step(Girdi(t=t, tespit_var=True, anlik_kilit=True,
+                   kumulatif_sn=5.50, kesintisiz_sn=2.90))
+    assert fsm.state is State.ENGAGE
+    # İkisi de dolu → STRIKE.
+    t = round(t + DT, 6)
+    fsm.step(Girdi(t=t, tespit_var=True, anlik_kilit=True,
+                   kumulatif_sn=5.10, kesintisiz_sn=3.60))
+    assert fsm.state is State.STRIKE
+
+
 def _strike_e_getir(s):
     t = kilitle_kumulatife(s, 4.55)
     t, _ = besle(s, t, 0.5, False, False)                              # kesintisizi kır

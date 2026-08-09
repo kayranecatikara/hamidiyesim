@@ -41,7 +41,7 @@ from vision.detection_state import (set_detection, set_frame_detection,
                                     get_gorev_state, get_son_kapanma,
                                     get_yaklasma_karar)
 from control.kilitlenme import KilitTakip  # 6.1.4 kilitlenme gösterge/skor katmanı
-from control.mission_fsm import GorevFSM, Girdi as _FSMGirdi   # merkezî görev FSM
+from control.mission_fsm import GorevFSM, Girdi as _FSMGirdi, State  # merkezî görev FSM
 from vision.kutu_yumusatici import KutuYumusatici   # AH kutusu zamansal yumuşatma
 from vision import kilit_overlay as _kilit_overlay   # Adım 8 overlay (salt-okur)
 from control import kilit_log as _kilit_log          # Adım 8 CSV hakem logu
@@ -1517,7 +1517,7 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     # bbox modu → det (detect_talon, zaten ham). Güdüm nişan/filtreli kutuyu (det,
     # set_detection) kullanmaya DEVAM eder — yalnız kilit karar/çizim hattı ayrıştı.
     # AV sabit; merkez-AV-içinde şartı KilitTakip'te aynen durur.
-    global _kilit_takip
+    global _kilit_takip, _gorev_fsm
     _kdurum = None
     if stamp is not None:
         H, W = img.shape[:2]
@@ -1535,7 +1535,13 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         _kutu_dt = (stamp - _kutu_onceki_t) if _kutu_onceki_t else 0.0
         _kutu_onceki_t = stamp
         _kbbox = _kutu_yumusatici.yumusat(_kbbox, max(0.0, _kutu_dt))
-        _kdurum = _kilit_takip.guncelle(_kbbox, stamp)
+        # STRIKE = taahhüt edilmiş dalış: şartname 6.1.3 "ANGAJMAN'da merkez/%5
+        # aranmaz, kriter aktif takip". Yakın mesafede hedef kareyi doldurup merkez
+        # AV'den çıkınca anlık kilit KESİLMESİN → kesintisiz sayaç dalış boyunca
+        # SIFIRLANMAZ (kullanıcı 2026-08-09). Önceki karenin FSM state'i kullanılır
+        # (guncelle, fsm.step'ten önce çağrılır); ilk karede _gorev_fsm henüz None.
+        _angajman = _gorev_fsm is not None and _gorev_fsm.state is State.STRIKE
+        _kdurum = _kilit_takip.guncelle(_kbbox, stamp, angajman=_angajman)
         set_kilit_durum(_kdurum)
         # ── 8B: kilit isteri (pencere_ok latch) YÜKSELEN KENARINDA bildir ──
         # Salt-okur gözlemci; beyan aralığı KilitSure'dan (gerçek kilitli örnekle
@@ -1555,8 +1561,7 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         # kapıları BİREBİR aynı olur (eskiden ayrı eşiklerdi → UI 3 s gösterse de
         # STRIKE tetiklenmiyordu). Süre kapıları FSM içinde (kendi KilitSure'u
         # aynı anlık kilitle beslenir → aynı süre). Bildirim yolu ayrı (Ek-3).
-        global _gorev_fsm
-        if _gorev_fsm is None:
+        if _gorev_fsm is None:            # global 1520'de bildirildi
             _gorev_fsm = GorevFSM()
         _anlik = bool(_kdurum.get("anlik_kilit"))
         _ah_oran = max(_kdurum.get("kaplama_x", 0.0), _kdurum.get("kaplama_y", 0.0))

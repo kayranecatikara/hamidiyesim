@@ -116,11 +116,16 @@ class KilitTakip:
             return self._sure.beyan_araligi(now)
         return self._sure.beyan_araligi(now, pencere_sn)
 
-    def guncelle(self, bbox, now):
+    def guncelle(self, bbox, now, angajman=False):
         """Bir kareyi işle.
 
         bbox : (x1, y1, x2, y2) hedef kutusu (piksel) ya da None (tespit yok).
         now  : duvar saati (time.time()).
+        angajman : taahhüt edilmiş STRIKE dalışı mı? Şartname 6.1.3 — angajmanda
+            merkez/%5 ARANMAZ, kriter aktif takip. True iken tespit varsa anlık
+            kilit korunur (hedef kareyi doldurup merkez AV'den çıksa da) → kesintisiz
+            kilit sayacı dalış boyunca SIFIRLANMAZ. Normal fazlarda (False) kilit
+            koşulu aynen: merkez AV içinde + boyut histerezisi.
         Döner: durum sözlüğü (çizim + telemetri için).
         """
         cfg = self.cfg
@@ -159,7 +164,9 @@ class KilitTakip:
             boyut_ok = (kap_x >= esik) or (kap_y >= esik)
             ax1, ay1, ax2, ay2 = self.av
             merkez_ic = (ax1 <= cx <= ax2) and (ay1 <= cy <= ay2)
-            anlik_kilit = boyut_ok and merkez_ic
+            # ANGAJMAN'da (taahhüt edilmiş dalış) merkez/%5 aranmaz (6.1.3):
+            # tespit varsa anlık kilit KORUNUR → kesintisiz sayaç sıfırlanmaz.
+            anlik_kilit = True if angajman else (boyut_ok and merkez_ic)
 
             durum["ah_kutu"] = (int(x1), int(y1), int(x2), int(y2))
             durum["kaplama_x"] = kap_x
@@ -182,6 +189,7 @@ class KilitTakip:
         durum["anlik_kilit"] = anlik_kilit
         durum["kumulatif_s"] = kumulatif
         durum["kesintisiz_s"] = sure_durum.kesintisiz_sn
+        durum["kesintisiz_ok"] = sure_durum.kesintisiz_ok   # >= KESINTISIZ_SN (UI vurgu)
         durum["kilit_isteri_ok"] = self._terminal_latch
 
         # ── Faz kararı (ileri-kilitlemeli) ──

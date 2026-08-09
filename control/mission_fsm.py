@@ -142,8 +142,14 @@ class GorevFSM:
                            ("tespit_dogrulandi", State.TRACK_LOCK)],
         State.TRACK_LOCK: [("kilit_tamamen_kayip", State.TRACK_LOST),
                            ("kumulatif_5s", State.ENGAGE)],
+        # STRIKE KAPISI: kümülatif>=5 VE kesintisiz>=3 AYNI ANDA dolu olmalı
+        # (şartname 6.1.4 kümülatif + 6.1.3 son 3 sn kesintisiz). 3 sn, 5 sn'nin
+        # İÇİNDE olabilir (örtüşme serbest) ama ikisinden biri o an dolu değilse
+        # vuruş YOK. Kümülatif yalnız ENGAGE girişinde değil, STRIKE anında da
+        # yeniden doğrulanır: kayan 10 sn penceresi ENGAGE'de kümülatifi 5'in
+        # altına düşürebilir → o durumda kesintisiz 3'e ulaşsa bile vurmaz.
         State.ENGAGE:     [("kilit_tamamen_kayip", State.TRACK_LOST),
-                           ("kesintisiz_3s", State.STRIKE)],
+                           ("kumulatif5_ve_kesintisiz3", State.STRIKE)],
         # STRIKE bir kez tetiklendi mi COMMIT — dalış temasa dek sürdürülür.
         # Yakın mesafede hedef kareyi doldurup merkez AV'den çıkınca kilit
         # titrer (CLAUDE.md 6.1.3: ANGAJMAN'da merkez/%5 aranmaz), ama dalış
@@ -155,7 +161,8 @@ class GorevFSM:
     }
 
     # İlerleme (progress) guard'ları: reddedildiklerinde sebebiyle loglanır.
-    _ILERLEME_GUARD = {"tespit_dogrulandi", "kumulatif_5s", "kesintisiz_3s"}
+    _ILERLEME_GUARD = {"tespit_dogrulandi", "kumulatif_5s",
+                       "kumulatif5_ve_kesintisiz3"}
 
     def step(self, girdi: Girdi) -> State:
         t = girdi.t
@@ -226,6 +233,9 @@ class GorevFSM:
             return ctx["dogrulandi"] and g.anlik_kilit
         if adi == "kumulatif_5s":
             return ctx["pencere_ok"]
+        if adi == "kumulatif5_ve_kesintisiz3":
+            # İKİSİ BİRDEN: kümülatif>=5 VE kesintisiz>=3 (o an, aynı karede).
+            return ctx["pencere_ok"] and ctx["kesintisiz_ok"]
         if adi == "kesintisiz_3s":
             return ctx["kesintisiz_ok"]
         if adi == "kesintisiz_koptu":
@@ -267,9 +277,16 @@ class GorevFSM:
         elif guard_adi == "kumulatif_5s":
             sebep = (f"kumulatif {girdi.kumulatif_sn:.2f}s "
                      f"< {self.sart.KUMULATIF_KILIT_SN:.2f}s")
-        elif guard_adi == "kesintisiz_3s":
-            sebep = (f"kesintisiz {girdi.kesintisiz_sn:.2f}s "
-                     f"< {self.sart.KESINTISIZ_SN:.2f}s")
+        elif guard_adi == "kumulatif5_ve_kesintisiz3":
+            # Hangi koşul(lar) eksik: ikisi ayrı ayrı raporlanır.
+            eksik = []
+            if girdi.kumulatif_sn < self.sart.KUMULATIF_KILIT_SN:
+                eksik.append(f"kumulatif {girdi.kumulatif_sn:.2f}s"
+                             f"<{self.sart.KUMULATIF_KILIT_SN:.2f}s")
+            if girdi.kesintisiz_sn < self.sart.KESINTISIZ_SN:
+                eksik.append(f"kesintisiz {girdi.kesintisiz_sn:.2f}s"
+                             f"<{self.sart.KESINTISIZ_SN:.2f}s")
+            sebep = " + ".join(eksik) if eksik else "?"
         else:
             return
         hedef_ad = dict(self._TABLO[self.state]).get(guard_adi)
