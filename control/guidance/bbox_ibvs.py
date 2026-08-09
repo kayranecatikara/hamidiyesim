@@ -336,6 +336,7 @@ _CSV_ALANLAR = [
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "elev_atalet_deg", "elev_I", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac", "gecikme_ms",
+    "iris_pitch_deg", "iris_vz", "iris_hiz",
 ]
 
 
@@ -761,6 +762,15 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0, "gecikme_ms": gecikme_ms,
+                # Dikey döngünün teşhisi için: aracın KENDİ eğimi ve dikey hızı.
+                # elev_atalet = piksel_elev(cy) + iris_pitch olduğu için pitch
+                # yanlışsa yükseliş ölçümü topyekûn kayar; iris_vz ise komutun
+                # gerçekten izlenip izlenmediğini gösterir (WPNAV_ACCEL_Z=2.5
+                # m/s² tavanı yüzünden ±5 m/s komut fiziksel olarak 4 s sürer).
+                "iris_pitch_deg": round(math.degrees(ipitch), 1),
+                "iris_vz": round(float(iris.get("vz", 0.0) or 0.0), 2),
+                "iris_hiz": round(math.hypot(float(iris.get("vx", 0.0) or 0.0),
+                                             float(iris.get("vy", 0.0) or 0.0)), 1),
             })
             f.flush()
 
