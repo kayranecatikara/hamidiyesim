@@ -527,6 +527,20 @@ def main():
             abs(ib.Cfg.TERM_ELEV_BIAS) < 1e-9,
             "AVCI_IBVS_TERM_BIAS verilmedikçe eski davranış aynen sürer")
 
+    # ── B35: terminal kapısı ölçüm gelmeden açılmamalı (KAPI_KATI) ──
+    # Iskadan sonra görsel faz YAKINDAN yeniden başlıyor (kutu 30-50 px);
+    # sahte 0° hatayla kapı ilk karede açılırsa irtifa şartı hiç uygulanmamış
+    # olur — yani kapının var olma nedeni ortadan kalkar.
+    class _Kati(ib.Cfg):
+        KAPI_KATI = True
+    import control.guidance.bbox_ibvs as _ib2
+    _kaynak = open(_ib2.__file__, encoding="utf-8").read()
+    kontrol("B35 kapı katı modda sahte 0° ile açılmaz",
+            "99.0 if cfg.KAPI_KATI else 0.0" in _kaynak
+            and _Kati.KAPI_KATI and not ib.Cfg.KAPI_KATI,
+            "katı modda başlangıç 99° (kapı kapalı), varsayılan hâlâ eski "
+            "davranış — kampanyada ölçülecek")
+
     print("=" * 60)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

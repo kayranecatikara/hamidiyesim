@@ -204,6 +204,18 @@ class Cfg:
     # Maliyeti küçük: 2-6 m menzilde 5° = 0.17-0.52 m. Hedef gövdesi + drone
     # yarıçapı bunu yutar.  0 = kapalı (varsayılan, davranış değişmez).
     TERM_ELEV_BIAS = math.radians(_env_f("AVCI_IBVS_TERM_BIAS", 0.0))
+
+    # ══ TERMİNAL KAPISININ BOŞ GEÇMESİ (2026-08-09, kusur) ══
+    # Kapı iki şart ister: kutu ≥ TERMINAL_BOYUT VE yükseliş hatası ≤ eşik.
+    # Ama ikinci şart, döngü başında 0.0 ile başlatılan bir değişkene bakıyor.
+    # Görsel faz UZAKTAN başlarsa (kutu ~10 px) sorun çıkmıyor. Ancak ıskadan
+    # sonra supervisor GPS'e dönüp YAKINDAN yeniden devrediyor (ölçüldü: bir
+    # koşuda 5 görsel faz); o girişte kutu zaten 30-50 px olduğu için kapı
+    # SAHTE 0° hatayla ilk karede açılıyor — tam da engellemesi gereken durum.
+    # 1 = kapı gerçek ölçüm gelene dek KAPALI kalır (doğrusu bu).
+    # Varsayılan 0: faz-2 kampanyasının tek-değişken temeli bozulmasın diye;
+    # ölçülüp kazanırsa varsayılan çevrilecek.
+    KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 0.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
@@ -572,7 +584,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     prev_time = None
     cmd_yaw = None
     kurt = Kurtarma()         # duruş bekçisi (normal uçuşta hiç tetiklenmez)
-    tani_onceki_elev_hata = 0.0   # terminal kapısı için (bir önceki turdan)
+    # KAPI_KATI: ölçüm gelmeden kapı açılmasın diye 'çok büyük' başlar
+    tani_onceki_elev_hata = (99.0 if cfg.KAPI_KATI else 0.0)
     elev_I = 0.0              # dikey integral (irtifa eşitleyici)
     pn_yon = None             # PN hız-vektörü yönü [azimut, yükseliş]
     irtifa_bekleme_yazildi = False
