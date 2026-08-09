@@ -546,10 +546,12 @@ def main():
         KAPI_KATI = True
     import control.guidance.bbox_ibvs as _ib2
     _kaynak = open(_ib2.__file__, encoding="utf-8").read()
-    kontrol("B35 terminal kapısı sahte 0° ile açılmaz (VARSAYILAN)",
-            "99.0 if cfg.KAPI_KATI else 0.0" in _kaynak and ib.Cfg.KAPI_KATI,
-            "kapı gerçek ölçüm gelene dek kapalı; ıskadan sonraki yakın "
-            "girişlerde boş geçmiyor")
+    kontrol("B35 [seçenek] katı kapı sahte 0° ile açılmaz",
+            "99.0 if cfg.KAPI_KATI else 0.0" in _kaynak
+            and _Kati.KAPI_KATI and not ib.Cfg.KAPI_KATI,
+            "AVCI_IBVS_KAPI_KATI=1 ile kapı gerçek ölçüm gelene dek kapalı. "
+            "⚠ VARSAYILAN DEĞİL: katı kapı terminalin hiç mandallanmamasına "
+            "ve aracın hedefe yaklaşırken FREN yapmasına yol açabiliyor")
 
     # ── B36: integral doyma koruması ──
     # Büyük ve sürekli bir hatada (hedef çok yukarıda) klasik integral tavana
@@ -568,16 +570,22 @@ def main():
             f"3 s büyük hatadan sonra integral: klasik {_I_klasik:+.2f} "
             f"(tavan ±{C.ELEV_I_MAX:.1f}) → korumalı {_I_awu:+.2f}")
 
-    # B37: KAZANAN YAPILANDIRMANIN BEKÇİSİ. 39 uçuşluk kampanya (2026-08-09):
-    # kontrol 0/3 vuruş & 0.84 m dikey kaçırma → bu üçlü 8/9 & 0.16 m (p≈0.018).
-    # Bu üçü birlikte ölçüldü; biri kazara kapanırsa test kırmızıya döner.
-    kontrol("B37 KAZANAN varsayılanlar yerinde (39 uçuşla doğrulandı)",
-            ib.Cfg.TERM_DIKEY_TUTUS and ib.Cfg.KAPI_KATI
-            and abs(ib.Cfg.VZ_MAX - 2.5) < 1e-9
-            and not ib.Cfg.PN and not ib.Cfg.AWU,
+    # B37: VARSAYILANLARIN BEKÇİSİ.
+    # 2026-08-09: "8/9 vuruş" diye varsayılan yapılan üçlü GERİ ALINDI —
+    # ölçütler (vuruş/ıska + dikey kaçırma) görevin SÜRESİNİ ve kaç başarısız
+    # geçiş yapıldığını görmüyordu. Kullanıcı uçuşta yakaladı: araç hedefin
+    # üstüne çıkıp fren yapıyor, görsel temas kopuyor, tekrar deniyor.
+    # Sonradan ölçüldü: kutu >40 px iken komut 9 koşunun 5'inde 0.0 m/s'ye
+    # iniyor; vuruş medyanı 61 s (eski yapılandırma ~46 s).
+    # Bu test artık "deneysel anahtarlar KAPALI" durumunu bekçiliyor —
+    # doğru ölçütlerle (tools/gorev_olcut.py) yeniden sınanacaklar.
+    kontrol("B37 deneysel anahtarlar KAPALI (görev ölçütüyle sınanmadan açılmaz)",
+            not ib.Cfg.TERM_DIKEY_TUTUS and not ib.Cfg.KAPI_KATI
+            and abs(ib.Cfg.VZ_MAX - 3.0) < 1e-9
+            and not ib.Cfg.PN and not ib.Cfg.AWU
+            and not ib.Cfg.TERM_VZ_DONDUR and ib.Cfg.TERM_BIRAK == 0.0,
             f"dikey_tutus={ib.Cfg.TERM_DIKEY_TUTUS} kapi_kati={ib.Cfg.KAPI_KATI} "
-            f"VZ_MAX={ib.Cfg.VZ_MAX} | ölçüm desteklemeyenler kapalı: "
-            f"PN={ib.Cfg.PN} AWU={ib.Cfg.AWU}")
+            f"VZ_MAX={ib.Cfg.VZ_MAX} PN={ib.Cfg.PN} AWU={ib.Cfg.AWU}")
 
     # ── B38: terminal mandalı menzil açılınca bırakılır ──
     _src = open(ib.__file__, encoding="utf-8").read()
@@ -606,15 +614,17 @@ def main():
     # "hız vektörünü LOS'a doğrult"a çeviriyor — kazancı v_los·tan() olduğu için
     # 18 m/s'de raya dayanıyor ve araç (2.5 m/s²) izleyemiyor. Bu seçenek
     # (a)'yı korur, (b)'yi geri alır.
-    class _EskiTavan(_EskiCfg):
-        VZ_MAX_TERM = 5.0     # eski terminal tavanı
-    _a = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, C, True)          # varsayılan
-    _b = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, _EskiTavan, True)  # eski yasa
+    class _DikTut(ib.Cfg):
+        TERM_DIKEY_TUTUS = True    # seçenek; varsayılan DEĞİL
+        VZ_MAX = 2.5
+    _a = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, _DikTut, True)
+    _b = ib.komut(CX, 360, 60, 60, 0.0, 18.0, 0.05, C, True)   # varsayılan (eski yasa)
     _yat_a = math.hypot(_a[0], _a[1])
     _yat_b = math.hypot(_b[0], _b[1])
-    kontrol("B40 terminalde dikey tutuş yasasında: hız TAM, dikey RAYA DAYANMAZ",
+    kontrol("B40 [seçenek] dikey tutuş yasasında: hız TAM, dikey raya dayanmaz",
             _yat_a >= _yat_b - 1e-6 and abs(_a[2]) < abs(_b[2]) - 0.5
-            and abs(_a[2]) <= C.VZ_MAX + 1e-6 and ib.Cfg.TERM_DIKEY_TUTUS,
+            and abs(_a[2]) <= _DikTut.VZ_MAX + 1e-6
+            and not ib.Cfg.TERM_DIKEY_TUTUS,
             f"tutuş yasası: yatay {_yat_a:.1f} m/s, vz {_a[2]:+.2f} | "
             f"eski terminal: yatay {_yat_b:.1f} m/s, vz {_b[2]:+.2f} (rayda)")
 

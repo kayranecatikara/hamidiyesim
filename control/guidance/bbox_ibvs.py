@@ -119,11 +119,11 @@ class Cfg:
     # Tutuş fazının dikey tavanı. ⚠ Aracın ölçülen dikey ivme sınırı 2.5 m/s²
     # (WPNAV_ACCEL_Z=250) — 3 m/s'lik bir komutu uygulaması 1.2 s sürüyor.
     # Terminal tavanıyla (VZ_MAX_TERM) birlikte ayarlanmalı.
-    # ⚠ 3.0 → 2.5 (2026-08-09): aracın ÖLÇÜLEN dikey ivme sınırı 2.5 m/s²
-    # (WPNAV_ACCEL_Z=250). 3 m/s'lik komutu uygulaması 1.2 s sürüyor ve komut
-    # sürekli doygun kalıyordu. Tavanı aracın yapabildiğine indirmek, her
-    # salınımın GENLİĞİNİ küçültüyor — kazanan üçlünün parçası.
-    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 2.5)   # m/s; dikey hız tavanı
+    # ⚠ VARSAYILAN GERİ ALINDI (3.0). Aracın ölçülen dikey ivme sınırı
+    # 2.5 m/s² olduğu için 2.5 tavan fiziksel olarak daha dürüst — ama üçlünün
+    # parçası olarak ölçüldü ve üçlü görevi kötüleştirdi. Tek başına doğru
+    # ölçütlerle yeniden sınanacak.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 3.0)   # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ══ İRTİFA EŞİTLE, SONRA DAL (2026-08-09, KULLANICI FİKRİ) ══
@@ -226,9 +226,11 @@ class Cfg:
     # 1 = kapı gerçek ölçüm gelene dek KAPALI kalır (doğrusu bu).
     # Varsayılan 0: faz-2 kampanyasının tek-değişken temeli bozulmasın diye;
     # ölçülüp kazanırsa varsayılan çevrilecek.
-    # ⚠ VARSAYILAN AÇIK (kazanan üçlünün parçası). Kapı artık gerçek ölçüm
-    # gelene dek kapalı kalır; sahte 0° ile açılmaz.
-    KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 1.0) >= 0.5
+    # ⚠ VARSAYILAN GERİ ALINDI (bkz. TERM_DIKEY_TUTUS). Katı kapı terminalin
+    # HİÇ mandallanmamasına yol açabiliyor; o zaman araç tutuş yasasında
+    # kalıyor ve tutuşun PI hız denetimi kutu büyüdükçe FREN YAPIYOR
+    # (2.7 m'de 1.7 m/s). Kullanıcının gördüğü fren davranışının kaynağı bu.
+    KAPI_KATI = _env_f("AVCI_IBVS_KAPI_KATI", 0.0) >= 0.5
 
     # ══ İNTEGRAL DOYMA KORUMASI (anti-windup) — 2026-08-09 ══
     # ÖLÇÜLDÜ (log 112517, tutuş fazı): elev_I ilk yarım saniyede tavana (3.0)
@@ -278,11 +280,16 @@ class Cfg:
     # doğrusal ofseti sıfıra götürür — yani eşitleyici zaten bir kesişim
     # çözümüdür, üstelik kazancı hıza değil açı hatasına bağlı olduğu için
     # raya dayanmaz.
-    # ⚠ VARSAYILAN AÇIK (2026-08-09, 39 uçuşluk kampanyayla doğrulandı):
-    #     kontrol            0/3 vuruş, dikey kaçırma 0.84 m
-    #     bu yasa + tavan 2.5  8/9 vuruş, dikey kaçırma 0.16 m   (p ≈ 0.018)
-    # AVCI_IBVS_TERM_DIKEY_TUTUS=0 eski davranışı geri getirir.
-    TERM_DIKEY_TUTUS = _env_f("AVCI_IBVS_TERM_DIKEY_TUTUS", 1.0) >= 0.5
+    # ⚠ VARSAYILAN GERİ ALINDI (2026-08-09, kullanıcı uçuşta yakaladı).
+    # "8/9 vuruş" ölçümü YANILTICIYDI: ölçütlerim vuruş/ıska ve dikey kaçırma
+    # idi; ikisi de GÖREVİN ne kadar sürdüğünü ve kaç başarısız geçiş
+    # yapıldığını görmüyordu. Kullanıcı izleyerek gördü: araç hedefin üstüne
+    # çıkıp FREN YAPIYOR, görsel temas kopuyor, tekrar tekrar deniyor.
+    # Sonradan ölçüldü: kutu >40 px iken komut edilen hız 9 koşunun 5'inde
+    # 0.0 m/s'ye iniyor ve vuruş medyanı 61 s (eski yapılandırma ~46 s'de
+    # vuruyordu). Yani "vuruş" sayısı arttı ama görev KÖTÜLEŞTİ.
+    # Ders: bir ölçüt neyi ölçmediğini söylemez. Bkz. tools/gorev_olcut.py
+    TERM_DIKEY_TUTUS = _env_f("AVCI_IBVS_TERM_DIKEY_TUTUS", 0.0) >= 0.5
     # Terminal kapısı: yükseliş bu bandın içinde DEĞİLSE hücum başlamaz.
     TERMINAL_ELEV_ESIK = _env_f("AVCI_IBVS_TERM_ELEV", 5.0)  # °
     ELEV_ATALET = _env_f("AVCI_IBVS_ELEV_ATALET", 1.0) >= 0.5  # 0 = eski yol
