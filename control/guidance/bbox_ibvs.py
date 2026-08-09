@@ -197,6 +197,8 @@ class Cfg:
     # 14.5) → hem düzeltmeye daha çok kare, hem pencerede daha uzun süre.
     # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
     V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
+    # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
+    V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
 
     LEAD_SURE = _env_f("AVCI_IBVS_LEAD", 0.4)    # s; nişanın öne alınma süresi
     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
@@ -282,6 +284,22 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
                         math.radians(cfg.LEAD_MAX_DEG))
         nisan_elev = clamp(elev_atalet + lead_el,
                            -math.radians(60.0), math.radians(60.0))
+
+        # ── DİKEY BÜTÇE KISITI (2026-08-09, kullanıcı gözlemi: "dikeyde çok
+        # kaçırıyor") ──
+        # Hız vektörünün gösterebileceği en dik açı atan(VZ_MAX_TERM/v_los).
+        # 18 ve 5 ile bu YALNIZCA 15.5° — hedef daha yukarıdaysa kesişim
+        # MATEMATİKSEL OLARAK İMKÂNSIZ, drone altından geçer. Ölçüldü: terminal
+        # karelerinin %22-49'unda vz tavana dayanmıştı (yani "daha çok
+        # tırmanmam lazım" deyip yapamıyordu).
+        # ÇÖZÜM: dikey tavan yetmiyorsa YATAYI KIS — böylece vektör hedefe
+        # bakabilir. Yavaşlamak yaklaşmayı geciktirir ama ıskalamaktan iyidir;
+        # V_TERM_MIN altına inilmez (hedefi büsbütün kaçırmamak için).
+        t_ = abs(math.tan(nisan_elev))
+        if t_ > 1e-6 and v_los * t_ > cfg.VZ_MAX_TERM:
+            v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
+            vx_ned = v_los * math.cos(yaw_cmd)
+            vy_ned = v_los * math.sin(yaw_cmd)
         vz = clamp(-v_los * math.tan(nisan_elev),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
     else:

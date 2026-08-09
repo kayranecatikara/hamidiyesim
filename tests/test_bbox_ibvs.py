@@ -299,6 +299,39 @@ def main():
             f"LOS=0.5 rad/s → {math.degrees(t_ld['lead_az']):.1f}°  "
             f"tutuş → {math.degrees(t_tut2['lead_az']):.1f}°")
 
+    # ── B22: DİKEY BÜTÇE KISITI — hız vektörü hedefe BAKABİLMELİ ──
+    # Kullanıcı gözlemi (2026-08-09): "hele dikeyde çok kaçırıyor".
+    # Mekanizma: v=18, vz tavanı 5 → vektör en fazla 15.5° yukarı bakabilir;
+    # hedef daha yukarıdaysa kesişim imkânsız. Ölçüldü: terminal karelerinin
+    # %22-49'unda vz doymuştu. Çözüm: yatayı kıs, vektör hedefe baksın.
+    def _cy_icin(elev_deg):
+        """Verilen LOS yükselişini üretecek piksel (boresight 25° yukarıda)."""
+        return geo.CY + geo.FY * math.tan(
+            math.radians(geo_tilt := 25.0) - math.radians(elev_deg))
+
+    # 20° — eski sürümün 15.5° tavanının ÜSTÜNDE, ama hız tabanının bağladığı
+    # noktanın altında: vektör hedefe TAM bakabilmeli.
+    cy20 = _cy_icin(20.0)
+    vx_d, vy_d, vz_d, _, _, _ = ib.komut(CX, cy20, 30, 30, 0.0, 10.0, 0.05,
+                                         C, True, (0.0, 0.0), 0.0)
+    vyatay = math.hypot(vx_d, vy_d)
+    elev_vektor = math.degrees(math.atan2(-vz_d, vyatay)) if vyatay > 1e-6 else 0.0
+    kontrol("B22 dik hedefte yatay kısılır, hız vektörü hedefe TAM bakar",
+            vyatay < C.V_TERMINAL - 1.0 and abs(elev_vektor - 20.0) < 2.0,
+            f"hedef 20° yukarıda → yatay {C.V_TERMINAL:.0f}→{vyatay:.1f} m/s, "
+            f"vektör {elev_vektor:.1f}° (eski sürüm 15.5°'de takılırdı)")
+
+    # 35° — taban bağlar; vektör hedefe tam bakamaz ama eski 15.5°'den DİK
+    cy35 = _cy_icin(35.0)
+    vx_e, vy_e, vz_e, _, _, _ = ib.komut(CX, cy35, 30, 30, 0.0, 10.0, 0.05,
+                                         C, True, (0.0, 0.0), 0.0)
+    vyat_e = math.hypot(vx_e, vy_e)
+    elev_e = math.degrees(math.atan2(-vz_e, vyat_e)) if vyat_e > 1e-6 else 0.0
+    kontrol("B23 aşırı dikte hız tabanı bağlar (hedefi büsbütün kaçırmamak için)",
+            abs(vyat_e - C.V_TERM_MIN) < 1e-6 and elev_e > 20.0,
+            f"hedef 35° → yatay taban {vyat_e:.1f} m/s, vektör {elev_e:.0f}° "
+            f"(eski sürüm 15.5°)")
+
     # ── B21: ⚠ YAW SLEW SINIRI — takla önleyici ──
     # 2026-08-09: görsel fazda yaw komutu 876 °/s'ye çıkıyordu (araç ~120);
     # yaw doyumu roll/pitch yetkisini yiyor → takla. Ölçülen medyan 12-38 °/s,
