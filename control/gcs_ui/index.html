@@ -152,8 +152,20 @@
                         <div class="d-row"><span>GÜDÜM:</span>
                             <span class="faz-grup">
                                 <span id="faz-gps" class="faz-isik">● GPS</span>
+                                <span id="faz-gorsel" class="faz-isik">● GÖRSEL</span>
                             </span>
                         </div>
+                        <!-- MOD SEÇİMİ: sunucunun varsayılanı "gps". Panelde
+                             seçim olmayınca görev sessizce GPS koşuyor ve
+                             görsel güdüm hiç denenmemiş oluyor. Düğmeler
+                             yalnız AVCI_GORSEL=on ile başlatılmışsa etkin. -->
+                        <div class="d-row"><span>MOD:</span>
+                            <span class="faz-grup">
+                                <button id="btn-mod-gps" class="t-btn mod-btn">GPS</button>
+                                <button id="btn-mod-hybrid" class="t-btn mod-btn">HİBRİT</button>
+                            </span>
+                        </div>
+                        <div id="mod-not" class="d-row" style="opacity:.75"></div>
                     </div>
 
 
