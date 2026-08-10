@@ -7,7 +7,7 @@ yanlış toplanırsa "yeni ayar daha iyi" hükmü de yanlış olur. Buradaki tes
 sentetik CSV satırlarıyla saf toplama mantığını denetler.
 
 K1-K3  _vis_metrik    faz sonucu sınıflaması, en yakın menzil, vuruş bayrağı
-K4     _vis_metrik    pose oranı — hangi satır "pose var" sayılıyor
+K4     _vis_metrik    arşivlenmiş "pose_orani_%" metriği geri sızmasın
 K5-K6  _gps_metrik    istasyonda oturma yüzdesi, kadraj hatası yalnız KİLİT'te
 K7-K8  _sentetik      eski test artefaktı süzgeci (gerçek uçuşu ELEMEMELİ)
 K9-K11 _gecis_metrik  faz geçişi sağlığı (2026-08-09: "gps kopup duruyo")
@@ -61,20 +61,20 @@ def main():
             and v["vurus"] is False,
             f"{v['faz_sayisi']} faz, min(3.40, 1.20) = {v['en_yakin']:.2f} m")
 
-    # ── K4: pose ORANI ARTIK YOK — metrik geri sızarsa uyar ──
-    # 2026-08-06'da pose modeli kaldırıldı (bkz. scripts/gcs.sh başlığı), ama
-    # bu test 'pose_orani_%' okumaya devam etti ve KeyError ile ÇÖKTÜ. Çöken
+    # ── K4: ARŞİVLENMİŞ METRİK GERİ SIZARSA UYAR ──
+    # 2026-08-06'da keypoint dönemi kapandı (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/),
+    # ama bu test 'pose_orani_%' okumaya devam etti ve KeyError ile ÇÖKTÜ. Çöken
     # dosya K5-K10'u hiç çalıştırmıyordu; üstelik testleri `python3 dosya.py |
     # tail` ile koşarsanız çıkış kodu boruda kaybolduğu için sağlam görünür.
     # (2026-08-09'da fark edildi.) Artık ölçüt tersine çevrildi: metriğin
-    # OLMADIĞI doğrulanıyor. Pose geri gelirse burası kırmızı yanar ve testi
+    # OLMADIĞI doğrulanıyor. Metrik geri gelirse burası kırmızı yanar ve testi
     # bilinçli olarak yeniden yazmak gerekir.
     karisik = [_vis_satir(0.0, 8.0, "ok", kalite="0.9"),
                _vis_satir(0.1, 8.0, "kanat_dusuk", kalite="0.0"),
                _vis_satir(0.2, 8.0, "tespit_yok", kalite=""),
                _vis_satir(0.3, 8.0, "tespit_yok", kalite="")]
     v = gk._vis_metrik([(VIS, karisik)])
-    kontrol("K4  pose metriği kaldırılmış durumda (08-06 pose kaldırıldı)",
+    kontrol("K4  arşivlenmiş kalite metriği geri sızmamış (08-06)",
             "pose_orani_%" not in v and v["faz_sayisi"] == 1,
             f"anahtarlar: {sorted(v)[:6]}…")
 

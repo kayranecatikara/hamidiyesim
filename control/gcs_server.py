@@ -763,7 +763,7 @@ def set_gudum_ozellik(cmd: OzellikCmd):
 # -----------------------------------------------------------------------
 # 2026-08-01: Bu endpoint ESKİDEN SAHTEYDİ. Ground-truth telemetriye yapay
 # gauss gürültüsü + sabit 8 m ofset ekleyip "PnP çıkışı" diye sunuyordu
-# ("rapor fotoğrafları için" notuyla). Pose modeline hiç dokunmuyordu, o
+# ("rapor fotoğrafları için" notuyla). Görüş hattına hiç dokunmuyordu, o
 # yüzden panele bakarak görsel fazın ne zaman devreye gireceği anlaşılamıyordu
 # ve saatlerce açık kalan GCS'te 6000 m gibi değerler görünüyordu.
 #
@@ -772,7 +772,7 @@ def set_gudum_ozellik(cmd: OzellikCmd):
 # ground-truth yan yana, fark = algı hatası).
 # Ayrıca GPS→görsel geçişinin İKİ kapısı da canlı gösteriliyor, çünkü asıl
 # sorulan soru bu: "neden hâlâ görsel faza geçmedi?"
-#   • görsel kilit: son KILIT_PENCERE karenin kaçında tespit conf ≥ POSE_CONF_MIN
+#   • görsel kilit: son KILIT_PENCERE karenin kaçında tespit conf ≥ KILIT_CONF_MIN
 #   • menzil kapısı: yatay mesafe d_h < GATE_MENZIL mi
 # Hangisinin bağlayıcı olduğu panelden tek bakışta görünür.
 
@@ -780,7 +780,7 @@ def _gorus_menzil_kestirimi(det, iris_att):
     """Detection kutusundan ölçek tabanlı menzil (m) — guidance_core ile AYNI
     formül. Kamera dışında hiçbir bilgi kullanmaz.
 
-    2026-08-06: pose keypoint ölçeğinin (gövde+kanat projeksiyonu) yerini
+    2026-08-06: eski keypoint ölçeğinin (gövde+kanat projeksiyonu) yerini
     kutunun GENİŞLİĞİ aldı; kalibrasyon sabiti Cfg.BBOX_L_ETKIN_M.
 
     iris_att verilirse yükselti düzeltmesi de uygulanır (hedef seviyeli uçuyor
@@ -863,10 +863,6 @@ def pnp_telemetry():
         # görüş hattı
         "tespit_var": det is not None,
         "tespit_conf": round(float(det["conf"]), 2) if det else None,
-        # Panel sözleşmesi korunuyor (arayüz bu adları okuyor): pose modeli
-        # kalktıktan sonra "pose" alanları TESPİT kutusunu yansıtır.
-        "pose_var": det is not None,
-        "pose_conf": round(float(det["conf"]), 2) if det else None,
         "kanat_gorunur": bool(olcek_ok),
         "gorus_menzil": round(gorus_menzil, 1) if gorus_menzil else None,
         # ground-truth (etiketli)
@@ -904,7 +900,7 @@ if _GPS_GUDUM == "frpn":
           "— uçuşta eski yasadan İYİ ÇIKMADI; dönmek için AVCI_GPS_GUDUM=istasyon")
 else:
     _run_gps_guidance = _run_gps_guidance_eski
-from control.guidance.visual_lead import run_visual_lead as _run_visual_lead
+from control.guidance.bbox_ibvs import run_bbox_ibvs as _run_bbox_ibvs, Cfg as _IbvsCfg
 from control.guidance import supervisor as _supervisor_mod
 from control.guidance.supervisor import run_hybrid as _run_hybrid
 
@@ -1218,12 +1214,21 @@ def _visual_thread():
             t = telemetry_state["plane"]
             return {"x": t["x"], "y": t["y"], "z": t["z"]}
 
+        def get_iris():
+            t = telemetry_state["iris"]
+            return {"x": t["x"], "y": t["y"], "z": t["z"],
+                    "roll": math.radians(t.get("roll", 0.0)),
+                    "pitch": math.radians(t.get("pitch", 0.0)),
+                    "yaw": math.radians(t.get("yaw", 0.0)),
+                    "vx": t.get("vx", 0.0), "vy": t.get("vy", 0.0),
+                    "vz": t.get("vz", 0.0)}
+
         _visual_stop_event.clear()
         sim_truth.temas_sifirla()
-        _run_visual_lead(conn, wait_new_frame, get_plane_truth, _visual_stop_event,
-                         get_temas=sim_truth.temas,
-                         get_menzil=sim_truth.menzil,
-                         get_gt=_gt_bbox_girdi)
+        # ⚠ 2026-08-10: eski `run_visual_lead` ARŞİVLENDİ; bu uç da aktif
+        # yasaya (bbox IBVS) bağlandı. GPS fazı koşmadığı için taşıyıcı sıfır.
+        _run_bbox_ibvs(conn, get_iris, wait_new_frame, _visual_stop_event,
+                       cfg=_IbvsCfg, get_temas=sim_truth.temas)
 
     except Exception as e:
         import traceback
@@ -1281,12 +1286,17 @@ def _read_iris_telem_from_conn(conn):
         _process_mavlink_msg(msg, "iris")
 
 
-def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
+def _gorsel_tek_faz(conn, get_iris, stop_event):
     """GÖRSEL mod (UI seçimi): supervisor'suz tek-faz görsel güdüm.
 
     Kilit oturana dek (KILIT_N ardışık güvenli tespit — hibritteki sayaçla aynı)
-    araç hover'da bekler; sonra run_visual_lead koşar. Temas koparsa GPS'e
-    DÖNÜLMEZ (kullanıcı kararı): araç hover'da durur, yeni görsel kilit bekler.
+    araç hover'da bekler; sonra bbox IBVS koşar. Temas koparsa GPS'e DÖNÜLMEZ
+    (kullanıcı kararı): araç hover'da durur, yeni görsel kilit bekler.
+
+    ⚠ 2026-08-10 DÜZELTME: burası `run_visual_lead` çağırıyordu — yani panelde
+    GÖRSEL'e basan kullanıcı, hibritte UÇMAYAN eski yasayı uçuruyordu. İki mod
+    artık AYNI görsel yasayı (bbox IBVS) kullanır; aralarındaki tek fark temas
+    kopunca GPS'e dönülüp dönülmediğidir.
     Dönüş: vuruldu mu (bool)."""
     from control.guidance.common import send_velocity
     from control.guidance.supervisor import SupCfg
@@ -1303,7 +1313,7 @@ def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
                 continue
             son_seq = kayit["seq"]
             kdet = kayit["det"]
-            if kdet is not None and kdet.get("conf", 0.0) >= SupCfg.POSE_CONF_MIN:
+            if kdet is not None and kdet.get("conf", 0.0) >= SupCfg.KILIT_CONF_MIN:
                 sayac += 1
             else:
                 sayac = 0
@@ -1314,13 +1324,18 @@ def _gorsel_tek_faz(conn, get_plane_truth, stop_event):
             return False
         # ── görsel faz ──
         _supervisor_mod.status["gecis_sayisi"] += 1
-        print(f"[CHASE] ✓ GÖRSEL KİLİT — lead pursuit başlıyor "
+        print(f"[CHASE] ✓ GÖRSEL KİLİT — bbox IBVS başlıyor "
               f"(geçiş #{_supervisor_mod.status['gecis_sayisi']}, GÖRSEL mod)")
-        sebep = _run_visual_lead(conn, wait_new_frame, get_plane_truth, stop_event,
-                                 kayip_kare_esik=SupCfg.KAYIP_M,
-                                 get_temas=sim_truth.temas,
-                                 get_menzil=sim_truth.menzil,
-                                 get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
+        # DONDURULMUŞ TAŞIYICI: hibritteki ile aynı — hedefin son GPS hız
+        # kestirimi SAYI olarak geçilir (D0: görsel döngü canlı GPS görmez).
+        # GÖRSEL modda GPS fazı hiç koşmadıysa bu sıfır olur; o zaman yasa
+        # hız integralini sıfırdan kurar (kabul edilen davranış).
+        _ff = (_gps_guidance_mod.status.get("tgt_vx") or 0.0,
+               _gps_guidance_mod.status.get("tgt_vy") or 0.0,
+               _gps_guidance_mod.status.get("tgt_vz") or 0.0)
+        sebep = _run_bbox_ibvs(conn, get_iris, wait_new_frame, stop_event,
+                               cfg=_IbvsCfg, kayip_kare_esik=SupCfg.KAYIP_M,
+                               ff_hiz=_ff, get_temas=sim_truth.temas)
         _supervisor_mod.status["son_sebep"] = sebep
         if sebep == "vuruldu":
             _supervisor_mod.status["faz"] = "VURULDU"
@@ -1423,7 +1438,7 @@ def _chase_thread():
             elif mod == "visual":
                 print("[CHASE] Güdüm modu: GÖRSEL — kilit bekleniyor; temas "
                       "koparsa GPS'e dönülmez, araç durur")
-                vuruldu = _gorsel_tek_faz(conn, get_plane_truth, mod_stop)
+                vuruldu = _gorsel_tek_faz(conn, get_iris, mod_stop)
             else:
                 print("[CHASE] Güdüm modu: HİBRİT — GPS yaklaşma ↔ görsel lead pursuit")
                 _run_hybrid(conn, get_plane, get_iris, wait_new_frame,
@@ -1452,7 +1467,13 @@ def _chase_thread():
 # -----------------------------------------------------------------------
 latest_frames = {
     "iris":  {"data": None, "id": 0},
-    "plane": {"data": None, "id": 0}
+    "plane": {"data": None, "id": 0},
+    # DIŞ GÖRÜŞ (chase) kameraları — SDF'teki iris_chase/talon_chase topic'leri.
+    # Aracı DIŞARIDAN gösterirler; tespit/kilit hattına GİRMEZLER, ham geçerler.
+    # Yalnız gz-transport (Harmonic) yolunda beslenir: ROS 2 (Classic) köprüsü
+    # bu topic'leri yayınlamaz, o kurulumda akış boş kalır (arayüz "kaynak yok").
+    "iris_chase":  {"data": None, "id": 0},
+    "talon_chase": {"data": None, "id": 0},
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1572,7 +1593,7 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     # set_detection'a giden kutu (kilit politikası — GT'li deneyle doğrulandı):
     #  - kilit bu karede EŞLEŞMİŞSE (taze/BYTE) onun kutusu → anlık FP hedefi çalamaz
     #  - kilit COAST'taysa det=None → Kalman tahmini NİŞAN olarak kullanılmaz
-    #    (deneyde uzun coast yalnız yanlış kutu ekledi); kutu yalnız pose kropuna gider
+    #    (deneyde uzun coast yalnız yanlış kutu ekledi)
     #  - kilit yoksa det_raw → hedef ediniminde eski davranış (gecikmesiz)
     if _yolo_detector is not None:
         if _talon_tracker is not None:
@@ -1774,6 +1795,41 @@ def gz_talon_camera_thread():
         time.sleep(1)
 
 
+def gz_chase_camera_thread(key, topic, etiket):
+    """Gazebo Harmonic dış görüş (chase) kamerası → HAM MJPEG.
+
+    iris/plane akışlarından farkı: HİÇBİR işleme yok — YOLO, takip, kilit
+    overlay'i, parazit simülasyonu, hakem logu, hiçbiri. Kare doğrudan JPEG'e
+    kodlanıp latest_frames[key]'e yazılır. Bu görüntü hakem ispatı DEĞİLDİR,
+    yalnız operatör izlemesi içindir; tespit hattına karışmaması bilinçlidir.
+    """
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.image_pb2 import Image as GzImage
+    except Exception as e:
+        print(f"[GCS] gz-transport Python yok, {etiket} dış görüş atlandı: {e}")
+        return
+
+    def cb(msg):
+        try:
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+            ok, buf = cv2.imencode('.jpg', cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            if not ok:
+                return
+            if latest_frames[key]["data"] is None:
+                print(f"[GCS] ✓ {etiket} dış görüş kamerasından ilk görüntü!")
+            latest_frames[key]["data"] = buf.tobytes()
+            latest_frames[key]["id"] += 1
+        except Exception as e:
+            print(f"[GCS GZ-CAM] {etiket} dış görüş hata: {e}")
+
+    node = GzNode()
+    node.subscribe(GzImage, topic, cb)
+    print(f"[GCS] gz-transport {etiket} dış görüş dinleniyor ({topic}, Harmonic)")
+    while True:
+        time.sleep(1)
+
+
 class CameraSubscriber(RosNode):
     def __init__(self):
         if not _ROS2_VAR:
@@ -1828,7 +1884,11 @@ async def generate_mjpeg(vehicle: str):
 
 @app.get("/api/video_feed/{vehicle}")
 def video_feed(vehicle: str):
-    if vehicle not in ["iris", "plane"]:
+    # ⚠ Eskiden burada sabit ["iris", "plane"] listesi vardı: dış görüş
+    # kameraları eklenince istekler SESSİZCE iris'e düşüyor, panelde
+    # "Avcı Dış Görüş" düğmesi avcının KENDİ ön kamerasını gösteriyordu.
+    # Doğru kaynak tamponların kendisi.
+    if vehicle not in latest_frames:
         vehicle = "iris"
     return StreamingResponse(generate_mjpeg(vehicle),
                              media_type="multipart/x-mixed-replace; boundary=frame")
@@ -2077,6 +2137,15 @@ async def startup_event():
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
         threading.Thread(target=gz_iris_camera_thread, daemon=True).start()   # avcı iris
         threading.Thread(target=gz_talon_camera_thread, daemon=True).start()  # hedef Talon
+        # Dış görüş (chase) kameraları — AVCI_GZ_CHASE_CAM=0 ile kapatılabilir
+        # (iki ek 640x480@15Hz render; zayıf GPU'da kapatmak isteyebilirsiniz).
+        if os.environ.get("AVCI_GZ_CHASE_CAM", "1") == "1":
+            for _key, _env, _vars, _et in (
+                ("iris_chase",  "AVCI_GZ_IRIS_CHASE_TOPIC",  "/iris_chase/image",  "Avcı"),
+                ("talon_chase", "AVCI_GZ_TALON_CHASE_TOPIC", "/talon_chase/image", "Talon"),
+            ):
+                threading.Thread(target=gz_chase_camera_thread, daemon=True,
+                                 args=(_key, os.environ.get(_env, _vars), _et)).start()
     else:
         threading.Thread(target=ros2_spin_thread, daemon=True).start()
     if os.environ.get("AVCI_NO_BROWSER", "0") != "1":

@@ -1,5 +1,14 @@
 # 13 — `gcs_server.py` Yer Kontrol İstasyonu
 
+> ⚠ **2026-08-10 — BU BÖLÜMLERİN BİR KISMI KEYPOINT DÖNEMİNE AİT.**
+> Görsel güdüm 2026-08-06'da keypoint zincirinden çıktı; aktif yasa artık
+> `control/guidance/bbox_ibvs.py` (yalnız tespit kutusu). Kamera↔güdüm köprüsü
+> KARE köprüsüdür (`wait_new_frame` / `kayit["det"]`). Aşağıda keypoint'lerden,
+> `pose_detector`'dan ya da `process(pose, ...)` imzasından söz eden her yer
+> TARİHSELDİR → [`POSEA_GERI_DONMEK_ISTERSENIZ/`](../POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
+> Canlı davranış için kaynak kodu esastır.
+
+
 **Yol:** `control/gcs_server.py` · **1170 satır**
 **Rol:** Projenin ana çalıştırılabilir süreci. Kamera, telemetri, görev kontrolü
 ve web arayüzü tek yerde.
@@ -254,14 +263,14 @@ if _yolo_detector is not None:
     set_detection(det)
 if _pose_detector is not None:
     pose = _pose_detector.detect_pose(img)
-    set_pose_detection(pose, stamp=stamp, wall_recv=wall_recv)   # ← visual_lead uyanır
+    set_frame_detection(pose, stamp=stamp, wall_recv=wall_recv)   # ← visual_lead uyanır
 # ... overlay çiz ... video parazit ... JPEG kodla
 ```
 
 **Sıra kritik:**
 1. **Temiz** kare → detection
 2. **Temiz** kare → pose
-3. `set_pose_detection` → `Condition.notify_all()` → `visual_lead` uyanır
+3. `set_frame_detection` → `Condition.notify_all()` → `visual_lead` uyanır
 4. Overlay çizimi (detection kutusu + pose keypoint/iskelet)
 5. Video parazit
 6. JPEG → `latest_frames["iris"]`
@@ -409,7 +418,7 @@ else:
     def get_plane_truth():
         t = telemetry_state["plane"]
         return {"x": t["x"], "y": t["y"], "z": t["z"]}
-    _run_hybrid(conn, get_plane, get_iris, wait_new_pose,
+    _run_hybrid(conn, get_plane, get_iris, wait_new_frame,
                 get_plane_truth, chase_stop)
 
 # ---- DURDURMA → HOVER ----
@@ -436,7 +445,7 @@ _chase_active = False       # aynı porta erişen GPS chase'i durdur
 stop_iris_telem()
 conn = df_connect_drone(port=14541)
 success = df_takeoff(target_z=-5.0)
-_run_visual_lead(conn, wait_new_pose, get_plane_truth, _visual_stop_event)
+_run_visual_lead(conn, wait_new_frame, get_plane_truth, _visual_stop_event)
 ```
 
 Supervisor **yok** — doğrudan görsel döngü. Hata ayıklarken hangi fazın sorunlu

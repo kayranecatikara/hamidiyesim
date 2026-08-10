@@ -1,5 +1,14 @@
 # 01 — Proje Yapısı
 
+> ⚠ **2026-08-10 — BU BÖLÜMLERİN BİR KISMI KEYPOINT DÖNEMİNE AİT.**
+> Görsel güdüm 2026-08-06'da keypoint zincirinden çıktı; aktif yasa artık
+> `control/guidance/bbox_ibvs.py` (yalnız tespit kutusu). Kamera↔güdüm köprüsü
+> KARE köprüsüdür (`wait_new_frame` / `kayit["det"]`). Aşağıda keypoint'lerden,
+> `pose_detector`'dan ya da `process(pose, ...)` imzasından söz eden her yer
+> TARİHSELDİR → [`POSEA_GERI_DONMEK_ISTERSENIZ/`](../POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
+> Canlı davranış için kaynak kodu esastır.
+
+
 > Klasör ağacı, her klasörün işlevi ve tam dosya envanteri.
 > Kod açıklamaları için: [10-15 numaralı dosyalar](00_ICINDEKILER.md).
 
@@ -38,15 +47,12 @@ avci_sim/
 ├── vision/                       # Görüntü işleme + model eğitimi
 │   ├── geometry.py                   # Kamera projeksiyonu + Talon 3D geometrisi
 │   ├── detector.py                   # YOLO tespiti (bbox)
-│   ├── pose_detector.py              # YOLO-pose (6 keypoint)
 │   ├── detection_state.py            # Thread-safe tespit köprüsü
 │   ├── capture_dataset.py            # Detection verisi (otomatik etiketli)
-│   ├── capture_pose_dataset.py       # Pose verisi (otomatik etiketli)
 │   ├── capture_negatives.py          # Hard-negative (canlı sim, pervane)
 │   ├── capture_runway_negatives.py   # Hard-negative (pist/zemin)
 │   ├── train_yolo.py                 # Detection eğitimi
-│   ├── train_yolo_pose.py            # Pose eğitimi
-│   ├── models/                       # avci_yolo.pt, avci_pose.pt
+│   ├── models/                       # avci_yolo.pt
 │   └── demo_model_comparison/        # 20 örnek çıkarım görüntüsü
 ├── sim/
 │   ├── gazebo_harmonic/
@@ -154,13 +160,10 @@ avci_sim/
 | `geometry.py` | 288 | Kamera projeksiyonu + Talon 3D geometrisi |
 | `capture_dataset.py` | 247 | Detection verisi toplama |
 | `capture_runway_negatives.py` | 224 | Pist/zemin hard-negative |
-| `capture_pose_dataset.py` | 193 | Pose verisi toplama |
-| `pose_detector.py` | 120 | YOLO-pose çıkarımı |
 | `capture_negatives.py` | 110 | Pervane hard-negative |
 | `detector.py` | 67 | YOLO detection çıkarımı |
 | `detection_state.py` | 57 | Thread-safe tespit köprüsü |
 | `train_yolo.py` | 55 | Detection eğitimi |
-| `train_yolo_pose.py` | 53 | Pose eğitimi |
 
 ### tests/, tools/, scripts/, sim/
 

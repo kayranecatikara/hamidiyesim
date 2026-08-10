@@ -1,5 +1,14 @@
 # 12 — `control/guidance/` Hibrit Güdüm Paketi
 
+> ⚠ **2026-08-10 — BU BÖLÜMLERİN BİR KISMI KEYPOINT DÖNEMİNE AİT.**
+> Görsel güdüm 2026-08-06'da keypoint zincirinden çıktı; aktif yasa artık
+> `control/guidance/bbox_ibvs.py` (yalnız tespit kutusu). Kamera↔güdüm köprüsü
+> KARE köprüsüdür (`wait_new_frame` / `kayit["det"]`). Aşağıda keypoint'lerden,
+> `pose_detector`'dan ya da `process(pose, ...)` imzasından söz eden her yer
+> TARİHSELDİR → [`POSEA_GERI_DONMEK_ISTERSENIZ/`](../POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
+> Canlı davranış için kaynak kodu esastır.
+
+
 > **Projenin kalbi.** Avcı drone'un hedefi *nasıl* vuracağını belirleyen tüm
 > matematik ve karar mantığı. Fonksiyon bazında açıklama.
 
@@ -930,7 +939,7 @@ return math.sqrt((p["x"]-iris_pos[0])**2 + (p["y"]-iris_pos[1])**2
 
 ---
 
-## `run_visual_lead(conn, wait_pose, get_plane_truth, stop_event, cfg=Cfg, kayip_kare_esik=None)`
+## `run_visual_lead(conn, wait_kare, get_plane_truth, stop_event, cfg=Cfg, kayip_kare_esik=None)`
 
 **Dönüş:** `"vuruldu"` | `"kayip"` | `"durduruldu"`
 
@@ -953,7 +962,7 @@ return math.sqrt((p["x"]-iris_pos[0])**2 + (p["y"]-iris_pos[1])**2
 
 ```python
 while not stop_event.is_set():
-    kayit = wait_pose(son_seq, timeout=0.5)    # Condition üzerinde bekle
+    kayit = wait_kare(son_seq, timeout=0.5)    # Condition üzerinde bekle
 ```
 
 #### Kare gelmediyse
@@ -1113,7 +1122,7 @@ Dosya docstring'i:
 > tekrarı ve bayat veri üretir)."*
 
 Sabit döngü aynı kareyi iki kez işler (`dt=0` → filtre bozulur) veya kare kaçırır.
-`wait_new_pose` bir `threading.Condition` üzerinde bekler.
+`wait_new_frame` bir `threading.Condition` üzerinde bekler.
 
 ---
 ---
@@ -1348,7 +1357,7 @@ olsaydı gerçek frekans işlem süresi kadar düşerdi.
 |------|------:|--------|
 | `KILIT_N` | 10 | Ardışık güvenli pose karesi → geç (~0.33 s @30 Hz) |
 | `KAYIP_M` | 20 | Ardışık pose'suz kare → GPS'e dön (~0.66 s) |
-| `POSE_CONF_MIN` | 0.5 | Pose güven eşiği |
+| `KILIT_CONF_MIN` | 0.5 | Pose güven eşiği |
 | `GATE_KILIT` | True | Menzil kapısı aktif |
 | `GATE_MENZIL` | 20 m | Kapı menzili — `AVCI_HYBRID_GATE_MENZIL` |
 
@@ -1383,7 +1392,7 @@ kırdığında görev bitmemeli).
 
 ---
 
-## `run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth, stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg)`
+## `run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth, stop_event, sup_cfg=SupCfg, lead_cfg=LeadCfg)`
 
 ### GPS fazı + izci
 
@@ -1397,12 +1406,12 @@ while not stop_event.is_set():
     def izci():
         sayac, son_seq = 0, 0
         while not faz_stop.is_set():
-            kayit = wait_pose(son_seq, timeout=0.5)
+            kayit = wait_kare(son_seq, timeout=0.5)
             if kayit is None:
                 continue
             son_seq = kayit["seq"]
             pose = kayit["pose"]
-            if pose is not None and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN:
+            if pose is not None and pose.get("conf", 0.0) >= sup_cfg.KILIT_CONF_MIN:
                 sayac += 1
             else:
                 sayac = 0                        # ARDIŞIK olmalı — sıfırla
@@ -1440,7 +1449,7 @@ if stop_event.is_set() or not tetik["gorsel"]:
 
 status["faz"] = "VISUAL"
 status["gecis_sayisi"] += 1
-sebep = run_visual_lead(conn, wait_pose, get_plane_truth, stop_event,
+sebep = run_visual_lead(conn, wait_kare, get_plane_truth, stop_event,
                         cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M)
 status["son_sebep"] = sebep
 

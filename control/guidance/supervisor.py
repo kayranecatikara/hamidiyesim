@@ -4,21 +4,21 @@ supervisor.py — Faz 4: GPS ↔ görsel güdüm geçişi (hibrit müdahale).
 run_hybrid tek görev döngüsüdür (start_chase bunu çalıştırır):
 
   GPS fazı (gps_guidance) hedefe yaklaşır. Görsel temas oturunca
-  (KILIT_PENCERE karenin KILIT_N'inde tespit, conf ≥ POSE_CONF_MIN, VE handoff
+  (KILIT_PENCERE karenin KILIT_N'inde tespit, conf ≥ KILIT_CONF_MIN, VE handoff
   menzili içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (visual_lead)
   geçilir. Görsel temas kesilirse ya da hedef GEÇİLİRSE (B5 fly-past) → GPS
   fazına dönülür. stop_chase gelene (veya araç vurulana) kadar bu döngü sürer.
 
-  ── 2026-08-06: kilit sinyali pose değil DETECTION güveni ──
-  Pose modeli kaldırıldı; "görsel kilit" artık kutunun güvenidir. Eşik adı
-  (POSE_CONF_MIN) tarihsel olarak korundu — aynı sayı, aynı anlam.
+  ── Kilit sinyali: DETECTION güveni ──
+  "Görsel kilit" kutunun güvenidir (KILIT_CONF_MIN). Bu eşiğin eski adı ve
+  keypoint dönemindeki karşılığı için: POSEA_GERI_DONMEK_ISTERSENIZ/README.md
 
 Menzil kapısının (GATE_KILIT) nedeni: görsel fazın kapanma hızı sabit
 (V_KAPANMA); uzaktan erken geçilirse hızlı hedefe yetişilemez. GPS handoff
 histerezisi (≤40 m) zaten "yetişilmiş" durumu işaretler. GPS jam/DROPOUT'ta
 menzil bilinemez → görsel temas tek başına yeter (jamming fallback).
 
-GT modunda pose kilidini atlamak MÜMKÜNDÜR (`AVCI_GT_KILIT_BYPASS=on`) ama
+GT modunda görsel kilidi atlamak MÜMKÜNDÜR (`AVCI_GT_KILIT_BYPASS=on`) ama
 VARSAYILAN KAPALIDIR — ölçümle çürütüldü, bkz. SupCfg.GT_KILIT_BYPASS.
 """
 
@@ -30,13 +30,14 @@ from control import carpisma_state          # GERÇEK temas — GPS fazı vuruş
 from control.guidance import gps_guidance as _ga
 from control.guidance.gps_guidance import run_gps_guidance
 from control.guidance.guidance_core import Cfg as LeadCfg
-from control.guidance.visual_lead import run_visual_lead
 from control.guidance.bbox_ibvs import run_bbox_ibvs, Cfg as IbvsCfg
 
-# GÖRSEL FAZ SEÇİMİ (2026-08-08, D0 yarışma kuralı):
-#   bbox : SAF bbox IBVS — GPS'siz, kural uyumlu (VARSAYILAN)
-#   lead : eski visual_lead (pose/truth-menzil zamanı; ARŞİV, kural dışı FF içerir)
-_GORSEL_YASA = os.environ.get("AVCI_VISUAL", "bbox").strip().lower()
+# GÖRSEL FAZ: TEK YASA — SAF bbox IBVS (GPS'siz, D0 yarışma kuralına uygun).
+# ⚠ 2026-08-10: eski `lead` kolu (visual_lead + adapter_copter) ARŞİVLENDİ →
+# POSEA_GERI_DONMEK_ISTERSENIZ/gudum_anlik_goruntu/. Uçmayan bir kolu ayakta
+# tutmak hangi kodun gerçek olduğunu belirsizleştiriyordu ve bir kez pahalıya
+# patladı: TODO'da sıradaki dört A/B'nin anahtarları o koldaydı, uçsaydık
+# dört uçuş boşa giderdi. AVCI_VISUAL anahtarı da kalktı.
 
 
 class SupCfg:
@@ -89,7 +90,7 @@ class SupCfg:
     # Değeri değiştirmek DAVRANIŞI DEĞİŞTİRMEZ; eşiği ayarlamak isteyen
     # guidance_core'daki o iki sabite bakmalı.
     KAYIP_M = 20
-    POSE_CONF_MIN = 0.5
+    KILIT_CONF_MIN = 0.5
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
     #
@@ -117,8 +118,8 @@ class SupCfg:
     GPS_VURUS = os.environ.get("AVCI_GPS_VURUS", "on").lower() not in ("0", "off")
 
     # ── GT MODUNDA GÖRSEL KİLİDİ ATLA — DENENDİ VE GERİ ALINDI (2026-08-04) ──
-    # Gerekçe mantıklıydı: GT modunda güdüm pose'a bakmıyor, o hâlde geçişi
-    # pose'un tutması anlamsız. Kilit sinyali "GT akışı canlı mı"ya çevrildi.
+    # Gerekçe mantıklıydı: GT modunda güdüm tespite bakmıyor, o hâlde geçişi
+    # tespitin tutması anlamsız. Kilit sinyali "GT akışı canlı mı"ya çevrildi.
     #
     # ÖLÇÜM ÇÜRÜTTÜ (uçuş 164352 = kilit VAR, 172103 = kilit YOK, ikisi de GT):
     #
@@ -129,7 +130,7 @@ class SupCfg:
     #   GPS kadraj yaw RMS           35.7°       116.8°
     #   biten faz                  3 ıska/4 kayıp  13/13 KAYIP
     #
-    # MEKANİZMA: pose kilidi farkında olmadan bir GECİKME görevi görüyormuş.
+    # MEKANİZMA: görsel kilit farkında olmadan bir GECİKME görevi görüyormuş.
     # Kilit ~6 m'de oturuyor, devir orada oluyordu. Kilit kalkınca devir 20 m
     # kapısına yapıştı; görsel faz hedefe yetişemeyeceği menzilde devralıp
     # hemen kaybediyor. Dahası GPS fazı artık istasyonuna hiç oturamıyor
@@ -177,7 +178,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
               "devir 6.6→19.6 m, en yakın 0.68→2.41 m, 13/13 faz kayıp.")
 
     while not stop_event.is_set():
-        # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci pose akışını sayar)
+        # ══ GPS FAZI ══ (gps_guidance kendi 20 Hz döngüsünde; izci tespit akışını sayar)
         status["faz"] = "GPS"
         faz_stop = threading.Event()
         _kopru(stop_event, faz_stop)
@@ -218,7 +219,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                     pencere.append(get_gt() is not None)
                 else:
                     pencere.append(det is not None
-                                   and det.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
+                                   and det.get("conf", 0.0) >= sup_cfg.KILIT_CONF_MIN)
                 sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
@@ -252,34 +253,27 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         status["faz"] = "VISUAL"
         status["gecis_sayisi"] += 1
         print(f"[SUPERVISOR] ✓ GÖRSEL TEMAS — görsel güdüme geçildi "
-              f"(geçiş #{status['gecis_sayisi']}, yasa={_GORSEL_YASA.upper()})")
-        if _GORSEL_YASA == "bbox":
-            # bbox IBVS — CANLI GPS girmez (yarışma kuralı D0).
-            # get_plane_truth/get_menzil/get_gt KASITEN geçilmez.
-            #
-            # DONDURULMUŞ TAŞIYICI: hedefin son GPS hız kestirimi BURADA, yani
-            # görsel faz BAŞLAMADAN önce bir kez okunur ve sayı olarak geçilir.
-            # Görsel döngü canlı GPS'e erişemez (callback değil, üçlü sayı).
-            ff = (_ga.status.get("tgt_vx") or 0.0,
-                  _ga.status.get("tgt_vy") or 0.0,
-                  _ga.status.get("tgt_vz") or 0.0)
-            print(f"[SUPERVISOR] taşıyıcı donduruldu: "
-                  f"({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
-                  f"— görsel faz boyunca GPS'e bir daha bakılmayacak")
-            # get_temas: Talon çarpma sensörü — SONUÇ sinyali (vuruş kararı),
-            # güdüm girdisi değil; hedefin yerini/hızını taşımaz.
-            # ⚠ MERGE (2026-08-09): kayramin_super_gudumu'nda köprü hâlâ POSE
-            # devrindeydi (wait_pose / kayit["pose"]). Bu dalda pose çıkarıldı,
-            # köprü KARE köprüsü oldu (wait_kare / kayit["det"]); adlar buna
-            # göre çevrildi — aynı akış, tek isim düzlemi.
-            sebep = run_bbox_ibvs(conn, get_iris, wait_kare, stop_event,
-                                  cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                  ff_hiz=ff, get_temas=get_temas)
-        else:
-            sebep = run_visual_lead(conn, wait_kare, get_plane_truth, stop_event,
-                                    cfg=lead_cfg, kayip_kare_esik=sup_cfg.KAYIP_M,
-                                    get_temas=get_temas, get_menzil=get_menzil,
-                                    get_gt=get_gt)
+              f"(geçiş #{status['gecis_sayisi']})")
+        # bbox IBVS — CANLI GPS girmez (yarışma kuralı D0).
+        # get_plane_truth/get_menzil/get_gt KASITEN geçilmez.
+        #
+        # DONDURULMUŞ TAŞIYICI: hedefin son GPS hız kestirimi BURADA, yani
+        # görsel faz BAŞLAMADAN önce bir kez okunur ve sayı olarak geçilir.
+        # Görsel döngü canlı GPS'e erişemez (callback değil, üçlü sayı).
+        ff = (_ga.status.get("tgt_vx") or 0.0,
+              _ga.status.get("tgt_vy") or 0.0,
+              _ga.status.get("tgt_vz") or 0.0)
+        print(f"[SUPERVISOR] taşıyıcı donduruldu: "
+              f"({ff[0]:+.1f},{ff[1]:+.1f},{ff[2]:+.1f}) m/s "
+              f"— görsel faz boyunca GPS'e bir daha bakılmayacak")
+        # get_temas: Talon çarpma sensörü — SONUÇ sinyali (vuruş kararı),
+        # güdüm girdisi değil; hedefin yerini/hızını taşımaz.
+        # ⚠ Köprü adları: wait_kare / kayit["det"] (KARE köprüsü). Bu depoda
+        # tek isim düzlemi budur; eski köprü adlarıyla yazılmış dış kod
+        # gelirse çevrilir, yoksa çalışma anında KeyError verir.
+        sebep = run_bbox_ibvs(conn, get_iris, wait_kare, stop_event,
+                              cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                              ff_hiz=ff, get_temas=get_temas)
         status["son_sebep"] = sebep
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"

@@ -4,11 +4,11 @@ tests/test_visual_lead.py — BBOX IBVS kabul kriterleri.
 Gazebo'dan ÖNCE geçmeli. Sentetik üreteç:
   w_px = fx * BBOX_L_ETKIN_M / R        (kutu genişliği; ölçek sinyali)
 
-── 2026-08-06: POSE ÇIKARILDI ──
+── 2026-08-06: KEYPOINT DÖNEMİ KAPANDI ──
 T1-T21 bloğu yeniden yazıldı: keypoint/yandanlık/şekil-lead testlerinin yerini
 bbox ölçeği ve AZİMUT-ORANI lead testleri aldı. T22+ numaraları korundu
-(davranışları değişmedi, yalnız girdi üreteci pose→det oldu).
-Sökülen pose testleri: POSEA_GERI_DONMEK_ISTERSENIZ/gudum_anlik_goruntu/
+(davranışları değişmedi, yalnız girdi üreteci keypoint→det oldu).
+Sökülen keypoint testleri: POSEA_GERI_DONMEK_ISTERSENIZ/gudum_anlik_goruntu/
 
 Kullanım: python3 -m tests.test_visual_lead
 """
@@ -89,7 +89,7 @@ def main():
     print("BBOX IBVS kabul kriterleri")
     print("=" * 60)
 
-    # ══ T1-T4: BBOX ÖLÇEĞİ (pose keypoint ölçeğinin halefi) ══
+    # ══ T1-T4: BBOX ÖLÇEĞİ (eski keypoint ölçeğinin halefi) ══
 
     # ── T1: kutu genişliğinden menzil kestirimi (SADECE LOG) ──
     hatalar = [abs(tek_kare(cfg_copy(), make_det(R))["menzil_kestirim_m"] - R) / R * 100
@@ -120,7 +120,7 @@ def main():
             and "kutu_kucuk" in r["warn"],
             f"durum={r['durum']} kalite={r['kalite']}")
 
-    # ══ T5-T8: AZİMUT-ORANI LEAD (pose şekil-lead'inin halefi) ══
+    # ══ T5-T8: AZİMUT-ORANI LEAD (eski şekil-lead'inin halefi) ══
 
     # ── T5: azimut SABİT → lead yok (saf takip) ──
     _, out = _az_kosusu(cfg_copy(), [0.0] * 40)
@@ -242,7 +242,7 @@ def main():
     import control.guidance.supervisor as sup
     # 2026-08-08: varsayılan görsel yasa artık run_bbox_ibvs (D0 kuralı).
     # Zincir testi yasadan bağımsız — supervisor AKTİF yasayı çağırır; onu
-    # sahteler. İmza: run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, ...).
+    # sahteler. İmza: run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, ...).
     olaylar = []
     _orij_gps, _orij_bbox = sup.run_gps_guidance, sup.run_bbox_ibvs
 
@@ -252,7 +252,7 @@ def main():
 
     # Parametre adları merge'de kayramin_super_gudumu'nunkilerle hizalandı:
     # aktif yasa artık oradaki run_bbox_ibvs ve imzası bu.
-    def fake_visual(conn, get_iris, wait_pose, stop_event, cfg=None,
+    def fake_visual(conn, get_iris, wait_kare, stop_event, cfg=None,
                     kayip_kare_esik=None, **kw):
         olaylar.append("visual")
         return "kayip" if olaylar.count("visual") == 1 else "durduruldu"
@@ -289,7 +289,7 @@ def main():
     def fake_gps2(conn, gp, gi, stop_event):
         olaylar2.append("gps"); stop_event.wait(5.0)
 
-    def fake_visual_vurus(conn, get_iris, wait_pose, stop_event, cfg=None,
+    def fake_visual_vurus(conn, get_iris, wait_kare, stop_event, cfg=None,
                           kayip_kare_esik=None, **kw):
         olaylar2.append("visual"); return "vuruldu"
 
@@ -362,8 +362,8 @@ def main():
     # T24: yaklaş (10→6, tespit var), sonra tespit KESİL ama menzil kapanmaya devam
     # (6→1.2): kör dalış devreye girer, menzil<1.5 → VURULDU
     menz = [10, 9, 8, 7, 6.5, 6] + [5, 4, 3, 2, 1.2]
-    posev = [True] * 6 + [False] * 5
-    sonuc = terminal_kosusu(cfgT, menz, posev)
+    tespitv = [True] * 6 + [False] * 5
+    sonuc = terminal_kosusu(cfgT, menz, tespitv)
     kontrol("T24 kör dalış → VURULDU",
             sonuc == "vuruldu", f"sonuç={sonuc}")
 
@@ -372,8 +372,8 @@ def main():
     cfgT2 = cfg_copy()
     cfgT2.TERMINAL_MENZIL = 8.0; cfgT2.VURUS_MENZIL = 1.5; cfgT2.TERMINAL_SURE = 0.08
     menz2 = [10, 8, 7, 6, 5.5, 5] + [4.9, 4.8, 4.7, 4.6, 4.5, 4.4, 4.3, 4.2, 4.1, 4.0]
-    posev2 = [True] * 6 + [False] * 10
-    sonuc2 = terminal_kosusu(cfgT2, menz2, posev2)
+    tespitv2 = [True] * 6 + [False] * 10
+    sonuc2 = terminal_kosusu(cfgT2, menz2, tespitv2)
     kontrol("T25 kör dalış süresi dolunca ıska (kayip)",
             sonuc2 == "kayip", f"sonuç={sonuc2}")
 
@@ -383,8 +383,8 @@ def main():
     cfgT3.TERMINAL_MENZIL = 8.0; cfgT3.VURUS_MENZIL = 3.0; cfgT3.TERMINAL_SURE = 1.0
     # yaklaş (tespit var) → tespit kesil → menzil canlıdaki gibi ZIPLASIN
     menz3 = [10, 8, 7, 6, 5.5, 5] + [8.6, 3.8, 7.1, 2.7, 5.3, 2.75]
-    posev3 = [True] * 6 + [False] * 6
-    sonuc3 = terminal_kosusu(cfgT3, menz3, posev3)
+    tespitv3 = [True] * 6 + [False] * 6
+    sonuc3 = terminal_kosusu(cfgT3, menz3, tespitv3)
     kontrol("T26 gürültülü menzilde kilit tutar + vuruş",
             sonuc3 == "vuruldu", f"sonuç={sonuc3} (2.7/2.75<3.0 yakalanmalı)")
 

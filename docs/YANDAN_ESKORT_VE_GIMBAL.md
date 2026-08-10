@@ -35,8 +35,8 @@ Dönüşte drone hedefi **tam yandan** görür (90° bakış; eski geometri de 6
 ile yandan görüyordu, yenilik yakınlık ve tam yan olması). Sonuçları:
 
 - Tespit (bbox) GÜÇLENİR: yakın + yan profil = büyük kutu, güven ~0.85.
-- Pose zinciri KİLİTLENEMEZ: yan profilde "kanat yok" → pose kilidi yok →
-  supervisor görsel faza devri açmaz (panel: GEÇİŞİ ENGELLEYEN: POSE KİLİDİ).
+- Görsel kilit KURULAMAZ: yan profilde tespit güveni düşük → kilit yok →
+  supervisor görsel faza devri açmaz (panel: GEÇİŞİ ENGELLEYEN: GÖRSEL KİLİT).
 - IBVS görsel güdüm kuyruk-takibi varsayımıyla kurulduğu için yandan devir
   alırsa hedefi kadrajdan kaçırma riski yüksektir.
 
@@ -50,7 +50,7 @@ Kameraya yaw gimbalı eklenirse gövde yönü ile bakış yönü ayrışır:
 
 1. Drone iç eskort rotasını uçarken kamera hedefe YANDAN kilitli kalır —
    **5-7 m mesafe + kesintisiz görsel kilit aynı anda** mümkün olur.
-2. Pose/IBVS zinciri yan profil için yeniden eğitilir/formüle edilir
+2. Algı/IBVS zinciri yan profil için yeniden eğitilir/formüle edilir
    (görüntü hatası → komut eşlemesi gimbal çerçevesine taşınır).
 3. Geri getirme adımları:
    - `AVCI_GPS_ARKA_KISALT=1` (bugünkü varsayılan zaten bu; geri alındıysa)
@@ -62,7 +62,7 @@ Kameraya yaw gimbalı eklenirse gövde yönü ile bakış yönü ayrışır:
 ## Gimbalsız dönemde politika
 
 GPS fazının amacı görsel faza EN İYİ pozda devretmektir. Yandan devir
-verilmez; devir kapısı kuyruk-benzeri geometri ister (pose kilidi bugünkü
+verilmez; devir kapısı kuyruk-benzeri geometri ister (görsel kilit bugünkü
 doğal bekçi; açık ω/bakış-açısı kapısı UYGULANACAK'ta önerilmiştir).
 Dönüşte GPS yakın eskort yapar (tespit kilidi süre toplamaya devam eder),
 devir hedef düzeldiğinde gerçekleşir.

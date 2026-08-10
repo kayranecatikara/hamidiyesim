@@ -7,8 +7,8 @@ kestirimi) çıkar. Çıktı bir YÖNDÜR: u_govde (FRD birim vektör) ve ondan 
 yaw_hata / pitch_hata. Bu geometri platformdan bağımsızdır — platforma bağlı
 komut üretimi adaptördedir (adapter_copter).
 
-── 2026-08-06: POSE MODELİ KALDIRILDI ──
-Eskiden YOLO-pose'un 6 keypoint'inden (burun, kuyruk, kanat/vtail uçları)
+── 2026-08-06: KEYPOINT DÖNEMİ KAPANDI ──
+Eskiden 6 keypoint'ten (burun, kuyruk, kanat/vtail uçları)
 hedefin görünür yönelimi (yandanlık + gövde ekseni yönü) çıkarılıp saf takip
 yönünün üstüne bir ŞEKİL-LEAD'i bindiriliyordu (tek ayar K_LEAD). Bu daldan
 vazgeçildi; sökülen kodun tamamı ve geri dönüş yolu:
@@ -66,11 +66,11 @@ class Cfg:
     # Kutunun görünen genişliği w ≈ fx · L_ETKIN / R. L_ETKIN gerçek bir uzunluk
     # değil, YOLO kutusunun kalibrasyon sabitidir (kutu gövdeye tam oturmaz).
     # 2026-08-06'da ölçüldü: bugünkü tüm `ok` karelerinde (n=1917) w·R/fx
-    # medyanı 1.687 m, p10-p90 yayılımı ±%45. Kıyas — sökülen pose ölçeğinin
+    # medyanı 1.687 m, p10-p90 yayılımı ±%45. Kıyas — sökülen keypoint ölçeğinin
     # aynı verideki yayılımı ±%55'ti, yani BBOX DAHA KARARLI bir menzil vekili.
     # Denenen alternatifler: h (±%83), sqrt(w·h) (±%58), hypot(w,h) (±%52).
     BBOX_L_ETKIN_M = _env_f("AVCI_IBVS_BBOX_L", 1.687)
-    # Kalite rampası bbox pikseline göre yeniden ölçeklendi. Eski eşikler pose
+    # Kalite rampası bbox pikseline göre yeniden ölçeklendi. Eski eşikler keypoint
     # ölçeğine (fx·0.81/R) göreydi: 6 px ≈ 22.5 m, 14 px ≈ 9.6 m. Aynı MENZİL
     # bandını bbox genişliğinde tutmak için: fx·1.687/22.5 = 12.5 px ve
     # fx·1.687/9.6 = 29.3 px. Böylece kalite kapısı menzil olarak AYNI yerde.
@@ -89,7 +89,7 @@ class Cfg:
     # ⚠ SİMÜLASYONA ÖZGÜ: gerçek donanımda hedefin pozu bilinmez, bu mod
     # uçurulamaz. Amacı güdüm YASASINI algı hatasından yalıtarak test etmek:
     # GT modunda ıska varsa suç yasada, bbox modunda varsa suç algıdadır.
-    # (Env adı AVCI_GT_ROT tarihsel — pose döneminde "GT rotasyon modu"ydu.)
+    # (Env adı AVCI_GT_ROT tarihsel — "GT rotasyon modu"ndan geliyor.)
     GT_ROT = _env_b("AVCI_GT_ROT", False)
     # ── copter adaptörü ──
     # Kapanma hızı hedefin (~15 m/s) ÇOK üstünde olmalı (kullanıcı kararı):
@@ -109,7 +109,7 @@ class Cfg:
     # göreli değil. İlk denemede 12.0 seçildi ve GT modunu tamamen bozdu:
     # hedef 14.2 m/s (ölçüldü, medyan) uçarken net kapanma −2.2 m/s oldu, yani
     # drone UZAKLAŞTI. 222803 uçuşu: 1070 karenin hepsi yaklaşma alt-fazında,
-    # menzil 24.2 → 82.8 m. Pose modu etkilenmedi çünkü orada devir zaten
+    # menzil 24.2 → 82.8 m. Eski mod etkilenmedi çünkü orada devir zaten
     # ~6 m'de (TERMINAL_MENZIL altında) oluyor ve alt-faz hiç çalışmıyor.
     # 20.0 → net kapanma +5.8 m/s: yavaşlama faydası korunuyor (25 yerine 20)
     # ama yetişme garanti. Hedef daha hızlı bir uçağa çevrilirse BU DEĞER DE
@@ -260,7 +260,7 @@ class Cfg:
     # Son uçuşta SAF TAKİP, tırmanan hedefin ALTINDAN geçti: menzil kapandıkça
     # hedefin yükseliş açısı 51°→75° (kadraj tavanına) fırladı, drone ~2.4 m
     # altından ıskaladı. İki terim eklendi (adapter_copter uygular):
-    #  (a) DİKEY AIM YUMUŞATMA: pose yükseliş açısı ok↔kpt_dusuk kareleri arasında
+    #  (a) DİKEY AIM YUMUŞATMA: yükseliş açısı ok↔düşük-kalite kareleri arasında
     #      BİMODAL zıplıyor (~10-18°); ham türev alınırsa PN ±tavana çakılıp vz'yi
     #      chatter'a sokuyor (162804 uçuşu: %24 doygun, 17 vz işaret değişimi, 5.1m
     #      ıska). Önce dikey aim'i tek-kare slew kırpma + EMA ile yumuşat.
@@ -293,8 +293,8 @@ class Cfg:
     PN_DIKEY_MAX_DEG  = _env_f("AVCI_IBVS_PN_MAX_DEG", 30.0)
     PN_RATE_EMA       = 0.45
 
-    # ── YATAY (AZİMUT-ORANI) LEAD — pose şekil-lead'inin YERİNE (2026-08-06) ──
-    # Pose kaldırılınca yandanlıktan türeyen lead de gitti. Yerine dikey kanalda
+    # ── YATAY (AZİMUT-ORANI) LEAD — şekil-lead'inin YERİNE (2026-08-06) ──
+    # Keypoint'ler kalkınca yandanlıktan türeyen lead de gitti. Yerine dikey kanalda
     # zaten çalışan PN'in yatay eşi kondu: LOS azimutunun DEĞİŞİM ORANIYLA
     # orantılı öne nişan. Hedef yanlamasına geçiyorsa azimut döner → nişan öne
     # kayar; hedef tam önümüzde/arkamızdaysa oran ~0 → saf takip. Bu, şekil-lead'i
@@ -302,7 +302,7 @@ class Cfg:
     #
     # SABİTLER DİKEY KANALDAN ALINDI (aynı yumuşatma zinciri: slew-kırpma → EMA →
     # oran EMA). Ölçüm (08-06, 10 183 `ok` karesi, log üstünde yeniden oynatıldı):
-    #     şekil-lead'i (pose)   : medyan 2.39°  ort 6.18°  p90 18.64°
+    #     şekil-lead'i (arşiv)  : medyan 2.39°  ort 6.18°  p90 18.64°
     #     azimut-oranı (bu yasa): medyan 1.09°  ort 6.08°  p90 20.00°
     # yani lead bütçesi korunuyor. ⚠ Ölçüm cevap anahtarı azimutuyla yapıldı;
     # canlıda sinyal bbox merkezinden gelir ve daha gürültülüdür — yumuşatma
@@ -342,7 +342,7 @@ class Cfg:
     KADRAJ_MAX_DEG = 30.0    # düzeltmenin açı tavanı (aşırı komut sınırı)
 
     # ── GÖRSEL FAZI ERKEN BIRAKMA (2026-07-31) ──
-    # Eskiden KAYIP_M ARDIŞIK pose'suz kare görsel fazı bitiriyordu. Tespit
+    # Eskiden KAYIP_M ARDIŞIK tespitsiz kare görsel fazı bitiriyordu. Tespit
     # kümelenmiş koptuğu için (karelerin %28'i tespit_yok) bu şart sık sağlanıyor:
     # 19:35 uçuşunda görsel faz 4 KEZ başlayıp koptu, her biri 1-1.9 s. Her
     # kopuşta GPS fazı drone'u istasyona (hedefin 4.65 m altına) GERİ ÇEKİYOR —
@@ -440,7 +440,7 @@ def hedef_kadraj_hatasi(hedef_ned, drone_ned, roll, pitch, yaw):
 
     guidance_core'un ters izdüşümü: dünya-NED hedef/drone pozu + drone attitude'undan
     hedefe bakışın (LOS) gövde-çerçevesi açılarını ve piksel izdüşümünü verir. IBVS
-    pose zincirinin AYNI konvansiyonu (NED/FRD, 25° tilt) — hiç ENU/Gazebo karışmaz.
+    görüş zincirinin AYNI konvansiyonu (NED/FRD, 25° tilt) — hiç ENU/Gazebo karışmaz.
 
     Kadraj MERKEZİ ⇔ yaw_hata=0 ve elev=+25° (kamera tilt'i) ⇔ (u,v)=(CX,CY).
     Dönüş dict:

@@ -10,19 +10,18 @@ Görsel güdümün güncel deney günlüğü → **[UYGULANACAK.md](UYGULANACAK.
 > onun hattından devam ediliyor.** İki sonucu var, ikisi de bu dosyanın yarısını
 > etkiliyor:
 >
-> **1. Aktif görsel yasa artık `bbox_ibvs.py`** (`AVCI_VISUAL` varsayılanı
-> `bbox`). `visual_lead.py` + `adapter_copter.py` + `guidance_core`'un komut
-> yolu **uçmuyor** — yalnız `AVCI_VISUAL=lead` ile açılan alternatif kol.
-> Ölçüldü: `bbox_ibvs` `guidance_core`'dan **yalnız `KAMERA_TILT_DEG`**'i
-> okuyor, başka hiçbir şeyini değil.
+> **1. Görsel yasa TEK: `bbox_ibvs.py`.** 2026-08-10'da eski kol
+> (`visual_lead.py` + `adapter_copter.py` + testleri) **ARŞİVE ALINDI** →
+> `POSEA_GERI_DONMEK_ISTERSENIZ/gudum_anlik_goruntu/`. `AVCI_VISUAL` anahtarı
+> kalktı. Panelin **GÖRSEL** modu da düzeltildi: eskiden arşivlenmiş yasayı
+> çalıştırıyordu, artık hibritle aynı yasayı kullanıyor.
 >
 > ⛔ Dolayısıyla `AVCI_IBVS_COALT_DEG`, `AVCI_IBVS_PN_YATAY_KAPI`,
 > `AVCI_IBVS_PN_YATAY_MAX`, `AVCI_IBVS_IVME_TAVAN`,
-> `AVCI_IBVS_ILK_KARE_LIMIT`, `AVCI_IBVS_BITIR_TAM_DUR` **uçan koda
-> değmiyor.** Bunlarla A/B koşmak uçuş harcamaktır. Hepsi
-> `guidance_core`/`adapter_copter` içinde. Aktif yasanın kendi anahtarları
-> ayrı ve panelde: `AVCI_IBVS_ROLL`, `AVCI_IBVS_KAPANMA`,
-> `AVCI_IBVS_LEAD_ERKEN`, `AVCI_IBVS_KD`, `AVCI_IBVS_KVZD`…
+> `AVCI_IBVS_ILK_KARE_LIMIT`, `AVCI_IBVS_BITIR_TAM_DUR` **artık kod olarak da
+> yok** (arşivde). Bunlarla A/B kurulamaz. Aktif yasanın anahtarları ayrı ve
+> panelde: `AVCI_IBVS_ROLL`, `AVCI_IBVS_KAPANMA`, `AVCI_IBVS_LEAD_ERKEN`,
+> `AVCI_IBVS_KD`, `AVCI_IBVS_KVZD`…
 >
 > **2. Çalışma yöntemi artık [CLAUDE.md](CLAUDE.md)'de ve bağlayıcı**
 > (Kayra `1b458f3`, kullanıcı kararı). Özeti: her özellik **en az 4 uçuşla**
@@ -52,6 +51,7 @@ Sıra ÖNEM sırasıdır; sağdaki sütun dosyadaki bölüm numarasıdır.
 
 | önem | iş | neden şimdi | bölüm |
 |---|---|---|---|
+| **0** | **🔴 HİBRİTTE GÜDÜM DURUYOR** — 57-58 m'de araç asılı kalıyor | kullanıcı bildirdi, **loglarda doğrulandı**: bugün 3 kez 69-314 s boyunca HİÇBİR güdüm döngüsü koşmadı | §0 |
 | **1** | **Dönüş bütçesi** — Ö6 (`ANGLE_MAX` 45→55°) · Ö5 (dönüş-farkında hız tavanı) | Kayra'nın son ölçümü: hedef 2.1× hızlı, **2.5× dar** dönüyor. Eskiden "bu daldan çözülemez" denen kapalı yol; **bu dal artık o hat** | §1 |
 | **2** | **Ö1 kaçış telafisi kararı** | ölçüm bitti, birincil ölçüt yanlış seçildiği için karar kullanıcıya bırakıldı; varsayılan KAPALI bekliyor | §2 |
 | **3** | **M2 tespit eşiği histerezisi** (yakala 0.35 / tut 0.20) | 0.15 sabit eşik takibi 3× iyileştirdi, vuruş getirmedi; histerezis hiç denenmedi | §3 |
@@ -313,6 +313,70 @@ Ortam değişkeniyle **denemek** serbest, **kod değiştirmek** değil.
 > Aşağıdaki her iş CLAUDE.md'deki döngüye tabidir: **ölçüt önce ilan edilir,
 > en az 4 uçuş, dönüşümlü A/B, video + log çaprazlanır.** Yeni eklenen her
 > anahtar `gcs_server._OZELLIKLER`'e de yazılır (panelden aç/kapa — CLAUDE.md §5).
+
+### 0 — 🔴 HİBRİTTE GÜDÜM DURUYOR (57-58 m) — ÖNCE BU
+
+**Kullanıcı bildirimi (2026-08-10):** "avcı hedefe yaklaşıp 50-60 m'ye girince
+hover moduna geçiyor gibi, hızı sıfırlanıyor, irtifası sabit kalıyor, mesafe
+bilgisi donuyor. GPS'e tıklayınca düzeliyor."
+
+**LOGDAN DOĞRULANDI — algı değil, gerçek:** 2026-08-10 oturumunda güdüm
+döngüsünün HİÇ koşmadığı üç boşluk var (`gps_guidance_*` ve `bbox_ibvs_*`
+loglarının ikisi de yok):
+
+| boşluk | öncesi biten faz | biterken menzil | duruş |
+|---|---|---|---|
+| **179 s** | GPS 13.5 s | **58.0 m** | roll −7.8° pitch 11.8° (sakin) |
+| **314 s** | GÖRSEL 3.4 s | — | — |
+| **69 s** | GPS 13.7 s | **57.6 m** | roll −7.4° pitch 7.3° (sakin) |
+
+O sürede araca hız komutu gitmiyor → GUIDED modda olduğu yerde asılı kalıyor.
+
+**ELENEN üç sebep (ölçümle):**
+- ❌ Kurtarma bekçisi (takla) — duruş sakin, eşik 60°, en fazla 12° görüldü
+- ❌ DROPOUT (hedef telemetrisi bayat) — telemetri **son kareye kadar 20 Hz**
+  akıyordu; DROPOUT 3 s durgunluk ister
+- ❌ Devir (görsel faza geçiş) — sonrasında **bbox_ibvs logu YOK**
+
+**Geriye kalan:** `run_gps_guidance` temiz çıkmış (`stop_event` set edilmiş) ve
+ardından **hiçbir faz yeniden başlamamış.** `run_hybrid`'de bunu kalıcı yapan
+tek yol `tetik["vuruldu"]` → VURULDU → görev döngüsü biter → `df_hover()`.
+
+- [ ] **UÇUŞTA DOĞRULA (30 saniyelik iş):** donma olduğunda **terminale bak**.
+      Hangi satır yazıyorsa sebep odur:
+      - `[SUPERVISOR] ✓✓ HEDEF VURULDU (GPS fazında gerçek temas)` +
+        `[CHASE] Algoritma sonlandı → hover'a geçiliyor` → **sahte vuruş**
+        (temas mandalı yanlış tetiklendi)
+      - `[CHASE] Güdüm modu seçildi: ...` → mod anahtarı kendiliğinden değişmiş
+      - hiçbiri → döngü bir yerde bloklanmış (MAVLink yazımı şüphelisi)
+      *Sonuç:*
+- [ ] **Faz bitiş SEBEBİNİ logla** (davranış değiştirmez, yalnız teşhis):
+      `supervisor` her faz sonunda sebebi `status`'a ve stdout'a yazsın.
+      Bir daha bu soruyu log kazarak cevaplamayalım. *Sonuç:*
+
+### 0b — Devirde "dondurulmuş taşıyıcı" SIFIR geliyor (KANITLANDI)
+
+Ayrı ve **kesin** bir hata. Bugünkü 32 devrin 3'ünde hedefin hız kestirimi
+devir anında tam sıfırdı (`tgt_v = 0,0,0`) — hepsi 12.6-12.7 m'de:
+
+    görsel faz başlıyor: kutu 15-18 px, conf 0.74-0.91  (tespit SAĞLAM)
+    ama komut hızı v_los = 2.58 m/s   ← hedef 15 m/s gidiyor
+    3 kare sonra kutu kadrajdan çıkıyor → 19 kare KUTU_YOK → 'kayip'
+
+**Mekanizma:** görsel yasa hız integralini `ff_hiz`'den (devir anındaki hedef
+hız kestirimi) başlatır. `ff = 0` ise `v_los = K_FWD·hata ≈ 2.5 m/s` — araç
+sürünür, hedef kaçar. Sağlıklı devirlerde `|ff| ≈ 14-16 m/s`.
+
+**Kök neden:** `run_gps_guidance` hız kestiricisini (`vel_x/y/z`, `est_x`)
+**her çağrıda sıfırdan** kurar. Hibritte her görsel fazdan sonra yeniden
+çağrıldığı için, kısa bir GPS fazı (1.2-1.3 s) kestiriciyi dolduramadan
+devrediyor. Ölçüldü: ölen 3 fazın 25-26 karesinin **hepsinde** `tgt_v = 0`.
+
+- [ ] **Düzeltme önerisi (ONAY BEKLİYOR): devir kapısına şart ekle.**
+      `supervisor.izci` şu an yalnız tespit güvenine bakıyor; `|ff|` anlamlı
+      olana kadar (ör. > 3 m/s) devretmesin. **`gps_guidance`'a dokunmadan**
+      çözülür (kapı bizim alanımızda), kill-switch + panel düğmesi eklenir.
+      *Sonuç:*
 
 ### 1 — Dönüş bütçesi (eski kapalı yol, artık açık)
 

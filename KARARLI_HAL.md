@@ -14,7 +14,7 @@
 > | `ISTASYON_ELEV_DEG 15°`, `KD_H 0.60`, `IC_KAYMA 14` | ✅ aynı |
 > | araç parametreleri | ✅ değerler aynı (25 m/s, 8 m/s², 2.5 m/s², 45°), **adlar SI şemasında** — bu firmware `WPNAV_*`/`ANGLE_MAX` tanımıyor, bkz. `avci_copter.parm` başlığı |
 > | "Görsel faz kapalı" | ❌ bu dalda görsel faz **açık** (hibrit güdüm) |
-> | "Truth modu açık, pose devre dışı" | ❌ pose **kaldırıldı** (2026-08-07 kullanıcı kararı, kesin). Görsel faz bbox ile çalışıyor; `AVCI_POSE_KAYNAK` / `gercek_geometri` / `_process_gercek` merge'de sökülmüştür. GT modu (`AVCI_GT_ROT`) varsayılan KAPALI |
+> | "Truth modu açık, keypoint zinciri devre dışı" | ❌ keypoint zinciri **kaldırıldı** (2026-08-07 kullanıcı kararı, kesin). Görsel faz bbox ile çalışıyor; o dönemin `gercek_geometri` / `_process_gercek` yolu merge'de sökülmüştür (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/). GT modu (`AVCI_GT_ROT`) varsayılan KAPALI |
 > | "Panel 8 m yalan söylüyordu" | ✅ bu dalın arayüzü baştan yazıldı, o hata yok |
 > | menzil sonuçları (13-16 m) | ⚠ o zarfla ölçüldü; bu dalda **henüz uçulmadı** — TODO.md §0 taban ölçümü |
 
@@ -71,7 +71,8 @@ PSC_VELXY_P   2.0       FS_GCS_ENABLE / FS_THR_ENABLE = 0
 ### Diğer
 
 - Görsel faz **kapalı** (`AVCI_GORSEL=on` ile açılır) — yalnız GPS güdümü
-- Truth modu **açık** (`AVCI_POSE_KAYNAK=gercek`) — pose modeli devre dışı
+- Truth modu **açık** — o dönemin keypoint zinciri devre dışı (⚠ bu satır
+  2026-08-07 öncesine aittir; env anahtarı artık yok)
 - FRPN modülü rafta (`AVCI_GPS_GUDUM=frpn` ile denenebilir, varsayılan değil)
 
 ---

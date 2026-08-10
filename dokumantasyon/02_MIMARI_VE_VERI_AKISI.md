@@ -1,5 +1,14 @@
 # 02 — Mimari ve Veri Akışı
 
+> ⚠ **2026-08-10 — BU BÖLÜMLERİN BİR KISMI KEYPOINT DÖNEMİNE AİT.**
+> Görsel güdüm 2026-08-06'da keypoint zincirinden çıktı; aktif yasa artık
+> `control/guidance/bbox_ibvs.py` (yalnız tespit kutusu). Kamera↔güdüm köprüsü
+> KARE köprüsüdür (`wait_new_frame` / `kayit["det"]`). Aşağıda keypoint'lerden,
+> `pose_detector`'dan ya da `process(pose, ...)` imzasından söz eden her yer
+> TARİHSELDİR → [`POSEA_GERI_DONMEK_ISTERSENIZ/`](../POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
+> Canlı davranış için kaynak kodu esastır.
+
+
 > Sistem uçtan uca nasıl çalışır: süreçler, portlar, kare akışı, görev akışı.
 
 ---
@@ -41,7 +50,7 @@ Sistem **5 ayrı süreçten** oluşur; her biri kendi terminalinde çalışır.
            ▼                                            ▼▼ ▼
     ┌──────────────────────────────────────────────────────────┐
     │                    gcs_server.py                          │
-    │  · kamera oku → YOLO + pose → overlay → MJPEG            │
+    │  · kamera oku → YOLO → overlay → MJPEG                   │
     │  · telemetri topla (plane: 14550, iris: 14541)           │
     │  · görev API + WebSocket → tarayıcı                       │
     └────────────────────────┬─────────────────────────────────┘
@@ -80,7 +89,7 @@ gz_iris_camera_thread()  ──── wall_recv = time.time() damgası vurulur
 process_iris_frame(img, stamp, wall_recv)
    │
    ├──► detector.detect_talon(TEMİZ kare)   → bbox + conf   → set_detection()
-   ├──► pose_detector.detect_pose(TEMİZ kare) → 6 keypoint  → set_pose_detection(pose, stamp, wall_recv)
+   ├──► pose_detector.detect_pose(TEMİZ kare) → 6 keypoint  → set_frame_detection(pose, stamp, wall_recv)
    │                                                             │
    ├──► overlay çiz (bbox + keypoint + iskelet)                  │  Condition.notify_all()
    ├──► video parazit simülasyonu uygula                         │
@@ -97,7 +106,7 @@ process_iris_frame(img, stamp, wall_recv)
 - **İki farklı saat kullanılır ve karıştırılmaz:**
   - `stamp` (kare header'ı, **sim saati**) → `dt` hesabı, filtreler, PN türevi
   - `wall_recv` (**duvar saati**) → bayat kare tespiti (`gecikme_s`)
-- **Döngü sabit Hz'te dönmez.** `wait_new_pose(son_seq)` bir `threading.Condition`
+- **Döngü sabit Hz'te dönmez.** `wait_new_frame(son_seq)` bir `threading.Condition`
   üzerinde bekler; kare geldikçe uyanır. Sabit Hz'te dönen bir döngü aynı kareyi
   tekrar işler ve bayat veriyle komut üretir.
 
@@ -113,7 +122,7 @@ _chase_thread (gcs_server)
    ├── iris telemetri worker'ını durdur (port serbest kalsın)
    ├── conn = connect_drone(14541)
    ├── takeoff_to_z(-5.0)              # GUIDED + NAV_TAKEOFF
-   └── supervisor.run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth, stop)
+   └── supervisor.run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth, stop)
           │
           ▼
    ┌───────────────────── HİBRİT DÖNGÜ ─────────────────────┐
@@ -159,7 +168,7 @@ tüm dönüşümler tek dosyada (`guidance_core.py`) toplandı.
 
 | Çerçeve | Eksenler | Nerede |
 |---------|----------|--------|
-| **Kamera (OpenCV)** | X sağ, Y aşağı, Z ileri | `pose_detector`, `geometry` |
+| **Kamera (OpenCV)** | X sağ, Y aşağı, Z ileri | `detector`, `geometry` |
 | **Gövde (FRD)** | X ileri, Y sağ, Z aşağı | Güdüm çekirdeği çıktısı (`u_govde`) |
 | **Dünya (NED)** | X kuzey, Y doğu, Z aşağı | ArduPilot telemetrisi, hız komutları |
 | **Gazebo (ENU)** | X doğu, Y kuzey, Z yukarı | SDF dosyaları, `set_pose` servisi |
@@ -198,7 +207,6 @@ olmayacak veriler güdüm hesabına sokulmaz.
 |------|--------|------------------|
 | Hedefin GPS telemetrisi (gürültülü) | `get_plane()` → `_apply_gps_noise` | ✅ GPS fazında |
 | Kendi pozisyon + attitude | `LOCAL_POSITION_NED`, `ATTITUDE` | ✅ Her iki fazda |
-| Pose keypoint'leri | `pose_detector` | ✅ Görsel fazda |
 | Hedefin **gerçek** NED pozu | `get_plane_truth()` | ❌ **Sadece log + vuruş tespiti** |
 | Menzil kestirimi (piksel ölçeğinden) | `guidance_core` | ❌ **Sadece log** |
 

@@ -45,18 +45,15 @@ avci_sim/
 ├── vision/                       # Görüntü işleme + model eğitimi
 │   ├── geometry.py                   # Kamera projeksiyonu + Talon 3D geometrisi
 │   ├── detector.py                   # YOLO tespiti (bbox)
-│   ├── pose_detector.py              # YOLO-pose (6 keypoint)
 │   ├── tracker.py                    # HybridSORT takip (boxmot, kareler arası ID)
 │   ├── hybridsort_video.py           # Takibi video dosyasında offline çalıştırma
 │   ├── compare_tracker.py            # GT'li "detection vs detection+tracker" deneyi
 │   ├── detection_state.py            # Thread-safe tespit köprüsü
 │   ├── capture_dataset.py            # Detection verisi (otomatik etiketli)
-│   ├── capture_pose_dataset.py       # Pose verisi (otomatik etiketli)
 │   ├── capture_negatives.py          # Hard-negative (canlı sim, pervane)
 │   ├── capture_runway_negatives.py   # Hard-negative (pist/zemin)
 │   ├── train_yolo.py                 # Detection eğitimi
-│   ├── train_yolo_pose.py            # Pose eğitimi
-│   ├── models/                       # avci_yolo.pt, avci_pose.pt
+│   ├── models/                       # avci_yolo.pt
 │   └── demo_model_comparison/        # 20 örnek çıkarım görüntüsü
 ├── sim/
 │   ├── gazebo_harmonic/
@@ -165,16 +162,13 @@ avci_sim/
 | `geometry.py` | 288 | Kamera projeksiyonu + Talon 3D geometrisi |
 | `capture_dataset.py` | 247 | Detection verisi toplama |
 | `capture_runway_negatives.py` | 224 | Pist/zemin hard-negative |
-| `capture_pose_dataset.py` | 193 | Pose verisi toplama |
 | `compare_tracker.py` | 298 | GT'li detection vs detection+tracker deneyi |
 | `tracker.py` | 285 | HybridSORT sarmalayıcı + kilitli-ID politikası (TargetLock) |
 | `hybridsort_video.py` | 205 | HybridSORT'u videoda offline çalıştırma |
-| `pose_detector.py` | 120 | YOLO-pose çıkarımı |
 | `detector.py` | 114 | YOLO detection çıkarımı (+detect_all/best_det) |
 | `capture_negatives.py` | 110 | Pervane hard-negative |
 | `detection_state.py` | 74 | Thread-safe tespit köprüsü |
 | `train_yolo.py` | 55 | Detection eğitimi |
-| `train_yolo_pose.py` | 53 | Pose eğitimi |
 
 ### tests/, tools/, scripts/, sim/
 
@@ -219,7 +213,7 @@ avci_sim/
 | `runs/`, `*.pt` | Eğitim çıktıları |
 | `eeprom.bin`, `mav.parm` | ArduPilot SITL geçici dosyaları |
 
-**İstisna:** eğitilmiş `vision/models/avci_yolo.pt` ve `avci_pose.pt` depoya
+**İstisna:** eğitilmiş `vision/models/avci_yolo.pt` depoya
 **girer** (~5.5 MB) — dataset girmez ama kullanılabilir model girer.
 
 ---

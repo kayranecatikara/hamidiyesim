@@ -5,10 +5,10 @@ Sabit Hz'te DÖNMEZ: kamera 30 Hz, kare geldikçe işler (sabit döngü kare tek
 ve bayat veri üretir). Her yeni kare kaydında:
   bayat kare kapısı → GUIDED kontrolü → guidance_core.process → adaptör → CSV.
 
-── 2026-08-06: POSE MODELİ KALDIRILDI ──
-Döngü artık pose keypoint'lerini değil DETECTION KUTUSUNU tüketiyor
+── 2026-08-06: KEYPOINT DÖNEMİ KAPANDI ──
+Döngü artık keypoint'leri değil DETECTION KUTUSUNU tüketiyor
 (detection_state.wait_new_frame → {'det': ...}). Sökülen keypoint/PnP ölçüm
-sütunları ve pose'lu sürümün tamamı: POSEA_GERI_DONMEK_ISTERSENIZ/README.md
+sütunları ve keypoint'li sürümün tamamı: POSEA_GERI_DONMEK_ISTERSENIZ/README.md
 
 Saat tasarımı (sim/duvar saati birbirine karıştırılmaz):
   dt        = ardışık kare header.stamp farkı (sim saati) — filtre/rampa bunu kullanır
@@ -49,7 +49,7 @@ _CSV_ALANLAR = [
     "u_nisan_x", "u_nisan_y", "u_nisan_z",
     "u_govde_x", "u_govde_y", "u_govde_z", "yaw_hata_deg", "pitch_hata_deg",
     "yatay_bilesen", "azimut_kalite", "yaw_adim_deg",
-    # YATAY (azimut-oranı) LEAD — pose şekil-lead'inin yerini alan terim.
+    # YATAY (azimut-oranı) LEAD — eski şekil-lead'inin yerini alan terim.
     # adapter_copter._yatay_pn üretir; lead_deg sütununun halefi.
     "yatay_lead_deg", "az_rate_dps",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "v_doygun", "yaw_doygun",

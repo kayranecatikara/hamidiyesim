@@ -38,16 +38,14 @@ def _cfg(**kw):
 
 
 class _Kosum:
-    """run_gps_guidance / görsel yasa yerine geçen sahte fazlar.
+    """run_gps_guidance / run_bbox_ibvs yerine geçen sahte fazlar.
 
     Gerçek güdüm döngüleri MAVLink ve kamera ister; buradaki testler yalnız
     supervisor'ın FAZ HAKEMLİĞİNİ sınıyor, o yüzden fazlar taklit edilir.
 
-    ⚠ MERGE (2026-08-09): varsayılan görsel yasa artık run_bbox_ibvs
-    (AVCI_VISUAL=bbox, D0 kuralı). Yalnız run_visual_lead sahtelenince
-    supervisor GERÇEK bbox döngüsünü çağırıyor ve S5 sessizce düşüyordu.
-    İKİ yasa da sahtelenir; sayaç ortak (`vis_cagri`) — testler "görsel faza
-    devredildi mi"yi soruyor, hangi yasayla olduğunu değil.
+    ⚠ 2026-08-10: görsel yasa TEK — run_bbox_ibvs. Eski `lead` kolu arşive
+    alındı (POSEA_GERI_DONMEK_ISTERSENIZ/gudum_anlik_goruntu/), bu yüzden
+    yalnız bbox sahtelenir.
     """
 
     def __init__(s, gorsel_sonuc="kayip"):
@@ -59,10 +57,6 @@ class _Kosum:
         s.gps_cagri += 1
         faz_stop.wait(timeout=2.0)      # izci kırana kadar bekle
 
-    def vis(s, conn, wait_kare, get_plane_truth, stop_event, **kw):
-        s.vis_cagri += 1
-        return s.gorsel_sonuc
-
     def bbox(s, conn, get_iris, wait_kare, stop_event, **kw):
         # run_bbox_ibvs imzası: get_plane_truth YOK (D0 — canlı GPS girmez).
         s.vis_cagri += 1
@@ -71,10 +65,9 @@ class _Kosum:
 
 def _kos(cfg, kosum, det_var=True, d_h=5.0, sure=3.0):
     """run_hybrid'i sahte fazlarla koştur; (faz, son_sebep) döndür."""
-    eski_gps, eski_vis = sv.run_gps_guidance, sv.run_visual_lead
-    eski_bbox = sv.run_bbox_ibvs
+    eski_gps, eski_bbox = sv.run_gps_guidance, sv.run_bbox_ibvs
     eski_dh = sv._ga.status.get("d_h")
-    sv.run_gps_guidance, sv.run_visual_lead = kosum.gps, kosum.vis
+    sv.run_gps_guidance = kosum.gps
     sv.run_bbox_ibvs = kosum.bbox
     sv._ga.status["d_h"] = d_h
     sv._ga.status["durum"] = "KILIT"
@@ -93,8 +86,7 @@ def _kos(cfg, kosum, det_var=True, d_h=5.0, sure=3.0):
     t.join(timeout=sure)
     stop.set()
     t.join(timeout=2.0)
-    sv.run_gps_guidance, sv.run_visual_lead = eski_gps, eski_vis
-    sv.run_bbox_ibvs = eski_bbox
+    sv.run_gps_guidance, sv.run_bbox_ibvs = eski_gps, eski_bbox
     sv._ga.status["d_h"] = eski_dh
     return sv.status.get("faz"), sv.status.get("son_sebep")
 

@@ -23,16 +23,16 @@ hedefe merkezler                 ile terminal hücum
             geçilirse (B5 fly-past)
 ```
 
-**2026-08-06 — POSE MODELİ KALDIRILDI.** Görsel güdüm artık YOLO-pose'un 6
+**2026-08-06 — KEYPOINT DÖNEMİ KAPANDI.** Görsel güdüm artık YOLO-pose'un 6
 keypoint'ini kullanmıyor, yalnız detection kutusunu (`cx, cy, w, h, conf`)
-okuyor. Pose'a ait tüm kod/model/araç/belge ve sökülmeden önceki güdüm hattının
+okuyor. O döneme ait tüm kod/model/araç/belge ve sökülmeden önceki güdüm hattının
 anlık görüntüsü: **[POSEA_GERI_DONMEK_ISTERSENIZ/](POSEA_GERI_DONMEK_ISTERSENIZ/README.md)**
 
 **Vuruş ölçütü:** Gazebo temas sensörü (fiziksel çarpışma). Yakınlık (1.5 m)
 yalnız temas kaynağı yoksa yedek. Bu bilinçli bir seçim — bkz. §4.
 
 **Güncel başarı (2026-08-05, en iyi dönem):** 30 görsel fazda 8 vuruş (%27),
-en yakın menzil medyanı 0.65 m. ⚠ Bu rakam POSE dönemine ait; bbox güdümüyle
+en yakın menzil medyanı 0.65 m. ⚠ Bu rakam eski görsel yasaya ait; bbox güdümüyle
 henüz uçulmadı, yeni taban ilk uçuşlarda ölçülecek.
 
 ---
@@ -194,11 +194,11 @@ Bayat telemetri doğrudan hedef hız kestirimini zehirlediği için bu GPS'i de
 ilgilendiriyor.
 
 **Alınmayanlar:** kararlı daldaki `guidance_core` / `visual_lead` / arayüz
-değişiklikleri **alınmadı** (görsel faz bu dalda baştan yazıldı ve pose
-söküldü). Kararlı dalın GPS yaw'ı hâlâ eski birikimli `cmd_yaw`'dı; bu dalın
+değişiklikleri **alınmadı** (görsel faz bu dalda baştan yazıldı ve keypoint
+zinciri söküldü). Kararlı dalın GPS yaw'ı hâlâ eski birikimli `cmd_yaw`'dı; bu dalın
 demirleme + süreli susma düzeltmesi **korundu**.
 
-### BBOX ÖLÇEĞİ pose ölçeğinden DAHA KARARLI (2026-08-06)
+### BBOX ÖLÇEĞİ, sökülen keypoint ölçeğinden DAHA KARARLI (2026-08-06)
 
 Menzil vekili olarak hangi sinyal daha az saçılıyor (n=1917 `ok` karesi,
 `w·R/fx` = etkin uzunluk, p10-p90 yayılımı):
@@ -207,7 +207,7 @@ Menzil vekili olarak hangi sinyal daha az saçılıyor (n=1917 `ok` karesi,
 |---|---:|---:|
 | **bbox genişliği (w)** | **1.687 m** | **±%45** |
 | bbox hypot(w,h) | 1.936 m | ±%52 |
-| pose ölçeği (sökülen) | 1.343 m | ±%55 |
+| keypoint ölçeği (sökülen) | 1.343 m | ±%55 |
 | bbox sqrt(w·h) | 1.245 m | ±%58 |
 | bbox yüksekliği (h) | 0.904 m | ±%83 |
 
@@ -216,12 +216,12 @@ bandını koruyacak şekilde yeniden ölçeklendi (12.5 px ≈ 22.5 m, 29.3 px �
 
 ### LEAD KAYBOLMADI — kaynağı değişti (2026-08-06)
 
-Pose'un şekil-lead'i (yandanlık × K_LEAD) gitti; yerine `adapter_copter._yatay_pn`
+Sökülen şekil-lead'i (yandanlık × K_LEAD) gitti; yerine `adapter_copter._yatay_pn`
 azimut-oranı lead'i geldi. Aynı 10 183 kare üzerinde yeniden oynatıldı:
 
 | | medyan | ort | p90 |
 |---|---:|---:|---:|
-| şekil-lead'i (pose) | 2.39° | 6.18° | 18.64° |
+| şekil-lead'i (sökülen) | 2.39° | 6.18° | 18.64° |
 | azimut-oranı lead'i | 1.09° | 6.08° | 20.00° |
 
 Ham azimut oranı çok gürültülü (|oran| medyan 15.8 °/s ama p90 187 °/s), o
@@ -261,45 +261,12 @@ peşinden gidiyor ve `WP_ACC_Z` rampası yüzünden zamanında duramayıp üstü
 
 ---
 
-### Pose modeli ASLINDA İYİYDİ (2026-08-05) — TARİHSEL
+### Pose dönemi ölçümleri → arşive taşındı (2026-08-10)
 
-> ⚠ Aşağıdaki iki bölüm **pose dönemine** aittir ve artık canlı sistemi
-> anlatmaz (pose 2026-08-06'da kaldırıldı). Kararın gerekçesi olarak
-> saklanıyor. Araçlar: `POSEA_GERI_DONMEK_ISTERSENIZ/`
-
-Uzun süre "kötü pose modeli" varsayıldı. Ölçüldü — yanlış:
-
-| pose modu, hedef önde, menzil > 3 m | değer |
-|---|---|
-| |yaw sapması| medyanı | **1.04°** |
-| p90 | 4.71° |
-| örneklem | 1885 kare |
-
-3 m'nin altında sapma patlıyor (medyan 83°) ama bu **model hatası değil**:
-hedef kadrajı taşırıyor, nişan vektörü dikeye yaklaşıyor ve azimut
-tanımsızlaşıyor (`guidance_core` bunu `azimut_kalite` ile zaten söndürüyor).
-
-Grafik: `python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/pose_vs_gt_viz.py`
-
-### Algı darboğaz DEĞİL — ve GT modu neden daha kötü (TARİHSEL)
-
-`AVCI_GT_ROT=on` güdümün algı girdisini Gazebo'nun gerçek pozuna çevirir
-(teşhis modu, gerçek donanımda uçurulamaz). Kusursuz algıyla isabet **artmadı**.
-
-Sebebi ölçüldü — güdümün fiilen çalıştığı menzil:
-
-| | medyan | p90 | > 15 m kare oranı |
-|---|---|---|---|
-| **pose modu** | **5.1 m** | 7.4 m | ~%0 |
-| **GT modu** | 17.3 m | 84.0 m | **%42** |
-
-Pose modelinin "uzakta göremiyor" olması bir kusur değil, **doğru faz sınırını
-çizen bir filtre**: yaklaşmayı GPS fazı yapar, görsel faz yalnız son metrelerde
-devreye girer. GT modunda algı hiç kopmadığı için görsel faz 84 m'ye kadar
-devrede kalıyor ve yaklaşmayı da o üstleniyor — ama görsel faz bunun için
-tasarlanmadı (sabit `V_KAPANMA`, istasyon tutmaz, hedef hızına uyum sağlamaz).
-
-Yan kanıt: `kalite` medyanı pose modunda 1.00, GT modunda 0.36.
+"Pose modeli aslında iyiydi" ve "algı darboğaz değil / GT modu neden daha
+kötü" bölümleri **[POSEA_GERI_DONMEK_ISTERSENIZ/README.md](POSEA_GERI_DONMEK_ISTERSENIZ/README.md)**
+içine taşındı. Pose kaldırma kararının gerekçesi orada; bu dosya yalnız CANLI
+sistemi anlatır.
 
 ### Kök neden: dikey bütçe (2026-08-02, üç uçuş, kara kutuyla)
 
@@ -428,7 +395,7 @@ yaradı, biri ölçülebilir zarar verdi, hangisinin ne yaptığı ayırt edilem
 - [x] **Menzil kaynağı** — `_menzil_olc()` bağlandı: zaman hizalı gz önce,
       telemetri yedek. `menzil_kaynak` sütunu. Testler T55/T55b.
 - [x] **Yapılandırma damgası** — `visual_lead` CSV'sinin ilk satırına hangi
-      bayraklarla uçulduğu yazılıyor (GT/POSE/TRACKER/GPS_RANGE/...).
+      bayraklarla uçulduğu yazılıyor (GT/TRACKER/GPS_RANGE/...).
 - [x] **HybridSORT kurulumu** — `boxmot` hiç kurulu değildi, takipçi bugüne dek
       **hiç çalışmadı**; projedeki tüm eski ölçümler takipçisiz. Kuruldu ama
       varsayılan **kapalı** bırakıldı (ölçüm tabanı sessizce değişmesin).
@@ -454,7 +421,7 @@ yaradı, biri ölçülebilir zarar verdi, hangisinin ne yaptığı ayırt edilem
 |---|---|---|
 | `ATC_ANG_YAW_P` 4.5 → 3.0 | `avci_copter.parm` | yaw takip hatası 1.4° → 8.5-11.9° |
 | `supervisor.KILIT_N` 10 → 7 | `supervisor.py` SupCfg | faz/uçuş 3.4 → 8.0, her ölçüt kötüleşti |
-| GT modunda pose kilidini atla | `supervisor.py` `GT_KILIT_BYPASS` | devir 6.6 → 19.6 m, 13/13 faz kayıp |
+| GT modunda görsel kilidi atla | `supervisor.py` `GT_KILIT_BYPASS` | devir 6.6 → 19.6 m, 13/13 faz kayıp |
 | hedef hızına ivme kapısı | TODO A4 | hız kestiriminin oturmasını da engelledi |
 | "araç komutu uygulamıyor" teşhisi | bu belge §4 | kara kutu çürüttü; takip hatası 0.1 m/s |
 | `pkill` köşeli parantez hilesi | `dokumantasyon/17_KOD_*.md` | kendi kabuğunu öldürüyor |
@@ -479,11 +446,11 @@ o an gerçekten sağlam mı"ya bağlı. Kapı sağlamlık üretmiyor.
 | terim | anlamı |
 |---|---|
 | **kara kutu** | ArduPilot'un kendi uçuş kaydı (`~/ardupilot/logs/*.BIN`). Aracın gördüğü attitude, motor çıkışları, kontrolcü hedefleri. Bizim CSV'lerimizden bağımsız — "araç komutu uyguladı mı" sorusunun tek dürüst kaynağı. |
-| **istasyon** | GPS fazının drone'a "şurada dur" dediği hayali nokta; hedefle birlikte hareket eder. Sabit metre DEĞİL sabit AÇI: hedeften `RANGE_SET` uzakta, LOS yükselişi `ISTASYON_ELEV_DEG`. Amacı vurmak değil, kamerayı hedefe oturtmak: alttan bakış (gökyüzü fonu), pose'un çalıştığı menzil bandı, hedefin hızına uyum. |
+| **istasyon** | GPS fazının drone'a "şurada dur" dediği hayali nokta; hedefle birlikte hareket eder. Sabit metre DEĞİL sabit AÇI: hedeften `RANGE_SET` uzakta, LOS yükselişi `ISTASYON_ELEV_DEG`. Amacı vurmak değil, kamerayı hedefe oturtmak: alttan bakış (gökyüzü fonu), tespitin güvenilir çalıştığı menzil bandı, hedefin hızına uyum. |
 | **istasyon aşımı** | Drone'un istasyonun ÜSTÜNE çıkması. Kötü çünkü yukarıdan bakınca hedefin fonu yer olur, gökyüzü silueti kaybolur. Sebebi: görsel faz alttan yaklaştığı için sürekli tırmanma emrediyor; temas kopunca kontrol GPS'e drone hâlâ tırmanırken dönüyor. |
 | **faz** | GPS fazı (uzaktan yaklaşma, `gps_guidance`) ↔ görsel faz (terminal hücum, `visual_lead`). Geçişi `supervisor` yönetir. |
 | **geçiş sayısı** | GPS→görsel kaç kez geçildi. 1 ideal; yüksek sayı görsel temasın kopup kopup kurulduğunu gösterir. |
-| **`ok` oranı** | `visual_lead` her kareye `durum` etiketi yazar. `ok` = pose hedefi temiz gördü, keypoint'ler güvenilir. Diğerleri: `kpt_dusuk`, `tespit_yok`, `kor_dalis`, `bayat`. |
+| **`ok` oranı** | Görsel yasa her kareye `durum` etiketi yazar. `ok` = tespit kutusu temiz ve güvenilir. Diğerleri: `kutu_kucuk`, `tespit_yok`, `kor_dalis`, `bayat`. |
 | **min medyan** | Her görsel fazın en yakın menzili alınır, hepsinin medyanı. "Tipik bir fazda hedefe ne kadar yaklaşıyoruz" — tek kötü faz ortalamayı bozduğu için medyan kullanılır. |
 | **fly-past** | Drone hedefe temas etmeden yanından geçmesi. Sonrasında "hedefe uç" komutu yukarı-geriyi gösterir → kontrolsüz tırmanma. Bkz. TODO B5. |
 | **yaw susturma** | Dönüş komutu verildiği hâlde hata kapanmıyorsa (bayat/hatalı ölçüm), dönmeye devam etmek yalnız aracı çevirir. 15 kare sonra yaw komutu sıfırlanır. |

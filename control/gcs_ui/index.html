@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=61">
 </head>
 <body>
 
@@ -17,14 +17,20 @@
     <div class="hstat"><span class="k">Latency</span><span class="v" id="hLat">--</span></div>
     <div class="hstat"><span class="k">Loss</span><span class="v" id="hLoss">--</span></div>
     <div class="hstat"><span class="k">HB</span><span class="v" id="hHb">--</span></div>
+    <!-- KAMERA SEÇİCİ — 4 görüş açısı. AV (ana ekrandaki görüş) takip ekranını
+         pencereye alır/geri koyar; diğerleri kendi kamera penceresini açar.
+         Daireler JS'te CAMS tanımından üretilir. Üst çubukta duruyor ki takip
+         ekranı pencereye alındığında onunla birlikte kaymasın. -->
+    <div class="camsel">
+      <span class="k">Görüş</span>
+      <div class="camdock" id="camDock" role="group" aria-label="Kamera görüşleri — pencere olarak aç"></div>
+    </div>
     <a class="hlink" href="/panel" target="_blank" title="Uçuş loglarının görsel analizi">Uçuş Logları</a>
   </header>
 
-  <section class="stats">
-    <div class="panel stat lock"><div class="label">Kilit Durumu</div><div class="big" id="sLock">BEKLEMEDE</div><div class="cap" id="sLockCap">görev başlatılmadı</div></div>
-    <div class="panel stat rng"><div class="label">Hedef Mesafe</div><div class="big"><span id="sRng">--</span><span class="u">m</span></div><div class="cap" id="sRngCap">telemetri bekleniyor</div></div>
-    <div class="panel stat term"><div class="label">Terminal Mod</div><div class="big" id="sTerm">HAZIR</div><div class="cap" id="sTermCap">güdüm bekliyor</div></div>
-  </section>
+  <!-- Üstteki üç özet kart (Kilit Durumu / Hedef Mesafe / Terminal Mod)
+       KALDIRILDI (istek). Aynı değerler sağdaki "Telemetri & Algoritma"
+       panelinde (tLock/tTerm/pDist) ve videonun üstündeki rozetlerde duruyor. -->
 
   <div class="main">
     <!-- LEFT -->
@@ -42,23 +48,23 @@
             <div class="grp">
               <span class="label">Uçuş Senaryoları</span>
               <div class="scn" id="scn">
-                <!-- DÜZ: süresiz düz uçuş. Manuel modun yerine geçer — manuel
-                     nötr elevator'la yavaşça ALÇALIYOR ve o koşular geçersiz
-                     çıkıyordu (bkz. ucus_bekci "hedef-irtifa" ihlali). Düz
-                     referans ölçümü artık desen makinesinden. -->
+                <!-- DÜZ: süresiz düz uçuş (önce kısa bekleme dairesi). Manuel
+                     modun yerine geçer — manuel nötr elevator'la yavaşça
+                     ALÇALIYOR ve o koşular geçersiz çıkıyordu (bkz. ucus_bekci
+                     "hedef-irtifa" ihlali). CLAUDE.md §3.3'e göre VARSAYILAN
+                     test senaryosu budur; kaçamak testi de bunun üstüne kurulu. -->
                 <button data-scn="duz" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12 H21" stroke-width="2" stroke-linecap="round"/><path d="M17 8 L21 12 L17 16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Düz Uç</span></button>
                 <button data-scn="square" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" stroke-width="2"/></svg><span>Kare Çiz</span></button>
                 <button data-scn="circle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg><span>Daire Çiz</span></button>
                 <button class="aggr" data-scn="aggressive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M13 3 L6 13 H11 L10 21 L18 10 H12 Z" stroke-width="2" stroke-linejoin="round"/></svg><span>Agresif Uçuş</span></button>
                 <button class="manuel" id="manBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="10" rx="4" stroke-width="2"/><path d="M8 13h-3M6.5 11.5v3M15 12h.01M18 14h.01" stroke-width="2" stroke-linecap="round"/></svg><span id="manLbl">Manuel Mod</span></button>
               </div>
-              <!-- Daire ÇAPI varyantları (gps_kararli_hal merge'ünde geldi).
-                   Yarıçap yatış açısıyla belirlenir (R = v²/g·tanθ); adlar ve
-                   değerler run_plane_scenario.DAIRE_CAPLARI ile aynı. İç daire
-                   nişanını farklı yarıçaplarda sınamak için — TODO §0'daki
-                   IC_ORAN A/B'si bunu gerektiriyor (eskiden yalnız curl'dü). -->
+              <!-- Daire ÇAPI varyantları. Yarıçap yatış açısıyla belirlenir
+                   (R = v²/g·tanθ); adlar ve değerler run_plane_scenario
+                   .DAIRE_CAPLARI ile aynı. Aynı senaryo API'sini kullanırlar,
+                   o yüzden #scn ile birlikte tek grup gibi yönetilirler. -->
               <span class="label">Daire Çapı</span>
-              <div class="cap" id="cap">
+              <div class="capgrp" id="cap">
                 <button data-scn="circle_xl" aria-pressed="false"><span>⌀ 96 m</span></button>
                 <button data-scn="circle_l" aria-pressed="false"><span>⌀ 71 m</span></button>
                 <button data-scn="circle" aria-pressed="false"><span>⌀ 55 m</span></button>
@@ -66,15 +72,15 @@
               </div>
             </div>
 
-            <!-- UÇUŞ KAYDI — kayramin_super_gudumu'ndan taşındı (2026-08-09).
-                 Sunucu tarafı (/api/kayit/*) merge'le zaten gelmişti; yalnız
-                 düğmesi eski arayüzde kalmıştı. Saniyede 1 kare + tam durum
-                 (faz, mesafe, güdüm modu, manuel kumanda konumları) yazar —
-                 "o an ne yapıyordun" bilgisi olmadan video yorumlanamıyor. -->
+            <!-- UÇUŞ KAYDI — sunucu ucu /api/kayit/* (kayramin_super_gudumu).
+                 Saniyede 1 kamera karesi + tam durum satırı (faz, mesafe, güdüm
+                 modu, manuel kumanda konumları) → logs/kayit/ucus_<tarih>/.
+                 Manuel uçuş videosu "o an ne yapıyordun" bilgisi olmadan
+                 yorumlanamıyor. -->
             <div class="grp">
               <span class="label">Uçuş Kaydı</span>
               <div class="scn">
-                <button id="kayitBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg><span id="kayitLbl">Video Kaydı Al</span></button>
+                <button id="kayitBtn" class="kayit" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg><span id="kayitLbl">Video Kaydı Al</span></button>
               </div>
               <span class="hint" id="kayitNot"></span>
             </div>
@@ -121,10 +127,11 @@
 
           <!-- AVCI DRONE -->
           <div class="view" id="viewAvci" hidden>
+            <!-- Güdüm modu: gps = hep GPS · visual = yalnız görsel (temas
+                 kopunca hover'da bekler) · hybrid = supervisor geçişli.
+                 Sunucu varsayılanı hybrid; vurgu HER ZAMAN sunucudan dönen
+                 gerçek modla güncellenir (görev sırasında da değişebilir). -->
             <div class="grp">
-              <!-- Güdüm modu seçimi (5bc5f8d) — Ayşenur arayüzü merge edilirken
-                   kaybolmuştu, geri getirildi. gps=hep GPS, visual=yalnız görsel
-                   (temas kopunca durur), hybrid=supervisor geçişli. -->
               <span class="label">Güdüm Modu</span>
               <div class="mod-grup" role="group" aria-label="Güdüm modu">
                 <button id="mod-gps" class="mod-btn" data-mode="gps">GPS</button>
@@ -134,6 +141,7 @@
             </div>
             <div class="grp">
               <span class="label">Takip Modu — Otonom</span>
+              <div class="avci-faz"><span class="kp-k">Faz</span><span class="kp-faz" id="kpFaz">—</span></div>
               <button class="startbtn" id="startBtn">
                 <svg class="play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>
                 <span id="startLbl">Görevi Başlat</span>
@@ -148,15 +156,26 @@
                    temasın kopup kopup yeniden kurulduğunu gösterir. -->
               <div class="trow"><span class="tk">Geçiş</span><span class="tv muted" id="aGecis">—</span></div>
             </div>
+            <aside class="kilitpanel" id="kilitPanel">
+              <div class="kp-title">KİLİTLENME</div>
+              <div class="kp-row"><span class="kp-k">Marj</span><span class="kp-v" id="kpMarj">--</span></div>
+              <div class="kp-cum">
+                <div class="kp-row"><span class="kp-k">Kümülatif</span><span class="kp-v" id="kpKum">-- / 5.0 s</span></div>
+                <div class="kp-bar"><div class="kp-fill" id="kpKumBar"></div></div>
+              </div>
+              <div class="kp-row"><span class="kp-k">Kesintisiz</span><span class="kp-v" id="kpKes">-- s</span></div>
+              <div class="kp-row"><span class="kp-k">Tespit doğrulandı</span><span class="kp-v" id="kpDogr">—</span></div>
+              <div class="kp-row"><span class="kp-k">Menzil ref (tutucu)</span><span class="kp-v" id="kpRef">-- m</span></div>
+              <div class="kp-note">Sarı AV çerçevesi ve kırmızı kilit dörtgeni videonun içindedir (hedefin kadraj konumu).</div>
+            </aside>
 
-            <!-- GÜDÜM ÖZELLİKLERİ — CANLI AÇ/KAPA (kayramin_super_gudumu 93ea734)
-                 CLAUDE.md §5 kuralı: sisteme eklenen HER davranış anahtarının
-                 panelde düğmesi olacak. Uçuş SIRASINDA açılıp kapanır — sunucu
-                 bbox_ibvs.Cfg sınıf niteliğini değiştirir, güdüm döngüsü bir
-                 sonraki karede yeni değeri okur; sim yeniden kurulmaz.
+            <!-- GÜDÜM ÖZELLİKLERİ — CANLI AÇ/KAPA (CLAUDE.md §5 kuralı)
+                 Uçuş SIRASINDA açılıp kapanır: sunucu bbox_ibvs.Cfg sınıf
+                 niteliğini değiştirir, güdüm döngüsü bir sonraki karede yeni
+                 değeri okur — sim yeniden kurulmaz.
                  Liste sunucudan gelir (/api/gudum_ozellikleri): yeni özellik
                  eklerken yalnız gcs_server._OZELLIKLER'e satır eklenir,
-                 buraya dokunulmaz. -->
+                 buraya ve CSS'e dokunulmaz. -->
             <div class="grp">
               <span class="label">🎛 Güdüm Özellikleri</span>
               <div id="ozellik-panel" class="ozellik-panel">
@@ -171,24 +190,62 @@
     <!-- CENTER FPV -->
     <div class="col" id="centerCol">
       <section class="panel fpvpanel" style="display:flex;flex-direction:column">
-        <div class="phead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
+        <div class="phead" id="fpvHead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="spacer"></span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
         <div class="fpvwrap" id="fpvwrap">
-          <img id="fpvImg" alt="">
-          <canvas id="noiseCv"></canvas>
-          <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
-          <div class="xhair"></div>
-          <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
-          <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
-          <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
-          <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>KUTU</b> <span id="oPose">--</span></div>
-          <div class="lockbadge idle" id="lockBadge">BEKLEMEDE</div>
-          <div class="guidebadge idle" id="guideBadge" title="Aktif takip güdümü — GPS konumu mu, kamera (görsel) mi?">
-            <svg id="guideIcon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
-            <span id="guideTxt">GÜDÜM BEKLEMEDE <span class="sub">MODEL PASİF</span></span>
+          <!-- Kilitlenme paneli buradan SOL SÜTUNA (Avcı Drone sekmesi,
+               Görevi Başlat'ın altına) taşındı. Boşalan pillarbox şeridi
+               kalmasın diye sarmalayıcı 16/9 yerine videonun kendi 4:3
+               oranına çekildi — siyah kenar yok, görüntü daha büyük. -->
+          <!-- SAĞ: 4:3 video sahnesi — object-fit:contain, gerilme YOK -->
+          <div class="fpvstage" id="fpvStage">
+            <img id="fpvImg" alt="">
+            <canvas id="noiseCv"></canvas>
+            <!-- Kilit kutuları TARAYICI katmanında: viewBox 640x480 (kare koordinatı),
+                 img contain ile nasıl ölçekleniyorsa SVG de aynı ölçeklenir → video
+                 hareket/boyutlanınca kutular birlikte hareket eder. -->
+            <svg id="avOverlay" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <rect id="avRect" fill="none" stroke="#ffe000" stroke-width="1.5" visibility="hidden"/>
+              <rect id="lockRect" fill="none" stroke="#ff2d2d" stroke-width="2" visibility="hidden"/>
+            </svg>
+            <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
+            <div class="xhair"></div>
+            <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
+            <!-- KAMERA SEÇİCİ buradan ÜST ÇUBUĞA taşındı: sahnenin içindeyken
+                 takip ekranı pencereye alınınca daireler de pencereyle birlikte
+                 hareket ediyordu. Artık sabit duruyor. -->
+            <div class="ov tr"><b>ALT</b> <span id="oAlt">--</span> m<br><b>SPD</b> <span id="oSpd">--</span> m/s</div>
+            <div class="ov bl"><b>HDG</b> <span id="oHdg">---</span>°<br><b>RNG</b> <span id="oRng">--</span> m</div>
+            <div class="ov br"><b>CONF</b> <span id="oConf">--</span><br><b>KUTU</b> <span id="oKutu">--</span></div>
+            <div class="lockbadge idle" id="lockBadge">BEKLEMEDE</div>
+            <div class="guidebadge idle" id="guideBadge" title="Aktif takip güdümü — GPS konumu mu, kamera (görsel) mi?">
+              <svg id="guideIcon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+              <span id="guideTxt">GÜDÜM BEKLEMEDE <span class="sub">MODEL PASİF</span></span>
+            </div>
+            <div class="manbadge" id="manBadge" hidden>MANUEL — HEDEF İHA UÇURULUYOR</div>
           </div>
-          <div class="manbadge" id="manBadge" hidden>MANUEL — HEDEF İHA UÇURULUYOR</div>
         </div>
+        <!-- Sekiz boyutlandırma tutamacı (dört kenar + dört köşe) — kamera
+             pencerelerindekinin AYNI sınıfları, aynı camDrag kalıbı. YALNIZ
+             pencere modunda görünür/çalışır; grid içindeyken CSS ile gizli ve
+             camDrag izin kapısı kapalıdır. Sağ alt köşedeki .cw-grip görünür
+             tek ipuçtur (kenarlar şeffaftır). -->
+        <div class="cw-rs n"  data-yon="n"></div>
+        <div class="cw-rs s"  data-yon="s"></div>
+        <div class="cw-rs e"  data-yon="e"></div>
+        <div class="cw-rs w"  data-yon="w"></div>
+        <div class="cw-rs ne" data-yon="ne"></div>
+        <div class="cw-rs nw" data-yon="nw"></div>
+        <div class="cw-rs sw" data-yon="sw"></div>
+        <div class="cw-grip cw-rs se" data-yon="se" title="Köşeden boyutlandır"></div>
       </section>
+      <!-- Takip ekranı pencereye alındığında orta sütun boş/çökmüş
+           görünmesin diye kalan kart; geri koyma düğmesini taşır (pencere
+           ekranın kenarına çekilse bile erişilebilir kalsın diye). -->
+      <div class="panel fpvdock" id="fpvDock" hidden>
+        <!-- Geri koyma düğmesi BAŞLIKTA: kartın dibinde dururken orta sütun
+             viewport'tan uzun olduğu için ekranın altında kalıyordu. -->
+        <div class="phead"><span class="ptitle">Takip ekranı pencerede</span><span class="spacer"></span><button class="iconbtn" id="fpvDockBtn" title="Takip ekranını orta sütuna geri koy">⤓ Panele geri koy</button></div>
+      </div>
     </div>
 
     <!-- RIGHT -->
@@ -232,10 +289,16 @@
         </div>
       </section>
 
-      <section class="panel posPanel" id="posPanel" style="display:flex;flex-direction:column">
+      <!-- KONUM İZLEME artık sütunda YER KAPLAMAZ: yalnız üst çubuktaki KNM
+           dairesine basılınca pencere olarak açılır (hidden kalkar), kapanınca
+           yeniden gizlenir. Sağ sütunun yarısını sürekli tutmasına gerek yok.
+           "Yan yana" (⤢) düzeni de kaldırıldı — panel hiç sütuna girmediği
+           için onu orta sütuna taşımanın anlamı kalmamıştı. -->
+      <!-- display satır-içinde DEĞİL, CSS'te: satır-içi stil [hidden]'ın
+           display:none'ını ezip paneli 3 px'lik bir şerit olarak bırakıyordu. -->
+      <section class="panel posPanel" id="posPanel" hidden>
         <div class="phead">
           <span class="ptitle">Konum İzleme</span>
-          <button class="iconbtn" id="posExpand" title="Büyüt" aria-label="Konum ekranını büyüt">⤢</button>
         </div>
         <div class="scenewrap">
           <canvas id="scene"></canvas>
@@ -254,19 +317,26 @@
           </div>
           <div class="draghint">SÜRÜKLE: döndür · SHIFT: kaydır · TEKER: yakınlaştır · ÇİFT TIK: sıfırla</div>
         </div>
+        <!-- Pencere modu tutamakları — FPV panelindekiyle aynı sınıflar, aynı
+             camDrag kalıbı (bkz. pencereKur). Sütundayken CSS ile gizli. -->
+        <div class="cw-rs n"  data-yon="n"></div>
+        <div class="cw-rs s"  data-yon="s"></div>
+        <div class="cw-rs e"  data-yon="e"></div>
+        <div class="cw-rs w"  data-yon="w"></div>
+        <div class="cw-rs ne" data-yon="ne"></div>
+        <div class="cw-rs nw" data-yon="nw"></div>
+        <div class="cw-rs sw" data-yon="sw"></div>
+        <div class="cw-grip cw-rs se" data-yon="se" title="Köşeden boyutlandır"></div>
       </section>
     </div>
   </div>
 
-  <section class="panel">
-    <div class="phead"><span class="ptitle">Görev Kaydı / Olay Zaman Çizelgesi</span></div>
-    <div class="logbody" id="logBody"></div>
-  </section>
+  <!-- GÖREV KAYDI / OLAY ZAMAN ÇİZELGESİ paneli KALDIRILDI (istek). -->
 </div>
 
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=16"></script>
+<script src="script.js?v=61"></script>
 </body>
 </html>

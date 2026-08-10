@@ -37,11 +37,11 @@ runs/
 *.pt
 # Eğitilmiş güncel model repoya girer (5.5MB) — dataset girmez
 !vision/models/avci_yolo.pt
-!vision/models/avci_pose.pt
+!POSEA_GERI_DONMEK_ISTERSENIZ/models/avci_pose.pt
 .claude/*
 !.claude/skills/
 logs/visual_lead_*.csv
 
 # ============ Eğitim çıktıları (ağırlıklar vision/models altında tutulur) ============
-vision/runs_pose/
+POSEA_GERI_DONMEK_ISTERSENIZ/runs_pose/
 vision/runs/

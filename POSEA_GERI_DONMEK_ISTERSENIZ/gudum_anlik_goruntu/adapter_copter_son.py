@@ -81,13 +81,13 @@ class CopterAdapter:
         return True
 
     def _yatay_pn(self, u_dunya, dt, kalite, azimut_kalite=1.0):
-        """AZİMUT-ORANI LEAD — pose şekil-lead'inin yerine (2026-08-06).
+        """AZİMUT-ORANI LEAD — eski şekil-lead'inin yerine (2026-08-06).
 
         Nişan yönünü YATAY düzlemde, LOS azimutunun değişim oranıyla orantılı
         kadar öne döndürür. Yükseliş açısına DOKUNMAZ (dikey kanal ayrı).
         Dönüş: (u_dunya_yeni, lead_rad).
 
-        NEDEN BU SİNYAL: pose kaldırılınca yandanlıktan türeyen lead de gitti.
+        NEDEN BU SİNYAL: keypoint'ler kalkınca yandanlıktan türeyen lead de gitti.
         Hedefin yanlamasına geçişi LOS azimutunu döndürür; o dönüşün oranı
         "hedef ne kadar hızlı yanımızdan geçiyor"un doğrudan ölçüsüdür ve
         keypoint gerektirmez. Saf takip + bu terim = lead pursuit.
@@ -241,7 +241,7 @@ class CopterAdapter:
                 kalite=1.0, terminal=False, azimut_kalite=1.0, menzil=None):
         """Saf hesap (test edilir; göndermez).
         attitude: (roll, pitch, yaw) radyan. dt: kare aralığı (s).
-        kalite: pose kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
+        kalite: tespit kalitesi 0..1 (düşükse PN söner). terminal: menzil eşik altı
         (co-altitude yanlılığı aktif). azimut_kalite: 0..1, nişan dikeye yaklaşınca
         yaw_hata tanımsızlaşır (guidance_core) — yaw adımı bununla sönümlenir.
         menzil: hedefe gerçek mesafe (m) — YAKLAŞMA alt-fazı için; None ise

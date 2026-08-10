@@ -2,15 +2,13 @@
 # Kamera thread'i ile güdüm döngüleri arasında tespit sonuçlarını paylaşan
 # thread-safe köprü (gcs_server yazar; control.guidance okur).
 #
-# ── 2026-08-06: POSE KÖPRÜSÜ → KARE KÖPRÜSÜ ──
-# Eskiden olay güdümlü köprü YOLO-pose çıktısını taşıyordu (set_pose_detection /
-# wait_new_pose) ve güdüm keypoint'lerden lead açısı türetiyordu. Pose modeli
-# kullanımdan kaldırıldı (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/README.md); görsel
-# güdüm artık YALNIZ bbox ile çalışıyor. Köprü de aynı kareyi taşımaya devam
-# ediyor, yalnız yükü pose değil DETECTION sözlüğü:
+# ── KARE KÖPRÜSÜ ──
+# Köprü her KAMERA KARESİNİ taşır; yükü DETECTION sözlüğüdür:
 #     {cx, cy, w, h, conf, bbox, track_id?}
-# Fonksiyon adları bilerek değişti (set_frame_detection / wait_new_frame): eski
-# adlar kalsaydı pose taşıdıkları sanılırdı.
+# Adlar (set_frame_detection / wait_new_frame) bilerek "kare" der — köprünün
+# taşıdığı şeyin ne olduğu adından okunsun diye. Bu depoda tek isim düzlemi
+# budur. Köprünün 2026-08-06 öncesi hâli ve neden değiştiği:
+# POSEA_GERI_DONMEK_ISTERSENIZ/README.md
 import threading
 
 _lock = threading.Lock()

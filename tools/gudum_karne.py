@@ -162,7 +162,7 @@ def _vis_metrik(dosyalar):
             "sonuc": sonuc, "durumlar": dict(durumlar),
         })
         toplam += len(rows)
-        # 2026-08-06: pose kaldırıldı; "kalite" artık kutu ölçeğinden gelen
+        # 2026-08-06: keypoint'ler kalktı; "kalite" artık kutu ölçeğinden gelen
         # algı kalitesi (0..1). Metrik adı da ona göre: kalite oranı.
         kalite_k += sum(1 for r in rows if r.get("kalite"))
         yawlar += [_f(r["yaw_hata_deg"]) for r in rows if _f(r.get("yaw_hata_deg")) is not None]

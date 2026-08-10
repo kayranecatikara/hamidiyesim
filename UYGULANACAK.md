@@ -50,7 +50,12 @@ Videolar `logs/manevra_*.mp4`, ölçüm aracı `manevra.py` + `kayip.py`.
 
 Kopuşların **%100'ünde hedef hâlâ kadrajın İÇİNDE**; kopuştan önceki 5 karede
 güven medyanı 0.39, min 0.35 = `CONF_MIN`. Yani dedektör görüyor, güdüm eşikte
-atıyor. `AVCI_POSE_CONF=0.15 AVCI_IBVS_CONF=0.15` ile:
+atıyor. `AVCI_IBVS_CONF=0.15` ile:
+
+⚠ **Düzeltme (2026-08-10):** ölçüm `AVCI_POSE_CONF=0.15 AVCI_IBVS_CONF=0.15` ile
+koşulmuştu ama **`AVCI_POSE_CONF` kodda YOK** (tarandı) — o değişken hiçbir şey
+yapmadı, işi tek başına `AVCI_IBVS_CONF` gördü. Sonuç geçerli; tekrar ederken
+yalnız `AVCI_IBVS_CONF` yeter. Dedektörün kendi eşiği ayrı: `AVCI_YOLO_CONF`.
 
 | ölçüt | B1/B2 (0.35) | C1/C2 (**0.15**) |
 |---|---|---|
@@ -446,7 +451,7 @@ fuser -k 8000/tcp 2>/dev/null; python3 -m control.gcs_server
 |---|---|
 | **kara kutu** | ArduPilot'un kendi uçuş kaydı (`~/ardupilot/logs/*.BIN`). "Araç komutu uyguladı mı" sorusunun tek dürüst kaynağı. |
 | **istasyon** | GPS fazının "şurada dur" dediği hayali nokta. Sabit metre DEĞİL, sabit AÇI: hedeften `RANGE_SET`(11 m) uzakta, LOS yükselişi `ISTASYON_ELEV_DEG`. 2026-08-02'de bu açı kamera tilt'inden (25°) ayrılıp **15°**'ye indirildi → 10.63 m geride + **2.85 m** altta (eskiden 9.97 m + 4.65 m). Sebep: terminalin kapatacağı dikey mesafe aracın 1 m/s²'lik dikey ivme bütçesine sığmıyordu. Drone hedefi değil bu noktayı takip eder. B5'teki "istasyona dön" = ıskaladıktan sonra kontrollü şekilde bu bekleme noktasına dönüp yeni hücuma hazırlanmak. |
-| **`ok` oranı** | `visual_lead` her kareye `durum` yazar. `ok` = pose temiz, keypoint'ler güvenilir. Diğerleri `kpt_dusuk` / `tespit_yok` / `kor_dalis`. "%51 ok" = karelerin yarısında güdüm sağlam veriyle çalışıyor. |
+| **`ok` oranı** | Görsel yasa her kareye `durum` yazar. `ok` = tespit kutusu temiz ve güvenilir. Diğerleri `kutu_kucuk` / `tespit_yok` / `kor_dalis`. "%51 ok" = karelerin yarısında güdüm sağlam veriyle çalışıyor. |
 | **faz** | GPS fazı (yaklaşma) ↔ görsel faz (terminal hücum). Geçişi `supervisor` yönetir. |
 | **fly-past** | Drone hedefe temas etmeden yanından geçmesi. Sonrasında "hedefe uç" komutu yukarı-geriyi gösterir → kontrolsüz tırmanma. Bkz. B5. |
 

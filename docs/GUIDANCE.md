@@ -132,7 +132,7 @@ Sabit Hz'te DÖNMEZ — kamera karesi (30 Hz) geldikçe işler. Her kabul edilen
    Lead burada ÜRETİLMEZ — çekirdek yalnız "hedef nerede" sorusunu cevaplar.
 2. **Adaptör (`CopterAdapter.compute`):** yönü dünya-NED hız vektörüne çevirir
    (`V_KAPANMA`), iki kanalda lead uygular —
-   **yatay** `_yatay_pn` (LOS azimut oranıyla orantılı öne nişan; pose
+   **yatay** `_yatay_pn` (LOS azimut oranıyla orantılı öne nişan; eski
    şekil-lead'inin halefi) ve **dikey** `_dikey_pn` (yumuşatma + PN lead +
    kadraj tutma + terminal co-altitude). Ardından ivme sınırı ve slew-limitli
    yaw. `SET_ATTITUDE_TARGET` kullanılmaz (multirotorda yanlış araç).
@@ -149,7 +149,7 @@ Sabit Hz'te DÖNMEZ — kamera karesi (30 Hz) geldikçe işler. Her kabul edilen
 
 ### Geçiş mantığı (`supervisor.run_hybrid`)
 Tek görev döngüsü. `izci()` alt-thread'i tespit akışını sayar:
-- **GPS → görsel:** `KILIT_PENCERE` (15) karenin `KILIT_N` (10) tanesinde güvenli tespit (conf ≥ `POSE_CONF_MIN`)
+- **GPS → görsel:** `KILIT_PENCERE` (15) karenin `KILIT_N` (10) tanesinde güvenli tespit (conf ≥ `KILIT_CONF_MIN`)
   **VE** kapı: `d_h < GATE_MENZIL` (20 m) **YA DA** GPS `DROPOUT` (jamming fallback).
 - **görsel → GPS:** temas kaybı (kayan pencere) · kare akışının durması · **hedefin geçilmesi (B5 fly-past)**.
 - **Bitiş:** `run_visual_lead` `"vuruldu"` dönerse görev tamamlanır (`faz=VURULDU`);
@@ -168,7 +168,7 @@ hızlı hedefe yetişilemez. Tespit asıl 10-12 m'de sağlam; kapı 20 m bandı 
 |---|---|---|---|
 | `Cfg` | `guidance_core.py` | **IBVS/görsel** | `BBOX_L_ETKIN_M`, `V_KAPANMA`, `V_YAKLASMA`, `KP_YAW`, `IVME_TAVAN`, `TERMINAL_MENZIL/SURE`, `VURUS_MENZIL`, `PN_LEAD_SURE`, `PN_YATAY_SURE`, `YAW_SUS_N`, `FLYPAST_*` |
 | `Cfg` | `gps_guidance.py:43` | **GPS fazı (kadraj)** | `RANGE_SET`, `CENTER_ELEV_DEG`, `TRACK_MIN_SPD`, `LOOKUP_MIN_ALT`, `KP_H/KD_H`, `KP_Z/VZ_MAX`, `V_MAX/MAX_ACCEL`, `HANDOFF_RANGE`, `POS_EMA/VEL_EMA`, `HOLD_S` |
-| `SupCfg` | `supervisor.py` | **geçiş** | `KILIT_N`, `KILIT_PENCERE`, `KAYIP_M`, `POSE_CONF_MIN`, `GATE_KILIT`, `GATE_MENZIL` |
+| `SupCfg` | `supervisor.py` | **geçiş** | `KILIT_N`, `KILIT_PENCERE`, `KAYIP_M`, `KILIT_CONF_MIN`, `GATE_KILIT`, `GATE_MENZIL` |
 
 > **Not:** İki config sınıfı da `Cfg` adında; `supervisor` içine `LeadCfg` olarak
 > import edilir. İsim çakışması yalnız kozmetik (Python ayırır). Birleştirme/yeniden

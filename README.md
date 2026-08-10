@@ -21,12 +21,13 @@ kontrol, görüntü işleme ve görev arayüzü tek bir web tabanlı Yer Kontrol
 | **Talon** | Hedef İHA | `mini_talon_vtail` | ArduPlane (`-I1`, sysid 2) | 9012 | 14542 | `/talon_cam/image` |
 
 - **iris** GUIDED modda hız + yaw setpoint'leriyle uçar. Hedefi kamerasından
-  **YOLO** ile bulur, **YOLO-pose** ile 6 keypoint'inden yönelimini çıkarır ve
-  **iki fazlı hibrit güdümle** müdahale eder:
-  1. **GPS fazı** — hedefi kamera kadrajının merkezine ve pose modelinin
-     güvenilir çalıştığı menzil bandına (~10-11 m) oturtur.
-  2. **Görsel faz (IBVS lead pursuit)** — menzilden bağımsız öne nişan (lead)
-     ile kesme rotasında kapanır, terminal kör dalışla vurur.
+  **YOLO** ile bulur (tek çıktı: TESPİT KUTUSU) ve **iki fazlı hibrit güdümle**
+  müdahale eder:
+  1. **GPS fazı** — hedefi kamera kadrajının merkezine ve tespitin güvenilir
+     çalıştığı menzil bandına (~8-11 m) oturtur.
+  2. **Görsel faz (bbox IBVS)** — yalnız kutudan; yaw ← yatay piksel,
+     dikey ← düşey piksel, ileri ← kutu boyutu. Terminalde kör hücumla vurur.
+     ⚠ Yarışma kuralı (D0): görsel temas varken GPS güdümü YASAK.
 
   Geçişi `guidance/supervisor.py` yönetir; görsel temas kesilirse GPS'e döner.
 - **Talon** ArduPlane ile Gazebo'da uçar; gcs arayüzündeki senaryo butonları
@@ -178,7 +179,7 @@ mono MissionPlanner.exe    # UDP 14551
 1. `http://localhost:8000` otomatik açılır (YKİ — Taktik Saha Ekranı).
 2. Kamera görünümü: **AVCI DRONE** sekmesi = iris kamerası, **HEDEF İHA** sekmesi = Talon burun kamerası.
 3. **Kare / Daire / Agresif** → Talon kalkıp seçilen rotayı çizer. **Manuel Mod** → RC benzeri kontrol.
-4. iris kamerası hedefi görünce YOLO tespiti + pose keypoint overlay'i çizilir.
+4. iris kamerası hedefi görünce YOLO tespit kutusu overlay'i çizilir.
 5. **Takip Başlat** → hibrit güdüm devreye girer (GPS fazı → görsel faz → vuruş).
    Her uçuş `logs/gps_guidance_*.csv` ve `logs/visual_lead_*.csv` üretir;
    `python3 tools/gps_log_viz.py --last 6 --open` ile tarayıcıda incelenir.
@@ -220,14 +221,13 @@ avci_sim/
 │   │   ├── supervisor.py               # GPS ↔ görsel faz geçişi (run_hybrid)
 │   │   └── common.py                   # Paylaşılan matematik + send_velocity
 │   └── demos/                      # Elle çalıştırılan bağımsız uçuş demoları
-├── vision/                     # YOLO tespit + YOLO-pose keypoint + veri/eğitim
+├── vision/                     # YOLO tespit + veri/eğitim
 │   ├── detector.py                 # detect_talon()  → bbox
-│   ├── pose_detector.py            # detect_pose()   → bbox + 6 keypoint
 │   ├── geometry.py                 # Kamera projeksiyonu (otomatik etiketleme)
-│   ├── detection_state.py          # Thread-safe tespit paylaşımı
+│   ├── detection_state.py          # Thread-safe KARE köprüsü (kamera → güdüm)
 │   ├── capture_*.py                # Otomatik etiketli veri toplayıcılar
 │   ├── train_yolo*.py              # Model eğitimi
-│   └── models/                     # avci_yolo.pt, avci_pose.pt
+│   └── models/                     # avci_yolo.pt
 ├── sim/
 │   ├── gazebo_harmonic/            # World + modeller (iris_cam, mini_talon_vtail)
 │   └── ardupilot_params/           # avci_copter.parm, avci_plane.parm

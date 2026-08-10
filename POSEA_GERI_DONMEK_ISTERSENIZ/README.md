@@ -95,7 +95,7 @@ Bunlar ana ağaçta kaldı; arşivdeki araçlar geri getirildiğinde çalışsı
   `KEYPOINT_NAMES`, `KEYPOINT_FLIP_IDX`, `pose_rpy_cozum`, `rot_gt_goruntu`.
   Bunlar saf geometri; model değil. `pose_rpy_cozum` ve `rot_gt_goruntu` artık
   canlı yolda **hiç çağrılmıyor**.
-- `tools/gudum_rapor.py` → pose sütunlarını hâlâ okuyabiliyor, yani **eski
+- `tools/gudum_rapor.py` (2026-08-10'da buraya taşındı) → pose sütunlarını hâlâ okuyabiliyor, yani **eski
   logları** açabiliyorsunuz. Yeni loglarda o bölümler boş kalır.
 - `docs/COLAB_TRAINING.md` → detection eğitimi (pose'a özgü değil).
 
@@ -118,3 +118,50 @@ Bunlar ana ağaçta kaldı; arşivdeki araçlar geri getirildiğinde çalışsı
 devam ederseniz lead İKİ KEZ binmiş olur (`guidance_core` + `_yatay_pn`).
 Pose'a dönerken `AVCI_IBVS_PN_YATAY_SURE=0` yapın ya da `_yatay_pn` çağrısını
 kaldırın.
+
+---
+
+## DURUM.md'den taşınan ölçümler (2026-08-10)
+
+Aşağıdaki iki bölüm DURUM.md'de "TARİHSEL" etiketiyle duruyordu; canlı sistemi
+anlatmadığı için buraya alındı. Pose kaldırma kararının gerekçesi bunlardır.
+
+### Pose modeli ASLINDA İYİYDİ (2026-08-05) — TARİHSEL
+
+> ⚠ Aşağıdaki iki bölüm **pose dönemine** aittir ve artık canlı sistemi
+> anlatmaz (pose 2026-08-06'da kaldırıldı). Kararın gerekçesi olarak
+> saklanıyor. Araçlar: `POSEA_GERI_DONMEK_ISTERSENIZ/`
+
+Uzun süre "kötü pose modeli" varsayıldı. Ölçüldü — yanlış:
+
+| pose modu, hedef önde, menzil > 3 m | değer |
+|---|---|
+| |yaw sapması| medyanı | **1.04°** |
+| p90 | 4.71° |
+| örneklem | 1885 kare |
+
+3 m'nin altında sapma patlıyor (medyan 83°) ama bu **model hatası değil**:
+hedef kadrajı taşırıyor, nişan vektörü dikeye yaklaşıyor ve azimut
+tanımsızlaşıyor (`guidance_core` bunu `azimut_kalite` ile zaten söndürüyor).
+
+Grafik: `python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/pose_vs_gt_viz.py`
+
+### Algı darboğaz DEĞİL — ve GT modu neden daha kötü (TARİHSEL)
+
+`AVCI_GT_ROT=on` güdümün algı girdisini Gazebo'nun gerçek pozuna çevirir
+(teşhis modu, gerçek donanımda uçurulamaz). Kusursuz algıyla isabet **artmadı**.
+
+Sebebi ölçüldü — güdümün fiilen çalıştığı menzil:
+
+| | medyan | p90 | > 15 m kare oranı |
+|---|---|---|---|
+| **pose modu** | **5.1 m** | 7.4 m | ~%0 |
+| **GT modu** | 17.3 m | 84.0 m | **%42** |
+
+Pose modelinin "uzakta göremiyor" olması bir kusur değil, **doğru faz sınırını
+çizen bir filtre**: yaklaşmayı GPS fazı yapar, görsel faz yalnız son metrelerde
+devreye girer. GT modunda algı hiç kopmadığı için görsel faz 84 m'ye kadar
+devrede kalıyor ve yaklaşmayı da o üstleniyor — ama görsel faz bunun için
+tasarlanmadı (sabit `V_KAPANMA`, istasyon tutmaz, hedef hızına uyum sağlamaz).
+
+Yan kanıt: `kalite` medyanı pose modunda 1.00, GT modunda 0.36.

@@ -91,7 +91,7 @@ görsel hat sadece vel+yaw (strike'ın `_TYPEMASK_VEL_YAW` deseni).
 
 ### Faz 2 — Detection modeli (YOLO + Gazebo oto-etiketleme)
 - `vision/autolabel.py`: drone uçarken her karede **ground-truth** üret →
-  iris kamera pozu (pose + 25° tilt) + intrinsics + hedefin 3B konumu/boyutu
+  iris kamera pozu (konum/yönelim + 25° tilt) + intrinsics + hedefin 3B konumu/boyutu
   (`mini_talon` gövde/kanat) → 8 köşeyi görüntüye projekte et → 2B bbox → YOLO
   formatı (normalize cx,cy,w,h). Hedef pozu **gz-transport `/world/avci/pose/info`**
   (en doğru ground-truth) ya da telemetriden.
@@ -109,7 +109,7 @@ görsel hat sadece vel+yaw (strike'ın `_TYPEMASK_VEL_YAW` deseni).
 
 ### Faz 3 — Görsel güdüm (IBVS lead pursuit v2) — UYGULANDI (2026-07-23)
 Eski bbox-merkezleme IBVS'i (`visual_guidance.py`) ve supervisor iskeleti KALDIRILDI;
-yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
+yerine keypoint'lerden **menzil bağımsız lead pursuit** (ARŞİV — bkz. POSEA_GERI_DONMEK_ISTERSENIZ/):
 - `guidance_core.py` (platformdan bağımsız, Adım 1-8): `d = burun−kuyruk` gövde
   projeksiyonu a, kanat projeksiyonu b → `olcek = sqrt(a² + (0.633·b)²)` (menzil
   sadeleşir) → `yandanlik = a/olcek` → `lead = atan(K_LEAD·guven·kalite·yandanlik_f)`.
@@ -131,7 +131,7 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
   uygulanmadan önce ayrıca incelenecek. ArduCopter'ın SET_ATTITUDE_TARGET gaz
   alanını yorumlayışı sürüme/moda göre değişir — varsayma, SITL'de ölç.
 - `visual_lead.py`: OLAY GÜDÜMLÜ döngü (sabit Hz yok, kare geldikçe;
-  `detection_state.wait_new_pose`). dt = kare header.stamp farkı (duvar saati
+  `detection_state.wait_new_frame`). dt = kare header.stamp farkı (duvar saati
   DEĞİL); bayat kare kapısı (gecikme>0.12s → komut yok); GUIDED kontrolü; her
   kare CSV log (`logs/visual_lead_*.csv`): ölçüm zinciri + komutlar + eps/duzeltme
   + menzil_kestirim (SADECE log, güdüme girmez) + menzil_gercek + pitch_body +
@@ -144,11 +144,11 @@ yerine pose modelinin keypoint'lerinden **menzil bağımsız lead pursuit**:
   `GPS → (görsel kilit) → VISUAL (visual_lead) → (temas kaybı) → GPS ...`
   stop_chase'e kadar döner. (GPS fazı o gün `gps_approach`'tı; bugün
   `gps_guidance` — arayüz sözleşmesi aynı kaldı.)
-- **GPS→görsel:** KILIT_N=10 ardışık pose karesi (conf ≥ 0.5) **VE**
+- **GPS→görsel:** KILIT_N=10 ardışık TESPİT karesi (conf ≥ 0.5) **VE**
   (handoff ≤40 m **VEYA** GPS DROPOUT). Menzil kapısının nedeni: görsel fazın
   kapanma hızı sabit (V_KAPANMA) — uzaktan erken geçilirse hızlı hedefe yetişilemez;
   jam/DROPOUT'ta menzil bilinemez, görsel temas tek başına yeter.
-- **görsel→GPS fallback:** KAYIP_M=20 ardışık pose'suz kare veya kare akışının
+- **görsel→GPS fallback:** KAYIP_M=20 ardışık tespitsiz kare veya kare akışının
   >1 s durması → `run_visual_lead` "kayip" döner, GPS fazı yeniden başlar.
 - `gcs_server`: `start_chase` VARSAYILAN olarak hibriti çalıştırır
   (`AVCI_HYBRID=off` → saf GPS, `AVCI_GPS_LAW=v2` → eski chase). `/api/chase_status`

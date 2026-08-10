@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # scripts/gcs.sh — GCS'i (Terminal B) tek komutla başlatır.
 #
-# 2026-08-06: POSE MODELİ KALDIRILDI. Görsel güdüm artık YALNIZ detection
-# kutusuyla çalışıyor (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/README.md), o yüzden
-# eski A0-A4 adımlarındaki AVCI_POSE değişkeni yok.
+# Görsel güdüm YALNIZ detection kutusuyla çalışır; eski A0-A4 adımlarındaki
+# keypoint değişkenleri yoktur (bkz. POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
 #
 # MODLAR:
 #   bash scripts/gcs.sh bbox   GERÇEK SİSTEM: güdüm YOLO kutusundan (varsayılan)

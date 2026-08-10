@@ -359,6 +359,34 @@
         </camera>
       </sensor>
 
+      <!-- DIŞ GÖRÜŞ (chase) kamerası — GCS'te pencere olarak açılır.
+           Talon'un ARKASINDAN/ÜSTÜNDEN bakar, hedef İHA kendisi kadrajdadır.
+           Burun kamerasından farkı: bu görüntü hiçbir tespite/kilide girmez,
+           ham yayınlanır (yalnız izleme).
+           2.5 m arkada, 0.8 m yukarıda, ~18° aşağı (+0.31 rad) bakar:
+           atan(0.8/2.5)=17.7° → gövde kadraj merkezine yakın oturur.
+           gz-transport topic: talon_chase/image -->
+      <sensor name="chase_camera" type="camera">
+        <gz_frame_id>base_link</gz_frame_id>
+        <pose>-2.5 0 0.8 0 0.31 0</pose>
+        <always_on>1</always_on>
+        <update_rate>15</update_rate>
+        <visualize>0</visualize>
+        <topic>talon_chase/image</topic>
+        <camera>
+          <horizontal_fov>1.4</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>2000</far>
+          </clip>
+        </camera>
+      </sensor>
+
       <!-- A5 — GERÇEK ÇARPIŞMA SENSÖRÜ.
            Vuruş ölçütü artık "1.5 m'ye yaklaştı" değil, fiziksel temas.
            Yakınlık çarpışma değildir: bir koşuda 0.61 / 0.69 / 0.75 / 1.06 /

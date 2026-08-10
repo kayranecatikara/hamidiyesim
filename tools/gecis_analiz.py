@@ -182,7 +182,7 @@ def _csv_ozet(bin_yol, sure):
                         sure=ts[-1] - ts[0] if len(ts) > 1 else 0,
                         giris=men[0], enyakin=min(men),
                         ok=100 * c["ok"] / n,
-                        # kpt_dusuk (pose) → kutu_kucuk (bbox), 2026-08-06
+                        # kpt_dusuk (eski) → kutu_kucuk (bbox), 2026-08-06
                         kpt=100 * c.get("kutu_kucuk", 0) / n,
                         kor=100 * c.get("kor_dalis", 0) / n,
                         vur=bool(c.get("vuruldu"))))

@@ -1,5 +1,14 @@
 # AVCI SİM — Dokümantasyon
 
+> ⚠ **2026-08-10 — BU BÖLÜMLERİN BİR KISMI KEYPOINT DÖNEMİNE AİT.**
+> Görsel güdüm 2026-08-06'da keypoint zincirinden çıktı; aktif yasa artık
+> `control/guidance/bbox_ibvs.py` (yalnız tespit kutusu). Kamera↔güdüm köprüsü
+> KARE köprüsüdür (`wait_new_frame` / `kayit["det"]`). Aşağıda keypoint'lerden,
+> `pose_detector`'dan ya da `process(pose, ...)` imzasından söz eden her yer
+> TARİHSELDİR → [`POSEA_GERI_DONMEK_ISTERSENIZ/`](../POSEA_GERI_DONMEK_ISTERSENIZ/README.md).
+> Canlı davranış için kaynak kodu esastır.
+
+
 > **Depo:** `~/projects/avci_sim` (hamidiyesim) · **Dal:** `main`
 > **Son güncelleme:** 30 Temmuz 2026 · **Kapsam:** temizlik sonrası güncel kod ağacı
 >
@@ -63,9 +72,9 @@ gerçekten uçar.
 
 Güdüm **iki fazlıdır**:
 
-1. **GPS fazı** — hedefi kameranın tam ortasına ve pose modelinin güvenilir
+1. **GPS fazı** — hedefi kameranın tam ortasına ve tespitin güvenilir
    çalıştığı ~10-11 m bandına oturtur. Amacı vuruş değil, **kadraj merkezleme**.
-2. **Görsel faz (IBVS lead pursuit)** — pose keypoint'lerinden çıkarılan
+2. **Görsel faz (bbox IBVS)** — yalnız tespit kutusundan çıkarılan
    yönelimle **menzilden bağımsız** öne nişan alır, kesme rotasında kapanır,
    terminal kör dalışla vurur.
 
@@ -82,7 +91,7 @@ karıştırılırsa (jamming) görsele geçer. Her şey tek bir web arayüzünde
 `supervisor.py` (geçiş) · `common.py` (MAVLink çıkışı)
 
 **Gözler (görü):** `geometry.py` (projeksiyon) → `capture_*.py` (veri) →
-`train_yolo*.py` (eğitim) → `detector.py` + `pose_detector.py` (çıkarım) →
+`train_yolo.py` (eğitim) → `detector.py` (çıkarım) →
 `detection_state.py` (paylaşım)
 
 **Kaslar (kontrol):** `mav_common.py` (MAVLink) → `drone_functions.py` (iris) /
@@ -103,6 +112,6 @@ karıştırılırsa (jamming) görsele geçer. Her şey tek bir web arayüzünde
 | Mimariyi anlamak | [02_MIMARI_VE_VERI_AKISI.md](02_MIMARI_VE_VERI_AKISI.md) |
 | Güdümü anlamak | [12_KOD_guidance.md](12_KOD_guidance.md) — supervisor → gps_guidance → guidance_core |
 | Arayüz / API | [13_KOD_gcs_server.md](13_KOD_gcs_server.md) → [14_KOD_gcs_ui.md](14_KOD_gcs_ui.md) |
-| Görüntü işleme | [15_KOD_vision.md](15_KOD_vision.md) — geometry → pose_detector |
+| Görüntü işleme | [15_KOD_vision.md](15_KOD_vision.md) — geometry → detector |
 | Uçuşu analiz etmek | [17_KOD_scripts_tools_tests.md](17_KOD_scripts_tools_tests.md) — CSV formatları + `gps_log_viz.py` |
 | Kod değiştirmeden önce | `python3 -m tests.test_visual_lead` ve `python3 -m tests.test_gps_guidance` |

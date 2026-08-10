@@ -12,9 +12,12 @@ Grafikler matplotlib ile üretilip base64 olarak gömülür — CDN/internet yok
 tek dosya her yerde açılır.
 
 Kullanım:
-  python3 tools/gudum_rapor.py             # logs/ → /tmp/gudum_rapor.html
-  python3 tools/gudum_rapor.py --ac        # üretip tarayıcıda aç
-  python3 tools/gudum_rapor.py -o rapor.html
+  ⛔ ARŞİV (2026-08-10): bu araç YALNIZ pose dönemi loglarıyla çalışır
+     (pose_yaw_sapma_deg, kpt_pose_px … sütunları 2026-08-06'dan sonra
+     üretilmiyor). tools/ altından buraya taşındı.
+
+  python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/gudum_rapor.py
+  python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/gudum_rapor.py --ac
 """
 import argparse
 import base64
@@ -571,7 +574,7 @@ doğrudan sebebi.<br>
 hız komutu kalıcıdır, göndermeyi bırakmak "dur" demek değildir.<br>
 <b>4.</b> Görsel faza irtifa tabanı (<code>TODO B1</code>).
 </div>
-<p class=alt>Üreten: <code>python3 tools/gudum_rapor.py</code></p>
+<p class=alt>Üreten: <code>python3 POSEA_GERI_DONMEK_ISTERSENIZ/tools/gudum_rapor.py</code></p>
 </div></body></html>"""
 
 

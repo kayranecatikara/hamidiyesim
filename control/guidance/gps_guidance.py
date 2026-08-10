@@ -2,7 +2,7 @@
 gps_guidance.py — GPS güdümü (sıfırdan yeniden inşa, görsel-temas odaklı).
 
 AMAÇ (başarı kriteri): Drone'u öyle konumlandır ki hedef sabit-kanatlı İHA
-kameranın TAM ORTASINDA, pose modelinin güvenilir çalıştığı menzil bandında
+kameranın TAM ORTASINDA, tespitin güvenilir çalıştığı menzil bandında
 (~10-11 m) ve KARARLI görünsün → supervisor görsel faza devretsin. (Vuruş DEĞİL;
 vuruş görsel fazın işi.)
 
@@ -15,7 +15,7 @@ KADEME 1 (bu sürüm): GEOMETRİK kadraj-noktası takibi. Hedefin hız yönünü
 D_BEHIND gerisine + D_BELOW altına (slant RANGE_SET'te +25° yükseliş verecek)
 bir istasyon kur; oraya PD hız + hedef-hızı feedforward ile git (feedforward →
 kilitlenince kararlı hold). Burun daima gerçek hedefe döner (yaw). Drone hedefin
-ALTINDA kalır → gökyüzü arka planı, pose kopmaz.
+ALTINDA kalır → gökyüzü arka planı, tespit kopmaz.
 
 KADEME 2 (2026-08-06): istasyonun LOS yükselişi artık GÖVDE PİTCH'İNDEN
 dinamik türetilir (elev = kamera tilt + pitch) — kamera gövdeye vidalı olduğu
@@ -59,7 +59,7 @@ class Cfg:
     # Eski "11→5 denendi, hiç etki yok" bulgusu bu değişikliğe engel DEĞİL:
     # o ölçüm menzil >16 m'de komut V_MAX'a doygunken alınmıştı; artık 12-15 m
     # bandında lineer bölgedeyiz ve istasyonun yeri birebir menzile yansıyor.
-    # 11'in kökeni pose modelinin tatlı noktasıydı (pose artık devre dışı).
+    # 11'in kökeni eski algı zincirinin tatlı noktasıydı (artık geçerli değil).
     RANGE_SET = _env_f("AVCI_GPS_RANGE", 8.0)    # m; slant menzil setpoint
 
     # İSTASYONUN LOS yükselişi — kamera tilt'inden AYRILDI (2026-08-02).
