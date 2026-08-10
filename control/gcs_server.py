@@ -1535,12 +1535,16 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         _kutu_dt = (stamp - _kutu_onceki_t) if _kutu_onceki_t else 0.0
         _kutu_onceki_t = stamp
         _kbbox = _kutu_yumusatici.yumusat(_kbbox, max(0.0, _kutu_dt))
-        # STRIKE = taahhüt edilmiş dalış: şartname 6.1.3 "ANGAJMAN'da merkez/%5
-        # aranmaz, kriter aktif takip". Yakın mesafede hedef kareyi doldurup merkez
-        # AV'den çıkınca anlık kilit KESİLMESİN → kesintisiz sayaç dalış boyunca
-        # SIFIRLANMAZ (kullanıcı 2026-08-09). Önceki karenin FSM state'i kullanılır
-        # (guncelle, fsm.step'ten önce çağrılır); ilk karede _gorev_fsm henüz None.
-        _angajman = _gorev_fsm is not None and _gorev_fsm.state is State.STRIKE
+        # ANGAJMAN (ENGAGE + STRIKE) = şartname 6.1.3 "ANGAJMAN'da merkez/%5
+        # aranmaz, kriter aktif takip". ENGAGE'de agresif görsel güdüm manevrası
+        # hedefi merkez-AV'den çıkarıp anlık kilidi düşürüyordu → KESİNTİSİZ sayaç
+        # sıfırlanıp ENGAGE→STRIKE (3 sn kesintisiz) geç/güvenilmez tetikleniyordu
+        # (2026-08-10 kullanıcı bulgusu). ENGAGE de angajman olduğundan kilit orada
+        # da AKTİF TAKİPle tutulur (tespit varsa) → kesintisiz birikir, STRIKE'a
+        # temiz geçer. STRIKE'ta zaten tutuluyordu (dalış boyunca sıfırlanmasın).
+        # Önceki karenin FSM state'i (guncelle, fsm.step'ten önce); ilk karede None.
+        _angajman = (_gorev_fsm is not None
+                     and _gorev_fsm.state in (State.ENGAGE, State.STRIKE))
         _kdurum = _kilit_takip.guncelle(_kbbox, stamp, angajman=_angajman)
         set_kilit_durum(_kdurum)
         # ── 8B: kilit isteri (pencere_ok latch) YÜKSELEN KENARINDA bildir ──
