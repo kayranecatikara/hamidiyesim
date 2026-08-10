@@ -8,8 +8,15 @@ sonuç maddenin altına yazılacak. Bir madde bitmeden diğerine geçilmeyecek.
 drone hedefin üstüne çıkıp zemine çakıldı). Hangisinin ne yaptığı ayırt
 edilemedi.
 
-**Kural:** her adımda `python3 -m tests.test_visual_lead` ve
-`python3 -m tests.test_gps_guidance` çalıştırılır.
+**Kural:** her adımda testler çalıştırılır. ⚠ 2026-08-10: aktif görsel yasa
+`bbox_ibvs` olduğu için asgari küme **`test_bbox_ibvs` + `test_supervisor` +
+`test_gps_guidance`**; `test_visual_lead` artık alternatif yasayı sınıyor.
+⚠ **`pytest` bu dosyaların asıl kontrollerini KOŞMAZ** (hepsi `main()` ile
+çalışır) — hepsini birden koşmak için:
+
+```bash
+for t in tests/test_*.py; do echo "── $t"; PYTHONPATH=. python3 "$t" | tail -2; done
+```
 
 ---
 
@@ -283,6 +290,12 @@ istasyon yerinin her milimetresi davranışa yansıyor.
   uçağı ~0.9 m/s tırmandırıyor, uzun koşuda 250 m tavanı aşılıyor. Sayılar
   irtifadan bağımsız çıktı (⌀41: 9.5 @300-388 m vs 10.4 @175-263 m) ama
   KÖK NEDEN backlog'da: senaryo pitch trimi irtifa tutacak şekilde ayarlanmalı.
+  ✅ **ÇÖZÜLDÜ (2026-08-09):** açık çevrim pitch trimi yerine kapalı çevrim
+  irtifa tutucu (`run_plane_scenario._irtifa_pitch`, PD; yük faktörü payı
+  taban, üstüne düzeltme biner, gaza dokunulmaz). `AVCI_SCN_ALT=<m>` ile
+  hedef irtifası zorlanabilir → A/B'nin iki kolu AYNI irtifada uçar. Bu, tek
+  bir senaryo kusuru değil 08-08'deki dört A/B'yi birden geçersiz kılan
+  karıştırıcının kendisiydi (kollar 134-175 m farklı irtifada uçmuştu).
 
 ### E — bbox-IBVS görsel faz İNŞA (2026-08-08, devam ediyor)
 
