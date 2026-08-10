@@ -379,6 +379,42 @@ class Cfg:
     KACIS_KD = _env_f("AVCI_IBVS_KD", 0.0)      # (m/s)/(m/s); 0 = kapalı
     KACIS_MAX = _env_f("AVCI_IBVS_KDMAX", 10.0)  # m/s; terimin tavanı
 
+    # ── Ö5 · ANİ KAÇIŞ MANEVRASI: TESPİT + DÖNÜŞ-FARKINDA HIZ TAVANI ──
+    # (2026-08-10, kullanıcı fikri; fizikle uyumlu hâle getirildi)
+    #
+    # KULLANICI GÖZLEMİ: "hedef manevra yaptığında kadrajda çok hızlı kayıp
+    # uzaklaşıyor, mesafe bir anda açılıyor." Ölçüldü, doğru: yakın geçişten
+    # sonra menzil 21 → 114 m, başka koşuda 17 → 177 m açılıyor.
+    #
+    # ⚠ TESPİT PİKSEL HIZIYLA YAPILMAZ. Kullanıcının ilk önerisi "kutu büyük +
+    # kadrajda hızlı kayıyor"dı; ölçtüm ve ELENDİ: 1.5 m'de hedef HİÇ manevra
+    # yapmasa bile saf geçiş geometrisi ~1666 px/s üretiyor. O ölçütle kurulan
+    # dedektör 75 kare yakaladı ve 75'i de TERMINAL, yani normal çarpma anıydı.
+    # Piksel hızı 1/R ile patlıyor; menzille çarpınca patlama gider:
+    #     v_yanal = |λ̇| · R   [m/s]  — "hedef bize göre kaç m/s yana kayıyor"
+    # ÖLÇÜLDÜ (2540 kare): normal takipte medyan 1.2 m/s (yakında 0.5),
+    # p90 15.7. Hedefin kendi hava hızı 15 m/s; v_yanal o mertebeye çıkıyorsa
+    # hedef bize göre TAM YANDAN geçiyor demektir. 8 m/s eşiği karelerin
+    # %3.2'sini yakalıyor — nadir ve ayrık bir olay.
+    #
+    # ⚠ TEPKİ "DAHA ÇOK ROLL" DEĞİL, "HIZ TAVANI". Dönüş yarıçapı v²/(g·tanθ):
+    #     18 m/s @45° → 33.0 m (31°/s)   |  HEDEF 15 m/s @60° → 13.2 m (65°/s)
+    #     18 m/s @55° → 23.1 m (45°/s)   |  11 m/s @45° → 12.3 m (51°/s)
+    # 18 m/s'de HİÇBİR yatış açısı hedefi yakalamıyor; bağlayıcı değişken HIZ.
+    # Hedefin kertesini tutmak için hız vektörünü λ̇ ile döndürmek gerekir;
+    # elde edilebilir dönüş hızı ω = g·tanθ/v. Buradan:
+    #     v ≤ g·tan(MANEVRA_ACI) / |λ̇|
+    # λ̇=1.0 rad/s (57°/s) → tavan 9.8 m/s. Yani araç yavaşlar VE dönebilir.
+    #
+    # ⚠ Bu, kullanıcının "fren yok" kararının İSTİSNASIDIR ve yalnız tespit
+    # penceresinde geçerlidir; olay bitince tavan kalkar. VMIN altına inmez.
+    # Geri dönüş: AVCI_IBVS_MANEVRA=0 (varsayılan KAPALI — ölçüm karar verecek).
+    MANEVRA = _env_f("AVCI_IBVS_MANEVRA", 0.0) >= 0.5
+    MANEVRA_VYAN = _env_f("AVCI_IBVS_MANEVRA_VYAN", 8.0)   # m/s; |λ̇·R| eşiği
+    MANEVRA_R = _env_f("AVCI_IBVS_MANEVRA_R", 12.0)        # m; bundan yakında
+    MANEVRA_ACI = _env_f("AVCI_IBVS_MANEVRA_ACI", 45.0)    # °; ATC_ANGLE_MAX
+    MANEVRA_VMIN = _env_f("AVCI_IBVS_MANEVRA_VMIN", 6.0)   # m/s; tavanın tabanı
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -392,7 +428,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "manevra", "v_yanal", "hiz_I", "v_los", "kacis_ek", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -501,6 +537,22 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
                       cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
+    # ── Ö5 · ANİ KAÇIŞ: dönüş-farkında hız tavanı (bkz. Cfg.MANEVRA) ──
+    # Terminal DAHİL uygulanır: ölçüm, olayların %100'ünün TERMINAL durumunda
+    # yaşandığını gösterdi (Ö1'in "fark göremedim" sebebi de buydu — o yalnız
+    # SEYİR'de çalışıyor). Hedefi yakalayamadan hızlı gitmenin değeri yok.
+    manevra = False
+    v_yanal = 0.0
+    if cfg.MANEVRA and boyut > 0.0:
+        R = cfg.MENZIL_PX_M / boyut                  # m; kutu boyutundan menzil
+        v_yanal = abs(los_hiz[0]) * R                # m/s; yanal kayma hızı
+        if v_yanal >= cfg.MANEVRA_VYAN and R <= cfg.MANEVRA_R:
+            manevra = True
+            lam = max(abs(los_hiz[0]), 1e-3)
+            a_max = 9.81 * math.tan(math.radians(cfg.MANEVRA_ACI))
+            v_tavan = max(a_max / lam, cfg.MANEVRA_VMIN)
+            v_los = min(v_los, v_tavan)
+
     # SAF TAKİP: tüm hız LOS/burun yönünde
     vx_ned = v_los * math.cos(yaw_cmd)
     vy_ned = v_los * math.sin(yaw_cmd)
@@ -550,6 +602,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "kacis_ek": kacis_ek,
+            "manevra": manevra, "v_yanal": v_yanal,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "eps_yaw_ham": eps_yaw_ham}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -817,6 +870,8 @@ def run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, cfg=Cfg,
                 "iris_pitch_deg": round(math.degrees(ipitch), 1),
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
+                "manevra": int(tani.get("manevra", False)),
+                "v_yanal": round(tani.get("v_yanal", 0.0), 2),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),

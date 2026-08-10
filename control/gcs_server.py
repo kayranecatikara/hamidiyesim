@@ -717,6 +717,12 @@ _OZELLIKLER = {
         "LEAD_ERKEN", "bool", "M3 · Erken lead (terminal kapısı kalkar)",
         "Lead'i yalnız son 6 m yerine kutu olan her karede uygular. "
         "10 uçuşta nötr çıktı.", "AVCI_IBVS_LEAD_ERKEN", True),
+    "o5_manevra": (
+        "MANEVRA", "bool", "Ö5 · Ani kaçış: dönüş-farkında hız tavanı",
+        "Hedef yakında (<12 m) bize göre >8 m/s yana kayarsa hızı "
+        "v ≤ g·tan45°/λ̇ ile kısar — yavaşlayınca dönüş yarıçapı küçülür ve "
+        "araç hedefle birlikte dönebilir. 18 m/s'de hiçbir yatış yetmiyor.",
+        "AVCI_IBVS_MANEVRA", True),
     "o1_kacis_telafisi": (
         "KACIS_KD", "kazanc", "Ö1 · Kaçış telafisi",
         "Hedef uzaklaşırken (ṙ<0) seyir hızını anında artırır. Yalnız "

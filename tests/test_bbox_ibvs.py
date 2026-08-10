@@ -629,6 +629,66 @@ def main():
             f"ṙ=-30 → ek {_buyuk[5]['kacis_ek']:.1f} m/s "
             f"(tavan {_Kacis.KACIS_MAX:.0f}); KD=0 → ek 0.00")
 
+    # ══ B43-B48: Ö5 ANİ KAÇIŞ — TESPİT + DÖNÜŞ-FARKINDA HIZ TAVANI ══
+    # Kullanıcı fikri (2026-08-10); tespit ölçütü ölçümle piksel hızından
+    # yanal hıza (|λ̇·R|) çevrildi — piksel hızı 1/R ile patlıyor ve yakın
+    # geçişte hedef manevra yapmasa bile 1666 px/s üretiyor.
+    class _Man(C):
+        MANEVRA = True
+        MANEVRA_VYAN = 8.0
+        MANEVRA_R = 12.0
+        MANEVRA_ACI = 45.0
+        MANEVRA_VMIN = 6.0
+
+    class _ManKapali(_Man):
+        MANEVRA = False
+
+    # boyut 20 px → R = 160/20 = 8 m (< MANEVRA_R). λ̇ = 1.5 rad/s → v_yan = 12 m/s
+    _argM = (CX, C.CY_NISAN, 20, 20, 0.0, 18.0, 0.05)
+    _man = ib.komut(*_argM, _Man, False, (1.5, 0.0), 0.0, 0.0, None, 0.0)
+    _kap = ib.komut(*_argM, _ManKapali, False, (1.5, 0.0), 0.0, 0.0, None, 0.0)
+
+    kontrol("B43 yakın + hızlı yanal kayma → MANEVRA tespit edilir",
+            _man[5]["manevra"] is True and _kap[5]["manevra"] is False,
+            f"v_yanal {_man[5]['v_yanal']:.1f} m/s (eşik {_Man.MANEVRA_VYAN:.0f}), "
+            f"R=8 m; MANEVRA=0 iken tespit yok")
+
+    _bek = 9.81 * math.tan(math.radians(45.0)) / 1.5      # = 6.54 m/s
+    kontrol("B44 hız tavanı v ≤ g·tan(açı)/λ̇ formülünü uygular",
+            abs(_man[5]["v_los"] - _bek) < 1e-6,
+            f"λ̇=1.5 rad/s → tavan {_bek:.2f} m/s, komut {_man[5]['v_los']:.2f}; "
+            f"kapalıyken {_kap[5]['v_los']:.2f} m/s")
+
+    # UZAK hedef: boyut 8 px → R = 20 m > MANEVRA_R → tetiklenmemeli
+    _uzak = ib.komut(CX, C.CY_NISAN, 8, 8, 0.0, 18.0, 0.05, _Man, False,
+                     (1.5, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B45 UZAK hedefte tetiklenmez (menzil kapısı)",
+            _uzak[5]["manevra"] is False,
+            f"R=20 m > {_Man.MANEVRA_R:.0f} m → tespit yok, "
+            f"v_los {_uzak[5]['v_los']:.1f} m/s serbest")
+
+    # YAKIN ama SAKİN: λ̇ = 0.1 → v_yan = 0.8 m/s → tetiklenmemeli
+    _sakin = ib.komut(*_argM, _Man, False, (0.1, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B46 yakın ama SAKİN takipte tetiklenmez (normal uçuş korunur)",
+            _sakin[5]["manevra"] is False and _sakin[5]["v_yanal"] < 1.0,
+            f"λ̇=0.1 rad/s → v_yanal {_sakin[5]['v_yanal']:.2f} m/s < "
+            f"{_Man.MANEVRA_VYAN:.0f} → tespit yok")
+
+    # VMIN tabanı: λ̇ çok büyükse tavan VMIN'in altına inmemeli
+    _sert = ib.komut(*_argM, _Man, False, (5.0, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B47 tavan MANEVRA_VMIN'in altına İNMEZ (araç durmaz)",
+            abs(_sert[5]["v_los"] - _Man.MANEVRA_VMIN) < 1e-9,
+            f"λ̇=5.0 rad/s → ham tavan {9.81/5.0:.2f} m/s, "
+            f"uygulanan {_sert[5]['v_los']:.2f} = VMIN")
+
+    # Yatış açısı büyürse tavan YÜKSELİR (Ö6 ile birlikte anlamlı)
+    class _Man55(_Man):
+        MANEVRA_ACI = 55.0
+    _m55 = ib.komut(*_argM, _Man55, False, (1.5, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B48 yatış açısı 45→55° olunca tavan YÜKSELİR (Ö6 ile birlikte)",
+            _m55[5]["v_los"] > _man[5]["v_los"] + 1.0,
+            f"45° → {_man[5]['v_los']:.2f} m/s, 55° → {_m55[5]['v_los']:.2f} m/s")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

@@ -106,6 +106,64 @@ aracın sahip olmadığı yanal ivmeyi yaratmıyor.
 **KARAR: nötr → varsayılan KAPALI.** Zarar verdiği için değil; ölçülebilir
 hiçbir şey değiştirmeden %82 doyan bir terim eklediği için.
 
+### Ö5 — ANİ KAÇIŞ: TESPİT + DÖNÜŞ-FARKINDA HIZ TAVANI · SONUÇSUZ (2026-08-10)
+
+Kullanıcı fikri: "hedef manevra yapınca kadrajda hızla kayıp uzaklaşıyor;
+drone bunu tespit edip normalden farklı tepki versin — hedefin yöneldiği yöne
+roll ile birlikte dönsün."
+
+**Fikrin iki noktası ölçümle düzeltildi:**
+
+1. **Tespit piksel hızıyla yapılamaz.** 1.5 m'de hedef HİÇ manevra yapmasa
+   bile saf geçiş geometrisi ~1666 px/s üretir; o ölçütle kurulan dedektör 75
+   kare yakaladı ve **75'i de TERMINAL** (normal çarpma anı) çıktı. Menzille
+   çarpınca 1/R patlaması gider: `v_yanal = |λ̇|·R` [m/s]. Ölçüldü (2540 kare):
+   normal takipte medyan **1.2 m/s** (yakında 0.5), p90 15.7. 8 m/s eşiği
+   karelerin %3.2'sini yakalıyor.
+2. **Tepki "daha çok roll" olamaz.** Yarıçap = v²/(g·tanθ):
+
+   | | hız | yatış | yarıçap | dönüş hızı |
+   |---|---|---|---|---|
+   | avcı | 18 m/s | 45° | 33.0 m | 31 °/s |
+   | avcı | 18 m/s | 55° | 23.1 m | 45 °/s |
+   | **hedef** | 15 m/s | 60° | **13.2 m** | **65 °/s** |
+   | avcı | 11 m/s | 45° | 12.3 m | 51 °/s |
+
+   18 m/s'de hiçbir yatış hedefi yakalamıyor; bağlayıcı değişken **HIZ**.
+   Uygulanan: `v ≤ g·tan(MANEVRA_ACI)/|λ̇|` (λ̇=1 rad/s → tavan 9.8 m/s).
+   Bu, "fren yok" kararının **tespit penceresiyle sınırlı** istisnasıdır.
+
+**Kod:** `bbox_ibvs.Cfg.MANEVRA` (varsayılan KAPALI) + panelde 🎛 düğmesi +
+CSV'ye `manevra`/`v_yanal` + testler B43-B48.
+
+**2×2 kampanya (4 uçuş, hepsi taze restart, kollar panelden doğrulandı):**
+
+| kol | Ö5 | ANGLE_MAX | tetik | en yakın | imha |
+|---|---|---|---|---|---|
+| A2 taban | kapalı | 45° | 24.8 m | 0.20 m | ✓ |
+| B | kapalı | **55°** | 24.5 m | 0.19 m | ✓ |
+| C | **açık** | 45° | 22.1 m | **0.13 m** | ✓ |
+| D | **açık** | **55°** | 23.6 m | 0.26 m | ✓ |
+
+**HÜKÜM: SONUÇSUZ — varsayılan KAPALI kalıyor.** Dördü de vurdu, en yakın
+menziller 0.13-0.26 m bandında (gürültü içinde), kol farkı ölçülemedi.
+
+⚠ **SEBEP — TEST AYIRT ETMİYOR (CLAUDE.md §3.1):** `kacamak_testi`'nin
+`bekle_hedef_hazir()` fonksiyonu hedefi **tırmanış geçişinde** yakalıyor
+(22 m/s okuyor; kararlı seyir **15.2 m/s**). Chase hedef yavaşken başlıyor,
+kaçamak t≈19 s'de tetikleniyor ve kesişim her kolda kolaylaşıyor.
+Hedefin oturması beklenen TEK koşuda (drone 194 m geriden, kapanma 2.8 m/s,
+tetik t=79.6 s) **taban kolu ıskaladı** (en yakın 1.25 m, imha yok).
+Ayırt edici geometri odur.
+
+**Özellik mekanik olarak çalışıyor:** C kolunda 8, D kolunda 10 karede
+tetiklendi, `v_yanal` 21.0-22.7 m/s'ye çıktı — dedektör tasarlandığı gibi ve
+nadir çalışıyor. Ama müdahale ~0.5 s sürdüğü için sonuca yansımadı.
+
+**SIRADAKİ:** önce testi düzelt (hedef kararlı seyre oturana kadar bekle),
+sonra kol başına 3 koşuyla tekrarla. Düzeltilmemiş testle alınacak sonuç
+kabul edilemez.
+
 ### M5 — KAÇAMAK TESTİYLE ÖLÇÜLEN ASIL DARBOĞAZ: manevra sonrası HIZ ÇÖKÜŞÜ
 
 Kaçamak testi mimarisiyle (bkz. CLAUDE.md §3.3) 16 uçuş. Kullanıcının kendi
