@@ -90,17 +90,49 @@ def rc(a, e, t):
           {"aileron": a, "elevator": e, "throttle": t})
 
 
-def bekle_hedef_hazir(sn=140):
+def bekle_hedef_hazir(sn=240, oturma_s=12.0, hiz_bant=0.8, irt_bant=3.0):
+    """Hedef KARARLI SEYRE oturana kadar bekler.
+
+    ⚠ 2026-08-10 DÜZELTMESİ — ESKİ HÂLİ TÜM A/B'LERİ GEÇERSİZ KILIYORDU.
+    Eski ölçüt "hız > 12 m/s ve irtifa 20-300 m" idi ve hedefi TIRMANIŞ
+    GEÇİŞİNDE yakalıyordu: kalkışta hız 22 m/s'ye fırlıyor, sonra kararlı
+    seyir 15.2 m/s'ye oturuyor. Chase o yüzden hedef henüz oturmamışken
+    başlıyordu; kaçamak t≈19 s'de tetikleniyor ve kesişim HER KOLDA
+    kolaylaşıyordu. Ölçüldü (Ö5 2×2 kampanyası, 4 uçuş): dört kol da vurdu,
+    en yakın menziller 0.13-0.26 m — kol farkı ölçülemedi, kampanya çöp oldu.
+    Buna karşılık hedefin oturması BEKLENEN tek koşuda taban kolu ıskaladı
+    (194 m geriden, kapanma 2.8 m/s, tetik t=79.6 s, en yakın 1.25 m).
+
+    Yeni ölçüt: hız VE irtifa `oturma_s` boyunca dar bir bantta KALMALI.
+    Böylece her koşu aynı geometriden başlar (CLAUDE.md §3.3'ün amacı budur).
+    """
     t0 = time.time()
+    pencere = []                       # (t, hiz, irtifa) — son oturma_s saniye
     while time.time() - t0 < sn:
         _, _, p = durum()
+        simdi = time.time()
         hiz = p.get("speed") or 0.0
         irt = -(p.get("z") or 0.0)
-        if hiz > 12.0 and 20 < irt < 300:
-            print(f"  hedef hazır: {hiz:.1f} m/s, {irt:.0f} m")
-            return True
-        time.sleep(2.0)
-    print("  ⚠ hedef hazır olmadı")
+        if hiz > 6.0 and 20 < irt < 300:
+            pencere.append((simdi, hiz, irt))
+        else:
+            pencere.clear()            # bant dışı → oturma sayacı sıfırlanır
+        # ⚠ Pencere oturma_s'DEN GENİŞ tutulur; yoksa kırpma sonrası
+        # "span >= oturma_s" koşulu matematiksel olarak sağlanamaz (off-by-one).
+        pencere[:] = [x for x in pencere if simdi - x[0] <= oturma_s * 2.0]
+        if pencere and simdi - pencere[0][0] >= oturma_s:
+            son = [x for x in pencere if simdi - x[0] <= oturma_s]
+            hizlar = [x[1] for x in son]
+            irtler = [x[2] for x in son]
+            if (max(hizlar) - min(hizlar) <= hiz_bant
+                    and max(irtler) - min(irtler) <= irt_bant):
+                print(f"  hedef KARARLI SEYİRDE: {sum(hizlar)/len(hizlar):.1f} m/s "
+                      f"(bant {max(hizlar)-min(hizlar):.2f}), "
+                      f"{sum(irtler)/len(irtler):.0f} m "
+                      f"(bant {max(irtler)-min(irtler):.1f}) — {simdi-t0:.0f} s'de oturdu")
+                return True
+        time.sleep(1.0)
+    print(f"  ⚠ hedef {sn:.0f} s'de kararlı seyre OTURMADI — koşu GEÇERSİZ")
     return False
 
 
