@@ -94,7 +94,93 @@ aracın sahip olmadığı yanal ivmeyi yaratmıyor.
 **KARAR: nötr → varsayılan KAPALI.** Zarar verdiği için değil; ölçülebilir
 hiçbir şey değiştirmeden %82 doyan bir terim eklediği için.
 
-### ⚠ M3'ün ortaya çıkardığı ASIL DARBOĞAZ — buluşma GEOMETRİSİ
+### M5 — KAÇAMAK TESTİYLE ÖLÇÜLEN ASIL DARBOĞAZ: manevra sonrası HIZ ÇÖKÜŞÜ
+
+Kaçamak testi mimarisiyle (bkz. CLAUDE.md §3.3) 16 uçuş. Kullanıcının kendi
+uçuşu (`logs/kayit/ucus_20260810_103525`) da aynısını gösteriyor.
+
+**İSTİSNASIZ HER KOŞUDA**, kaçamaktan sonraki 15 s içinde:
+
+    drone hızı  7.7-13.9 m/s'ye düşüyor      hedef 15.4-16.3 m/s
+    açılan mesafe 48-147 m
+    ⇒ hedeften YAVAŞKEN mesafe matematiksel olarak kapanmaz
+
+Vuruş ancak hedef DÜZ uçmaya dönünce oluyor. Kullanıcının tarifi birebir:
+"manevra sırasında mesafe kapatılamıyor, hedef çok uzağa gidiyor."
+
+**KÖK NEDEN — hız yasası saf bir MENZİL düzenleyicisi, hız farkını hiç
+görmüyor:**
+
+    hata  = BOYUT_REF − boyut = 25 − boyut        K_I = 0.04 (m/s)/(px·s)
+    hiz_I = clamp(hiz_I + K_I·hata·dt, 0, 24)
+    v_los = hiz_I + K_FWD·hata                    (IBVS/seyir durumunda)
+
+Yakın geçişte kutu 88-102 px'e çıkıyor → hata = −63…−77 → integral
+**saniyede 3.1 m/s düşüyor**. Normal hata ≈ +15'te ise **saniyede 0.6 m/s**
+toparlanıyor — **5:1 asimetri**. Kullanıcının uçuş logunda birebir:
+hiz_I 15.1 → 12.0 (2 s) → geri çıkması ~5 s.
+Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
+
+**ÖNERİLEN SIRA (her biri ayrı test, tek değişken):**
+
+1. **Ö1 · Kapanma hızı geri beslemesi.** ṙ zaten hesaplanıyor (KAPANMA,
+   dikey kanal için). Hıza da ekle: `v_los = hiz_I + K_FWD·hata − K_D·ṙ`.
+   Hedef kaçmaya başladığı ANDA hız artar; integralin 5 saniyesini beklemez.
+2. **Ö2 · İntegral tabanı = hedefin seyir hızı.** `I_MIN=0` şu an; görsel
+   temas varken komut hedefin hızının altına düşmemeli. Taşıyıcı (`ff_hiz`)
+   yalnız başlangıç değerini veriyor, tabanı tutmuyor.
+3. **Ö3 · Asimetrik integral** — hızlanma yönü yavaşlama yönünden hızlı olsun.
+4. **Ö4 · T1b dikey roll telafisi** — ölçülen 33° işaret hatası (aşağıda).
+5. **Ö5 · Yatış-farkında hız bütçesi** — komut 18 m/s, yatıktayken ulaşılan
+   10.8-14.3 m/s.
+
+### Ö1 — KAÇIŞ TELAFİSİ · 8 UÇUŞ · ÖLÇÜT ÇELİŞKİSİ → KULLANICIYA
+
+`v_los = hiz_I + K_FWD·hata + KACIS_KD·max(0, −ṙ)` — yalnız SEYİR fazında,
+yalnız hızlandırma yönünde. `AVCI_IBVS_KD=0` varsayılan (kapalı).
+Mekanizma doğrulandı: karelerin %34'ünde terim aktif, 10 m/s tavanına dayandı.
+
+4'e 4 dönüşümlü (`yatay`, `capraz`), tetik 25 m:
+
+| ölçüt | KONTROL n=4 | Ö1 n=4 | kazanan |
+|---|---|---|---|
+| **maks açılan mesafe** (birincil) | **107.7 m** | 116.9 m | kontrol |
+| **drone min hız** (birincil) | **12.8 m/s** | 11.2 m/s | kontrol |
+| en yakın menzil medyanı | 0.68 m | **0.51 m** | Ö1 |
+| isabet | 2/4 | **3/4** | Ö1 |
+| ≤1 m'ye gelen koşu | 3/4 | **4/4** | Ö1 |
+
+**Önceden ilan edilen kural Ö1'i ELER** (iki birinciliyi de kaybetti).
+**Ama tüm ikincil ölçütler ve VİDEO Ö1 lehine.**
+
+Video (en yakın geçiş karesi): KONTROL koşusunda hedef kadrajda YOK — altta
+`ID:7 tahmin(3)`, yani izleyici görmüyor, tahmin ediyor; drone hedefe KÖR
+gidiyor. Ö1 koşusunda hedef kadrajın ortasında, kutu kilitli (conf 0.93).
+
+⚠ **İTİRAF: birincil ölçütü yanlış seçmişim.** "Maks açılan mesafe" dönüş
+manevrasındaki savrulmayı ölçüyor, kesişimin kalitesini değil. Ö1 daha sert
+atak yapıp daha çok savruluyor ama daha iyi kesişim üretiyor. Sonuca bakıp
+ölçüt değiştirmek CLAUDE.md §4'e aykırı olduğu için kararı TEK BAŞIMA
+DEĞİŞTİRMİYORUM — kullanıcıya götürüyorum.
+
+Yan bulgu (Ö5'i destekler): Ö1 daha yüksek hız KOMUT ediyor ama ULAŞILAN
+min hız daha düşük (11.2 < 12.8). Komut arttıkça araç daha çok yatıyor ve
+ileri hız düşüyor — yatış-farkında hız bütçesi gerçek bir kısıt.
+
+### M4 — M3 yeniden testi (kullanıcı itirazı üzerine) → HÂLÂ AYIRT EDİLEMİYOR
+
+Kaçamak testiyle 10 uçuş (`yatay` ve `capraz`, dönüşümlü):
+
+| | n | isabet | en yakın medyan | ≤1.5 m |
+|---|---|---|---|---|
+| M3 KAPALI | 6 | 4/6 | 1.24 m | 4/6 |
+| M3 AÇIK | 4 | 2/4 | 0.93 m | 3/4 |
+
+İlk 4 uçuşta "AÇIK 2/2, KAPALI 0/2" çıkmıştı — n arttıkça eridi. M3 zarar
+VERMİYOR; en yakın menzil medyanında hafif önde. Varsayılan kapalı kalıyor,
+karar kullanıcıda. Değişkenliğin kaynağı M3 değil, yukarıdaki hız çöküşü.
+
+### ⚠ Daire senaryosunda görülen ayrı darboğaz — buluşma GEOMETRİSİ
 
 Nişan yasası değil, karşılaşma geometrisi. Ölçüldü:
 

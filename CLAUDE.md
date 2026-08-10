@@ -153,7 +153,36 @@ kaçamaklı sonuç yorumlanamaz.
 
 ---
 
-# 5 · YAPAY ZEKÂNIN ÇALIŞMA BİÇİMİ
+# 5 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
+
+**Sisteme eklenen her davranış anahtarının panelde bir aç/kapa düğmesi olur.**
+Kullanıcı kuralı (2026-08-10): "her defasında tüm sistemi baştan farklı
+ayarlarla çalıştırmak" kabul edilemez — hem zahmetli, hem de farkı anlık
+gözlemeyi imkânsız kılıyor.
+
+**Nasıl çalışıyor:** `bbox_ibvs.Cfg` bir SINIF ve güdüm döngüsü her karede
+`cfg.<ALAN>` okuyor. Sunucu sınıf niteliğini değiştirince bir sonraki kareden
+itibaren geçerli olur — **uçuş sırasında, yeniden başlatmadan.**
+
+**Yeni özellik eklerken yapılacaklar (atlanmaz):**
+
+1. `Cfg`'ye alanı ve `AVCI_*` env varsayılanını ekle (kill-switch).
+2. `control/gcs_server.py` içindeki **`_OZELLIKLER`** sözlüğüne bir satır ekle:
+   `"ad": ("CFG_ALANI", "bool"|"kazanc", "Etiket", "Açıklama", "AVCI_*", açık_değeri)`
+3. Başka hiçbir şey gerekmez — panel listeyi `/api/gudum_ozellikleri`'nden
+   çeker, arayüz kendiliğinden büyür (HTML/CSS/JS'e dokunma).
+4. Raporda kullanıcıya "panelden şu düğmeyi açıp kapatarak farkı gör" de.
+
+**Sonuç:** çalıştırma komutları ARTIK DEĞİŞMİYOR. Kol seçimi env ile değil,
+panelden yapılır. Env anahtarları yine duruyor (otomatik kampanyalar ve
+başlangıç varsayılanı için), ama insan testinde gerekmez.
+
+⚠ Otomatik A/B kampanyalarında hâlâ env + tam restart kullan: koşu boyunca
+anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
+
+---
+
+# 6 · YAPAY ZEKÂNIN ÇALIŞMA BİÇİMİ
 
 - **ARKA PLANDA GİZLİ SHELL YOK.** Uçuşlar ve analizler sohbette, doğrudan
   çalıştırılır ki kullanıcı ne olup bittiğini görsün. Uzun süren bir işi arka
@@ -164,7 +193,7 @@ kaçamaklı sonuç yorumlanamaz.
 
 ---
 
-# 6 · DEPO KURALLARI
+# 7 · DEPO KURALLARI
 
 - **Kafana göre push YOK.** Commit için sor, push için AYRICA sor.
 - Merge ile gelen davranış değişikliklerini işaretle; uçuş-kritik yolda
@@ -174,7 +203,7 @@ kaçamaklı sonuç yorumlanamaz.
 
 ---
 
-# 7 · SİM ÇALIŞTIRMA TUZAKLARI (hepsi yaşandı)
+# 8 · SİM ÇALIŞTIRMA TUZAKLARI (hepsi yaşandı)
 
 - `pkill -f` **kendi kabuğunu öldürür** (exit 144). Deseni köşeli parantezle
   kır (`gz [s]im`) ya da komutu ayrı script dosyasına al.
@@ -194,7 +223,7 @@ kaçamaklı sonuç yorumlanamaz.
 
 ---
 
-# 8 · YARIŞMA KISITI (üstün kural)
+# 9 · YARIŞMA KISITI (üstün kural)
 
 Görsel temas varken **GPS güdümü yasak** — yalnız bbox. Temas kesilince GPS
 serbest. Görsel döngü hedefe dair veriyi devirde bir kez SAYI olarak alır;

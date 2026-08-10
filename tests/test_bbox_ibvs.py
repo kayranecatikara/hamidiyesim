@@ -580,6 +580,55 @@ def main():
             "LEAD_ERKEN=False → terminal dışında lead 0, terminalde "
             f"{math.degrees(_eski_t[5]['lead_az']):.1f}° (eski yol aynen)")
 
+    print("=" * 60)
+    # ── Ö1: KAÇIŞ TELAFİSİ ──
+    # 10 kaçamak koşusunun İSTİSNASIZ hepsinde, kaçamaktan sonraki 15 s'de
+    # drone 7.7-13.9 m/s'ye düşüyor (hedef 15.4-16.3) ve 48-147 m açılıyor.
+    # Hız yasası saf menzil düzenleyicisi; "hedef uzaklaşıyor mu" girdisi yok.
+    class _Kacis(ib.Cfg):
+        KACIS_KD = 1.0
+
+    _argK = (CX, C.CY_NISAN, 12, 12, 0.0, 8.0, 0.05)   # boyut 12 → uzak, seyir
+    # ṙ<0 = hedef UZAKLAŞIYOR (kaçamak sonrası hâli)
+    _kac = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
+    _yok = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
+    kontrol("B38 hedef uzaklaşırken (ṙ<0) kaçış telafisi hızı ARTIRIR",
+            _kac[5]["v_los"] > _yok[5]["v_los"] + 3.0
+            and abs(_kac[5]["kacis_ek"] - 6.0) < 1e-6,
+            f"ṙ=-6 m/s: telafisiz {_yok[5]['v_los']:.1f} → telafili "
+            f"{_kac[5]['v_los']:.1f} m/s (ek {_kac[5]['kacis_ek']:.1f})")
+
+    # B39: YAKLAŞIRKEN terim SIFIR — fren yok (kullanıcı kararı: geri çekilme yok)
+    _yak_k = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, +6.0, 0.0)
+    _yak_y = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, +6.0, 0.0)
+    kontrol("B39 yaklaşırken (ṙ>0) kaçış telafisi ASLA yavaşlatmaz",
+            abs(_yak_k[5]["kacis_ek"]) < 1e-12
+            and abs(_yak_k[5]["v_los"] - _yak_y[5]["v_los"]) < 1e-12,
+            f"ṙ=+6 m/s: ek {_yak_k[5]['kacis_ek']:.2f}, v_los telafili "
+            f"{_yak_k[5]['v_los']:.2f} = telafisiz {_yak_y[5]['v_los']:.2f} m/s")
+
+    # B40: TERMİNAL hücum yasasına DOKUNMAZ (tek değişken)
+    _t_k = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 8.0, 0.05, _Kacis, True,
+                    (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
+    kontrol("B40 kaçış telafisi TERMİNALE dokunmaz (v = V_TERMINAL)",
+            abs(_t_k[5]["v_los"] - C.V_TERMINAL) < 1e-9
+            and abs(_t_k[5]["kacis_ek"]) < 1e-12,
+            f"terminalde ṙ=-6 olsa bile v_los {_t_k[5]['v_los']:.1f} = "
+            f"V_TERMINAL {C.V_TERMINAL:.1f} m/s")
+
+    # B41: DİKEY kanala dokunmaz
+    kontrol("B41 kaçış telafisi dikey komutu DEĞİŞTİRMEZ",
+            abs(_kac[2] - _yok[2]) < 1e-12,
+            f"vz telafili {_kac[2]:+.4f} = telafisiz {_yok[2]:+.4f} m/s")
+
+    # B42: tavan bağlar + kapatılabilir
+    _buyuk = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, -30.0, 0.0)
+    kontrol("B42 terim KACIS_MAX ile sınırlı ve AVCI_IBVS_KD=0 ile kapanır",
+            abs(_buyuk[5]["kacis_ek"] - _Kacis.KACIS_MAX) < 1e-9
+            and abs(_yok[5]["kacis_ek"]) < 1e-12,
+            f"ṙ=-30 → ek {_buyuk[5]['kacis_ek']:.1f} m/s "
+            f"(tavan {_Kacis.KACIS_MAX:.0f}); KD=0 → ek 0.00")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

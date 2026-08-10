@@ -348,6 +348,37 @@ class Cfg:
     # AVCI_IBVS_ROLL=0 → eski (telafisiz) yol aynen geri gelir.
     ROLL_TELAFI = _env_f("AVCI_IBVS_ROLL", 1.0) >= 0.5
 
+    # ══ Ö1 · KAÇIŞ TELAFİSİ — hız yasasına kapanma hızı geri beslemesi ══
+    # KULLANICI GÖZLEMİ (2026-08-10, kendi uçuşu + 16 kaçamak testi):
+    # "hedef manevra yaptığı sırada mesafe kapatılamıyor, hedef çok uzağa
+    # gidiyor; ne zaman düz gitmeye başlarsa o zaman vuruluyor."
+    #
+    # ÖLÇÜLDÜ — 10 kaçamak koşusunun İSTİSNASIZ HEPSİNDE, kaçamaktan sonraki
+    # 15 s içinde:
+    #     drone hızı  7.7-13.9 m/s'ye düşüyor   (hedef 15.4-16.3 m/s)
+    #     açılan mesafe 48-147 m
+    # Hedeften YAVAŞKEN mesafe matematiksel olarak kapanmaz.
+    #
+    # KÖK NEDEN: hız yasası saf bir MENZİL düzenleyicisi — "hedef şu an benden
+    # uzaklaşıyor mu" girdisi YOK.
+    #     hata  = BOYUT_REF − boyut ;  hiz_I += K_I·hata·dt ;  v = hiz_I+K_FWD·hata
+    # Yakın geçişte kutu 88-102 px olunca hata = −63…−77 → integral saniyede
+    # 3.1 m/s DÜŞÜYOR; normal hata ≈ +15'te ise saniyede 0.6 m/s toparlanıyor.
+    # 5:1 asimetri = kullanıcının gördüğü uzun toparlanma. (Kullanıcının uçuş
+    # logunda birebir: hiz_I 15.1 → 12.0 iki saniyede, geri çıkması ~5 s.)
+    #
+    # ÇÖZÜM: ṙ (kapanma hızı) zaten hesaplanıyor — dikey kanal için eklenmişti
+    # (bkz. Cfg.KAPANMA). Hız yasasına da girsin:
+    #     v_los = hiz_I + K_FWD·hata + KACIS_KD·max(0, −ṙ)
+    # ⚠ YALNIZ HIZLANDIRMA YÖNÜ. ṙ>0 (yaklaşırken) terim sıfırdır — kullanıcı
+    # freni bilerek kaldırttığı için (V_MIN=0, "geri çekilme yok") bu terim
+    # asla yavaşlatma yapmaz.
+    # ⚠ KAPSAM: yalnız SEYİR (IBVS). Terminal hücum yasası (v=V_TERMINAL)
+    # ve dikey kanal DOKUNULMADI — tek değişken kuralı.
+    # AVCI_IBVS_KD=0 → kapalı (varsayılan; açık değeri ölçüm belirleyecek).
+    KACIS_KD = _env_f("AVCI_IBVS_KD", 0.0)      # (m/s)/(m/s); 0 = kapalı
+    KACIS_MAX = _env_f("AVCI_IBVS_KDMAX", 10.0)  # m/s; terimin tavanı
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -361,7 +392,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -458,10 +489,17 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
     hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
+    kacis_ek = 0.0
     if terminal:
         v_los = cfg.V_TERMINAL                 # hücum: fren yok, sabit hız
     else:
-        v_los = clamp(hiz_I + cfg.K_FWD * hata, cfg.V_MIN, cfg.V_TOPLAM_MAX)
+        # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
+        # hızı ANINDA artır — integralin 5 saniyesini bekleme.
+        # ⚠ YALNIZ hızlandırma yönü: ṙ>0 iken (yaklaşırken) terim SIFIR.
+        if cfg.KACIS_KD > 0.0 and kapanma is not None and kapanma < 0.0:
+            kacis_ek = min(cfg.KACIS_KD * (-kapanma), cfg.KACIS_MAX)
+        v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
+                      cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
     # SAF TAKİP: tüm hız LOS/burun yönünde
     vx_ned = v_los * math.cos(yaw_cmd)
@@ -511,6 +549,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
+            "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "eps_yaw_ham": eps_yaw_ham}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -779,6 +818,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
+                "kacis_ek": round(tani["kacis_ek"], 2),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),

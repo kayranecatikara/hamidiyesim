@@ -628,6 +628,77 @@ def get_guidance_mode():
     return {"mode": _guidance_mode, "gorsel_acik": _GORSEL_ACIK}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# GÜDÜM ÖZELLİKLERİ — CANLI AÇ/KAPA (kullanıcı kuralı, 2026-08-10)
+# ═══════════════════════════════════════════════════════════════════════
+# NEDEN VAR: her özelliği env değişkeniyle denemek 5 terminali baştan
+# kurmayı gerektiriyordu ve kullanıcı farkı ANLIK göremiyordu. Artık her
+# davranış anahtarı panelden uçuş SIRASINDA açılıp kapanabiliyor.
+#
+# ⚠ NASIL ÇALIŞIYOR: bbox_ibvs.Cfg bir SINIF; güdüm döngüsü her karede
+# cfg.<ALAN> okuyor. Sınıf niteliğini burada değiştirmek bir sonraki
+# kareden itibaren geçerli olur — yeniden başlatma gerekmez.
+#
+# ⚠ YENİ ÖZELLİK EKLEYEN BUNU DA GÜNCELLER (CLAUDE.md §5): eklenen her
+# AVCI_* davranış anahtarının buraya bir satırı olacak, yoksa panelde
+# görünmez ve kullanıcı deneyemez.
+from control.guidance import bbox_ibvs as _ibvs_mod           # noqa: E402
+
+# ad → (Cfg alanı, tip, etiket, açıklama, env anahtarı, açık değeri)
+_OZELLIKLER = {
+    "t1a_yatay_telafi": (
+        "ROLL_TELAFI", "bool", "T1a · Yatay roll telafisi",
+        "Kamera azimutunu araç duruşuyla seviye çerçevesine döndürür. "
+        "Manevrada yatay salınımın kök nedeni.", "AVCI_IBVS_ROLL", True),
+    "kapanma_olcek": (
+        "KAPANMA", "bool", "Dikey komut kapanma hızıyla ölçeklenir",
+        "vz = −ṙ·tan(elev). Kapalıyken drone hızıyla ölçeklenir ve son anda "
+        "hedefin üstünden geçer.", "AVCI_IBVS_KAPANMA", True),
+    "m3_erken_lead": (
+        "LEAD_ERKEN", "bool", "M3 · Erken lead (terminal kapısı kalkar)",
+        "Lead'i yalnız son 6 m yerine kutu olan her karede uygular. "
+        "10 uçuşta nötr çıktı.", "AVCI_IBVS_LEAD_ERKEN", True),
+    "o1_kacis_telafisi": (
+        "KACIS_KD", "kazanc", "Ö1 · Kaçış telafisi",
+        "Hedef uzaklaşırken (ṙ<0) seyir hızını anında artırır. Yalnız "
+        "hızlandırma yönü — fren yapmaz.", "AVCI_IBVS_KD", 1.0),
+}
+
+
+class OzellikCmd(BaseModel):
+    ad: str
+    acik: bool
+
+
+def _ozellik_durumu():
+    d = []
+    for ad, (alan, tip, etiket, aciklama, env, acik_deger) in _OZELLIKLER.items():
+        v = getattr(_ibvs_mod.Cfg, alan)
+        acik = bool(v) if tip == "bool" else (float(v) > 0.0)
+        d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
+                  "env": env, "acik": acik,
+                  "deger": (v if tip != "bool" else None)})
+    return d
+
+
+@app.get("/api/gudum_ozellikleri")
+def get_gudum_ozellikleri():
+    return {"ozellikler": _ozellik_durumu()}
+
+
+@app.post("/api/gudum_ozellikleri")
+def set_gudum_ozellik(cmd: OzellikCmd):
+    if cmd.ad not in _OZELLIKLER:
+        return {"status": "error", "message": f"Bilinmeyen özellik: {cmd.ad}"}
+    alan, tip, etiket, _a, _e, acik_deger = _OZELLIKLER[cmd.ad]
+    yeni = (cmd.acik if tip == "bool"
+            else (float(acik_deger) if cmd.acik else 0.0))
+    setattr(_ibvs_mod.Cfg, alan, yeni)
+    print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
+          f"(Cfg.{alan} = {yeni})")
+    return {"status": "success", "ozellikler": _ozellik_durumu()}
+
+
 # -----------------------------------------------------------------------
 # GÖRÜŞ & FAZ PANELİ — /api/telemetry/pnp
 # -----------------------------------------------------------------------
