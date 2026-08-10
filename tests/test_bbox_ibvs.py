@@ -696,6 +696,146 @@ def main():
             abs(_dz[0]) < 1e-9 and abs(_dz[1]) < 1e-9,
             f"tek kutu → lead ofset {_dz} px (hız kestirimi yokken kaydırma yok)")
 
+    # ══ KESİŞİM-NOKTASI TAAHHÜDÜ KİLL-SWITCH (INTERCEPT) (2026-08-10) ══
+    # Ölçülen problem (log 092502): en yakın 3.00 m, 0 vuruş, 97 kör epizodu;
+    # terminal yatay lead %95 doymuş, hedef GİDECEĞİ yerin gerisine nişanlanıyor.
+    # INTERCEPT AÇIK → terminal son-birleşmede PRED hızıyla (vcx,vcy) hesaplanan
+    # KESİŞİM noktasına nişanla (cx_aim = cx + vcx·t_go·K). Yalnız (cx,cy)
+    # beslemesi; komut yasası değişmez. KAPALI (varsayılan) → besleme bit-aynı.
+    class _INToff(ib.Cfg):
+        PRED = True; INTERCEPT = False        # PRED açık, INTERCEPT kapalı
+    class _INTon(ib.Cfg):
+        PRED = True; INTERCEPT = True
+        INTERCEPT_K = 1.0; INTERCEPT_MENZIL = 6.0; INTERCEPT_MAX_PX = 200.0
+        INTERCEPT_KAPMIN = 1.5; INTERCEPT_TGO_MAX = 2.0
+
+    def _crosser_est(cfg, vpx=120.0, vpy=0.0, n=15):
+        """Sabit hızla yana kayan hedefe oturmuş estimator (vcx≈vpx px/s)."""
+        e = ib.HedefKestirim(cfg)
+        cx_e, cy_e = 320.0, 300.0
+        for _ in range(n):
+            cx_e += vpx * _dt
+            cy_e += vpy * _dt
+            e.guncelle(cx_e, cy_e, _dt)
+        return e
+
+    # ── B41: INTERCEPT KAPALI → besleme ham/PRED-lead ile BİT-AYNI (native) ──
+    # Aynı geometri + estimator, INTERCEPT-off vs saf PRED: _besleme_nisan
+    # terminalde de kesişim SEÇMEZ, PRED-lead yoluna düşer → çıktı özdeş.
+    _e_off = _crosser_est(_INToff)
+    _boyut_yakin = 52.0           # menzil = 160/52 ≈ 3.08 m (< INTERCEPT_MENZIL)
+    _kap = 3.0
+    _cxa_off, _cya_off, _src_off = ib._besleme_nisan(
+        320.0, 300.0, _boyut_yakin, _kap, True, _e_off, _INToff)
+    # saf PRED (INTERCEPT niteliği yok) ile aynı estimator → aynı lead_ofset
+    _dcx_pred, _dcy_pred = _e_off.lead_ofset()
+    kontrol("B41 INTERCEPT kapalı → terminal beslemesi PRED-lead ile bit-aynı",
+            _src_off == "pred_lead"
+            and abs(_cxa_off - (320.0 + _dcx_pred)) < 1e-12
+            and abs(_cya_off - (300.0 + _dcy_pred)) < 1e-12,
+            f"INTERCEPT-off terminal cx 320 → {_cxa_off:.2f} (PRED-lead {_dcx_pred:+.2f}px), "
+            f"kesişim SEÇİLMEDİ (kaynak={_src_off})")
+
+    # ── B42: INTERCEPT AÇIK — crosser'da nişan KESİŞİME öne alınır (≈vcx·t_go) ──
+    # t_go = menzil/max(kapanma,KAPMIN) = 3.08/3.0 ≈ 1.03 s; dcx ≈ vcx·t_go·K.
+    _e_on = _crosser_est(_INTon)
+    _cxa_on, _cya_on, _src_on = ib._besleme_nisan(
+        320.0, 300.0, _boyut_yakin, _kap, True, _e_on, _INTon)
+    _dcx_i, _dcy_i, _tgo_i = _e_on.intercept_ofset(_boyut_yakin, _kap)
+    _beklenen_dcx = _e_on.vcx * _tgo_i * _INTon.INTERCEPT_K   # tavan altındaysa bu
+    kontrol("B42 INTERCEPT açık: crosser'da nişan kesişime öne alınır (~vcx·t_go)",
+            _src_on == "intercept"
+            and _cxa_on > 320.0 + 20.0            # belirgin öne kayma (sağ crosser)
+            and abs((_cxa_on - 320.0) - _dcx_i) < 1e-9
+            and _dcx_i > 0.0,
+            f"vcx={_e_on.vcx:.0f}px/s, t_go={_tgo_i:.2f}s → cx 320 → {_cxa_on:.1f} "
+            f"(kesişim {_dcx_i:+.1f}px, ham vcx·t_go={_beklenen_dcx:+.1f}px)")
+
+    # ── B43: INTERCEPT yalnız INTERCEPT_MENZIL menzilinin ALTINDA uygulanır ──
+    # UZAK kutu (boyut 10 → menzil 16 m > 6): INTERCEPT açık olsa da kesişim
+    # SEÇİLMEZ, PRED-lead yoluna düşer (terminal son-anına özgü olsun).
+    _boyut_uzak = 10.0            # menzil = 160/10 = 16 m (> INTERCEPT_MENZIL)
+    _cxa_uz, _cya_uz, _src_uz = ib._besleme_nisan(
+        320.0, 300.0, _boyut_uzak, _kap, True, _e_on, _INTon)
+    kontrol("B43 INTERCEPT yalnız yakın menzilde (uzakta kesişim YOK, PRED-lead)",
+            _src_uz == "pred_lead"
+            and (160.0 / _boyut_uzak) > _INTon.INTERCEPT_MENZIL,
+            f"menzil {160.0/_boyut_uzak:.0f}m > {_INTon.INTERCEPT_MENZIL:.0f}m → "
+            f"kaynak={_src_uz} (yakın olsaydı 'intercept')")
+
+    # ── B44: KESİŞİM kayması INTERCEPT_MAX_PX ile TAVANLI (gürültü savurmasın) ──
+    # Absürt hız → dcx patlar; büyüklük INTERCEPT_MAX_PX'e kırpılır (yön korunur).
+    _e_hizli = _crosser_est(_INTon, vpx=5000.0)
+    _dcx_b, _dcy_b, _tgo_b = _e_hizli.intercept_ofset(_boyut_yakin, _kap)
+    _mag = math.hypot(_dcx_b, _dcy_b)
+    kontrol("B44 kesişim kayması INTERCEPT_MAX_PX ile tavanlı",
+            abs(_mag - _INTon.INTERCEPT_MAX_PX) < 1e-6,
+            f"vcx={_e_hizli.vcx:.0f}px/s → |kayma|={_mag:.1f}px = tavan "
+            f"{_INTon.INTERCEPT_MAX_PX:.0f}px")
+
+    # ── B45: KESİŞİM hem YAW hem DİKEYİ etkiler (2B ofset) — dikey crosser ──
+    # Ölçüm: ıskanın baskın bileşeni dikeydi. Hedef DİKEYDE kayıyorsa (vcy≠0)
+    # kesişim cy'yi de öne almalı → komut() dikey kanalı da geleceğe nişanlar.
+    _e_dik = _crosser_est(_INTon, vpx=0.0, vpy=100.0)   # aşağı kayan hedef
+    _cxa_d, _cya_d, _src_d = ib._besleme_nisan(
+        320.0, 300.0, _boyut_yakin, _kap, True, _e_dik, _INTon)
+    kontrol("B45 kesişim 2B: dikey crosser'da cy de öne alınır (yaw+dikey)",
+            _src_d == "intercept" and _cya_d > 300.0 + 20.0 and _e_dik.vcy > 0.0,
+            f"vcy={_e_dik.vcy:.0f}px/s → cy 300 → {_cya_d:.1f} (dikey kesişim "
+            f"{_cya_d-300.0:+.1f}px)")
+
+    # ── B46: t_go kapanma tabanı (KAPMIN) ve tavanı (TGO_MAX) ile sınırlı ──
+    # kapanma≈0 → KAPMIN tabana oturur, t_go patlamaz; ve TGO_MAX ile tavanlı.
+    _dcx0, _dcy0, _tgo0 = _e_on.intercept_ofset(_boyut_yakin, 0.0)  # kapanma 0
+    _dcxN, _dcyN, _tgoN = _e_on.intercept_ofset(2.0, 0.0)  # çok yakın+kapanma 0
+    kontrol("B46 t_go kapanma tabanı+tavanıyla sınırlı (yavaş kapanmada patlamaz)",
+            0.0 <= _tgo0 <= _INTon.INTERCEPT_TGO_MAX + 1e-9
+            and _tgoN <= _INTon.INTERCEPT_TGO_MAX + 1e-9,
+            f"kapanma=0 → t_go {_tgo0:.2f}s (≤ TGO_MAX {_INTon.INTERCEPT_TGO_MAX})")
+
+    # ── B47: INTERCEPT_K nişan kayma büyüklüğünü ölçekler (0.5 → yarı öne) ──
+    class _INThalf(_INTon):
+        INTERCEPT_K = 0.5
+        INTERCEPT_MAX_PX = 1000.0     # tavanı kaldır ki K etkisi görünsün
+    class _INTtam(_INTon):
+        INTERCEPT_K = 1.0
+        INTERCEPT_MAX_PX = 1000.0
+    _e_k = _crosser_est(_INTtam, vpx=60.0)     # tavan altında kalacak hız
+    _dxh = _crosser_est(_INThalf, vpx=60.0).intercept_ofset(_boyut_yakin, _kap)[0]
+    _dxt = _e_k.intercept_ofset(_boyut_yakin, _kap)[0]
+    kontrol("B47 INTERCEPT_K nişan kaymasını ölçekler (K=0.5 → yarısı)",
+            _dxt > 1.0 and abs(_dxh - _dxt * 0.5) < 1e-6,
+            f"K=1.0 → {_dxt:.2f}px, K=0.5 → {_dxh:.2f}px (yarısı)")
+
+    # ── B48: kör hücum ufku INTERCEPT açıkken KISALIR (37 m fly-past kesilir) ──
+    # INTERCEPT-off ufuk = TERMINAL_SURE; INTERCEPT-on ufuk = min(TERMINAL_SURE,
+    # INTERCEPT_KOR_MAXS). Döngü kodundaki _kor_ufuk seçimini doğrula.
+    class _KorOff(ib.Cfg):
+        INTERCEPT = False; TERMINAL_SURE = 2.0; INTERCEPT_KOR_MAXS = 0.8
+    class _KorOn(ib.Cfg):
+        INTERCEPT = True; TERMINAL_SURE = 2.0; INTERCEPT_KOR_MAXS = 0.8
+    _ufuk_off = (min(_KorOff.TERMINAL_SURE, _KorOff.INTERCEPT_KOR_MAXS)
+                 if getattr(_KorOff, "INTERCEPT", False) else _KorOff.TERMINAL_SURE)
+    _ufuk_on = (min(_KorOn.TERMINAL_SURE, _KorOn.INTERCEPT_KOR_MAXS)
+                if getattr(_KorOn, "INTERCEPT", False) else _KorOn.TERMINAL_SURE)
+    kontrol("B48 kör hücum ufku INTERCEPT açıkken kısalır (fly-past taşması azalır)",
+            abs(_ufuk_off - 2.0) < 1e-9 and abs(_ufuk_on - 0.8) < 1e-9
+            and _ufuk_on < _ufuk_off,
+            f"INTERCEPT-off ufuk {_ufuk_off:.1f}s → INTERCEPT-on {_ufuk_on:.1f}s "
+            f"(18 m/s × {_ufuk_off:.1f}s = {18*_ufuk_off:.0f}m → "
+            f"{18*_ufuk_on:.0f}m fly-past)")
+
+    # ── B49: INTERCEPT açık + PRED KAPALI → besleme kesişim SEÇMEZ (PRED şart) ──
+    # INTERCEPT PRED'in vcx/vcy'sine muhtaç; PRED yoksa est kullanılmaz → native.
+    class _INTnoPRED(ib.Cfg):
+        PRED = False; INTERCEPT = True
+    _cxa_np, _cya_np, _src_np = ib._besleme_nisan(
+        320.0, 300.0, _boyut_yakin, _kap, True, _e_on, _INTnoPRED)
+    kontrol("B49 INTERCEPT açık ama PRED kapalı → besleme ham (PRED şart)",
+            _src_np == "native" and abs(_cxa_np - 320.0) < 1e-12,
+            f"PRED=off → kaynak={_src_np}, cx değişmedi ({_cxa_np:.1f}) "
+            f"(INTERCEPT PRED'in vcx/vcy'sine muhtaç)")
+
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

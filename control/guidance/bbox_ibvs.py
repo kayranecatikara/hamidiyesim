@@ -295,6 +295,44 @@ class Cfg:
     PRED_ALPHA = _env_f("AVCI_IBVS_PRED_ALPHA", 0.5)
     PRED_BETA = _env_f("AVCI_IBVS_PRED_BETA", 0.1)
 
+    # ══ KESİŞİM-NOKTASI TAAHHÜDÜ (INTERCEPT) — KİLL-SWITCH (2026-08-10) ══
+    # ÖLÇÜLEN PROBLEM (en iyi uçuş, log 092502 + candidate_opt960 meta):
+    #   en yakın 3.00 m, 0 vuruş; 97 KÖR-hücum epizodu (churn); kör faz 18 m/s
+    #   × 2.05 s'ye kadar = ~37 m fly-past. Terminal karelerinin %95'inde yatay
+    #   lead 25°'de DOYMUŞ (crosser hedefi kovalamaya yetmiyor); en yakın
+    #   karelerde cx=407-436 (kadraj sağ kenarı, eps_yaw 37°), eps_elev −26° —
+    #   yaw DA dikey DE hedefin GİTTİĞİ yerin GERİSİNDE. Drone hedefin ŞU ANKİ
+    #   yerine nişanlıyor, GİDECEĞİ yere değil → arkasından/yanından geçiyor.
+    #
+    # ÇÖZÜM (yalnız (cx,cy) BESLEMESİ; dikey/yatay YASAYA dokunulmaz): terminal
+    # son-birleşmede, hedefin ŞU ANKİ pikseli yerine TAHMİN EDİLEN KESİŞİM
+    # noktasına nişanla. PRED kestiricisinin görüntü-düzlemi hedef hızını
+    # (vcx,vcy px/s — AVCI_IBVS_PRED GEREKLİ) ve kalan süreyi kullan:
+    #     t_go   = menzil / max(kapanma, KAPMIN)   (menzil = MENZIL_PX_M/boyut)
+    #     cx_aim = cx + vcx · t_go · INTERCEPT_K
+    #     cy_aim = cy + vcy · t_go · INTERCEPT_K
+    # Kayma büyüklüğü INTERCEPT_MAX_PX ile sınırlanır (kadraj yakınında kal).
+    # Bu (cx_aim,cy_aim) komut()'a beslendiği için taahhüt edilen dalış hem
+    # yaw'ı hem dikeyi hedefin GELECEK konumuna sürer — PN'in salt-yatay,
+    # doymuş lead'inden güçlü ve terminale özgü. PRED'in lead_ofset'inin
+    # (küçük, sabit ufuklu) yerine geçer: terminalde INTERCEPT, normalde
+    # PRED lead_ofset.
+    # AYRICA churn/fly-past azaltması: INTERCEPT açıkken kör hücum ufku
+    # daha kısa bir tavana (INTERCEPT_KOR_MAXS) bağlanır — 37 m düz taşmayı
+    # keser; kör fazda da coast+intercept ile hedefe DOĞRU eğrilmeye devam
+    # edilir (donmuş-düz değil).
+    # KAPALI (AVCI_IBVS_INTERCEPT=off, VARSAYILAN) → beslenen (cx,cy) hiç
+    # kaydırılmaz, kör ufuk TERMINAL_SURE kalır: BİT-AYNI native.
+    INTERCEPT = _env_bool("AVCI_IBVS_INTERCEPT", False)   # kesişim taahhüdü (off=native)
+    INTERCEPT_K = _env_f("AVCI_IBVS_INTERCEPT_K", 1.0)    # t_go lead kesri (1.0=tam kesişim)
+    INTERCEPT_MENZIL = _env_f("AVCI_IBVS_INTERCEPT_MENZIL", 6.0)  # m; yalnız bu menzilin ALTINDA uygula
+    INTERCEPT_MAX_PX = _env_f("AVCI_IBVS_INTERCEPT_MAX_PX", 200.0)  # px; nişan kayması tavanı
+    INTERCEPT_KAPMIN = _env_f("AVCI_IBVS_INTERCEPT_KAPMIN", 1.5)  # m/s; t_go için kapanma tabanı
+    INTERCEPT_TGO_MAX = _env_f("AVCI_IBVS_INTERCEPT_TGO", 2.0)  # s; t_go tavanı (yavaş kapanmada patlamasın)
+    # Kör hücum ufku INTERCEPT açıkken bu tavanla sınırlanır (37 m fly-past'ı
+    # keser). TERMINAL_SURE ile min alınır → yalnızca KISALTIR, uzatmaz.
+    INTERCEPT_KOR_MAXS = _env_f("AVCI_IBVS_INTERCEPT_KOR_MAXS", 0.8)  # s; INTERCEPT-on kör ufuk tavanı
+
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
     # geçtik") ──
     # SORUN: terminal dikey kanalı SAF NİŞANLAMA (vz = −v·tan(elev)) — türev/
@@ -428,6 +466,35 @@ class HedefKestirim:
             return 0.0, 0.0
         s = self.cfg.PRED_LEAD * self.cfg.PRED_MAXS
         return self.vcx * s, self.vcy * s
+
+    def intercept_ofset(self, boyut, kapanma):
+        """TERMİNAL kesişim ofseti (dcx, dcy) px — hedefin GELECEK pikseline nişan.
+
+        Kalan süre t_go = menzil / max(kapanma, KAPMIN) boyunca hedefin
+        görüntü-düzlemi hızıyla (vcx,vcy) alacağı yol; INTERCEPT_K kesriyle
+        ölçekli. Menzil kutu boyutundan (GPS yok): menzil = MENZIL_PX_M/boyut.
+        Kayma büyüklüğü INTERCEPT_MAX_PX ile sınırlanır (kadraj yakınında kal).
+
+        Yalnız INTERCEPT_MENZIL menzilinin ALTINDA anlamlı; çağıran menzil
+        kapısını uygular. Hız kestirimi yoksa (tek ölçüm) vcx=vcy=0 → ofset 0.
+        Döner: (dcx, dcy, t_go) — t_go tanı/log için.
+        """
+        if self.cx is None or boyut is None or boyut <= 1e-6:
+            return 0.0, 0.0, 0.0
+        menzil = self.cfg.MENZIL_PX_M / boyut
+        kap = self.cfg.INTERCEPT_KAPMIN
+        if kapanma is not None:
+            kap = max(self.cfg.INTERCEPT_KAPMIN, float(kapanma))
+        t_go = clamp(menzil / kap, 0.0, self.cfg.INTERCEPT_TGO_MAX)
+        dcx = self.vcx * t_go * self.cfg.INTERCEPT_K
+        dcy = self.vcy * t_go * self.cfg.INTERCEPT_K
+        # kayma büyüklüğünü tavanla (yön korunur): gürültülü vcx·t_go savurmasın
+        mag = math.hypot(dcx, dcy)
+        if mag > self.cfg.INTERCEPT_MAX_PX and mag > 1e-9:
+            k = self.cfg.INTERCEPT_MAX_PX / mag
+            dcx *= k
+            dcy *= k
+        return dcx, dcy, t_go
 
 
 _LOG_DIR = os.path.join(
@@ -574,6 +641,40 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
+def _besleme_nisan(cx, cy, boyut, kapanma, terminal, est, cfg, coast=False):
+    """komut()'a beslenecek NİŞAN pikselini (cx_aim, cy_aim) seç — YASA DIŞI.
+
+    Kutu yasasını (komut) HİÇ değiştirmez; yalnız hangi (cx,cy)'nin besleneceğini
+    belirler. Yollar (öncelik sırasıyla):
+      1. TERMİNAL + INTERCEPT açık + menzil < INTERCEPT_MENZIL → KESİŞİM ofseti
+         (hedefin GELECEK pikseli). Hem yaw hem dikey hedefin gideceği yere sürer.
+      2. (coast DEĞİLKEN) Normal takip + PRED açık → küçük görüntü-LEAD ofseti.
+      3. Aksi halde → ham (cx,cy) (bit-aynı native/coast).
+    INTERCEPT KAPALIYKEN yol 1 hiç seçilmez.
+
+    coast=True: kör-hücum/boşluk yolu. Bu yolda PRED zaten konumu ileri-tahmin
+    ettiği için AYRICA lead_ofset EKLENMEZ (yol 2 atlanır) — INTERCEPT kapalı
+    coast davranışı bit-aynı kalır (yalnız INTERCEPT açıkken kesişim eklenir).
+
+    Döner: (cx_aim, cy_aim, kaynak) — kaynak ∈ {"native","pred_lead","intercept"}.
+    """
+    if est is None or not getattr(cfg, "PRED", False) or not est.hazir():
+        return cx, cy, "native"
+    # 1) TERMİNAL KESİŞİM (yalnız INTERCEPT açık + yakın menzil)
+    if terminal and getattr(cfg, "INTERCEPT", False) and boyut and boyut > 1e-6:
+        menzil = cfg.MENZIL_PX_M / boyut
+        if menzil < cfg.INTERCEPT_MENZIL:
+            dcx, dcy, _tgo = est.intercept_ofset(boyut, kapanma)
+            return cx + dcx, cy + dcy, "intercept"
+    if coast:
+        # coast: konum zaten ileri-tahminli; lead_ofset EKLENMEZ (bit-aynı).
+        return cx, cy, "native"
+    # 2) NORMAL TAKİP görüntü-LEAD (INTERCEPT devre dışıysa terminalde de bu
+    #    yola düşülür — INTERCEPT kapalı canlı-yol davranışını bit-aynı korur).
+    _dcx, _dcy = est.lead_ofset()
+    return cx + _dcx, cy + _dcy, "pred_lead"
+
+
 def _kutu_gecerli(pose, cfg):
     """pose kaydından geçerli kutu çıkar → (cx,cy,w,h,conf) veya None."""
     if pose is None:
@@ -679,6 +780,14 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
         if ileri is None:
             return None
         cx_p, cy_p = ileri
+        # NİŞAN BESLEMESİ (ana yolla aynı kural): kör hücumda terminal +
+        # INTERCEPT + yakın menzil ise coast edilen konumun ÜSTÜNE kesişim
+        # ofseti eklenir — donmuş-düz yerine hedefin GELECEK yerine eğrilir.
+        # INTERCEPT kapalıysa yol saf coast (tahmin_ileri) kalır: bit-aynı.
+        _boyut_coast = math.sqrt(max(son_bw, 0.0) * max(son_bh, 0.0))
+        cx_p, cy_p, _ = _besleme_nisan(
+            cx_p, cy_p, _boyut_coast, kapanma, terminal_mandal, est, cfg,
+            coast=True)
         # komut(): terminal durumu KORUNUR (kör hücumda terminal yasası sürer).
         # Kutu boyutu son geçerli kutudan (kapanma/dikey ölçek için); los_hiz/
         # kapanma canlı döngü durumundan. hiz_I DEĞİŞMEZ (coast'ta integrali
@@ -771,12 +880,22 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 # (çok yakın); GPS'e hemen dönmek çarpışmayı iptal eder. Süre
                 # dolarsa ıska sayılır — sınırsız bırakmak aracı kaçırıyor.
                 if terminal_mandal:
+                    # KÖR UFUK: INTERCEPT açıkken 37 m fly-past'ı kesmek için
+                    # ufuk INTERCEPT_KOR_MAXS ile SINIRLANIR (yalnız kısaltır:
+                    # TERMINAL_SURE ile min). Kör faz bitince 'kayip' → GPS
+                    # yeniden yaklaşır; kısa ufuk churn'ü büyütmez çünkü
+                    # INTERCEPT açıkken hedefe DOĞRU eğrildiğimiz için daha az
+                    # tespit boşluğu/coast gerekir. INTERCEPT KAPALI → ufuk
+                    # TERMINAL_SURE (bit-aynı native).
+                    _kor_ufuk = cfg.TERMINAL_SURE
+                    if getattr(cfg, "INTERCEPT", False):
+                        _kor_ufuk = min(cfg.TERMINAL_SURE, cfg.INTERCEPT_KOR_MAXS)
                     if kor_baslangic is None:
                         kor_baslangic = time.time()
-                        print(f"[IBVS] kör hücum başladı — {cfg.TERMINAL_SURE:.1f} s "
+                        print(f"[IBVS] kör hücum başladı — {_kor_ufuk:.1f} s "
                               f"içinde temas gelmezse ıska")
                     gecen = time.time() - kor_baslangic
-                    if gecen >= cfg.TERMINAL_SURE:
+                    if gecen >= _kor_ufuk:
                         print(f"[IBVS] kör hücum {gecen:.1f} s sürdü, temas yok "
                               f"→ ISKA, 'kayip' (GPS'e dönülüyor)")
                         return "kayip"
@@ -903,15 +1022,15 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px, "
                       f"kapı={'FSM-STRIKE' if _kapi_aktif else 'native>=%d px' % cfg.TERMINAL_BOYUT}) "
                       f"— fren yok, tam taahhüt")
-            # ── GÖRÜNTÜ-DÜZLEMİ LEAD (bkz. Cfg.PRED / PRED_LEAD) ──
-            # PRED AÇIK: komut()'a beslenen nişanı hedefin görüntü-düzlemi hız
-            # yönünde HAFİFÇE öne al (crosser'da hedefin gideceği yere nişanla).
-            # Modest ofset — PN'i EZMEZ (PN los_hiz'i okur; bu cx/cy'yi kaydırır),
-            # onunla toplanır. PRED KAPALI → ham (cx,cy), bit-aynı native.
-            cx_giris, cy_giris = cx, cy
-            if getattr(cfg, "PRED", False) and est.hazir():
-                _dcx, _dcy = est.lead_ofset()
-                cx_giris, cy_giris = cx + _dcx, cy + _dcy
+            # ── NİŞAN BESLEMESİ (bkz. Cfg.PRED / Cfg.INTERCEPT) ──
+            # komut()'a HANGİ (cx,cy)'nin besleneceğini _besleme_nisan seçer
+            # (yasa değişmez, yalnız besleme):
+            #   • TERMİNAL + INTERCEPT + yakın menzil → KESİŞİM (hedefin gelecek
+            #     pikseli; hem yaw hem dikey öne alınır).
+            #   • Normal takip + PRED → küçük görüntü-LEAD ofseti (PN'i ezmez).
+            #   • INTERCEPT/PRED KAPALI → ham (cx,cy), bit-aynı native.
+            cx_giris, cy_giris, _besleme_kaynak = _besleme_nisan(
+                cx, cy, boyut_simdi, kapanma, terminal_mandal, est, cfg)
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx_giris, cy_giris, bw, bh,
                                                        iyaw, hiz_I, dt, cfg,
                                                        terminal_mandal,
