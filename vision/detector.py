@@ -55,6 +55,14 @@ else:
 
 _model = None
 
+# ── FP16 (yarı-hassasiyet) — 2026-08-10 algı-hızı optimizasyonu ──
+# Sim'de GPU Gazebo render'la PAYLAŞILIYOR; contention efektif FPS'i 30→22
+# düşürüyordu (fly-past'ın son-birleşme darboğazının kökü). FP16 + küçük imgsz
+# YOLO'nun GPU maliyetini keser (ölçüldü: 1280 FP32 19.5ms → 736 FP16 7.2ms),
+# render'a headroom bırakır. FP16 CUDA'da varsayılan AÇIK (CPU'da anlamsız/yavaş);
+# AVCI_YOLO_HALF=off ile kapatılır. Doğruluk kaybı ihmal edilebilir (inference).
+_HALF = (_CIHAZ != 'cpu') and os.environ.get("AVCI_YOLO_HALF", "on").lower() not in ("off", "0", "false")
+
 # ÇIKARIM ÇÖZÜNÜRLÜĞÜ — modelin EĞİTİLDİĞİ boyutla aynı olmak ZORUNDA.
 # predict()'e imgsz verilmezse ultralytics 640 varsayar. Uzak/küçük hedef için
 # 1280'de eğitilmiş bir model 640'ta çalıştırılırsa kazanılan çözünürlük geri
@@ -93,14 +101,14 @@ def load(model_path=None):
         _model = YOLO(path)
         _imgsz = _model_imgsz(_model)
         print(f"[{_ETIKET}] model: {os.path.basename(path)}  "
-              f"cikarim imgsz={_imgsz}  conf>={_CONF_MIN}")
+              f"cikarim imgsz={_imgsz}  half={_HALF}  conf>={_CONF_MIN}")
     return _model
 
 
 def detect_talon(frame_bgr, conf=None):
     """En yüksek güvenli Talon tespitini döndürür (dict) ya da None."""
     model = load()
-    res = model.predict(frame_bgr, device=_CIHAZ, imgsz=_imgsz,
+    res = model.predict(frame_bgr, device=_CIHAZ, imgsz=_imgsz, half=_HALF,
                         conf=(conf if conf is not None else _CONF_MIN),
                         verbose=False)[0]
     boxes = res.boxes
@@ -130,7 +138,7 @@ def detect_all(frame_bgr, conf=None):
     NMS güveni azalan sırada gezer, düşük skorlu kutu yüksek skorluyu asla
     bastıramaz — eşiği düşürmek conf>=_CONF_MIN kümesini değiştirmez."""
     model = load()
-    res = model.predict(frame_bgr, device=_CIHAZ, imgsz=_imgsz,
+    res = model.predict(frame_bgr, device=_CIHAZ, imgsz=_imgsz, half=_HALF,
                         conf=(conf if conf is not None else _TRACK_CONF),
                         verbose=False)[0]
     boxes = res.boxes
