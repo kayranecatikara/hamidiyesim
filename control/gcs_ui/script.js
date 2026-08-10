@@ -994,3 +994,68 @@ setInterval(renderStatus, 250);
 renderStatus();
 requestAnimationFrame(frame);
 })();
+
+// ── GÜDÜM ÖZELLİKLERİ — canlı aç/kapa ───────────────────────────────
+// NEDEN: her davranış anahtarını denemek için 5 terminali baştan kurmak
+// gerekiyordu ve fark anlık gözlenemiyordu. Artık uçuş sırasında açılıp
+// kapanıyor (sunucu bbox_ibvs.Cfg sınıf niteliğini değiştiriyor, güdüm
+// döngüsü bir sonraki karede yeni değeri okuyor).
+// Liste SUNUCUDAN gelir — yeni özellik eklenince burası kendiliğinden büyür.
+function ozellikCiz(liste) {
+    const p = document.getElementById('ozellik-panel');
+    if (!p) return;
+    if (!liste || !liste.length) {
+        p.innerHTML = '<div class="ozellik-bos">özellik yok</div>';
+        return;
+    }
+    p.innerHTML = '';
+    liste.forEach(o => {
+        const satir = document.createElement('div');
+        satir.className = 'ozellik-satir' + (o.acik ? ' acik' : '');
+
+        const metin = document.createElement('div');
+        metin.className = 'ozellik-metin';
+        const ad = document.createElement('div');
+        ad.className = 'ozellik-ad';
+        ad.textContent = o.etiket;
+        const acik = document.createElement('div');
+        acik.className = 'ozellik-aciklama';
+        acik.textContent = o.aciklama;
+        const env = document.createElement('div');
+        env.className = 'ozellik-env';
+        env.textContent = o.env + (o.deger !== null && o.deger !== undefined
+                                   ? '  (' + o.deger + ')' : '');
+        metin.appendChild(ad);
+        metin.appendChild(acik);
+        metin.appendChild(env);
+
+        const btn = document.createElement('button');
+        btn.className = 't-btn ozellik-btn' + (o.acik ? ' acik' : '');
+        btn.textContent = o.acik ? 'AÇIK' : 'KAPALI';
+        btn.addEventListener('click', () => ozellikDegistir(o.ad, !o.acik));
+
+        satir.appendChild(metin);
+        satir.appendChild(btn);
+        p.appendChild(satir);
+    });
+}
+
+function ozellikDegistir(ad, acik) {
+    fetch('/api/gudum_ozellikleri', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ad: ad, acik: acik })
+    })
+    .then(r => r.json())
+    .then(d => { if (d.ozellikler) ozellikCiz(d.ozellikler); })
+    .catch(() => {});
+}
+
+function ozellikYenile() {
+    fetch('/api/gudum_ozellikleri')
+        .then(r => r.json())
+        .then(d => ozellikCiz(d.ozellikler))
+        .catch(() => {});
+}
+
+ozellikYenile();

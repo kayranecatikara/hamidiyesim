@@ -148,6 +148,21 @@
                    temasın kopup kopup yeniden kurulduğunu gösterir. -->
               <div class="trow"><span class="tk">Geçiş</span><span class="tv muted" id="aGecis">—</span></div>
             </div>
+
+            <!-- GÜDÜM ÖZELLİKLERİ — CANLI AÇ/KAPA (kayramin_super_gudumu 93ea734)
+                 CLAUDE.md §5 kuralı: sisteme eklenen HER davranış anahtarının
+                 panelde düğmesi olacak. Uçuş SIRASINDA açılıp kapanır — sunucu
+                 bbox_ibvs.Cfg sınıf niteliğini değiştirir, güdüm döngüsü bir
+                 sonraki karede yeni değeri okur; sim yeniden kurulmaz.
+                 Liste sunucudan gelir (/api/gudum_ozellikleri): yeni özellik
+                 eklerken yalnız gcs_server._OZELLIKLER'e satır eklenir,
+                 buraya dokunulmaz. -->
+            <div class="grp">
+              <span class="label">🎛 Güdüm Özellikleri</span>
+              <div id="ozellik-panel" class="ozellik-panel">
+                <div class="ozellik-bos">yükleniyor…</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
