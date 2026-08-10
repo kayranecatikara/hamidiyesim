@@ -215,6 +215,51 @@ class Cfg:
     LEAD_SONUM = _env_f("AVCI_IBVS_LEAD_SON", 1.0) >= 0.5  # 0 = eski (sabit) yol
     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
+
+    # ══ LEAD ERKEN BAŞLASIN — M3 (2026-08-09) ══
+    # Yatay lead `if terminal:` kapısının ARKASINDAYDI. terminal mandalı
+    # TERMINAL_BOYUT=25 px ≈ 6.4 m'de kapanır, yani lead ancak son 6 metrede
+    # devreye giriyordu. `lead_olcek` de o noktaya kadar zaten 1.0 (sönüm
+    # yalnız 6.4 m'nin İÇİNDE başlar) — yani sönüm kusurlu değildi, KAPI
+    # kusurluydu.
+    #
+    # ÖLÇÜLDÜ — 4473 kutulu kare, kendi daire koşularım (2026-08-09):
+    #   menzil    |λ̇| med   V med   gereken yanal ivme   tavanı aşan   lead
+    #   20-35 m   0.46      19.4     9.0 m/s²             %43           0.0°
+    #   13-20 m   0.59      19.6    12.0                  %62           0.0°
+    #    8-13 m   1.21      18.3    21.9                  %88           0.0°
+    #     5-8 m   1.56      15.9    22.4                  %75           0.0°
+    #     0-5 m   0.79      18.0    14.1                  %54           8.4°
+    # Tavan = g·tan(ANGLE_MAX 45°) = 9.81 m/s². Gereken ivme = V·λ̇.
+    #
+    # OKUMASI: 8 m'ye gelindiğinde karelerin %88'i aracın FİZİKSEL olarak
+    # üretemeyeceği bir dönüş istiyor — o noktada hiçbir nişan düzeltmesi
+    # kurtarmaz. Düzeltmenin ucuz olduğu yer 13-35 m bandı (9-12 m/s²,
+    # tavana yakın ama erişilebilir) ve orada lead TAM SIFIR.
+    #
+    # DEĞİŞİKLİK: yatay lead artık kutu olan HER karede uygulanır. Ölçek,
+    # tavan ve LOS hızı kaynağı AYNEN aynı — tek değişen, kapının kalkması.
+    # ⚠ KAPSAM: yalnız YATAY. Dikey lead (lead_el) terminal tutuşunda kalıyor;
+    # kullanıcının düz uçuşta doğruladığı dikey davranış tek değişken
+    # kuralının dışında tutuluyor.
+    # DÜZ UÇUŞ RİSKİ DÜŞÜK: lead = LEAD_SURE · λ̇ ve düz takipte λ̇ ≈ 0
+    # (ölçüldü: 20-35 m'de bile medyan 0.46 rad/s DÖNÜŞTE; düz koşuda ~0).
+    #
+    # ⛔ UÇUŞTA ÖLÇÜLDÜ (2026-08-09, 2 koşu / 2038 kutulu kare) — VARSAYILAN
+    # KAPALI. Kapı kalkınca kadrajda tutuş gerçekten düzeldi:
+    #     yatay hata p90   173.5 → 97.5 px      temas süresi  90 → 143 s
+    #     yatay hata med    46.0 → 34.0 px      boyut son/ilk 0.97 → 1.07
+    # AMA asıl iş olan YAKLAŞMA bozuldu:
+    #     8 m içine giriş   4 kez / 65 kare  →  2 kez / 15 kare
+    #     en yakın menzil   2.1 m (isabet)   →  13.2 / 10.0 m
+    #     tavanı aşan kare  8-13 m'de %88    →  %95
+    # SEBEP: lead karelerin %27'sinde LEAD_MAX_DEG=25° tavanında, medyan 18.7°.
+    # Terminal için ayarlanmış tavan sürekli uygulanınca kalıcı nişan sapması
+    # oluyor; araç kesişmek yerine hedefi GÖLGE ediyor (paralel koşu).
+    # YÖN doğru, GENLİK yanlış. Sıradaki deney: seyir fazına AYRI (küçük)
+    # lead tavanı — ~8-10° — terminal tavanı 25°'de kalsın.
+    # AVCI_IBVS_LEAD_ERKEN=1 → ölçülen bu davranış geri gelir.
+    LEAD_ERKEN = _env_f("AVCI_IBVS_LEAD_ERKEN", 0.0) >= 0.5
     VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
 
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
@@ -402,8 +447,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         lead_olcek = clamp(cfg.BOYUT_REF / boyut, 0.0, 1.0)
     lead_sure = cfg.LEAD_SURE * lead_olcek
     lead_az = 0.0
-    if terminal:
-        # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE)
+    # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE).
+    # M3: kapı kalktı — artık kutu olan her karede (bkz. Cfg.LEAD_ERKEN).
+    if terminal or cfg.LEAD_ERKEN:
         lead_az = clamp(lead_sure * los_hiz[0],
                         -math.radians(cfg.LEAD_MAX_DEG),
                         math.radians(cfg.LEAD_MAX_DEG))

@@ -56,7 +56,74 @@ Takip 3× iyi, temas 2× uzun — **ama vuruş yok.** Varsayılan yapılmadı: (
 uçuş gerilemesi ölçülmedi, (b) düz eşik yerine histerezis olmalı (yakala 0.35,
 tut 0.20), (c) vuruşu engelleyen darboğaz M3.
 
-### M3 — SIRADAKİ: lead tam gerektiği anda sıfırlanıyor
+### M3 — Lead kapısı kaldırıldı · 3'e 3 UÇULDU → NÖTR (varsayılan KAPALI)
+
+`AVCI_IBVS_LEAD_ERKEN=1` → açılır. Kod, kill-switch ve testler (B33-B37) duruyor.
+
+Yatay lead `if terminal:` kapısının arkasındaydı; mandal 6.4 m'de kapandığı
+için lead ancak son 6 metrede çalışıyordu. `lead_olcek` o noktaya kadar zaten
+1.0 — **sönüm kusurlu değildi, KAPI kusurluydu.** Kapı kaldırıldı.
+
+⚠ **İLK HÜKÜM (n=2) YANLIŞTI.** "Yaklaşmayı bozdu" demiştim; o kıyasta kontrol
+koluna şanslı bir isabet denk gelmişti. Kullanıcı itiraz etti, 3'e 3 DÖNÜŞÜMLÜ
+(K,M,K,M,K,M) kampanya koşuldu — altısı da geçerli, her biri 210 kare + video.
+
+**Kapanma ölçütü DÜZELTİLDİ (video log'u yakaladı):** panel `mesafe` 1 Hz, ama
+buluşmadaki kapanma hızı medyan 4.9-12.4 / p90 13-22 m/s. 1 Hz örnekleme
+gerçek en yakın anı 15 m'ye kadar ıskalıyor. Panelin "4.8 m" dediği karede
+hedef kadrajda ~20 px'ti (4.8 m'de ~45 px olmalı). Yakınlık artık 20 Hz bbox
+logundan, kutu boyutundan ölçülüyor (`yakinlik.py`).
+
+| ölçüt (20 Hz, örtüşmesiz) | kontrol n=3 | M3 n=3 |
+|---|---|---|
+| İMHA | 0/3 | 0/3 |
+| tepe kutu boyutu (medyan) | 27.9 px | 26.9 px |
+| ≥20 px (≈≤8 m) kare | 13 | 12 |
+| ≥30 px (≈≤5 m) kare | 2 | 1 |
+| yatay hata p90 | 110 px | **99** |
+| toplam temas süresi | 56.4 s | **59.9 s** |
+
+**Koşular arası değişkenlik kol farkını YUTUYOR**: K1 tepe 76.5 px, K2 22.7 px
+— aynı kolda 3×. n=2 ile karar vermenin neden yanıltıcı olduğu tam olarak bu.
+
+**Mekanizma hükmü:** lead tasarlandığı gibi çalışıyor (20-35 m'de 8.7°,
+13-20 m'de 19.3°, 8-13 m'de 25° doymuş) **ama λ̇ DÜŞMÜYOR** (13-20 m'de
+0.72 → 0.84 rad/s) ve doyma oranı iyileşmiyor (%71 → %79). Burnu öne almak,
+aracın sahip olmadığı yanal ivmeyi yaratmıyor.
+
+**KARAR: nötr → varsayılan KAPALI.** Zarar verdiği için değil; ölçülebilir
+hiçbir şey değiştirmeden %82 doyan bir terim eklediği için.
+
+### ⚠ M3'ün ortaya çıkardığı ASIL DARBOĞAZ — buluşma GEOMETRİSİ
+
+Nişan yasası değil, karşılaşma geometrisi. Ölçüldü:
+
+    kapanma hızı        medyan 4.9-12.4 m/s, p90 13-22 m/s
+    saf kuyruk takibi   en fazla 18 − 14.9 = 3 m/s verirdi
+    ⇒ buluşmalar YÜKSEK AÇILI / KAFA KAFAYA (~30 m/s bağıl)
+
+Neden: daire senaryosunda araç dönmek için yatmak zorunda, yatınca ileri hızı
+düşüyor (dönüşte 9-14 m/s ölçüldü), hedefin gerisine düşüyor, sonra kirişi
+kesip hedefle KARŞIDAN buluşuyor. O geometride isabet zarfının (yatay ±0.65 m)
+içinde ~0.05 s kalıyor.
+
+Bütçe tablosu (gereken yanal ivme = V·λ̇, tavan = g·tan45° = 9.81 m/s²):
+
+| menzil | gereken a | tavanı aşan kare |
+|---|---|---|
+| 20-35 m | 8.8 m/s² | %38 |
+| 13-20 m | 14.4 | %71 |
+| 8-13 m | 23.1 | %96 |
+| 5-8 m | 25.8 | %100 |
+
+**M4 adayları (nişan yasası DEĞİL, geometri/enerji):**
+1. **Dönüş-farkında hız tavanı** — gereken a = V·λ̇. λ̇=0.8 rad/s'de V=20 → 16 m/s²
+   (bütçe dışı), V=12 → 9.6 m/s² (bütçe içi). Hızı dönüşte kısmak düzeltmeyi
+   uygulanabilir kılıyor.
+2. **Dairenin İÇİNDEN kesme** — kafa kafaya buluşmayı önlemek için hedefin
+   dönüş merkezine yakın yay izlemek.
+
+### M3 teşhis verisi — fiziksel tavan (kalıcı, sonraki işler için)
 
 C koşularında ≤10 m'deki 91 kare:
 

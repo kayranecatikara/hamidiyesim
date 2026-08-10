@@ -286,7 +286,10 @@ def main():
             vz_ter < -0.5 and vz_ter < vz_tut,
             f"tutuş vz={vz_tut:+.2f}  →  terminal vz={vz_ter:+.2f} m/s")
 
-    # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken ──
+    # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken (VARSAYILAN davranış) ──
+    # 2026-08-09/M3: kapıyı kaldırmak DENENDİ ve uçuşta ölçülüp GERİ ALINDI —
+    # kadrajda tutuş düzeldi ama yaklaşma bozuldu (bkz. Cfg.LEAD_ERKEN, B33-B37).
+    # Varsayılan yol yine "yalnız terminal"; bu test onu bekçiliyor.
     _, _, _, yaw_ldsz, _, t_ldsz = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
                                             0.05, C, True, (0.0, 0.0), 0.0)
     _, _, _, yaw_ld, _, t_ld = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
@@ -517,6 +520,65 @@ def main():
             and abs(_ile[5]["eps_yaw"] - _ile[5]["eps_yaw_ham"]) > math.radians(10.0),
             "ROLL_TELAFI=False → eps_yaw = ham okuma; True iken 40° yatışta "
             f"{math.degrees(abs(_ile[5]['eps_yaw'] - _ile[5]['eps_yaw_ham'])):.1f}° ayrışır")
+
+    print("=" * 60)
+    # ── M3: LEAD ERKEN BAŞLASIN ──
+    # Uçuş ölçümü (4473 kutulu kare, daire koşuları): lead 0-5 m dışında HER
+    # bantta tam 0.0° — çünkü `if terminal:` kapısı 6.4 m'de kapanıyordu.
+    # 8-13 m'de karelerin %88'i zaten aracın fiziksel tavanı (g·tan45 =
+    # 9.81 m/s²) üstünde dönüş istiyor; düzeltmenin ucuz olduğu 13-35 m
+    # bandında ise lead hiç yoktu.
+    # UÇUŞ SONUCU: kapı kalkınca kadrajda tutuş düzeldi ama YAKLAŞMA bozuldu
+    # (8 m'ye giriş 4→2 kez, lead karelerin %27'sinde 25° tavanında). Varsayılan
+    # KAPALI; bu testler mekanizmayı ve geri/ileri anahtarı koruyor.
+    class _LeadGec(ib.Cfg):
+        LEAD_ERKEN = False
+
+    class _LeadErk(ib.Cfg):
+        LEAD_ERKEN = True
+
+    # B33: terminal DEĞİLKEN lead artık uygulanabiliyor (kapı anahtarlı)
+    _lyaw = 0.4
+    _argL = (360.0, 300.0, 14, 10, _lyaw, 16.0, 0.05)   # boyut≈11.8 → ≈13 m
+    _erk = ib.komut(*_argL, _LeadErk, False, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
+    _gec = ib.komut(*_argL, _LeadGec, False, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
+    kontrol("B33 lead terminal DIŞINDA da uygulanır (M3 kapısı kalktı)",
+            abs(_erk[5]["lead_az"]) > math.radians(5.0)
+            and abs(_gec[5]["lead_az"]) < 1e-12,
+            f"13 m'de λ̇=0.6 rad/s: erken lead "
+            f"{math.degrees(_erk[5]['lead_az']):.1f}° — eski kapıda 0.0° "
+            f"(uçuşta ölçülen: 13-20 m bandında lead medyanı 0.0°)")
+
+    # B34: DÜZ UÇUŞ BOZULMAZ — λ̇≈0 iken lead ≈ 0, yaw komutu aynı kalır
+    _argD = (340.0, 300.0, 14, 10, _lyaw, 16.0, 0.05)
+    _dz_e = ib.komut(*_argD, _LeadErk, False, (0.0, 0.0), 0.0, 0.0, 2.0, 0.0)
+    _dz_g = ib.komut(*_argD, _LeadGec, False, (0.0, 0.0), 0.0, 0.0, 2.0, 0.0)
+    kontrol("B34 düz uçuşta (λ̇=0) M3 yaw komutunu DEĞİŞTİRMEZ",
+            abs(_dz_e[3] - _dz_g[3]) < 1e-12 and abs(_dz_e[0] - _dz_g[0]) < 1e-9,
+            "λ̇=0 → lead = LEAD_SURE·0 = 0; yaw ve hız komutu bit bit aynı "
+            "(kullanıcının düz uçuşta doğruladığı davranış korunur)")
+
+    # B35: M3 YALNIZ YATAY — dikey komut bit bit aynı (tek değişken kuralı)
+    kontrol("B35 M3 dikey kanala DOKUNMAZ (vz birebir aynı)",
+            abs(_erk[2] - _gec[2]) < 1e-12,
+            f"λ̇=0.6 rad/s'de vz erken {_erk[2]:+.4f} = geç {_gec[2]:+.4f} m/s "
+            "— dikey lead terminal tutuşunda bırakıldı")
+
+    # B36: tavan hâlâ geçerli — büyük λ̇ lead'i LEAD_MAX_DEG'de kesmeli
+    _sat = ib.komut(*_argL, _LeadErk, False, (5.0, 0.0), 0.0, 0.0, 2.0, 0.0)
+    kontrol("B36 erken lead tavanı aşmaz (LEAD_MAX_DEG)",
+            abs(math.degrees(_sat[5]["lead_az"])) <= _LeadErk.LEAD_MAX_DEG + 1e-9,
+            f"λ̇=5 rad/s (uçuşta görülen p90 4.81) → lead "
+            f"{math.degrees(_sat[5]['lead_az']):.1f}° ≤ "
+            f"{_LeadErk.LEAD_MAX_DEG:.0f}° tavan")
+
+    # B37: geri dönüş yolu — AVCI_IBVS_LEAD_ERKEN=0 eski davranışı getirir
+    _eski_t = ib.komut(*_argL, _LeadGec, True, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
+    kontrol("B37 M3 kapatılabilir (eski 'yalnız terminal' davranışı geri gelir)",
+            abs(_gec[5]["lead_az"]) < 1e-12
+            and abs(_eski_t[5]["lead_az"]) > math.radians(5.0),
+            "LEAD_ERKEN=False → terminal dışında lead 0, terminalde "
+            f"{math.degrees(_eski_t[5]['lead_az']):.1f}° (eski yol aynen)")
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
