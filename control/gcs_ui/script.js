@@ -967,6 +967,76 @@ fetch('/api/video_noise').then(r => r.json()).then(d => {
   clearTimeout(vidTimer);
 }).catch(() => {});
 
+// ══ ALGORİTMA ÖZELLİKLERİ (çalışma-anı kill-switch) ════════════════════
+// Düğmeler VERİ-GÜDÜMLÜ: /api/ozellikler REGISTRY'yi verir, her girdi için
+// bir aç/kapa satırı üretilir (hardcode YOK → yeni özellik kendiliğinden
+// belirir). Her satır tıklanınca POST eder; durumu tazelemek için hafifçe
+// yoklanır (birden çok düğme bağımsız çalışsın). gcs_server RESTART GEREKMEZ.
+const ozList = $('ozList');
+let ozReg = [];                 // REGISTRY (tek doğruluk kaynağı — sunucudan)
+let ozKilit = false;            // POST uçarken yoklama üzerine yazmasın
+
+function ozRender(durum){
+  if (!ozList) return;
+  ozList.innerHTML = '';
+  if (!ozReg.length){
+    ozList.innerHTML = '<div class="oz-empty">Kayıtlı özellik yok.</div>';
+    return;
+  }
+  for (const g of ozReg){
+    const on = !!durum[g.anahtar];
+    const item = document.createElement('div');
+    item.className = 'oz-item';
+    item.dataset.anahtar = g.anahtar;
+    item.dataset.on = on ? '1' : '0';
+    item.setAttribute('role', 'switch');
+    item.setAttribute('aria-checked', on ? 'true' : 'false');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', g.ad);
+    const txt = document.createElement('div');
+    txt.className = 'oz-txt';
+    const ad = document.createElement('span'); ad.className = 'oz-ad'; ad.textContent = g.ad;
+    const ac = document.createElement('span'); ac.className = 'oz-ac'; ac.textContent = g.aciklama || '';
+    txt.appendChild(ad); if (g.aciklama) txt.appendChild(ac);
+    const durumEt = document.createElement('span');
+    durumEt.className = 'oz-durum'; durumEt.textContent = on ? 'AÇIK' : 'KAPALI';
+    const sw = document.createElement('span'); sw.className = 'oz-sw';
+    item.appendChild(txt); item.appendChild(durumEt); item.appendChild(sw);
+    const tikla = () => ozToggle(g.anahtar);
+    item.addEventListener('click', tikla);
+    item.addEventListener('keydown', e => {
+      if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); tikla(); }
+    });
+    ozList.appendChild(item);
+  }
+}
+
+// Yerel durumu okur (DOM'dan) → tersini POST eder → yanıttaki durumu basar.
+function ozToggle(anahtar){
+  const item = ozList.querySelector('.oz-item[data-anahtar="' + anahtar + '"]');
+  if (!item) return;
+  const yeni = item.dataset.on !== '1';
+  ozKilit = true;                        // POST sürerken yoklama ezmesin
+  fetch('/api/ozellikler', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ anahtar: anahtar, deger: yeni }),
+  }).then(r => r.json()).then(d => {
+    ozRender(d.durum || {});
+    addLog('sys', 'OZ', anahtar + ' → ' + (d.deger ? 'AÇIK' : 'kapalı'));
+  }).catch(() => {}).finally(() => { ozKilit = false; });
+}
+
+function ozPoll(){
+  if (ozKilit) return;                   // kullanıcı POST'u uçarken dokunma
+  fetch('/api/ozellikler', { cache: 'no-store' }).then(r => r.json()).then(d => {
+    if (ozKilit) return;
+    ozReg = d.registry || [];
+    ozRender(d.durum || {});
+  }).catch(() => {});
+}
+ozPoll();                                // açılışta REGISTRY + durum
+setInterval(ozPoll, 1500);               // durum senkron (başka istemci/env değişirse)
+
 const noiseCv = $('noiseCv');
 function drawNoise(){
   const parent = noiseCv.parentElement;

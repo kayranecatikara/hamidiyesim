@@ -14,6 +14,9 @@ Kapsam:
          taşıyıcısız 8 m/s üretiyordu, hedef 15 → kutu kaybı)
   B11    toplam hız tavanı bağlar
   B12    kutu yokken taşıyıcı SÜRER (kısa boşluk kalıcı kayba dönmesin)
+  B50-54 çalışma-anı kill-switch deposu (ozellik_bayraklari): depo togglelanınca
+         TABAN Cfg + komut() değişir (restart yok), kapatınca native bit-aynı,
+         alt sınıf düz atama depoyu gölgeler (per-cfg test yolu korunur)
 """
 
 import math
@@ -835,6 +838,71 @@ def main():
             _src_np == "native" and abs(_cxa_np - 320.0) < 1e-12,
             f"PRED=off → kaynak={_src_np}, cx değişmedi ({_cxa_np:.1f}) "
             f"(INTERCEPT PRED'in vcx/vcy'sine muhtaç)")
+
+
+    # ══ ÇALIŞMA-ANI KİLL-SWITCH DEPOSU (2026-08-10, SOL panel özellik panosu) ══
+    # PN/PRED/INTERCEPT artık ozellik_bayraklari deposundan ÇALIŞMA ANINDA okunur
+    # (gcs_server restart YOK). TABAN Cfg depoyu okur; alt sınıf düz atarsa
+    # gölgeler (yukarıdaki tüm testler bu gölge yolunu kullanıyor → byte-aynı).
+    # Bu blok: depo togglelanınca TABAN Cfg + komut() DEĞİŞMELİ, kapatınca native.
+    from control import ozellik_bayraklari as ob
+    _kayit0 = ob.hepsi()                         # test sonrası eski haline döndür
+    try:
+        # ── B50: depo varsayılanı = env (hepsi off) → TABAN Cfg off okur ──
+        for a in ("pn", "pred", "intercept"):
+            ob.set(a, False)
+        kontrol("B50 depo varsayılanı: TABAN Cfg PN/PRED/INTERCEPT hepsi kapalı (env=off)",
+                (ib._ozellik(ib.Cfg, "pn", "PN") is False
+                 and ib._ozellik(ib.Cfg, "pred", "PRED") is False
+                 and ib._ozellik(ib.Cfg, "intercept", "INTERCEPT") is False),
+                "getattr(Cfg,'PN'/'PRED'/'INTERCEPT') = False (depo env-tohumlu)")
+
+        # ── B51: depo TOGGLE → TABAN Cfg canlı okur (restart yok) ──
+        ob.set("pn", True); ob.set("pred", True); ob.set("intercept", True)
+        kontrol("B51 depo set(True) → TABAN Cfg çalışma anında AÇIK okur",
+                (bool(getattr(ib.Cfg, "PN"))
+                 and bool(getattr(ib.Cfg, "PRED"))
+                 and bool(getattr(ib.Cfg, "INTERCEPT"))),
+                "set sonrası getattr(Cfg,...) = True (import değil, çalışma anı)")
+
+        # ── B52: komut() VARSAYILAN cfg=Cfg ile depo PN'ini GÖRÜR (crosser) ──
+        # PN off iken native lead, PN on iken PN lead — cfg açıkça verilmeden,
+        # yalnız depo togglelanarak. Aynı geometri, kaynak native→pn değişmeli.
+        _lam = 0.3
+        ob.set("pn", False); ob.set("pred", False); ob.set("intercept", False)
+        _d_off = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, ib.Cfg, True,
+                          (_lam, 0.0), 0.0, 0.0, 3.0)[5]
+        ob.set("pn", True)
+        _d_on = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, ib.Cfg, True,
+                         (_lam, 0.0), 0.0, 0.0, 3.0)[5]
+        kontrol("B52 komut(cfg=Cfg) depo PN'i çalışma anında görür (native→pn)",
+                (_d_off["lead_kaynak"] == "native"
+                 and _d_on["lead_kaynak"] == "pn"
+                 and _d_on["lead_az"] > _d_off["lead_az"] > 0.0),
+                f"depo pn off→native ({math.degrees(_d_off['lead_az']):.2f}°), "
+                f"on→pn ({math.degrees(_d_on['lead_az']):.2f}°)")
+
+        # ── B53: depo tekrar off → komut() BİT-AYNI native (kapatınca geri döner) ──
+        ob.set("pn", False)
+        _d_off2 = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, ib.Cfg, True,
+                           (_lam, 0.0), 0.0, 0.0, 3.0)[5]
+        kontrol("B53 depo off→ komut() native bit-aynı (kill-switch geri dönüşlü)",
+                (_d_off2["lead_kaynak"] == "native"
+                 and abs(_d_off2["lead_az"] - _d_off["lead_az"]) < 1e-12),
+                f"kapatınca lead {math.degrees(_d_off2['lead_az']):.3f}° "
+                f"= ilk off {math.degrees(_d_off['lead_az']):.3f}° (byte-aynı)")
+
+        # ── B54: alt sınıf düz atama GÖLGELER (depo True olsa da) → test yolu korunur ──
+        ob.set("pn", True)                       # depo AÇIK ama alt sınıf kapatır
+        class _PNshadow(ib.Cfg):
+            PN = False
+        kontrol("B54 alt sınıf `PN=False` depoyu gölgeler (per-cfg test yolu bozulmaz)",
+                ib._ozellik(_PNshadow, "pn", "PN") is False
+                and bool(getattr(ib.Cfg, "PN")) is True,
+                "depo pn=True iken alt sınıf PN=False okur (gölge), TABAN yine True")
+    finally:
+        for a, v in _kayit0.items():              # depoyu test öncesi haline getir
+            ob.set(a, v)
 
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]

@@ -205,7 +205,7 @@ def id_to_name(sysid):
 # circle_xl/l/s: daire ÇAPI varyantları (bkz. run_plane_scenario.DAIRE_CAPLARI).
 # Arayüzde butonları YOK — iç daire nişanını farklı yarıçaplarda sınamak için
 # curl ile çağrılır:  curl -X POST localhost:8000/api/command/plane/scenario/circle_s
-_SCENARIO_NAMES = ("square", "circle", "aggressive",
+_SCENARIO_NAMES = ("duz", "square", "circle", "aggressive",
                    "circle_xl", "circle_l", "circle_s")
 
 
@@ -697,6 +697,64 @@ def set_guidance_mode(cmd: GuidanceModeCmd):
 @app.get("/api/guidance_mode")
 def get_guidance_mode():
     return {"mode": _guidance_mode}
+
+
+# -----------------------------------------------------------------------
+# ALGORİTMA ÖZELLİKLERİ — çalışma-anı kill-switch panosu (SOL panel)
+# -----------------------------------------------------------------------
+# Her algoritma özelliği (PN / PRED / INTERCEPT ...) UI'da SOL sütunda bir
+# aç/kapa düğmesi olur ve gcs_server YENİDEN BAŞLATILMADAN çalışma anında
+# değiştirilir. TEK doğruluk kaynağı ozellik_bayraklari.REGISTRY: buraya yeni
+# bir girdi eklemek düğmeyi (UI) ve bayrağı (bbox_ibvs) otomatik doğurur —
+# bu endpoint'lere dokunmak gerekmez.
+from control import ozellik_bayraklari as _ozellik_bayraklari
+
+# ── YAPIŞKANLIK KÖPRÜSÜ (2026-08-10) ──
+# "yapiskanlik" toggle'ı, FSM'in görsel↔GPS geri-dönüş kapısını (KILIT_KAYIP_SN)
+# çalışma anında ayarlar. setattr — mission_fsm.py'ye DOKUNMAZ (supervisor'ın
+# RANGE_SET setattr deseniyle aynı; AYAR modül-düzeyi paylaşımlı örnek, FSM onu
+# runtime okur). AÇIK → 3.5 s (kısa boşlukta GPS'e dönme), KAPALI → env tabanı.
+from config.kilit_sabitler import AYAR as _AYAR_FSM
+_KKS_TABAN = _AYAR_FSM.KILIT_KAYIP_SN                                  # yapiskanlik KAPALI değeri (env-tohumlu)
+_KKS_YAPISKAN = float(os.environ.get("AVCI_KILIT_KAYIP_SN_ON", 3.5))  # yapiskanlik AÇIK değeri
+
+
+def _uygula_yapiskanlik(on):
+    """yapiskanlik toggle → FSM KILIT_KAYIP_SN (setattr, dosyaya dokunmaz)."""
+    _AYAR_FSM.KILIT_KAYIP_SN = _KKS_YAPISKAN if on else _KKS_TABAN
+    print(f"[OZELLIK] yapiskanlik={'AÇIK' if on else 'kapalı'} "
+          f"→ KILIT_KAYIP_SN={_AYAR_FSM.KILIT_KAYIP_SN}")
+
+
+# Başlangıç tohumu: env AVCI_YAPISKANLIK ile açık başlatıldıysa hemen uygula.
+_uygula_yapiskanlik(_ozellik_bayraklari.get("yapiskanlik"))
+
+
+class OzellikCmd(BaseModel):
+    anahtar: str      # REGISTRY anahtarı (ör. "pn")
+    deger: bool       # yeni aç/kapa durumu
+
+
+@app.get("/api/ozellikler")
+def get_ozellikler():
+    """REGISTRY (düğme tanımları) + anlık durum. UI bunu okuyup düğmeleri
+    veri-güdümlü üretir (hardcode değil → yeni özellik kendiliğinden belirir)."""
+    return {
+        "registry": _ozellik_bayraklari.registry(),
+        "durum": _ozellik_bayraklari.hepsi(),
+    }
+
+
+@app.post("/api/ozellikler")
+def set_ozellik(cmd: OzellikCmd):
+    """Bir özelliği çalışma anında aç/kapa; yeni durumu döner (bbox_ibvs bir
+    sonraki karede bu değeri okur — restart YOK)."""
+    yeni = _ozellik_bayraklari.set(cmd.anahtar, cmd.deger)
+    if cmd.anahtar == "yapiskanlik":          # FSM KILIT_KAYIP_SN köprüsü
+        _uygula_yapiskanlik(yeni)
+    print(f"[OZELLIK] {cmd.anahtar} → {'AÇIK' if yeni else 'kapalı'}")
+    return {"status": "success", "anahtar": cmd.anahtar, "deger": yeni,
+            "durum": _ozellik_bayraklari.hepsi()}
 
 
 # -----------------------------------------------------------------------

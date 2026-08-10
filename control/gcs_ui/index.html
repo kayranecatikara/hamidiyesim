@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=60">
+<link rel="stylesheet" href="style.css?v=61">
 </head>
 <body>
 
@@ -127,6 +127,23 @@
               <div class="kp-note">Sarı AV çerçevesi ve kırmızı kilit dörtgeni videonun içindedir (hedefin kadraj konumu).</div>
             </aside>
           </div>
+        </div>
+      </section>
+
+      <!-- ALGORİTMA ÖZELLİKLERİ — çalışma-anı kill-switch panosu.
+           Düğmeler HARDCODE DEĞİL: script.js /api/ozellikler'den REGISTRY
+           çekip #ozList içine üretir (yeni özellik = tek registry girdisi →
+           düğme kendiliğinden belirir). Her düğme değişince POST eder,
+           gcs_server RESTART GEREKMEZ. -->
+      <section class="panel" id="ozPanel">
+        <div class="phead"><span class="ptitle">Algoritma Özellikleri</span></div>
+        <div class="mc">
+          <div class="oz-list" id="ozList">
+            <div class="oz-empty" id="ozEmpty">Özellikler yükleniyor…</div>
+          </div>
+          <div class="oz-note">Her özellik bağımsız açılıp kapanır — birlikte
+            ya da ayrı sınayın. Değişiklik çalışma anında geçerlidir (sunucu
+            yeniden başlatılmaz). Hepsi kapalı = native davranış.</div>
         </div>
       </section>
     </div>
@@ -281,6 +298,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=60"></script>
+<script src="script.js?v=61"></script>
 </body>
 </html>

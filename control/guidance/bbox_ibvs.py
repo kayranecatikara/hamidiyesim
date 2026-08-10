@@ -61,6 +61,7 @@ from control.guidance.common import (
     clamp, normalize_angle, send_velocity, limit_acceleration,
 )
 from control.guidance.kurtarma import Kurtarma
+from control import ozellik_bayraklari as _ozellikler   # çalışma-anı kill-switch deposu
 
 # ── ŞARTNAME 3-FAZ KAPISI (2026-08-09 entegrasyon) ──
 # Terminal hücum (mandal) YALNIZ merkezî görev FSM STRIKE'ında tetiklenir (5 sn
@@ -90,7 +91,53 @@ def _env_bool(name, default=False):
     return v.strip().lower() in ("on", "1", "true", "yes", "evet")
 
 
-class Cfg:
+# ── ÇALIŞMA-ANI KİLL-SWITCH KÖPRÜSÜ (2026-08-10) ───────────────────────────
+# PN/PRED/INTERCEPT eskiden IMPORT anında env'den okunuyordu; artık ÇALIŞMA
+# ANINDA ozellik_bayraklari deposundan okunuyor (gcs_server yeniden başlatmadan
+# UI'dan açılıp kapatılabilsin diye). Depo AYNI env ile tohumlu, dolayısıyla
+# hiçbir düğmeye dokunulmazsa (hepsi env varsayılanı=off) davranış BYTE-AYNI.
+#
+# İKİ OKUMA YOLU, TEK GARANTİ:
+#  1) VARSAYILAN cfg=Cfg → Cfg.PN/PRED/INTERCEPT bir DESCRIPTOR'dur (aşağıdaki
+#     _CanliBayrak): getattr her seferinde depoyu okur → çalışma-anı togglable.
+#  2) TEST cfg alt sınıfı (ör. `class _PNon(Cfg): PN = True`) düz sınıf
+#     özniteliği atadığı için descriptor'ı GÖLGELER → getattr o sabiti verir.
+#     Böylece mevcut birim testleri (per-cfg override) BİRE BİR korunur.
+# _ozellik(cfg, anahtar, attr): iki yolu birleştirir — cfg açıkça override
+# etmişse onu, etmemişse (canlı descriptor) depoyu okur.
+
+class _CanliBayrak:
+    """Cfg üzerinde çalışma-anı kill-switch okuyan descriptor. Yalnız TABAN
+    Cfg'de canlıdır; bir alt sınıf düz bool atarsa gölgelenir (native/test yolu)."""
+    def __init__(self, anahtar):
+        self.anahtar = anahtar
+
+    def __get__(self, obj, objtype=None):
+        return _ozellikler.get(self.anahtar)
+
+
+class _CfgMeta(type):
+    """Cfg metasınıfı: sınıf üzerinden (getattr(cfg, 'PN')) descriptor'ın
+    çalışmasını sağlar — düz sınıf özniteliği descriptor protokolünü sınıf
+    erişiminde çalıştırmaz, metasınıf çalıştırır."""
+    PN = _CanliBayrak("pn")
+    PRED = _CanliBayrak("pred")
+    INTERCEPT = _CanliBayrak("intercept")
+    VLEAD = _CanliBayrak("vlead")
+    TBOOST = _CanliBayrak("tboost")
+    GAINSCHED = _CanliBayrak("gainsched")
+    COMMIT = _CanliBayrak("commit")
+    DUZTERM = _CanliBayrak("duzterm")
+
+
+def _ozellik(cfg, anahtar, attr):
+    """cfg[attr] override edilmişse onu, edilmemişse çalışma-anı depoyu döner.
+    Taban Cfg'de attr canlı descriptor'dır → depo okunur (togglable). Test alt
+    sınıfı attr'ı düz atarsa o değer okunur (byte-aynı native/test davranışı)."""
+    return bool(getattr(cfg, attr, _ozellikler.get(anahtar)))
+
+
+class Cfg(metaclass=_CfgMeta):
     LOOP_HZ = 20.0
 
     # ── KADRAJ NİŞAN NOKTASI ──
@@ -264,7 +311,10 @@ class Cfg:
     #   lead_az = clamp(N · true_los_rate_az · t_go, ±LEAD_MAX_DEG)
     #   N (PN sabiti) ≈ 3.0; native lead (LEAD_SURE·lead_olcek·los_hiz) yerine geçer.
     # KAPALI (AVCI_IBVS_PN=off, VARSAYILAN) → native lead_az bit-aynı korunur.
-    PN = _env_bool("AVCI_IBVS_PN", False)        # yatay PN lead açık/kapalı (off=native)
+    # PN artık ÇALIŞMA ANINDA okunur: TABAN Cfg'de _CfgMeta.PN canlı descriptor'ı
+    # (ozellik_bayraklari deposu, "pn" env ile tohumlu). Burada düz atanMAZ ki
+    # descriptor gölgelenmesin; test alt sınıfı `PN = True` atarsa gölgeler
+    # (byte-aynı). Erişim: _ozellik(cfg, "pn", "PN") ya da getattr(cfg, "PN").
     PN_N = _env_f("AVCI_IBVS_PN_N", 3.0)         # PN etkin oransal sabiti (N)
     PN_TGO_MAX = _env_f("AVCI_IBVS_PN_TGO", 3.0)  # s; t_go tavanı (uzak/yavaşta patlamasın)
     PN_KAP_MIN = _env_f("AVCI_IBVS_PN_KAPMIN", 1.5)  # m/s; t_go için kapanma tabanı
@@ -287,7 +337,9 @@ class Cfg:
     #   görüntü-düzlemi LEAD (tahmin edilen hız yönünde öne nişan) uygulanır —
     #   PN'in YERİNE değil, ONUNLA birlikte (PN los_hiz'i okur; bu cx/cy'yi kaydırır).
     # KAPALI (AVCI_IBVS_PRED=off, VARSAYILAN) → native/donmuş davranış BİT-AYNI.
-    PRED = _env_bool("AVCI_IBVS_PRED", False)     # kestirim+coast açık/kapalı (off=native)
+    # PRED artık ÇALIŞMA ANINDA okunur (TABAN Cfg'de _CfgMeta.PRED descriptor'ı,
+    # "pred" env ile tohumlu). Düz atanMAZ (descriptor gölgelenmesin); test alt
+    # sınıfı `PRED = True` atarsa gölgeler (byte-aynı native/test yolu).
     PRED_MAXS = _env_f("AVCI_IBVS_PRED_MAXS", 0.6)  # s; gerçek tespitsiz coast ufku
     PRED_LEAD = _env_f("AVCI_IBVS_PRED_LEAD", 0.3)  # normal takip görüntü-lead kesri
     # Alpha-beta gözlem kazançları (α konum düzeltmesi, β hız düzeltmesi).
@@ -323,7 +375,9 @@ class Cfg:
     # edilir (donmuş-düz değil).
     # KAPALI (AVCI_IBVS_INTERCEPT=off, VARSAYILAN) → beslenen (cx,cy) hiç
     # kaydırılmaz, kör ufuk TERMINAL_SURE kalır: BİT-AYNI native.
-    INTERCEPT = _env_bool("AVCI_IBVS_INTERCEPT", False)   # kesişim taahhüdü (off=native)
+    # INTERCEPT artık ÇALIŞMA ANINDA okunur (TABAN Cfg'de _CfgMeta.INTERCEPT
+    # descriptor'ı, "intercept" env ile tohumlu). Düz atanMAZ (descriptor
+    # gölgelenmesin); test alt sınıfı `INTERCEPT = True` atarsa gölgeler (byte-aynı).
     INTERCEPT_K = _env_f("AVCI_IBVS_INTERCEPT_K", 1.0)    # t_go lead kesri (1.0=tam kesişim)
     INTERCEPT_MENZIL = _env_f("AVCI_IBVS_INTERCEPT_MENZIL", 6.0)  # m; yalnız bu menzilin ALTINDA uygula
     INTERCEPT_MAX_PX = _env_f("AVCI_IBVS_INTERCEPT_MAX_PX", 200.0)  # px; nişan kayması tavanı
@@ -332,6 +386,41 @@ class Cfg:
     # Kör hücum ufku INTERCEPT açıkken bu tavanla sınırlanır (37 m fly-past'ı
     # keser). TERMINAL_SURE ile min alınır → yalnızca KISALTIR, uzatmaz.
     INTERCEPT_KOR_MAXS = _env_f("AVCI_IBVS_INTERCEPT_KOR_MAXS", 0.8)  # s; INTERCEPT-on kör ufuk tavanı
+
+    # ══ TEKTE VURUŞ ÖZELLİKLERİ (2026-08-10) — dört bağımsız kill-switch ══
+    # Hepsi VARSAYILAN KAPALI → byte-aynı native. Çalışma-anı okunur (TABAN
+    # Cfg'de _CfgMeta descriptor'ları: vlead/tboost/gainsched/commit, ilgili env
+    # ile tohumlu). Hepsi TERMİNAL-özgü; tutuş fazına dokunmaz. Erişim:
+    # _ozellik(cfg, "vlead", "VLEAD") vb.
+    #
+    # VLEAD — dikey terminal öncülük: terminalde nişan yükselişine sabit +açı
+    #   payı ekler → hedefin ÜSTÜNE nişanla. Teşhis edilen dikey ıska ekseni
+    #   (yükselen hedef + 25° kamera tilt) için. ⚠ Önceki dikey PN kötüleştirmişti;
+    #   bu SADECE terminal + küçük sabit pay + kill-switch (o yüzden ayrı sınanır).
+    VLEAD_DEG = _env_f("AVCI_IBVS_VLEAD_DEG", 6.0)   # derece; terminal yukarı nişan payı
+    # TBOOST — terminal hız artışı: hücum hızını V_TERMINAL yerine bu değere çıkarır
+    #   (hedef kadrajdan kaçmadan son metreyi delmek için). Dikey-bütçe kısıtı
+    #   yine geçerli (aşırı dik nişanda yatayı kısar).
+    TBOOST_VTERM = _env_f("AVCI_IBVS_TBOOST_VTERM", 23.0)  # m/s; TBOOST-on hücum hızı
+    # GAINSCHED — PN kazanç programı: t_go küçüldükçe etkin N büyür →
+    #   N_eff = PN_N·(1 + GAINSCHED_K·(1 − t_go/PN_TGO_MAX)). PN AÇIK gerektirir
+    #   (PN kapalıyken hiç etki yok). Terminale doğru keskinleşen öncülük.
+    GAINSCHED_K = _env_f("AVCI_IBVS_GAINSCHED_K", 1.0)
+    # COMMIT — son-saniye taahhüt: t_go ≤ COMMIT_TGO iken yaw hatası ölü bant
+    #   altındaysa (küçük piksel titremesi) yaw düzeltmesi SIFIRLANIR → burun
+    #   son vektöre taahhüt eder, churn/fly-past titremesi kesilir. Yalnız YATAY
+    #   kanal (churn'ün kaynağı). Büyük hata hâlâ düzeltilir (kilitlenip sapmaz).
+    COMMIT_TGO = _env_f("AVCI_IBVS_COMMIT_TGO", 0.8)      # s; bu t_go altında taahhüt
+    COMMIT_DEADBAND_DEG = _env_f("AVCI_IBVS_COMMIT_DB", 4.0)  # derece; yaw ölü bant
+
+    # DUZTERM — düz kuyruk / pure pursuit: terminalde lead_az'ı ±DUZTERM_LEAD_MAX
+    # ile KAPAR (ölçülen kök neden: PN lead ±25°'de doyup işaret değiştirince
+    # yaw limit-cycle salınımı → drone teğet geçiyor; log 191011 terminal yaw_cmd
+    # std 34.8°, 218 yön değişimi). Küçük tavan (varsayılan 4°) lead'in violent
+    # ±25 sıçramasını keser → hedefin ARKASINDAN düz gidip doğrudan çarpar.
+    # KAPALI → lead_az normal (±LEAD_MAX_DEG), bit-aynı. Kilit %6 tespitine
+    # dokunmaz (ayrı katman). 0.0 = tam pure pursuit (lead yok).
+    DUZTERM_LEAD_MAX = _env_f("AVCI_IBVS_DUZTERM_LEAD_MAX", 4.0)  # derece; terminal lead tavanı
 
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
     # geçtik") ──
@@ -375,6 +464,12 @@ class Cfg:
     # durduğunda dikey düzeltme büsbütün ölmesin.
     # AVCI_IBVS_KAPANMA=0 → eski davranış (v_los ile ölçekleme) aynen geri.
     KAPANMA = _env_f("AVCI_IBVS_KAPANMA", 1.0) >= 0.5
+    # DİKEY ÖLÇEK HARMANI (2026-08-10, birleşme dikey ıska teşhisi): terminal
+    # dikey hız v_dikey = kapanma + DIK_ORAN·(v_los − kapanma). 0 = saf kapanma
+    # (byte-aynı; hedef üstten çıkıp ALTINDAN geçiliyordu), 1 = saf yer hızı
+    # (hedef alttan çıkıp ÜSTÜNDEN geçiliyordu). Ortası hız vektörünü hedefe
+    # oturtur → sub-metre dikey ıskayı kapatır. Ölçümle ayarlanır.
+    DIK_ORAN = _env_f("AVCI_IBVS_DIK_ORAN", 0.0)
     KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
@@ -550,8 +645,16 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     lead_sure = cfg.LEAD_SURE * lead_olcek
     lead_az = 0.0
     _lead_kaynak = "native"
+    # Terminal t_go (GAINSCHED/COMMIT/PN ORTAK) — menzil/kapanma, GPS yok.
+    # menzil = MENZIL_PX_M/boyut; kapanma None/küçükse PN_KAP_MIN tabanı.
+    t_go_term = None
     if terminal:
-        if getattr(cfg, "PN", False):
+        _kap_t = cfg.PN_KAP_MIN
+        if kapanma is not None:
+            _kap_t = max(cfg.PN_KAP_MIN, float(kapanma))
+        _menzil_t = (cfg.MENZIL_PX_M / boyut) if boyut > 1e-6 else 0.0
+        t_go_term = clamp(_menzil_t / _kap_t, 0.0, cfg.PN_TGO_MAX)
+        if _ozellik(cfg, "pn", "PN"):
             # ── PN-TİPİ YATAY LEAD (kill-switch AÇIK; bkz. Cfg.PN) ──
             # true_los_rate_az: los_hiz[0] ZATEN ego-temiz (atalet LOS hızı;
             # bkz. Cfg.PN yorumu ve run_bbox_ibvs ~587). PN_EGO açıksa yaw_rate
@@ -560,31 +663,55 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             true_los_rate_az = los_hiz[0]
             if getattr(cfg, "PN_EGO", False):
                 true_los_rate_az = los_hiz[0] - yaw_rate
-            # t_go ≈ menzil / kapanma (GPS yok; menzil kutudan). kapanma None ya
-            # da küçükse tabana oturur; uzak/yavaş-kapanmada tavanla sınırlı.
-            _kap = cfg.PN_KAP_MIN
-            if kapanma is not None:
-                _kap = max(cfg.PN_KAP_MIN, float(kapanma))
-            _menzil = (cfg.MENZIL_PX_M / boyut) if boyut > 1e-6 else 0.0
-            t_go = clamp(_menzil / _kap, 0.0, cfg.PN_TGO_MAX)
-            # PN lead = N · λ̇_atalet · t_go  → LOS dönüş hızını sıfıra sürer.
-            lead_az = clamp(cfg.PN_N * true_los_rate_az * t_go,
+            t_go = t_go_term
+            # GAINSCHED (kill-switch): t_go küçüldükçe etkin N büyür (bkz.
+            # Cfg.GAINSCHED_K). KAPALI → N_eff = PN_N (bit-aynı PN).
+            _N = cfg.PN_N
+            if _ozellik(cfg, "gainsched", "GAINSCHED"):
+                _N = cfg.PN_N * (1.0 + cfg.GAINSCHED_K
+                                 * clamp(1.0 - t_go / max(cfg.PN_TGO_MAX, 1e-6),
+                                         0.0, 1.0))
+                _lead_kaynak = "pn+gs"
+            else:
+                _lead_kaynak = "pn"
+            # PN lead = N_eff · λ̇_atalet · t_go  → LOS dönüş hızını sıfıra sürer.
+            lead_az = clamp(_N * true_los_rate_az * t_go,
                             -math.radians(cfg.LEAD_MAX_DEG),
                             math.radians(cfg.LEAD_MAX_DEG))
-            _lead_kaynak = "pn"
         else:
             # NATIVE (VARSAYILAN, bit-aynı): nişanı atalet LOS dönüş hızıyla öne
             # al (bkz. Cfg.LEAD_SURE). lead_sure = LEAD_SURE·lead_olcek.
             lead_az = clamp(lead_sure * los_hiz[0],
                             -math.radians(cfg.LEAD_MAX_DEG),
                             math.radians(cfg.LEAD_MAX_DEG))
-    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
+        # DUZTERM (kill-switch): terminal lead'i küçük tavana kap → PN'in ±25°
+        # doyup işaret-değiştirme salınımını kes, hedefin arkasından düz git
+        # (bkz. Cfg.DUZTERM_LEAD_MAX). KAPALI → lead_az değişmez (bit-aynı).
+        if _ozellik(cfg, "duzterm", "DUZTERM"):
+            _dl = math.radians(cfg.DUZTERM_LEAD_MAX)
+            lead_az = clamp(lead_az, -_dl, _dl)
+            _lead_kaynak = _lead_kaynak + "+duz"
+    # COMMIT (kill-switch): son t_go penceresinde küçük yaw hatasını YOK SAY →
+    # burun son vektöre taahhüt eder, churn/fly-past titremesi kesilir. Yalnız
+    # YATAY kanal; büyük hata hâlâ düzeltilir. KAPALI → eps_yaw_cmd = eps_yaw
+    # (bit-aynı). Terminal + t_go ≤ COMMIT_TGO + |eps_yaw| < ölü bant koşulu.
+    eps_yaw_cmd = eps_yaw
+    _commit_aktif = (terminal and t_go_term is not None
+                     and _ozellik(cfg, "commit", "COMMIT")
+                     and t_go_term <= cfg.COMMIT_TGO)
+    if _commit_aktif and abs(eps_yaw) < math.radians(cfg.COMMIT_DEADBAND_DEG):
+        eps_yaw_cmd = 0.0
+        _lead_kaynak = _lead_kaynak + "+commit"
+    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw_cmd + lead_az)
 
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
     hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
     if terminal:
-        v_los = cfg.V_TERMINAL                 # hücum: fren yok, sabit hız
+        # TBOOST (kill-switch): hücum hızını yükselt (bkz. Cfg.TBOOST_VTERM).
+        # KAPALI → V_TERMINAL (bit-aynı). Dikey-bütçe kısıtı aşağıda yine geçerli.
+        v_los = (cfg.TBOOST_VTERM if _ozellik(cfg, "tboost", "TBOOST")
+                 else cfg.V_TERMINAL)         # hücum: fren yok, sabit hız
     else:
         v_los = clamp(hiz_I + cfg.K_FWD * hata, cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
@@ -602,6 +729,12 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
                         math.radians(cfg.LEAD_MAX_DEG))
         nisan_elev = clamp(elev_atalet + lead_el,
                            -math.radians(60.0), math.radians(60.0))
+        # VLEAD (kill-switch): terminalde hedefin ÜSTÜNE sabit açı payı
+        # (yükselen hedef + 25° kamera tilt telafisi; bkz. Cfg.VLEAD_DEG).
+        # KAPALI → nisan_elev değişmez (bit-aynı native). Yalnız terminal.
+        if _ozellik(cfg, "vlead", "VLEAD"):
+            nisan_elev = clamp(nisan_elev + math.radians(cfg.VLEAD_DEG),
+                               -math.radians(60.0), math.radians(60.0))
 
         # ── DİKEY BÜTÇE KISITI (2026-08-09, kullanıcı gözlemi: "dikeyde çok
         # kaçırıyor") ──
@@ -619,7 +752,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # frene basar). İki yer tek kavram.
         v_dikey = v_los
         if cfg.KAPANMA and kapanma is not None:
-            v_dikey = clamp(kapanma, cfg.KAPANMA_MIN, max(cfg.KAPANMA_MIN, v_los))
+            _kap_olcek = clamp(kapanma, cfg.KAPANMA_MIN, max(cfg.KAPANMA_MIN, v_los))
+            # HARMAN (bkz. Cfg.DIK_ORAN): 0=kapanma (bit-aynı), 1=yer hızı.
+            v_dikey = _kap_olcek + cfg.DIK_ORAN * (v_los - _kap_olcek)
         t_ = abs(math.tan(nisan_elev))
         if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:
             v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
@@ -658,10 +793,10 @@ def _besleme_nisan(cx, cy, boyut, kapanma, terminal, est, cfg, coast=False):
 
     Döner: (cx_aim, cy_aim, kaynak) — kaynak ∈ {"native","pred_lead","intercept"}.
     """
-    if est is None or not getattr(cfg, "PRED", False) or not est.hazir():
+    if est is None or not _ozellik(cfg, "pred", "PRED") or not est.hazir():
         return cx, cy, "native"
     # 1) TERMİNAL KESİŞİM (yalnız INTERCEPT açık + yakın menzil)
-    if terminal and getattr(cfg, "INTERCEPT", False) and boyut and boyut > 1e-6:
+    if terminal and _ozellik(cfg, "intercept", "INTERCEPT") and boyut and boyut > 1e-6:
         menzil = cfg.MENZIL_PX_M / boyut
         if menzil < cfg.INTERCEPT_MENZIL:
             dcx, dcy, _tgo = est.intercept_ofset(boyut, kapanma)
@@ -770,7 +905,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
         Kutu YASASINI değiştirmez: yalnızca (cx,cy) beslemesi tahminden gelir.
         """
         nonlocal vx_p, vy_p, vz_p, cmd_yaw, hiz_I
-        if not getattr(cfg, "PRED", False) or not est.hazir():
+        if not _ozellik(cfg, "pred", "PRED") or not est.hazir():
             return None
         # coast ufku: son GERÇEK tespitten bu yana geçen süre PRED_MAXS'i aşarsa
         # tahmine güvenme (donmuş komuta düş).
@@ -888,7 +1023,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     # tespit boşluğu/coast gerekir. INTERCEPT KAPALI → ufuk
                     # TERMINAL_SURE (bit-aynı native).
                     _kor_ufuk = cfg.TERMINAL_SURE
-                    if getattr(cfg, "INTERCEPT", False):
+                    if _ozellik(cfg, "intercept", "INTERCEPT"):
                         _kor_ufuk = min(cfg.TERMINAL_SURE, cfg.INTERCEPT_KOR_MAXS)
                     if kor_baslangic is None:
                         kor_baslangic = time.time()
@@ -957,7 +1092,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # ve son gerçek tespit anını/kutu boyutunu sakla — kutu boşluğunda
             # coast komutu bunları kullanır. PRED KAPALI iken bu tamamen atıldır:
             # est kullanılmaz, komut girdisi ham (cx,cy) kalır (bit-aynı native).
-            if getattr(cfg, "PRED", False):
+            if _ozellik(cfg, "pred", "PRED"):
                 est.guncelle(cx, cy, dt)
             son_gercek_t = now
             son_bw, son_bh = bw, bh

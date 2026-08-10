@@ -202,6 +202,34 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .kp-bar{height:7px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
 .kp-fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber),var(--green));transition:width .25s}
 .kp-note{margin-top:2px;font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
+/* ── ALGORİTMA ÖZELLİKLERİ — çalışma-anı kill-switch düğmeleri ──
+   Düğmeler script.js'te REGISTRY'den üretilir; ON = yeşil (seg/kilit ile aynı
+   dil). Salt görsel; boolean kaynağı sunucudaki depo. */
+#ozPanel .mc{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.oz-list{display:flex;flex-direction:column;gap:8px}
+.oz-empty{font-size:11px;color:var(--dim);letter-spacing:.02em;padding:4px 0}
+.oz-item{display:flex;align-items:center;gap:10px;padding:10px 11px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  cursor:pointer;transition:border-color .15s,background .15s}
+.oz-item:hover{border-color:var(--line2)}
+.oz-item[data-on="1"]{border-color:rgba(52,216,168,.45);background:#0b1a16}
+.oz-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.oz-ad{font-size:12px;font-weight:700;color:var(--text);letter-spacing:.02em}
+.oz-item[data-on="1"] .oz-ad{color:var(--green)}
+.oz-ac{font-size:10px;line-height:1.45;color:var(--muted);letter-spacing:.01em}
+.oz-durum{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;
+  color:var(--dim);min-width:34px;text-align:right}
+.oz-item[data-on="1"] .oz-durum{color:var(--green)}
+/* pill anahtar */
+.oz-sw{position:relative;flex:none;width:42px;height:23px;border-radius:12px;
+  background:var(--dim);transition:background .18s;border:1px solid var(--line)}
+.oz-item[data-on="1"] .oz-sw{background:linear-gradient(180deg,var(--green),#1fae86)}
+.oz-sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;
+  border-radius:50%;background:#fff;transition:transform .18s;
+  box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.oz-item[data-on="1"] .oz-sw::after{transform:translateX(19px)}
+.oz-item[aria-disabled="true"]{opacity:.5;pointer-events:none}
+.oz-note{font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
 /* Avcı Drone bölümü — faz durumu (Takip Modu — Otonom başlığı altında) */
 .avci-faz{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 10px;
   padding-bottom:8px;border-bottom:1px solid var(--line)}

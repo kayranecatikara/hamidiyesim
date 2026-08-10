@@ -102,7 +102,12 @@ class SupCfg:
     # kor_dalis ≤ %3) — bkz. DURUM.md B6.
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
-    KAYIP_M = 20          # ardışık tespitsiz kare → GPS'e dön (~0.66 s)
+    # KAYIP_M — bbox yürütücüsünün "kayip" döndürmeden önce tolere ettiği ardışık
+    # tespitsiz kare. Yükseltmek = görsel yürütücü boşlukta bail edip YENİDEN
+    # BAŞLAMAZ (terminal mandalı korunur) → tek sürekli dalış (tekte vuruş).
+    # PRED coast komutu boşlukta köprüler. VARSAYILAN 20 (~0.66s@30fps) = byte-aynı.
+    # Yapışkanlık testi: AVCI_HYBRID_KAYIP_M=60 (~2s) FSM KILIT_KAYIP_SN ile birlikte.
+    KAYIP_M = int(os.environ.get("AVCI_HYBRID_KAYIP_M", 20))
     POSE_CONF_MIN = 0.5
     GATE_KILIT = True     # geçiş için menzil kapısı (VEYA GPS DROPOUT — jamming)
     # Devir menzili: GPS handoff bayrağı 40 m'de açılıyor ama orada kutu ~7 px,
