@@ -428,6 +428,274 @@ def main():
                          (0.0, 0.0), 0.0, 0.0, 2.0)[2] - _eski) < 1e-9,
             "KAPANMA=False iken kapanma hızı verilse bile YOK SAYILIR")
 
+    # ══ PN YATAY LEAD KİLL-SWITCH (2026-08-09, arastirma Aday #2) ══
+    # Kök bulgu: los_hiz[0] = d/dt[iyaw + atan((cx−CX)/FX)] ZATEN ego-temiz
+    # (atalet LOS hızı). Kill-switch KAPALI (varsayılan) → native lead bit-aynı;
+    # AÇIK → PN lead (N·λ̇·t_go) yatay/yaw kanalında, dikey vz'ye DOKUNMAZ.
+    class _PNoff(ib.Cfg):
+        PN = False                 # varsayılanla aynı; açıkça
+    class _PNon(ib.Cfg):
+        PN = True
+        PN_N = 3.0
+        PN_TGO_MAX = 3.0
+        PN_KAP_MIN = 1.5
+
+    # Crosser geometrisi: hedef merkezde (yaw hatası izole edilsin), yatay LOS
+    # DÖNÜYOR (los_hiz[0]>0), kapanma 3 m/s, kutu 18px (≈8.9 m — ölçülen
+    # terminal-latch menzili). Native lead vs PN lead karşılaştır.
+    LAM = 0.3                       # rad/s atalet yatay LOS hızı (gerçek crosser)
+    _off = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, _PNoff, True,
+                    (LAM, 0.0), 0.0, 0.0, 3.0)[5]
+    _on = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, _PNon, True,
+                   (LAM, 0.0), 0.0, 0.0, 3.0)[5]
+
+    # ── B28: kill-switch KAPALI → native lead yolu (kaynak='native') ──
+    # Native = LEAD_SURE·lead_olcek·λ̇. Değer, kill-switch eklemeden ÖNCEKİ
+    # formülle bire bir aynı olmalı (bit-aynı native davranış).
+    _native_beklenen = max(-math.radians(C.LEAD_MAX_DEG),
+        min(math.radians(C.LEAD_MAX_DEG),
+            C.LEAD_SURE * min(1.0, C.BOYUT_REF / 18.0) * LAM))
+    kontrol("B28 PN kapalı → native lead formülü bit-aynı (kaynak=native)",
+            _off["lead_kaynak"] == "native"
+            and abs(_off["lead_az"] - _native_beklenen) < 1e-12,
+            f"native lead={math.degrees(_off['lead_az']):.3f}° "
+            f"(beklenen {math.degrees(_native_beklenen):.3f}°)")
+
+    # ── B29: PN AÇIK crosser'da lead DAHA BÜYÜK ve aynı işarette ──
+    # PN = N·λ̇·t_go; t_go = menzil/kapanma = (160/18)/3 ≈ 2.96 s → N·λ̇·t_go
+    # tavana (25°) oturur. Native ≈ 6.9°. PN, native'den belirgin büyük.
+    kontrol("B29 PN açık: crosser'da yatay lead native'den BÜYÜK, aynı işaret",
+            _on["lead_kaynak"] == "pn"
+            and _on["lead_az"] > _off["lead_az"] > 0.0
+            and abs(_on["lead_az"]) > abs(_off["lead_az"]) * 1.5,
+            f"native {math.degrees(_off['lead_az']):.2f}° → "
+            f"PN {math.degrees(_on['lead_az']):.2f}° "
+            f"({math.degrees(_on['lead_az'])/max(math.degrees(_off['lead_az']),1e-6):.1f}×)")
+
+    # ── B30: PN lead İŞARETİ LOS dönüş yönüyle uyumlu (sol crosser → sol lead) ──
+    _on_neg = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, _PNon, True,
+                       (-LAM, 0.0), 0.0, 0.0, 3.0)[5]
+    kontrol("B30 PN lead işareti λ̇ ile döner (λ̇<0 → lead<0)",
+            _on_neg["lead_az"] < 0.0
+            and abs(_on_neg["lead_az"] + _on["lead_az"]) < 1e-9,
+            f"λ̇=+{LAM} → {math.degrees(_on['lead_az']):+.1f}°, "
+            f"λ̇=−{LAM} → {math.degrees(_on_neg['lead_az']):+.1f}°")
+
+    # ── B31: PN lead LEAD_MAX_DEG ile tavanlı (gürültülü λ̇ savurmasın) ──
+    _on_big = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, _PNon, True,
+                       (5.0, 0.0), 0.0, 0.0, 3.0)[5]     # λ̇=5 rad/s absürt
+    kontrol("B31 PN lead LEAD_MAX_DEG tavanında kalır",
+            abs(_on_big["lead_az"]) <= math.radians(C.LEAD_MAX_DEG) + 1e-9,
+            f"λ̇=5 rad/s → {math.degrees(_on_big['lead_az']):.1f}° "
+            f"≤ {C.LEAD_MAX_DEG:.0f}°")
+
+    # ── B32: PN yalnız YATAY/YAW kanalını değiştirir — DİKEY vz AYNEN KALIR ──
+    # Aynı geometri, PN off vs on: vz komutu (index 2) bit-aynı olmalı.
+    cy_ust_pn = geo.CY + geo.FY * math.tan(math.radians(15))   # hedef 10° yukarıda
+    _vz_off = ib.komut(CX, cy_ust_pn, 18, 18, 0.0, 10.0, 0.05, _PNoff, True,
+                       (LAM, 0.4), 0.0, 0.0, 3.0)[2]
+    _vz_on = ib.komut(CX, cy_ust_pn, 18, 18, 0.0, 10.0, 0.05, _PNon, True,
+                      (LAM, 0.4), 0.0, 0.0, 3.0)[2]
+    kontrol("B32 PN dikey vz'ye DOKUNMAZ (yalnız yaw/yatay kanal)",
+            abs(_vz_off - _vz_on) < 1e-12,
+            f"vz PN-off {_vz_off:+.3f} = PN-on {_vz_on:+.3f} m/s")
+
+    # ── B33: EGO-DÜZELTME kancası — los_hiz[0] zaten ego-temiz; PN_EGO çift-
+    # çıkarma yapar. Kanca AÇIKKEN yaw_rate=λ̇ verilince lead ~0'a düşmeli
+    # (çift-düzeltme sinyali sıfırlar) → los_hiz[0]'ın gerçekten ego-temiz
+    # olduğunun ispatı: ondan yaw_rate çıkınca crosser sinyali kaybolur.
+    class _PNego(_PNon):
+        PN_EGO = True
+    _ego = ib.komut(CX, C.CY_NISAN, 18, 18, 0.0, 10.0, 0.05, _PNego, True,
+                    (LAM, 0.0), 0.0, 0.0, 3.0, LAM)[5]      # yaw_rate=LAM
+    kontrol("B33 PN_EGO çift-çıkarma: yaw_rate=λ̇ → lead≈0 (los_hiz ego-temiz kanıtı)",
+            abs(_ego["lead_az"]) < 1e-9,
+            f"PN_EGO=1, yaw_rate=λ̇=λ̇ → lead {math.degrees(_ego['lead_az']):.3f}° "
+            f"(los_hiz[0] ZATEN ego-temiz olduğu için çift-çıkarma sıfırlıyor)")
+
+    # ══ KESTİRİM + COAST KİLL-SWITCH (PRED) (2026-08-09, arastirma Aday #3/#5) ══
+    # Ölçülen problem: hedef-kaybı %73.7, kör hücumda son komut 2 s DONULUYORDU.
+    # PRED KAPALI (varsayılan) → komut yolu + kör davranış bit-aynı; PRED AÇIK →
+    # görüntü-düzlemi (cx,cy) kestirimiyle coast (donmuş yerine ilerleyen nişan)
+    # + normal takipte küçük görüntü-lead. Dikey/yatay YASAYA dokunulmaz.
+    class _PREDon(ib.Cfg):
+        PRED = True
+        PRED_MAXS = 0.6
+        PRED_LEAD = 0.3
+        PRED_ALPHA = 0.5
+        PRED_BETA = 0.1
+
+    # ── B34: PRED KAPALI → komut() yolu BİT-AYNI (kestirim yalnız döngüde) ──
+    # komut imzası değişmedi; PRED off cfg ile default cfg özdeş sonuç vermeli.
+    class _PREDoff(ib.Cfg):
+        PRED = False
+    _a = ib.komut(CX + 60, C.CY_NISAN + 40, 30, 30, 0.1, 8.0, 0.05, C,
+                  False, (0.2, 0.1), 0.05, 1.0, 2.0, 0.0)
+    _b = ib.komut(CX + 60, C.CY_NISAN + 40, 30, 30, 0.1, 8.0, 0.05, _PREDoff,
+                  False, (0.2, 0.1), 0.05, 1.0, 2.0, 0.0)
+    kontrol("B34 PRED kapalı → komut() çıktısı bit-aynı (yasa değişmedi)",
+            _a[:5] == _b[:5] and _a[5]["lead_az"] == _b[5]["lead_az"],
+            f"vx/vy/vz/yaw/I ve lead_az özdeş (PRED yalnız döngüde beslemeyi kaydırır)")
+
+    # ── B35: KESTİRİCİ hareketli hedefin bir sonraki konumunu DOĞRU tahminler ──
+    # Sabit hızla (px/frame) ilerleyen hedefe estimator'ı besle; ölçümsüz ileri-
+    # tahmin gerçek yörüngeye yakınsamalı (alpha-beta hızı öğrenir).
+    est = ib.HedefKestirim(_PREDon)
+    _dt = 0.05
+    _vx_px, _vy_px = 40.0, -20.0      # px/s (gerçek hedef görüntü hızı)
+    cx_t, cy_t = 300.0, 260.0
+    for _k in range(12):              # 12 kare besle → hız otursun
+        cx_t += _vx_px * _dt
+        cy_t += _vy_px * _dt
+        est.guncelle(cx_t, cy_t, _dt)
+    v_hata = math.hypot(est.vcx - _vx_px, est.vcy - _vy_px)
+    # bir sonraki karenin GERÇEK konumu vs estimator ileri-tahmini
+    cx_gercek, cy_gercek = cx_t + _vx_px * _dt, cy_t + _vy_px * _dt
+    cx_tah, cy_tah = est.tahmin_ileri(_dt)
+    tah_hata = math.hypot(cx_tah - cx_gercek, cy_tah - cy_gercek)
+    kontrol("B35 estimator hareketli hedefin hızını+sonraki konumunu doğru kestirir",
+            v_hata < 3.0 and tah_hata < 3.0,
+            f"öğrenilen hız ({est.vcx:.1f},{est.vcy:.1f}) vs gerçek "
+            f"({_vx_px:.0f},{_vy_px:.0f}) px/s; ileri-tahmin hatası {tah_hata:.2f} px")
+
+    # ── B36: COAST — boşlukta tahmin edilen cx/cy hız yönünde İLERLER (donmaz) ──
+    # Estimator hareketli hedefe oturtulduktan sonra art arda ileri-tahmin
+    # çağır; cx her adımda vcx·dt kadar artmalı (frozen olsaydı sabit kalırdı).
+    est2 = ib.HedefKestirim(_PREDon)
+    cx_s, cy_s = 320.0, 300.0
+    for _k in range(10):
+        cx_s += 30.0 * _dt            # 30 px/s sağa
+        est2.guncelle(cx_s, cy_s, _dt)
+    cx0, _ = est2.cx, est2.cy
+    est2.tahmin_ileri(_dt)
+    cx1 = est2.cx
+    est2.tahmin_ileri(_dt)
+    cx2 = est2.cx
+    kontrol("B36 coast: tahmin edilen cx hız yönünde ilerler (donmuş DEĞİL)",
+            cx1 > cx0 + 1.0 and cx2 > cx1 + 1.0
+            and abs((cx1 - cx0) - est2.vcx * _dt) < 1e-6,
+            f"cx {cx0:.1f} → {cx1:.1f} → {cx2:.1f} (adım ≈ vcx·dt = "
+            f"{est2.vcx * _dt:.2f} px; frozen olsaydı sabit)")
+
+    # ── DÖNGÜ COAST SÜRÜCÜSÜ (B37/B38 paylaşır) ──
+    # ⚠ Gerçekçi kare zamanlaması: gerçek uçuşta wait_pose bir SONRAKİ kamera
+    # karesine dek BLOKLAR (~30 fps); döngünün kutu-yok yolu bu yüzden kendi
+    # uyumaz (kaynak temposunu verir). Fake wait_pose'a küçük bir uyku koyup
+    # bunu modelliyoruz — yoksa boşluk döngüsü μs-dt ile spin eder (dt=0.001
+    # sınırında kalır) ve coast'ın ilerleyişi kare başına sub-mrad olur.
+    def _kosu_coast(cfg, buyuk_kutu, sure=1.2, dt_kare=0.03, kutu_sayi=12):
+        """Kutu akan sonra kesilen döngü koşusu; YALNIZ boşluk (coast) komutlarını
+        döner. Her komutu duvar-zamanıyla damgalar; son kutunun servis anından
+        SONRAKİ komutlar = boşluk (takip fazı dışlanır, izolasyon net)."""
+        conn_c = _FakeConn()
+        _sig = []                                    # (wall_t, args)
+        class _M:
+            def set_position_target_local_ned_send(s, *a):
+                _sig.append((time.monotonic(), a))
+        conn_c.mav = _M()
+        stc = {"seq": 0, "son_kutu_t": None}
+        def wp(son_seq, timeout=0.5):
+            time.sleep(dt_kare)                       # kamera karesi temposu
+            stc["seq"] += 1
+            if stc["seq"] <= kutu_sayi:
+                cxx = 300 + stc["seq"] * 5            # sağa kayan hedef
+                if buyuk_kutu:                        # terminal latch'i tetikler
+                    p = {"bbox": (cxx - 20, 285, cxx + 20, 320), "conf": 0.9}
+                else:                                 # küçük: normal takip yolu
+                    p = {"bbox": (cxx - 7, 296, cxx + 7, 304), "conf": 0.9}
+                stc["son_kutu_t"] = time.monotonic()  # son gerçek kutu servis anı
+            else:
+                p = None
+            return {"seq": stc["seq"], "pose": p,
+                    "stamp": None, "wall_recv": None, "lock": None}
+        stopc = threading.Event()
+        def gi():
+            return {"yaw": 0.0, "pitch": 0.0, "roll": 0.0,
+                    "vx": 10.0, "vy": 0.0, "vz": 0.0}
+        thc = threading.Thread(target=ib.run_bbox_ibvs,
+                               args=(conn_c, gi, wp, stopc, cfg, 500,
+                                     (10.0, 0.0, 0.0)),
+                               daemon=True)
+        thc.start(); time.sleep(sure); stopc.set(); thc.join(2.0)
+        # boşluk = son kutu servis anından SONRAKİ komutlar (takip fazı hariç).
+        t0 = stc["son_kutu_t"]
+        if t0 is None:
+            return [a for _t, a in _sig]
+        return [a for _t, a in _sig if _t > t0 + 1e-4]
+
+    # ── B37: DÖNGÜDE COAST + EXPIRY — PRED-on boşlukta İLERLER sonra DONAR,
+    #        PRED-off boşlukta HİÇ ilerlemez (donmuş). Kör hücum DIŞI yol. ──
+    # Kısa PRED_MAXS ile ufuk hızla dolar; ilerleme sonra durur (frozen'a düşer).
+    class _PREDexp(_PREDon):
+        PRED_MAXS = 0.25             # kısa ufuk: coast erken biter
+    # uzun boşluk (sure) ki ufuk dolduktan SONRA bol frozen kare kalsın.
+    _sig_off = _kosu_coast(_PREDoff, buyuk_kutu=False, sure=2.6)   # boşluk komutları
+    _sig_exp = _kosu_coast(_PREDexp, buyuk_kutu=False, sure=2.6)
+    _yoff = [s[14] for s in _sig_off]      # boşluktaki yaw komutları
+    _yexp = [s[14] for s in _sig_exp]
+    _span_off = (max(_yoff) - min(_yoff)) if _yoff else 0.0
+    _span_exp = (max(_yexp) - min(_yexp)) if _yexp else 0.0
+    # EXPIRY: son ~30 boşluk komutu (ufuk çoktan dolmuş) yaw sabit olmalı.
+    _kuyruk = _yexp[-30:] if len(_yexp) >= 30 else _yexp
+    _kuyruk_sabit = (max(_kuyruk) - min(_kuyruk) < 1e-4) if _kuyruk else False
+    kontrol("B37 coast ufuk (PRED_MAXS) dolunca donar; PRED-off hiç ilerlemez",
+            len(_yoff) > 3 and len(_yexp) > 3
+            and _span_off < 1e-4 and _span_exp > 1e-3 and _kuyruk_sabit,
+            f"boşlukta yaw yayılımı: PRED-off {_span_off:.5f} (donuk) | "
+            f"PRED-exp {_span_exp:.4f} rad ilerledi, ufuk sonrası kuyruk sabit "
+            f"({(max(_kuyruk)-min(_kuyruk)) if _kuyruk else 0:.6f})")
+
+    # ── B38: KÖR HÜCUM (terminal) COAST — PRED-on donmuş komut yerine hareketli
+    #        hedefi izler; PRED-off son komutu DONDURUR (native TERM_KOR). ──
+    # Ölçülen problemin doğrudan karşılığı: kör terminal hücumda crosser yana
+    # kaçarken PRED-on nişanı sürdürür, PRED-off düz uçar.
+    class _TermUzun_off(ib.Cfg):
+        TERMINAL_BOYUT = 30.0; TERMINAL_SURE = 5.0; PRED = False
+    class _TermUzun_on(_PREDon):
+        TERMINAL_BOYUT = 30.0; TERMINAL_SURE = 5.0
+    _sig_toff = _kosu_coast(_TermUzun_off, buyuk_kutu=True)   # kör hücum boşluğu
+    _sig_ton = _kosu_coast(_TermUzun_on, buyuk_kutu=True)
+    def _yaw_yay(sig):
+        vals = [s[14] for s in sig]
+        return (max(vals) - min(vals)) if vals else 0.0
+    _yay_toff = _yaw_yay(_sig_toff)
+    _yay_ton = _yaw_yay(_sig_ton)
+    kontrol("B38 kör hücum coast: PRED-on nişanı ilerletir, PRED-off dondurur",
+            len(_sig_toff) > 3 and len(_sig_ton) > 3
+            and _yay_toff < 1e-4 and _yay_ton > _yay_toff + 1e-3,
+            f"kör hücumda yaw yayılımı: PRED-off {_yay_toff:.5f} (donuk komut) → "
+            f"PRED-on {_yay_ton:.4f} rad (tahmin edilen hedefe nişan)")
+
+    # ── B39: NORMAL TAKİPTE görüntü-LEAD — nişanı hedefin gittiği yöne öne alır ──
+    # Hareketli hedefe oturmuş estimator ile normal (terminal DIŞI) takipte
+    # komut()'a beslenen cx, ham cx'ten hedefin hız yönünde kaymalı. Durgun
+    # hedefte lead≈0 (PN'i ezmeyen modest ofset).
+    est_l = ib.HedefKestirim(_PREDon)
+    cx_l = 320.0
+    for _k in range(10):
+        cx_l += 50.0 * _dt            # sağa 50 px/s
+        est_l.guncelle(cx_l, 300.0, _dt)
+    dcx, dcy = est_l.lead_ofset()
+    # durgun estimator (hız 0) → ofset 0
+    est_d = ib.HedefKestirim(_PREDon)
+    for _k in range(5):
+        est_d.guncelle(320.0, 300.0, _dt)
+    dcx0, _ = est_d.lead_ofset()
+    kontrol("B39 normal takip görüntü-lead: hareketli hedefte öne, durgunda ~0",
+            dcx > 1.0 and abs(dcx0) < 1e-6
+            and abs(dcx - est_l.vcx * _PREDon.PRED_LEAD * _PREDon.PRED_MAXS) < 1e-9,
+            f"hareketli → dcx {dcx:.2f} px (=vcx·LEAD·MAXS), durgun → {dcx0:.2f} px")
+
+    # ── B40: PRED açık DİKEY/YATAY YASAYA dokunmaz — coast dışı normal karede,
+    # estimator henüz hız öğrenmemişken (tek kutu) komut ham (cx,cy) ile aynı.
+    # (lead_ofset=0 → cx_giris=cx). Yasa reversibilitesi kanıtı.
+    est_z = ib.HedefKestirim(_PREDon)
+    est_z.guncelle(CX + 60, C.CY_NISAN + 40, _dt)     # tek ölçüm → hız 0
+    _dz = est_z.lead_ofset()
+    kontrol("B40 tek ölçümde lead ofseti 0 (hız yok) → komut ham (cx,cy) ile özdeş",
+            abs(_dz[0]) < 1e-9 and abs(_dz[1]) < 1e-9,
+            f"tek kutu → lead ofset {_dz} px (hız kestirimi yokken kaydırma yok)")
+
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

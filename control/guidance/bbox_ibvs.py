@@ -80,6 +80,16 @@ def _env_f(name, default):
     return float(os.environ.get(name, default))
 
 
+def _env_bool(name, default=False):
+    """Açma/kapama bayrağı — on/off/1/0/true/false kabul eder (bkz. AVCI_IBVS_PN).
+    Dosya başı _SARTNAME_KAPI ile aynı sözleşme; sayısal _env_f'in aksine
+    "on" gibi metinlerde patlamaz."""
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("on", "1", "true", "yes", "evet")
+
+
 class Cfg:
     LOOP_HZ = 20.0
 
@@ -230,6 +240,61 @@ class Cfg:
     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
     VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
 
+    # ══ PROPORTIONAL-NAVIGATION YATAY LEAD — KİLL-SWITCH (2026-08-09) ══
+    # ARAŞTIRMA BULGUSU (arastirma_raporu Aday #2): crosser fly-past'ın kökü,
+    # terminal yaw'ın SABİT KERTERİZ (collision triangle) yerine hedefin ŞU ANKİ
+    # pikselini kovalaması. Çözüm: yatay LOS DÖNÜŞ HIZINI sıfıra süren PN-tipi
+    # lead — burun, hedefin GİDECEĞİ yere döner, geçtiği yere değil.
+    #
+    # ⚠ EGO-DÜZELTME — KRİTİK BULGU (bu dosyada zaten yapılıyor):
+    #   los_hiz[0] = d/dt[ iyaw + atan((cx−CX)/FX) ]  (run_bbox_ibvs, ~587)
+    #   Yani LOS azimutu = drone HEADING + kadraj-içi kerteriz. Türevi alınınca
+    #   drone'un KENDİ yaw dönüşü ZATEN doğru biçimde içeride — los_hiz[0] atalet
+    #   (ego-temiz) LOS hızıdır. Diagnostik doğruladı: kod-oranı gerçek-atalet
+    #   oranıyla ondalığına dek eşit; "ham kadraj oranı" (yalnız atan türevi) ise
+    #   gerçek − yaw_rate olurdu (kontamine). Ekip _yatay_pn'de de aynısını
+    #   world-frame u_dunya azimutundan yapıyor. Dolayısıyla true_los_rate_az
+    #   İÇİN yaw_rate'i TEKRAR çıkarmak ÇİFT-DÜZELTME (yanlış) olur.
+    #   PN_EGO kancası bu yüzden VARSAYILAN KAPALI: los_hiz[0] zaten ego-temiz;
+    #   flag yalnız varsayım yanlışsa uçuşta A/B için (frame_rate − yaw_rate yolu).
+    #
+    # FORMÜL (yalnız YAW/YATAY kanal; dikey vz yasasına DOKUNULMAZ):
+    #   t_go   = clamp(menzil / max(kapanma, KAP_MIN), 0, T_GO_MAX)
+    #            menzil = MENZIL_PX_M / boyut  (kutudan; GPS yok)
+    #   lead_az = clamp(N · true_los_rate_az · t_go, ±LEAD_MAX_DEG)
+    #   N (PN sabiti) ≈ 3.0; native lead (LEAD_SURE·lead_olcek·los_hiz) yerine geçer.
+    # KAPALI (AVCI_IBVS_PN=off, VARSAYILAN) → native lead_az bit-aynı korunur.
+    PN = _env_bool("AVCI_IBVS_PN", False)        # yatay PN lead açık/kapalı (off=native)
+    PN_N = _env_f("AVCI_IBVS_PN_N", 3.0)         # PN etkin oransal sabiti (N)
+    PN_TGO_MAX = _env_f("AVCI_IBVS_PN_TGO", 3.0)  # s; t_go tavanı (uzak/yavaşta patlamasın)
+    PN_KAP_MIN = _env_f("AVCI_IBVS_PN_KAPMIN", 1.5)  # m/s; t_go için kapanma tabanı
+    # EGO kancası: los_hiz[0] ZATEN ego-temiz (yukarı). AÇIKKEN yaw_rate BİR
+    # KEZ DAHA çıkarılır (frame-rate varsayımı) — normalde YANLIŞ, yalnız A/B için.
+    PN_EGO = _env_bool("AVCI_IBVS_PN_EGO", False)
+
+    # ══ KESTİRİM + COAST (PRED) — KİLL-SWITCH (2026-08-09, arastirma Aday #3/#5) ══
+    # ÖLÇÜLEN PROBLEM: hedef-kaybı %73.7; tespit karelerin yalnız ~%24'ünde kutu
+    # taşıyor. Kör terminal hücumda (TERM_KOR) son komut 2 s DONDURULUYOR — araç
+    # düz uçarken CROSSER hedef yana kaçıyor → ıska.
+    #
+    # ÇÖZÜM (yalnız (cx,cy) BESLEMESİNİ etkiler; dikey/yatay YASAYA dokunmaz):
+    #   Görüntü-düzlemi hedef merkezine (cx,cy) hafif alpha-beta (sabit-hız)
+    #   kestirimi. Durum = [cx, cy, vcx, vcy] px, px/s. Her geçerli kutuda GÜNCELLE.
+    #   Kutu YOKKEN (özellikle kör hücum) İLERİ TAHMİN et (cx += vcx·dt) ve bu
+    #   tahmini komut()'a besle → güdüm donan komut yerine hareket eden hedefi
+    #   izlemeyi sürdürür. Tahmin ufku sınırlı: PRED_MAXS (0.6 s) sonra tahmine
+    #   güvenilmez (donmuş komuta düşülür). Normal takipte ise küçük bir
+    #   görüntü-düzlemi LEAD (tahmin edilen hız yönünde öne nişan) uygulanır —
+    #   PN'in YERİNE değil, ONUNLA birlikte (PN los_hiz'i okur; bu cx/cy'yi kaydırır).
+    # KAPALI (AVCI_IBVS_PRED=off, VARSAYILAN) → native/donmuş davranış BİT-AYNI.
+    PRED = _env_bool("AVCI_IBVS_PRED", False)     # kestirim+coast açık/kapalı (off=native)
+    PRED_MAXS = _env_f("AVCI_IBVS_PRED_MAXS", 0.6)  # s; gerçek tespitsiz coast ufku
+    PRED_LEAD = _env_f("AVCI_IBVS_PRED_LEAD", 0.3)  # normal takip görüntü-lead kesri
+    # Alpha-beta gözlem kazançları (α konum düzeltmesi, β hız düzeltmesi).
+    # α≈0.5/β≈0.1: gürültülü bbox'ta makul yumuşatma + hız izleme (ölçek-bağımsız).
+    PRED_ALPHA = _env_f("AVCI_IBVS_PRED_ALPHA", 0.5)
+    PRED_BETA = _env_f("AVCI_IBVS_PRED_BETA", 0.1)
+
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
     # geçtik") ──
     # SORUN: terminal dikey kanalı SAF NİŞANLAMA (vz = −v·tan(elev)) — türev/
@@ -283,6 +348,88 @@ class Cfg:
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
 
 
+class HedefKestirim:
+    """Görüntü-düzlemi hedef merkezi (cx,cy) için alpha-beta (sabit-hız) kestirimi.
+
+    Durum: [cx, cy, vcx, vcy]  (px, px/s). Saf Python — yeni bağımlılık yok.
+
+    Alpha-beta, sabit-hız Kalman'ın sabit-kazançlı sadeleştirmesidir: tahmin
+    adımı konumu hızla ilerletir, güncelleme adımı ölçüm artığını (residual)
+    α (konum) ve β/dt (hız) ile geri besler. Terminal bbox gürültüsünde ucuz ve
+    kararlıdır; kutu boşluğunda saf ileri-tahmin (coast) verir.
+
+    Kullanım (run_bbox_ibvs döngüsü):
+      est = HedefKestirim(cfg)
+      # geçerli kutuda:
+      est.guncelle(cx, cy, dt)             # tahmin + ölçüm birleşimi
+      # kutu yokken (coast):
+      cx_p, cy_p = est.tahmin_ileri(dt)    # yalnız ileri-tahmin, ölçüm yok
+    """
+
+    def __init__(self, cfg=Cfg):
+        self.cfg = cfg
+        self.cx = self.cy = None       # None = henüz başlatılmadı
+        self.vcx = self.vcy = 0.0      # px/s
+
+    def hazir(self):
+        """Hız kestirimi anlamlı mı? (en az iki ölçüm görüldü)."""
+        return self.cx is not None
+
+    def guncelle(self, cx, cy, dt):
+        """Geçerli kutu: alpha-beta tahmin+güncelleme. Yeni (cx,cy) durumu döner.
+
+        İlk çağrı yalnız durumu tohumlar (hız 0). Sonraki çağrılar hızı ölçüm
+        artığından öğrenir. dt makul aralıkta değilse (akış boşluğu) hız
+        güncellenmez, yalnız konum ölçüme çekilir (bayat hızla ekstrapolasyon
+        yapıp savrulmayı önler).
+        """
+        if self.cx is None:            # tohumla
+            self.cx, self.cy = float(cx), float(cy)
+            self.vcx = self.vcy = 0.0
+            return self.cx, self.cy
+        if not (1e-3 < dt < 0.5):
+            # akış boşluğu — hızı ekstrapole etme, konumu ölçüme oturt
+            self.cx, self.cy = float(cx), float(cy)
+            return self.cx, self.cy
+        # TAHMİN (sabit hız)
+        cx_pred = self.cx + self.vcx * dt
+        cy_pred = self.cy + self.vcy * dt
+        # ÖLÇÜM ARTIĞI
+        rx = float(cx) - cx_pred
+        ry = float(cy) - cy_pred
+        a, b = self.cfg.PRED_ALPHA, self.cfg.PRED_BETA
+        self.cx = cx_pred + a * rx
+        self.cy = cy_pred + a * ry
+        self.vcx += (b / dt) * rx
+        self.vcy += (b / dt) * ry
+        return self.cx, self.cy
+
+    def tahmin_ileri(self, dt):
+        """Kutu YOK: yalnız ileri-tahmin (coast). Durumu ilerletir ve döner.
+
+        Ölçüm olmadığı için hız sabit kalır; konum vcx/vcy·dt kadar ilerler.
+        Böylece kör hücumda donmuş komut yerine hedefin GİTTİĞİ yer beslenir.
+        """
+        if self.cx is None:
+            return None
+        if 1e-3 < dt < 0.5:
+            self.cx += self.vcx * dt
+            self.cy += self.vcy * dt
+        return self.cx, self.cy
+
+    def lead_ofset(self):
+        """Normal takip için görüntü-düzlemi LEAD ofseti (dcx, dcy) px.
+
+        Tahmin edilen hızla, coast ufku (PRED_MAXS) boyunca alınacak yer
+        değiştirmenin PRED_LEAD kesri kadar öne nişan. Modest (PN'i ezmez):
+        düz kuyruk takibinde v≈0 → ofset≈0.
+        """
+        if self.cx is None:
+            return 0.0, 0.0
+        s = self.cfg.PRED_LEAD * self.cfg.PRED_MAXS
+        return self.vcx * s, self.vcy * s
+
+
 _LOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "logs")
@@ -292,6 +439,7 @@ _CSV_ALANLAR = [
     "eps_yaw_deg", "eps_elev_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+    "lead_kaynak", "yaw_rate_deg",
 ]
 
 
@@ -310,7 +458,7 @@ def piksel_elev(cy, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None):
+          kapanma=None, yaw_rate=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -334,11 +482,35 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         lead_olcek = clamp(cfg.BOYUT_REF / boyut, 0.0, 1.0)
     lead_sure = cfg.LEAD_SURE * lead_olcek
     lead_az = 0.0
+    _lead_kaynak = "native"
     if terminal:
-        # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE)
-        lead_az = clamp(lead_sure * los_hiz[0],
-                        -math.radians(cfg.LEAD_MAX_DEG),
-                        math.radians(cfg.LEAD_MAX_DEG))
+        if getattr(cfg, "PN", False):
+            # ── PN-TİPİ YATAY LEAD (kill-switch AÇIK; bkz. Cfg.PN) ──
+            # true_los_rate_az: los_hiz[0] ZATEN ego-temiz (atalet LOS hızı;
+            # bkz. Cfg.PN yorumu ve run_bbox_ibvs ~587). PN_EGO açıksa yaw_rate
+            # BİR KEZ DAHA çıkarılır — bu ÇİFT-DÜZELTMEDİR, normalde YANLIŞ,
+            # yalnız varsayımı uçuşta sınamak için (VARSAYILAN kapalı).
+            true_los_rate_az = los_hiz[0]
+            if getattr(cfg, "PN_EGO", False):
+                true_los_rate_az = los_hiz[0] - yaw_rate
+            # t_go ≈ menzil / kapanma (GPS yok; menzil kutudan). kapanma None ya
+            # da küçükse tabana oturur; uzak/yavaş-kapanmada tavanla sınırlı.
+            _kap = cfg.PN_KAP_MIN
+            if kapanma is not None:
+                _kap = max(cfg.PN_KAP_MIN, float(kapanma))
+            _menzil = (cfg.MENZIL_PX_M / boyut) if boyut > 1e-6 else 0.0
+            t_go = clamp(_menzil / _kap, 0.0, cfg.PN_TGO_MAX)
+            # PN lead = N · λ̇_atalet · t_go  → LOS dönüş hızını sıfıra sürer.
+            lead_az = clamp(cfg.PN_N * true_los_rate_az * t_go,
+                            -math.radians(cfg.LEAD_MAX_DEG),
+                            math.radians(cfg.LEAD_MAX_DEG))
+            _lead_kaynak = "pn"
+        else:
+            # NATIVE (VARSAYILAN, bit-aynı): nişanı atalet LOS dönüş hızıyla öne
+            # al (bkz. Cfg.LEAD_SURE). lead_sure = LEAD_SURE·lead_olcek.
+            lead_az = clamp(lead_sure * los_hiz[0],
+                            -math.radians(cfg.LEAD_MAX_DEG),
+                            math.radians(cfg.LEAD_MAX_DEG))
     yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
 
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)
@@ -397,7 +569,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
-            "lead_az": lead_az, "lead_olcek": lead_olcek}
+            "lead_az": lead_az, "lead_olcek": lead_olcek,
+            "lead_kaynak": _lead_kaynak}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
@@ -469,11 +642,67 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
     boyut_onceki = None       # kapanma hızı için (bkz. Cfg.KAPANMA)
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
+    iyaw_onceki = None        # PN_EGO kancası için drone yaw'ı (opsiyonel)
+    # ── KESTİRİM + COAST (bkz. Cfg.PRED) ──
+    # est: görüntü-düzlemi (cx,cy) sabit-hız kestiricisi. Kutu boşluğunda
+    # (özellikle kör hücum) donmuş komut yerine ileri-tahmin edilen hedefi
+    # komut()'a besler. son_gercek_t: son GERÇEK tespitin monotonic anı —
+    # coast ufku (PRED_MAXS) bundan ölçülür. son_boyut: coast sırasında komut
+    # üretmek için son geçerli kutu boyutu (kapanma/terminal ölçeği için).
+    est = HedefKestirim(cfg)
+    son_gercek_t = None       # son geçerli kutunun monotonic anı
+    son_bw = son_bh = 0.0     # son geçerli kutu genişlik/yükseklik (coast komutu)
 
     def _vuruldu():
         if get_temas is None:
             return False
         return get_temas() is True
+
+    def _pred_coast_cmd(iris, iyaw, ipitch, dt, now):
+        """PRED coast: kutu yokken ileri-tahminle CANLI komut üret (donmuş değil).
+
+        Estimator'ı ilerletir, tahmin edilen (cx,cy)'yi komut()'a besler ve
+        ana yoldakiyle AYNI yaw-slew + ivme sınırını uygular. Yeni komut
+        dörtlüsünü döner; None dönerse çağıran donmuş davranışa düşer.
+        Paylaşılan limitleyici/yaw durumunu (nonlocal) günceller — böylece
+        ardışık coast kareleri sürekli ilerler.
+        Kutu YASASINI değiştirmez: yalnızca (cx,cy) beslemesi tahminden gelir.
+        """
+        nonlocal vx_p, vy_p, vz_p, cmd_yaw, hiz_I
+        if not getattr(cfg, "PRED", False) or not est.hazir():
+            return None
+        # coast ufku: son GERÇEK tespitten bu yana geçen süre PRED_MAXS'i aşarsa
+        # tahmine güvenme (donmuş komuta düş).
+        if son_gercek_t is not None and (now - son_gercek_t) > cfg.PRED_MAXS:
+            return None
+        ileri = est.tahmin_ileri(dt)
+        if ileri is None:
+            return None
+        cx_p, cy_p = ileri
+        # komut(): terminal durumu KORUNUR (kör hücumda terminal yasası sürer).
+        # Kutu boyutu son geçerli kutudan (kapanma/dikey ölçek için); los_hiz/
+        # kapanma canlı döngü durumundan. hiz_I DEĞİŞMEZ (coast'ta integrali
+        # sürdürme; hata sinyali gerçek değil) — yerel kopyayla çağrılır.
+        vx, vy, vz, yaw_hedef, _I_yeni, _t = komut(
+            cx_p, cy_p, son_bw, son_bh, iyaw, hiz_I, dt, cfg,
+            terminal_mandal, tuple(los_hiz), ipitch,
+            float(iris.get("vz", 0.0) or 0.0), kapanma, 0.0)
+        # YAW SLEW (ana yolla aynı): burun sınırla, hız yönü yaw_hedef'ten.
+        _cy = cmd_yaw if cmd_yaw is not None else iyaw
+        yaw_err = normalize_angle(yaw_hedef - _cy)
+        adim = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
+        _cy = normalize_angle(_cy + adim)
+        # hız yönünü slew'lenmiş yaw'a göre yeniden kur (ana yol yaw_cmd'yi
+        # komut içinde kullanır; burada komut yaw_hedef'i döndürdüğü için
+        # slew sonrası yönü tazele).
+        v_yatay = math.hypot(vx, vy)
+        vx = v_yatay * math.cos(_cy)
+        vy = v_yatay * math.sin(_cy)
+        cmd_yaw = _cy
+        vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,
+                                        cfg.MAX_ACCEL, dt)
+        vx_p, vy_p, vz_p = vx, vy, vz
+        return (vx, vy, vz, _cy)
 
     os.makedirs(_LOG_DIR, exist_ok=True)
     csv_yol = os.path.join(_LOG_DIR, time.strftime("bbox_ibvs_%Y%m%d_%H%M%S.csv"))
@@ -551,11 +780,24 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                         print(f"[IBVS] kör hücum {gecen:.1f} s sürdü, temas yok "
                               f"→ ISKA, 'kayip' (GPS'e dönülüyor)")
                         return "kayip"
+                    # PRED AÇIK: donmuş komut yerine TAHMİN edilen hedefe nişanla
+                    # (kör hücumda crosser yana kaçarken hedefin GİTTİĞİ yeri
+                    # sürdür). PRED KAPALI ya da tahmin süresi dolduysa → donmuş
+                    # son_v_cmd (native davranış, bit-aynı).
+                    _pred = _pred_coast_cmd(iris, iyaw, iris.get("pitch", 0.0),
+                                            dt, now)
+                    _durum_kor = "TERM_KOR"
+                    if _pred is not None:
+                        son_v_cmd = _pred
+                        _durum_kor = "TERM_PRED"
                     if son_v_cmd is not None:
                         send_velocity(conn, *son_v_cmd)
                     w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
-                                    "durum": "TERM_KOR",
+                                    "durum": _durum_kor,
                                     "kayip_sayac": kayip_sayac,
+                                    "vx_cmd": round(son_v_cmd[0], 2) if son_v_cmd else None,
+                                    "vy_cmd": round(son_v_cmd[1], 2) if son_v_cmd else None,
+                                    "vz_cmd": round(son_v_cmd[2], 2) if son_v_cmd else None,
                                     "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                     f.flush()
                     continue
@@ -565,12 +807,24 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 # Kutu yok: SON KOMUT sürdürülür (hedefin seyri bir karede
                 # değişmez). Sıfır komut vermek kısa bir tespit boşluğunu
                 # kalıcı kayba çevirir. İntegral dokunulmaz (bozulmasın).
+                # PRED AÇIK: donmuş komut yerine TAHMİN edilen hedefe köprüle
+                # (kısa tespit boşluğunda hedef hareketini sürdür). KAPALI ya da
+                # tahmin süresi dolduysa → native (donmuş son_v_cmd), bit-aynı.
+                _pred = _pred_coast_cmd(iris, iyaw, iris.get("pitch", 0.0),
+                                        dt, now)
+                _durum_yok = "KUTU_YOK"
+                if _pred is not None:
+                    son_v_cmd = _pred
+                    _durum_yok = "PRED"
                 if son_v_cmd is not None:
                     send_velocity(conn, *son_v_cmd)
                 else:
                     send_velocity(conn, vx_p, vy_p, vz_p, cmd_yaw or iyaw)
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
-                                "durum": "KUTU_YOK", "kayip_sayac": kayip_sayac,
+                                "durum": _durum_yok, "kayip_sayac": kayip_sayac,
+                                "vx_cmd": round(son_v_cmd[0], 2) if son_v_cmd else None,
+                                "vy_cmd": round(son_v_cmd[1], 2) if son_v_cmd else None,
+                                "vz_cmd": round(son_v_cmd[2], 2) if son_v_cmd else None,
                                 "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                 f.flush()
                 continue
@@ -578,6 +832,16 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             kayip_sayac = 0
             kor_baslangic = None       # kutu geri geldi → kör sayaç sıfırlanır
             cx, cy, bw, bh, conf = kutu
+
+            # ── KESTİRİM GÜNCELLE + COAST DURUMU (bkz. Cfg.PRED) ──
+            # Her geçerli kutuda görüntü-düzlemi (cx,cy) kestiricisini güncelle
+            # ve son gerçek tespit anını/kutu boyutunu sakla — kutu boşluğunda
+            # coast komutu bunları kullanır. PRED KAPALI iken bu tamamen atıldır:
+            # est kullanılmaz, komut girdisi ham (cx,cy) kalır (bit-aynı native).
+            if getattr(cfg, "PRED", False):
+                est.guncelle(cx, cy, dt)
+            son_gercek_t = now
+            son_bw, son_bh = bw, bh
 
             # ── ATALET LOS AÇILARI + HIZLARI (lead nişanı girdisi) ──
             # Piksel hızı DEĞİL: yaw kontrolcüsü kutuyu merkeze çektiği için
@@ -593,6 +857,15 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 los_hiz[1] = (a_ * ((los_el - los_el_onceki) / dt)
                               + (1 - a_) * los_hiz[1])
             los_az_onceki, los_el_onceki = los_az, los_el
+
+            # ── DRONE YAW HIZI (yalnız PN_EGO kancası için, bkz. Cfg.PN) ──
+            # los_hiz[0] ZATEN ego-temiz olduğundan bu normalde KULLANILMAZ;
+            # yaw_rate=0 komuta gider. PN_EGO açıksa komut() yaw_rate'i los_hiz[0]'
+            # dan çıkarır (çift-düzeltme; yalnız A/B doğrulaması için).
+            yaw_rate = 0.0
+            if iyaw_onceki is not None and 1e-3 < dt < 0.5:
+                yaw_rate = normalize_angle(iyaw - iyaw_onceki) / dt
+            iyaw_onceki = iyaw
 
             # ── KAPANMA HIZI, GÖRÜNTÜDEN (bkz. Cfg.KAPANMA) ──
             # R = MENZIL_PX_M/boyut  ⇒  ṙ = −dR/dt = R·(dboyut/dt)/boyut
@@ -615,21 +888,36 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # çünkü FSM zaten 5 sn kümülatif + 3 sn kesintisiz kilidi garanti etti
             # (tespit/takip/angajman disiplini). KAPALI/None → native (kutu eşiği).
             _kapi_aktif = _SARTNAME_KAPI and _State is not None and get_gorev_state is not None
+            _box_yakin = (math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT)
             if _kapi_aktif:
-                _terminal_ok = (get_gorev_state() == _State.STRIKE)
+                # İKİSİ BİRDEN (2026-08-09 uçuş bulgusu): FSM STRIKE'ı TEK BAŞINA
+                # yeterli sayınca terminal, hedef 139px merkez-dışı + box 18px
+                # (uzak) iken tetikleniyordu → bbox_ibvs terminali o geometriden
+                # yakınsayamıyor, fly-past. Box eşiği de şart: ENGAGE'de bbox_ibvs
+                # merkezleyip yakınlaşsın (box→TERMINAL_BOYUT), SONRA STRIKE terminali.
+                _terminal_ok = (get_gorev_state() == _State.STRIKE and _box_yakin)
             else:
-                _terminal_ok = (math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT)
+                _terminal_ok = _box_yakin
             if not terminal_mandal and _terminal_ok:
                 terminal_mandal = True
                 print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px, "
                       f"kapı={'FSM-STRIKE' if _kapi_aktif else 'native>=%d px' % cfg.TERMINAL_BOYUT}) "
                       f"— fren yok, tam taahhüt")
-            vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
-                                                       hiz_I, dt, cfg,
+            # ── GÖRÜNTÜ-DÜZLEMİ LEAD (bkz. Cfg.PRED / PRED_LEAD) ──
+            # PRED AÇIK: komut()'a beslenen nişanı hedefin görüntü-düzlemi hız
+            # yönünde HAFİFÇE öne al (crosser'da hedefin gideceği yere nişanla).
+            # Modest ofset — PN'i EZMEZ (PN los_hiz'i okur; bu cx/cy'yi kaydırır),
+            # onunla toplanır. PRED KAPALI → ham (cx,cy), bit-aynı native.
+            cx_giris, cy_giris = cx, cy
+            if getattr(cfg, "PRED", False) and est.hazir():
+                _dcx, _dcy = est.lead_ofset()
+                cx_giris, cy_giris = cx + _dcx, cy + _dcy
+            vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx_giris, cy_giris, bw, bh,
+                                                       iyaw, hiz_I, dt, cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
-                                                       kapanma)
+                                                       kapanma, yaw_rate)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -664,6 +952,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0,
+                "lead_kaynak": tani.get("lead_kaynak", "native"),
+                "yaw_rate_deg": round(math.degrees(yaw_rate), 1),
             })
             f.flush()
 
