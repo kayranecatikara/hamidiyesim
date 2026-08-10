@@ -1448,8 +1448,17 @@ def _chase_thread():
                             get_gt=_gt_bbox_girdi)   # GT modu (AVCI_GT_ROT=on)
                 vuruldu = (_supervisor_mod.status.get("faz") == "VURULDU")
             mod_stop.set()                 # izci thread'i sonlandır
+            # TEŞHİS (2026-08-10): görev döngüsünün neden dönüp durduğu ya da
+            # neden çıktığı hiçbir yere yazılmıyordu — bkz. TODO §0.
+            print(f"[CHASE] mod fazı bitti (mod={mod}) — "
+                  f"chase_stop={chase_stop.is_set()} vuruldu={vuruldu} "
+                  f"supervisor.faz={_supervisor_mod.status.get('faz')} "
+                  f"gps_bitis={_supervisor_mod.status.get('gps_faz_bitis')} "
+                  f"gorsel_bitis={_supervisor_mod.status.get('gorsel_faz_bitis')}")
 
         # ---- DURDURMA → HOVER ----
+        print(f"[CHASE] Görev döngüsü ÇIKTI — chase_stop={chase_stop.is_set()} "
+              f"vuruldu={vuruldu}  → bundan sonra araca güdüm komutu GİTMEZ")
         print("[CHASE] Algoritma sonlandı → hover'a geçiliyor...")
         df_hover(duration=3.0)
         print("[CHASE] Chase modu tamamen sonlandı.")

@@ -147,7 +147,9 @@ class SupCfg:
 
 
 # Telemetri/arayüz için son durum (gcs_server okur; salt gözlem)
-status = {"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None}
+status = {
+    # Faz bitiş sebepleri (TEŞHİS — panel/log okur; davranışa etkisi yok)
+    "gps_faz_bitis": None, "gorsel_faz_bitis": None,"faz": "GPS", "gecis_sayisi": 0, "kilit_sayac": 0, "son_sebep": None}
 
 
 def _kopru(parent_event, child_event):
@@ -239,6 +241,23 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
               f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
         run_gps_guidance(conn, get_plane, get_iris, faz_stop)
 
+        # ── FAZ BİTİŞ SEBEBİ (2026-08-10, TEŞHİS — davranışa etkisi YOK) ──
+        # NEDEN VAR: 08-10'da hibritte güdümün 69-314 s boyunca TAMAMEN
+        # durduğu üç olay yaşandı ve sebebi ancak log kazarak daraltılabildi
+        # (bkz. TODO §0). Fazın neden bittiği hiçbir yere yazılmıyordu.
+        # Artık hem stdout'a hem status'a düşer; bir sonraki donmada cevap
+        # tek satırda görünür.
+        _sebep_gps = ("vuruldu"   if tetik["vuruldu"]
+                      else "devir" if tetik["gorsel"]
+                      else "durduruldu" if stop_event.is_set()
+                      else "BİLİNMEYEN")
+        status["gps_faz_bitis"] = _sebep_gps
+        print(f"[SUPERVISOR] GPS fazı bitti — sebep: {_sebep_gps}")
+        if _sebep_gps == "BİLİNMEYEN":
+            print("[SUPERVISOR] ⚠ GPS fazı KENDİLİĞİNDEN bitti (ne devir, ne "
+                  "vuruş, ne durdurma). run_hybrid burada SONLANIYOR — görev "
+                  "döngüsü yeniden kurmazsa araca komut gitmez. TODO §0.")
+
         if tetik["vuruldu"]:
             status["faz"] = "VURULDU"
             status["son_sebep"] = "vuruldu_gps"
@@ -275,6 +294,8 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                               cfg=IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
                               ff_hiz=ff, get_temas=get_temas)
         status["son_sebep"] = sebep
+        status["gorsel_faz_bitis"] = sebep
+        print(f"[SUPERVISOR] görsel faz bitti — sebep: {sebep}")
         if sebep == "vuruldu":
             status["faz"] = "VURULDU"
             print("[SUPERVISOR] ✓✓ HEDEF VURULDU — görev tamamlandı.")
