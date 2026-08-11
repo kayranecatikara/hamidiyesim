@@ -179,6 +179,28 @@
                         <div class="ozellik-bos">yükleniyor…</div>
                     </div>
 
+                    <!-- KAÇAMAK TESTİ — panelden tek düğmeyle
+                         Hedef düz uçar, drone kuyruk yaklaşması kurar, mesafe
+                         eşiğe inince hedef seçilen kaçamağı yapar. Kareler
+                         kaydedilir, bitince vuruş KONTROLLÜ/ŞANS diye
+                         sınıflandırılır. Terminale gerek yok. -->
+                    <h3 class="section-title mt-2">🎯 KAÇAMAK TESTİ</h3>
+                    <div class="kacamak-panel">
+                        <div class="d-row"><span>KAÇAMAK:</span>
+                            <span class="faz-grup" id="kac-tur"></span>
+                        </div>
+                        <div class="d-row"><span>TETİK:</span>
+                            <span class="faz-grup" id="kac-tetik"></span>
+                        </div>
+                        <div class="d-row" style="gap:6px">
+                            <button id="kac-basla" class="t-btn kac-btn-basla">▶ TESTİ BAŞLAT</button>
+                            <button id="kac-dur" class="t-btn kac-btn-dur">■ DURDUR</button>
+                        </div>
+                        <div id="kac-durum" class="kacamak-durum">hazır</div>
+                        <div id="kac-sonuc" class="kacamak-sonuc"></div>
+                        <div id="kac-gecmis" class="kacamak-gecmis"></div>
+                    </div>
+
 
                     <!-- VIDEO PARAZİT SİMÜLASYONU -->
                     <h3 class="section-title mt-2">📷 VIDEO PARAZİT</h3>

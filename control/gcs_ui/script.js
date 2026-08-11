@@ -1239,3 +1239,105 @@ function ozellikYenile() {
 }
 
 ozellikYenile();
+
+// ── KAÇAMAK TESTİ — panelden tek düğmeyle ───────────────────────────
+// Hedef düz uçar, drone kuyruk yaklaşması kurar, mesafe eşiğe inince hedef
+// seçilen kaçamağı yapar. Kareler kaydedilir; bitince vuruş KONTROLLÜ/ŞANS
+// diye sınıflandırılır. Kol seçimi yukarıdaki GÜDÜM ÖZELLİKLERİ düğmeleriyle
+// yapılır — yani tam A/B tek arayüzden koşulabilir.
+const KAC_TURLER = [
+    ['yok', 'YOK (taban)'], ['yatay', 'YATAY'], ['capraz', 'ÇAPRAZ'],
+    ['dikey_yukari', 'TIRMAN'], ['dikey_asagi', 'DALIŞ'], ['hizlan', 'HIZLAN'],
+];
+const KAC_TETIKLER = [[8, '8 m (zor)'], [15, '15 m (orta)'], [25, '25 m (kolay)']];
+let kacTur = 'yatay', kacTetik = 8;
+
+function kacSecimCiz() {
+    const t = document.getElementById('kac-tur');
+    const m = document.getElementById('kac-tetik');
+    if (!t || !m) return;
+    t.innerHTML = ''; m.innerHTML = '';
+    KAC_TURLER.forEach(([v, ad]) => {
+        const b = document.createElement('button');
+        b.className = 't-btn kac-sec' + (v === kacTur ? ' aktif' : '');
+        b.textContent = ad;
+        b.addEventListener('click', () => { kacTur = v; kacSecimCiz(); });
+        t.appendChild(b);
+    });
+    KAC_TETIKLER.forEach(([v, ad]) => {
+        const b = document.createElement('button');
+        b.className = 't-btn kac-sec' + (v === kacTetik ? ' aktif' : '');
+        b.textContent = ad;
+        b.addEventListener('click', () => { kacTetik = v; kacSecimCiz(); });
+        m.appendChild(b);
+    });
+}
+
+function kacBasla() {
+    fetch('/api/kacamak/basla', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kacamak: kacTur, tetik_m: kacTetik, kayit_s: 100 })
+    }).then(r => r.json()).then(d => {
+        const el = document.getElementById('kac-durum');
+        if (el && d.status !== 'success') el.textContent = 'HATA: ' + (d.message || '');
+        kacDurumYenile();
+    }).catch(() => {});
+}
+
+function kacDur() {
+    fetch('/api/kacamak/durdur', { method: 'POST' })
+        .then(() => kacDurumYenile()).catch(() => {});
+}
+
+function kacSonucCiz(s) {
+    const el = document.getElementById('kac-sonuc');
+    if (!el) return;
+    if (!s) { el.innerHTML = ''; return; }
+    const vur = s.imha ? '<span class="kac-basari">✓ İSABET</span>'
+                       : '<span class="kac-iska">✗ ıska</span>';
+    let sinif = '';
+    if (s.sinif === 'KONTROLLÜ') sinif = '<span class="kac-basari">KONTROLLÜ</span>';
+    else if (s.sinif === 'ŞANS') sinif = '<span class="kac-sans">ŞANS</span>';
+    let h = `${vur} &nbsp; en yakın <b>${s.en_yakin ?? '—'} m</b>`;
+    if (sinif) h += ` &nbsp; vuruş: ${sinif}`;
+    h += `<br>salınım <b>${s.cx_salinim ?? '—'}</b>/s &nbsp; yatış p90 <b>${s.roll_p90 ?? '—'}°</b>`;
+    if (s.gerekce) h += `<br><span class="kac-olcut">${s.gerekce}</span>`;
+    Object.entries(s.olcut || {}).forEach(([ad, [ok, det]]) => {
+        h += `<br><span class="kac-olcut">${ok ? '✓' : '✗'} ${ad} — ${det}</span>`;
+    });
+    el.innerHTML = h;
+}
+
+function kacDurumYenile() {
+    fetch('/api/kacamak/durum').then(r => r.json()).then(d => {
+        const el = document.getElementById('kac-durum');
+        const b = document.getElementById('kac-basla');
+        const s = document.getElementById('kac-dur');
+        if (b) b.disabled = d.kosuyor;
+        if (s) s.disabled = !d.kosuyor;
+        if (el) {
+            el.className = 'kacamak-durum' + (d.kosuyor ? ' kosuyor' : '');
+            el.textContent = d.kosuyor
+                ? `KOŞUYOR — ${d.kacamak}, tetik ${d.tetik} m, ${d.gecen_s || 0} s\n`
+                  + (d.satirlar || []).slice(-3).join('\n')
+                : 'hazır';
+        }
+        kacSonucCiz(d.sonuc);
+        const g = document.getElementById('kac-gecmis');
+        if (g) {
+            g.innerHTML = (d.gecmis || []).slice(0, 5).map(x =>
+                `${x.imha ? '✓' : '✗'} ${x.ad} — ${x.en_yakin} m, salınım ${x.cx_salinim ?? '—'}/s`
+            ).join('<br>');
+        }
+    }).catch(() => {});
+}
+
+(function kacKur() {
+    kacSecimCiz();
+    const b = document.getElementById('kac-basla');
+    const s = document.getElementById('kac-dur');
+    if (b) b.addEventListener('click', kacBasla);
+    if (s) s.addEventListener('click', kacDur);
+    kacDurumYenile();
+    setInterval(kacDurumYenile, 2000);
+})();

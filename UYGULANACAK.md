@@ -134,6 +134,192 @@ Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
 5. **Ö5 · Yatış-farkında hız bütçesi** — komut 18 m/s, yatıktayken ulaşılan
    10.8-14.3 m/s.
 
+### Ö9 — YATAY SÖNÜMLEME (D terimi) · 12 UÇUŞ · SAKİNLEŞTİRDİ, YAKLAŞTIRMADI
+
+`yaw_cmd = iris_yaw + K_YAW·eps_yaw − SONUM_T·ω` (ω = aracın KENDİ yaw hızı).
+`AVCI_IBVS_SONUM` (varsayılan 0 = kapalı; denenen 0.30 s).
+
+**GEREKÇE — sistemin gecikmesi ÖLÇÜLDÜ:**
+
+    kamera → komut              73 ms   (gecikme_s sütunu, 96 örnek)
+    komut → gerçekleşen yaw    300 ms   (çapraz korelasyon, 490 kare)
+    hız vektörünü 30° döndürmek 780 ms   (Δv 9.3 m/s ÷ MAX_ACCEL 12)
+
+8 m'de LOS ~100°/s süpürüyor; 300 ms'de geometri 30° değişiyor. Yani
+denetleyici hep BAYAT duruma göre karar veriyor. Yatay kanal saf-P
+(türev terimi yok) → gecikmeli sistemde salınım YAPISAL olarak kaçınılmaz.
+
+| ölçüt | KONTROL n=6 | Ö9 n=6 | kazanan |
+|---|---|---|---|
+| **yatış p90** | 21° | **14°** | **Ö9** |
+| yaw komut hızı p90 | 120°/s | **115°/s** | Ö9 |
+| en yakın menzil | **1.82 m** | 2.33 m | KONTROL |
+| görsel temas | **%56** | %54 | KONTROL |
+| isabet | 0/6 | 0/6 | — |
+
+**Mekanizma doğrulandı (§5.1):** deney kolunun 6 koşusunda da sönüm aktif
+(kare oranı %44-66, medyan 0.4-0.9°, tepe 11.9-22.0°); kontrol kolunun
+6 koşusunda da tam 0.00° — kollar temiz ayrışmış.
+
+⚠ **BİRİNCİL ÖLÇÜT DEĞERLENDİRİLEMEDİ (§5.2 kapısı devreye girdi):** salınım
+yalnız temas ≥%60 olan koşularda geçerli. KONTROL'de 3 koşu geçerli
+(medyan 0.092), Ö9'da **yalnız 1** — kıyas yapılamaz. Bu bir Ö9 bulgusu
+değil, TEST KURULUMU bulgusu: 8 m tetikte temas oranı %42-81 arasında
+sallanıyor, yarısı eşiğin altında. Salınım sorusu bu senaryoda ölçülemiyor;
+15 m tetikte temas daha iyiydi, salınım oradan ölçülmeli.
+
+**SONUÇ:** Ö9 aracı ölçülebilir biçimde SAKİNLEŞTİRİYOR (yatış p90 %33
+düşüş, 6'ya 6 tutarlı) ama yaklaştırmıyor. Birincil ölçüt ölçülemediği için
+karar kullanıcıya. Varsayılan KAPALI.
+
+### Ö8 — YANAL KOMUT KAÇIRMA MESAFESİYLE · 18 UÇUŞ · SALINIMI ÇÖZDÜ, MENZİLİ ÇÖZMEDİ
+
+Hız vektörünün yönü açıya değil, kalan sürede yanal kaçırmayı kapatacak
+hıza göre belirlenir; BURUN tam hedefte kalır. `AVCI_IBVS_YANAL` (varsayılan
+0 = kapalı), menzil kapısı `AVCI_IBVS_YANAL_M=12` m ile yumuşak harman.
+
+**KÖK NEDEN (ölçüldü, O7A son 0.4 s):** 1.5 m'de `eps_yaw` 58°'ye fırlıyor ve
+yaw komutu 120°/s'de doyuyor. Ama 1.5 m'de 58° = yalnız **1.3 m** yanal
+kaçırma. Güdüm AÇIYA tepki veriyor, oysa önemli olan MESAFE. 18 m/s'lik
+vektörü 58° döndürmek 17.5 m/s'lik değişim ister; MAX_ACCEL ile 1.45 s
+sürer, geometri 0.08 s bırakır → doyma → savrulma → geri savrulma.
+⚠ Ö7'nin neden boşa gittiği de buradan: yaw sınırı yalnız BURNU yavaşlatıyor,
+hız vektörü zaten anında savruluyordu. Salınım HIZ kanalındaydı.
+
+**n=3 SONUÇ n=6'DA TERSİNE DÖNDÜ** — düşük n'in neden yanılttığının kesin
+kanıtı:
+
+| | n=3 (ilk tur) | **n=6 (taze kampanya)** | havuz n=9 |
+|---|---|---|---|
+| en yakın medyan KONTROL | 2.40 m | **1.96 m** | 2.23 m |
+| en yakın medyan Ö8 | 1.88 m | **2.76 m** | 2.31 m |
+| kim önde | Ö8 | **KONTROL** | berabere |
+
+**n=6 kampanyasının ölçütleri:**
+
+| ölçüt | KONTROL n=6 | Ö8 n=6 |
+|---|---|---|
+| **cx salınımı /s** (birincil 2) | 0.073 | **0.000** |
+| yatış p90 medyanı | 22° | **17°** |
+| en yakın menzil medyanı | **1.96 m** | 2.76 m |
+| ≤2.5 m'ye giren | **4/6** | 3/6 |
+| isabet | 1/6 | 0/6 |
+| komut kısma (mekanizma) | %0 | %17 |
+| 25 m'de gerileme | — | **yok** (13.21 → 12.14 m) |
+
+**SONUÇ — bölünmüş:** Ö8 **salınımı tamamen ortadan kaldırıyor** (0.073 → 0.000,
+yatış 22° → 17°) ama menzili kapatmıyor (1.96 → 2.76 m). Yani saldırganlığı
+sakinliğe çeviriyor.
+
+⚠ **Kullanıcının kendi kabul ölçütü tam da bunu istiyordu:** "direkt mesafeyi
+yaklaştıramasak manevra kısmında biraz mesafe açılsa ama SALINIM OLMASA, çok
+açılmasa ve sonra hemen kapatılabilse okeydir." Önceden ilan ettiğim birincil
+ölçüt (en yakın menzil) bunu cezalandırıyor — karar kullanıcıya bırakıldı.
+
+⚠ **Sınıflandırıcı özeleştirisi:** kontrol kolundaki tek isabet `vurus_kalitesi`
+tarafından ŞANS sayıldı ama altı ölçütten BEŞİNİ geçmişti (hedef medyan 11 px
+merkezde, kutu 3.55× düzgün büyümüş, yatış sakin); tek takıldığı 1 kopuk
+kareydi. "Sıfır kopuk kare" eşiği fazla katı — o vuruş fiilen kontrollüydü,
+Ö8 lehine sayıya çevrilmedi.
+
+### D0 KURAL DÜZELTMESİ — devir ölçütü sadeleşti · İŞE YARADI
+
+Kullanıcı tespiti: devir ölçütünde fazladan şart vardı. Eski hâli:
+kayan pencere (son 15'in 10'u) **+ conf ≥ 0.5** (dedektörün kendi eşiği 0.35).
+İkinci şart KATIYDI — model "gördüm" derken güdüm GPS'te kalıyordu; D0
+ihlali riski buydu. Yeni hâli: **ARDIŞIK 10 tespit, ekstra güven eşiği YOK.**
+Geri dönüş: `AVCI_HYBRID_ARDISIK=0`, `AVCI_HYBRID_CONF=0.5`.
+
+⚠ Riski vardı: "10 ardışık" gürültülü tespitte geç sağlanıyor diye 2026-07-31'de
+kayan pencereye geçilmişti (devir 6-10 m'de oluyordu). ÖLÇÜLDÜ — risk
+gerçekleşmedi, tersi oldu:
+
+    ilk devir menzili: 16.8 / 17.8 / 17.8 / 18.8 m  (tarihsel 6-10 m)
+
+Devir artık iki kat uzakta oluyor: hem kural uyumu daha iyi hem görsel faza
+daha çok süre kalıyor.
+
+### M3 — ERKEN LEAD, 15 m tetikte · 4 UÇUŞ · YİNE SİNYAL YOK
+
+| koşu | kol | en yakın | cx salınım/s | yatış p90 |
+|---|---|---|---|---|
+| M3A yatay | KONTROL | 5.93 m | 0.000 | 28° |
+| M3B yatay | **M3** | 5.98 m | 0.000 | 38° |
+| M3C capraz | KONTROL | 7.13 m | 0.000 | 30° |
+| M3D capraz | **M3** | 7.87 m | 0.000 | 34° |
+
+İsabet 0/4. Birincil 1 (kontrollü vuruş) 0-0; birincil 2 (salınım) her iki
+kolda da 0.000. **M3 girmiyor** — üçüncü kez ölçülüp üçüncü kez nötr.
+
+Yan bulgu: 15 m tetikte SALINIM YOK (cx değişimi 0.000). Kullanıcının gördüğü
+salınım 7-8 m'lik yakın kırılmaya özgü.
+
+### Ö7 — YAW HIZ TAVANI (120 → 200°/s) · 4 UÇUŞ · SİNYAL YOK
+
+Panelden canlı (`AVCI_IBVS_YAWRATE`). Gerekçe: kaçamak sonrası karelerin
+%23-47'sinde yaw komutu 120°/s tavanına yapışıyordu; doymuş sınırlayıcı faz
+gecikmesi katar ve salınım üretir (kullanıcı gözlemi).
+
+| koşu | kol | en yakın | cx dğş/s | yatış p90 | yaw doyma |
+|---|---|---|---|---|---|
+| O7A yatay | KONTROL | 2.19 m | 0.000 | 6° | %8 |
+| O7B yatay | **Ö7** | 2.94 m | 0.103 | 20° | %31 |
+| O7C capraz | KONTROL | 3.29 m | 0.161 | 26° | %40 |
+| O7D capraz | **Ö7** | 3.99 m | 0.086 | 31° | %6 |
+
+**Birincil 1 (kontrollü vuruş): 0-0 — hiçbir koşuda vuruş yok.**
+**Birincil 2 (cx salınımı): kontrol 0.081, Ö7 0.095 — kontrol hafif önde.**
+Kural gereği Ö7 GİRMEZ.
+
+⚠ **Mekanizma da tutmadı:** tavanı 200'e çıkarınca doyma azalmadı — O7B
+%31 doydu (güdüm 200°/s'den de fazlasını istiyor), O7D %6. Kontrol kolunda
+%8 ve %40. Aynı kolda 5 kat fark: doyma **kararlı bir mekanizma değil**,
+koşudan koşuya değişen bir sonuç.
+
+⚠ **ASIL BULGU — 8 m kırılma şu an ÇÖZÜLMEMİŞ:** bu 4 koşu + Ö6'nın 4
+kontrol koşusu = 8 koşuda **isabet yok** (Ö6'nın deney kolundaki 2 isabet
+hariç, o da yatışın gerçekten kullanıldığı tek koşuya dayanıyordu). Tetik
+25 m'de sistem 4/6 vuruyor; 8 m'de neredeyse hiç. Aradaki fark, üzerinde
+çalışılması gereken şey.
+
+### Ö6 — YÜKSEK YATIŞ (ANGLE_MAX 45° → 55°) · 8 UÇUŞ · ELENDİ
+
+Panelden canlı aç/kapa (araç parametresi, MAVLink PARAM_SET; geri okuma
+`_param_cache`'ten teyit ediliyor). Kod değişikliği yok.
+
+**GEREKÇE — dönüş yeteneği kıyası** (ω = g·tan(yatış)/V, R = V²/a):
+
+| araç | hız | yatış | yarıçap | dönüş hızı |
+|---|---|---|---|---|
+| AVCI drone (45°) | 18 m/s | 45° | **33.0 m** | **31°/s** |
+| AVCI drone (55°) | 18 m/s | 55° | 25.0 m | 44°/s |
+| HEDEF Talon | 15 m/s | 60° | 13.2 m | 65°/s |
+
+Hedef 2.1× hızlı, 2.5× dar dönüyor — drone fiziksel olarak takip edemiyor.
+İtki maliyeti 1.74×; araçta 2.56× pay var (`MOT_THST_HOVER=0.39`).
+
+**TEST — tetik 8 m** (kullanıcının gördüğü yakın dövüş; 25 m'lik tetikte
+sistem zaten 4/6 vuruyordu, ayırt etmiyordu). `yatay`+`capraz`, dönüşümlü:
+
+| ölçüt | KONTROL n=4 | Ö6 n=4 |
+|---|---|---|
+| **İSABET** | **0/4** | **2/4** |
+| en yakın menzil medyanı | 3.47 m | **1.41 m** |
+| ≤2 m'ye gelen koşu | 2/4 | **3/4** |
+| görsel temas oranı (medyan) | %67 | **%78** |
+| maks açılan mesafe (birincil) | 52.2 m | 52.6 m — berabere |
+
+**Mekanizma doğrulandı:** Ö6 koşusunda yatış **51°**'ye çıktı; kontrol kolu
+38°'de kaldı (45° tavanı). İtki payı yetti — irtifa kaybı/çakılma olmadı.
+
+⚠ **"Maks açılan mesafe" ölçütü İKİNCİ KEZ ayırt edemedi** (Ö1'de de öyle
+olmuştu). Savrulma, kaçamağın geometrisinden geliyor ve iyileşmeyle ilgisi
+zayıf. Kural gereği tek taraflı değiştirmiyorum ama ÖNERİM: birincil ölçüt
+bundan sonra **isabet + en yakın menzil** olsun, savrulma ikinciye insin.
+
+**8 m tetik gerçekten zor koşul:** kontrol kolu orada 0/4. 25 m tetikte aynı
+sistem 4/6 vuruyordu. Ö6, bu zor koşulda skor yapan İLK özellik.
+
 ### Ö1 — KAÇIŞ TELAFİSİ · 8 UÇUŞ · ÖLÇÜT ÇELİŞKİSİ → KULLANICIYA
 
 `v_los = hiz_I + K_FWD·hata + KACIS_KD·max(0, −ṙ)` — yalnız SEYİR fazında,

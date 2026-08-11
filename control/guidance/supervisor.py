@@ -70,7 +70,26 @@ class SupCfg:
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
-    POSE_CONF_MIN = 0.5
+
+    # ══ D0 KURAL UYUMU — DEVİR ÖLÇÜTÜ SADELEŞTİRİLDİ (2026-08-10) ══
+    # Kullanıcı tespiti: "görsel temas sağlandıktan sonra GPS'ten güdüm
+    # üretmek yasak; ekstra farklı bir şey olmasın — üst üste 10 kare
+    # detection modeli algıladıysa görsel güdüme geçelim."
+    #
+    # ESKİ HÂLİNDE İKİ SAPMA VARDI:
+    #   1) KAYAN PENCERE (son 15'in 10'u) — "üst üste 10" değil. Bu şart
+    #      GEVŞEKTİ, yani devri erkene alıyordu (kural lehine).
+    #   2) conf ≥ 0.5 — dedektörün kendi eşiği 0.35. Bu şart KATIYDI: model
+    #      "gördüm" dediği hâlde güdüm GPS'te kalıyordu. İHLAL RİSKİ BUYDU.
+    #
+    # YENİ HÂLİ: tespit varsa (dedektör ne verdiyse) ve ARDIŞIK KILIT_N kare
+    # sürdüyse devir. Ekstra güven eşiği YOK.
+    # ⚠ RİSK: "10 ardışık" gürültülü tespitte geç sağlanabiliyordu — kayan
+    # pencere tam bu yüzden konmuştu (2026-07-31). Devir menzili ölçülecek.
+    # AVCI_HYBRID_ARDISIK=0 → eski kayan pencere davranışı geri gelir.
+    # AVCI_HYBRID_CONF=0.5  → eski ekstra güven eşiği geri gelir.
+    KILIT_ARDISIK = os.environ.get("AVCI_HYBRID_ARDISIK", "1") == "1"
+    POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.0))
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
     #
@@ -120,6 +139,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
 
         def izci():
             pencere = collections.deque(maxlen=sup_cfg.KILIT_PENCERE)
+            ardisik = 0
             son_seq = 0
             while not faz_stop.is_set():
                 kayit = wait_pose(son_seq, timeout=0.5)
@@ -127,9 +147,15 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                     continue
                 son_seq = kayit["seq"]
                 pose = kayit["pose"]
-                pencere.append(pose is not None
-                               and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
-                sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
+                gorulen = (pose is not None
+                           and pose.get("conf", 0.0) >= sup_cfg.POSE_CONF_MIN)
+                if sup_cfg.KILIT_ARDISIK:
+                    # D0: ARDIŞIK sayım — tek bir tespitsiz kare sayacı sıfırlar
+                    ardisik = (ardisik + 1) if gorulen else 0
+                    sayac = ardisik
+                else:
+                    pencere.append(gorulen)
+                    sayac = sum(pencere)      # eski: kayan pencere
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
                     d_h = _ga.status.get("d_h")
@@ -142,7 +168,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_pose, get_plane_truth,
                         return
 
         threading.Thread(target=izci, daemon=True).start()
-        print(f"[SUPERVISOR] GPS fazı (görsel kilit: {sup_cfg.KILIT_N} ardışık kare"
+        print(f"[SUPERVISOR] GPS fazı (görsel kilit: {sup_cfg.KILIT_N} {'ARDIŞIK' if sup_cfg.KILIT_ARDISIK else '/15 kayan'} kare, conf≥{sup_cfg.POSE_CONF_MIN:.2f}"
               f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
         run_gps_guidance(conn, get_plane, get_iris, faz_stop)
 

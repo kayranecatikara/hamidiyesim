@@ -1068,3 +1068,35 @@ body {
     color: #052e16;
     background: #22c55e;
 }
+
+/* ── KAÇAMAK TESTİ paneli (2026-08-11) ──────────────────────────────── */
+.kacamak-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.kac-sec {
+    padding: 3px 7px; font-size: 11px; cursor: pointer; border-radius: 4px;
+    border: 1px solid #334155; background: #0b1220; color: #94a3b8;
+}
+.kac-sec:hover { border-color: #22c55e; }
+.kac-sec.aktif { border-color: #22c55e; background: #22c55e; color: #052e16; font-weight: 600; }
+.kac-btn-basla {
+    flex: 1; padding: 6px; font-size: 12px; font-weight: 700;
+    border: 1px solid #22c55e; background: #16311f; color: #22c55e; border-radius: 5px;
+}
+.kac-btn-basla:hover { background: #22c55e; color: #052e16; }
+.kac-btn-basla:disabled { opacity: .4; cursor: not-allowed; }
+.kac-btn-dur {
+    padding: 6px 10px; font-size: 12px; border: 1px solid #7f1d1d;
+    background: #1a0e0e; color: #f87171; border-radius: 5px;
+}
+.kac-btn-dur:disabled { opacity: .35; cursor: not-allowed; }
+.kacamak-durum {
+    font-size: 11px; padding: 5px 7px; border-radius: 4px;
+    background: rgba(255,255,255,.03); border: 1px solid #1f2937;
+    color: #cdd; white-space: pre-line; line-height: 1.45;
+}
+.kacamak-durum.kosuyor { border-color: #eab308; color: #eab308; }
+.kacamak-sonuc { font-size: 11px; line-height: 1.5; }
+.kacamak-sonuc .kac-basari { color: #22c55e; font-weight: 700; }
+.kacamak-sonuc .kac-iska { color: #f87171; font-weight: 700; }
+.kacamak-sonuc .kac-sans { color: #eab308; font-weight: 700; }
+.kac-olcut { font-size: 10px; opacity: .75; margin-left: 8px; }
+.kacamak-gecmis { font-size: 10px; opacity: .65; line-height: 1.5; }

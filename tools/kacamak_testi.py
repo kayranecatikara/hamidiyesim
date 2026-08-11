@@ -117,6 +117,7 @@ def main():
         raise SystemExit(1)
     os.makedirs(dizin, exist_ok=True)
 
+    t_bas = time.time()          # arşivleme için koşu başlangıcı
     print(f"[KAÇAMAK TESTİ] {kacamak}  tetik={tetik_m:.0f} m  kayıt={kayit_s:.0f} s")
 
     # ── temiz başlangıç: düz uçuş ──
@@ -194,6 +195,22 @@ def main():
     istek("/api/command/iris/stop_chase")
     istek("/api/command/plane/stop_manual")
     istek("/api/command/plane/stop_scenario")
+
+    # ── ARŞİV: bu koşuda üretilen bbox CSV'lerini koşunun dizinine kopyala ──
+    # Zaman damgası tahmin ederek glob yapmak YASAK (CLAUDE.md §4): bir koşunun
+    # logları bir kez yanlış eşleşti ve o koşu analizden düştü. Koşu başlangıç
+    # zamanından SONRA değişen dosyalar doğrudan seçilir.
+    try:
+        import shutil
+        log_dizin = os.path.join(kok, "logs")
+        for dosya in os.listdir(log_dizin):
+            if not dosya.startswith("bbox_ibvs_") or not dosya.endswith(".csv"):
+                continue
+            tam = os.path.join(log_dizin, dosya)
+            if os.path.getmtime(tam) >= t_bas:
+                shutil.copy2(tam, os.path.join(dizin, dosya))
+    except Exception as e:
+        print(f"  ⚠ bbox arşivlenemedi: {e}")
 
     hasar = oku("/api/hasar") or {}
     with open(os.path.join(dizin, "kacamak.csv"), "w", newline="") as f:

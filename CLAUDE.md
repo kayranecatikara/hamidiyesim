@@ -141,6 +141,24 @@ kaçamaklı sonuç yorumlanamaz.
 - **ÖLÇÜTLER VE KARAR KURALI KOŞMADAN ÖNCE YAZILIR.** Birincil/ikincil ayrımı
   ve "hangi kol kaç ölçüt kazanırsa ne olur" önceden ilan edilir. Sonuca
   bakıp ölçüt seçmek yasak.
+
+- ⛔ **SALINIM ÖLÇÜLMEDEN "İYİLEŞTİ" DENMEZ** (kullanıcı kuralı 2026-08-10).
+  Yalnız "isabet + en yakın menzil"e bakan bir ölçüt, dengesizce savrulup
+  şans eseri çarpan bir aracı ÖDÜLLENDİRİR. Salınan araç kötüdür — çok
+  yaklaşma üretse bile. Her karşılaştırmada şunlar da raporlanır:
+    * `cx` işaret değişimi / s (hedef kadrajda sağa-sola atıyor mu)
+    * yatış işaret değişimi / s ve |yatış| p90
+    * yaw komutu değişim hızı (°/s) — doyuma gidiyor mu
+    * görsel temas kesintisi sayısı ve süresi
+
+- ⛔ **HER VURUŞ "KONTROLLÜ VURUŞ" DEĞİLDİR.** Temas anı ve ÖNCESİNDEKİ
+  kareler tek tek incelenir ve vuruş sınıflandırılır:
+    * **KONTROLLÜ**: son ~2 s boyunca hedef kadrajda kesintisiz, `cx`
+      merkeze yakın ve sakin, kutu boyutu DÜZGÜN büyüyor, yatış sakin.
+    * **ŞANS**: hedef kadraj kenarında ya da aralıklı kayboluyor, kutu
+      boyutu sıçramalı, araç salınıyor, temas ani ve rastgele geliyor.
+  Şans vuruşu isabet sayılır ama **iyileşme kanıtı sayılmaz**. Rapor
+  ikisini ayrı verir. Araç `tools/vurus_kalitesi.py`.
 - **GEÇERLİLİK.** Hedef 20-250 m irtifa / 6-25 m/s bandı dışına çıktıysa koşu
   SAYILMAZ. Uçuş boyunca `tools/ucus_bekci.py` çalışır.
 - **ÖRTÜŞMEYE DİKKAT.** Panel `mesafe` 1 Hz'tir; kapanma hızlıyken gerçek en
@@ -153,7 +171,113 @@ kaçamaklı sonuç yorumlanamaz.
 
 ---
 
-# 5 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
+# 5 · ÖLÇÜM HATALARINA KARŞI MEKANİZMALAR — zorunlu kontrol listesi
+
+Bu bölüm 2026-08-10/11 oturumunda YAPILAN GERÇEK HATALARDAN üretildi.
+Her madde bir hataya karşılık gelir. Yeni bir özellik ölçülürken bu liste
+baştan sona uygulanır; atlanan madde varsa sonuç RAPOR EDİLMEZ.
+
+## 5.1 · MEKANİZMA KAPISI — "özellik gerçekten çalıştı mı?"
+
+**Kolları kıyaslamadan ÖNCE, özelliğin devreye girdiği KANITLANIR.**
+Her özellik, ne kadar iş yaptığını gösteren bir sütun loglar
+(`kacis_ek`, `eps_hiz_deg`, `sonum_deg` gibi). Deney kolunda bu sütun
+sıfırsa o koşu **veri noktası değil, GEÇERSİZ koşudur**.
+
+*Yaşandı:* Ö6 (ANGLE_MAX 45→55°) "isabet 0/4 → 2/4" diye raporlandı; sonra
+loglara bakınca deney kolunun 2 koşusunda araç **38-40°'de kalmış**, yani
+45° tavanına bile dayanmamıştı. O koşular fiilen kontrol koşusuydu ve tablo
+sahteydi. Ö1 de TERMINAL durumunda inert olduğu için kullanıcının uçuşunda
+hiç çalışmamıştı — "fark göremedim" demesinin sebebi buydu.
+
+## 5.2 · ÖLÇÜT GEÇERLİLİK EŞİ — "bu sayı KÖTÜ bir sebeple de düşer mi?"
+
+Her ölçüt için şu soru sorulur ve cevabı yazılır: **"bu değer, sistem
+KÖTÜLEŞTİĞİNDE de iyi görünebilir mi?"** Cevap evetse, ölçüt tek başına
+raporlanamaz; yanında **geçerlilik eşi** zorunludur.
+
+| ölçüt | kötü sebeple iyileşir mi | zorunlu eşi |
+|---|---|---|
+| salınım (cx işaret değişimi) | **EVET** — hedef kadrajdan çıkarsa ölçülemez, 0 görünür | görsel temas oranı (%60 altı → GÜVENİLMEZ) |
+| en yakın menzil | evet — savrulup şans eseri yaklaşma | vuruş sınıfı (KONTROLLÜ/ŞANS) |
+| isabet | evet — dengesiz araç şans eseri çarpar | salınım + vuruş sınıfı |
+| temas süresi | evet — uzakta durup hiç yaklaşmamak | kutu boyutu / yaklaşma |
+
+*Yaşandı:* "Ö8 salınımı 0.073 → 0.000 yaptı" diye rapor edildi. Salınım
+YALNIZ kutu olan karelerde sayılıyordu; hedefi daha çok kaybeden koşu daha
+sakin görünüyordu. Ölçüt, hedefi kaybetmeyi ödüllendiriyordu. Kullanıcı
+"ben fark görmedim" deyince yakalandı.
+
+## 5.3 · ÖRNEKLEME HIZI KURALI
+
+Bir ölçütün örnekleme hızı, ölçtüğü şeyin değişim hızının **en az 5 katı**
+olmalıdır. Değilse o kaynak kullanılmaz; daha hızlı kaynağa geçilir.
+
+*Yaşandı:* "en yakın menzil" panel telemetrisinden (1 Hz) alınıyordu, ama
+buluşmadaki kapanma hızı 13-22 m/s'ydi. Panelin "4.8 m" dediği karede hedef
+kadrajda 20 px'ti (4.8 m'de 45 px olmalıydı). Ölçüt 15 m'ye kadar
+yanılıyordu. 20 Hz bbox logundan (kutu boyutundan) yeniden hesaplandı.
+
+## 5.4 · EN AZ n=4/KOL — ve altındaki her şey "ARA VERİ"
+
+n < 4 iken **hüküm cümlesi kurulmaz**. Bu aşamadaki sayılar
+"ara veri, karar değil" diye sunulur.
+
+*Yaşandı, ÜÇ KEZ:*
+- M3: n=2'de "açık 2/2, kapalı 0/2" → n=6'da eridi, nötr çıktı.
+- Ö6: n=2'de "0/2 → 2/2" kazanım diye sunuldu → n=4'te mekanizmanın hiç
+  çalışmadığı ortaya çıktı.
+- Ö8: n=3'te "medyan 1.88 vs 2.40, Ö8 önde" → n=6'da **TERSİNE döndü**
+  (2.76 vs 1.96).
+
+⚠ Koşular arası değişkenlik gerçek: aynı kolda tepe kutu boyutu 76.5 px ve
+22.7 px ölçüldü (3 kat). Tek koşunun sonucu, kolun kendi dağılımından
+çekilmiş rastgele bir sayıdır.
+
+## 5.5 · ÖLÇÜT KULLANICININ HEDEFİNDEN TÜRETİLİR
+
+Birincil ölçüt seçilirken kullanıcının isteği **birebir alıntılanır** ve
+ölçütün o cümleyi ölçtüğü gösterilir. Hesaplaması kolay olan değil, hedefi
+temsil eden ölçüt seçilir.
+
+*Yaşandı:* "maks açılan mesafe" birincil ölçüt yapıldı ve ÜÇ testte
+üst üste kolları ayıramadı — savrulma kaçamağın geometrisinden geliyordu,
+iyileşmeyle ilgisi zayıftı. Dahası kullanıcı açıkça *"biraz mesafe açılsa
+ama salınım olmasa okeydir"* demişti; seçtiğim ölçüt tam da kabul ettiği
+şeyi cezalandırıyordu.
+
+## 5.6 · KENDİ LEHİNE YORUM YASAĞI
+
+Sonuç bölünmüş çıkarsa ölçüt DEĞİŞTİRİLMEZ, kullanıcıya götürülür.
+Sınıflandırıcı bir sonucu kendi önerdiğin özelliğin lehine çeviriyorsa,
+önce sınıflandırıcının doğruluğu sorgulanır.
+
+*Yaşandı (doğru yapıldı, örnek olsun):* kontrol kolundaki tek isabet
+`vurus_kalitesi` tarafından ŞANS sayıldı; ama altı ölçütten BEŞİNİ geçmişti
+ve tek takıldığı 1 kopuk kareydi. Eşik fazla katıydı — Ö8 lehine sayıya
+çevrilmedi, eşik hatası olarak raporlandı.
+
+## 5.7 · VERİ DAYANIKLILIĞI
+
+Koşu çıktıları **`logs/` altına** yazılır. `/tmp` gecelik temizleniyor.
+
+*Yaşandı, İKİ KEZ:* 12 uçuşluk kampanyanın kare/olay dosyaları ve daha
+önce scratchpad'deki tüm scriptler silindi. Özet sayılar `UYGULANACAK.md`'de
+olduğu için sonuçlar kurtarıldı, ham veri kurtarılamadı.
+
+## 5.8 · RAPORDAN ÖNCE ÜÇ SORU
+
+Her rapor öncesi yazılı olarak cevaplanır:
+
+1. **Özellik çalıştı mı?** (5.1 — mekanizma sütunu sıfır değil mi)
+2. **Ölçütüm kötü bir sebeple mi iyileşti?** (5.2 — geçerlilik eşi ne diyor)
+3. **n kaç, ve bu n'de hüküm kurulur mu?** (5.4)
+
+Üçünden birine cevap verilemiyorsa rapor değil, **eksik listesi** sunulur.
+
+---
+
+# 6 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
 
 **Sisteme eklenen her davranış anahtarının panelde bir aç/kapa düğmesi olur.**
 Kullanıcı kuralı (2026-08-10): "her defasında tüm sistemi baştan farklı
@@ -168,10 +292,23 @@ itibaren geçerli olur — **uçuş sırasında, yeniden başlatmadan.**
 
 1. `Cfg`'ye alanı ve `AVCI_*` env varsayılanını ekle (kill-switch).
 2. `control/gcs_server.py` içindeki **`_OZELLIKLER`** sözlüğüne bir satır ekle:
-   `"ad": ("CFG_ALANI", "bool"|"kazanc", "Etiket", "Açıklama", "AVCI_*", açık_değeri)`
+   `"ad": ("ALAN", "bool"|"kazanc"|"param", "Etiket", "Açıklama", "anahtar", açık_değeri)`
+   - `"param"` tipi ARAÇ parametresidir (ör. `ANGLE_MAX`); uçuş sırasında
+     MAVLink `PARAM_SET` ile yazılır, geri okuma `_param_cache`'ten teyit
+     edilir. Kod değişikliği gerektirmeyen deneyler böyle yapılır.
 3. Başka hiçbir şey gerekmez — panel listeyi `/api/gudum_ozellikleri`'nden
    çeker, arayüz kendiliğinden büyür (HTML/CSS/JS'e dokunma).
 4. Raporda kullanıcıya "panelden şu düğmeyi açıp kapatarak farkı gör" de.
+
+**⚠ PANELDE YALNIZ O ANKİ ADIMIN ÖZELLİĞİ DURUR.** Bir özelliğin kararı
+verilince — ister sisteme **GİRSİN** ister **ELENSİN** — düğmesi
+`_OZELLIKLER`'den **SİLİNİR**. Yeni adıma geçerken önceki adımın düğmesi
+temizlenir; panelde her zaman sadece o an denenen şey görünür.
+
+*Neden:* düğmeler birikince panel çöplüğe döner ve kullanıcı o adımda neyi
+sınadığını göremez. Silmek özelliği yok etmez — kill-switch env anahtarı
+kodda kalır, karar ve ölçümler `UYGULANACAK.md`'de durur, silinen özellikler
+`_OZELLIKLER` üstündeki yorum bloğunda env anahtarlarıyla listelenir.
 
 **Sonuç:** çalıştırma komutları ARTIK DEĞİŞMİYOR. Kol seçimi env ile değil,
 panelden yapılır. Env anahtarları yine duruyor (otomatik kampanyalar ve
@@ -182,7 +319,7 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 
 ---
 
-# 6 · YAPAY ZEKÂNIN ÇALIŞMA BİÇİMİ
+# 7 · YAPAY ZEKÂNIN ÇALIŞMA BİÇİMİ
 
 - **ARKA PLANDA GİZLİ SHELL YOK.** Uçuşlar ve analizler sohbette, doğrudan
   çalıştırılır ki kullanıcı ne olup bittiğini görsün. Uzun süren bir işi arka
@@ -193,7 +330,7 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 
 ---
 
-# 7 · DEPO KURALLARI
+# 8 · DEPO KURALLARI
 
 - **Kafana göre push YOK.** Commit için sor, push için AYRICA sor.
 - Merge ile gelen davranış değişikliklerini işaretle; uçuş-kritik yolda
@@ -203,7 +340,7 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 
 ---
 
-# 8 · SİM ÇALIŞTIRMA TUZAKLARI (hepsi yaşandı)
+# 9 · SİM ÇALIŞTIRMA TUZAKLARI (hepsi yaşandı)
 
 - `pkill -f` **kendi kabuğunu öldürür** (exit 144). Deseni köşeli parantezle
   kır (`gz [s]im`) ya da komutu ayrı script dosyasına al.
@@ -223,7 +360,7 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 
 ---
 
-# 9 · YARIŞMA KISITI (üstün kural)
+# 10 · YARIŞMA KISITI (üstün kural)
 
 Görsel temas varken **GPS güdümü yasak** — yalnız bbox. Temas kesilince GPS
 serbest. Görsel döngü hedefe dair veriyi devirde bir kez SAYI olarak alır;

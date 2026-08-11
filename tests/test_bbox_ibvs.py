@@ -385,7 +385,7 @@ def main():
         except (ValueError, KeyError):
             pass
     _enb = max(_hiz6) if _hiz6 else 0.0
-    _sinir = math.degrees(C.YAW_RATE_MAX)
+    _sinir = C.YAW_RATE_MAX_DEG
     kontrol("B21 yaw komut hızı slew sınırında kalır (fly-past'ta takla yok)",
             len(_hiz6) > 5 and _enb <= _sinir * 1.15,
             f"savrulan kutuda en hızlı yaw komutu {_enb:.0f}°/s ≤ sınır "
@@ -628,6 +628,107 @@ def main():
             and abs(_yok[5]["kacis_ek"]) < 1e-12,
             f"ṙ=-30 → ek {_buyuk[5]['kacis_ek']:.1f} m/s "
             f"(tavan {_Kacis.KACIS_MAX:.0f}); KD=0 → ek 0.00")
+
+    print("=" * 60)
+    # ── Ö8: YANAL KOMUT AÇIYLA DEĞİL, KAÇIRMA MESAFESİYLE ──
+    # Ölçüldü (O7A, 1.5 m): eps_yaw 58°, yaw komutu 120°/s'de doymuş.
+    # 1.5 m'de 58° = yalnız 1.3 m yanal kaçırma; güdüm mesafeyi değil açıyı
+    # görüyordu. Ö8 hız vektörünü kaçırma mesafesine göre ölçekler.
+    class _Yanal(ib.Cfg):
+        YANAL_K = 3.0
+
+    # YAKIN + BÜYÜK AÇI: kutu 105 px (≈1.5 m), hedef kadrajın sağında
+    _cx_uzak = CX + 300.0                       # eps_yaw ≈ 61°
+    _argY = (_cx_uzak, C.CY_NISAN, 105, 105, 0.0, 18.0, 0.05)
+    _y_ac = ib.komut(*_argY, _Yanal, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _y_ka = ib.komut(*_argY, C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _ac_deg = math.degrees(_y_ac[5]["eps_hiz"])
+    _ka_deg = math.degrees(_y_ka[5]["eps_hiz"])
+    kontrol("B43 yakında Ö8 hız komutunu KISAR (58° slam biter)",
+            abs(_ac_deg) < abs(_ka_deg) * 0.7,
+            f"1.5 m'de hız yönü: kapalı {_ka_deg:.0f}° → açık {_ac_deg:.0f}° "
+            f"(uçuşta ölçülen slam: 58°, yaw komutu 120°/s'de doymuş)")
+
+    # B44: BURUN kısılmaz — kamera hedefi izlemeye devam etmeli
+    kontrol("B44 Ö8 BURNU kısmaz (kamera hedefi kaybetmesin)",
+            abs(_y_ac[3] - _y_ka[3]) < 1e-9,
+            f"yaw komutu açık {math.degrees(_y_ac[3]):.1f}° = "
+            f"kapalı {math.degrees(_y_ka[3]):.1f}° — burun tam hedefte")
+
+    # B45: UZAKTA aşırı kısmamalı (25 m tetikte 4/6 isabet var, bozulmasın)
+    _argU = (CX + 60.0, C.CY_NISAN, 8, 8, 0.0, 18.0, 0.05)   # ≈20 m, eps≈20°
+    _u_ac = ib.komut(*_argU, _Yanal, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _u_ka = ib.komut(*_argU, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _oran = (abs(_u_ac[5]["eps_hiz"]) / max(abs(_u_ka[5]["eps_hiz"]), 1e-9))
+    kontrol("B45 uzakta Ö8 HİÇ kısmaz (menzil kapısı — 25 m tetik bozulmasın)",
+            _oran > 0.999,
+            f"20 m'de hız yönü kapalıya oranı %{100*_oran:.0f} "
+            f"({math.degrees(_u_ka[5]['eps_hiz']):.1f}° → "
+            f"{math.degrees(_u_ac[5]['eps_hiz']):.1f}°)")
+
+    # B46: ASLA BÜYÜTMEZ — yalnız kısan bir sınır
+    _buyutme = False
+    for _cxt in (CX + 20, CX + 100, CX + 200, CX + 300):
+        for _bt in (8, 20, 60, 105):
+            _a = ib.komut(_cxt, C.CY_NISAN, _bt, _bt, 0.0, 18.0, 0.05,
+                          _Yanal, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+            _k = ib.komut(_cxt, C.CY_NISAN, _bt, _bt, 0.0, 18.0, 0.05,
+                          C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+            if abs(_a[5]["eps_hiz"]) > abs(_k[5]["eps_hiz"]) + 1e-9:
+                _buyutme = True
+    kontrol("B46 Ö8 komutu ASLA büyütmez (yalnız kısan sınır)",
+            not _buyutme, "16 kombinasyonda hiçbirinde büyütme yok")
+
+    # B47: kapatılabilir — AVCI_IBVS_YANAL=0 eski davranışı aynen getirir
+    kontrol("B47 Ö8 kapatılabilir (varsayılan KAPALI)",
+            abs(C.YANAL_K) < 1e-9
+            and abs(_y_ka[5]["eps_hiz"] - _y_ka[5]["eps_yaw"]) < 1e-12,
+            f"YANAL_K={C.YANAL_K} → eps_hiz = eps_yaw (bit bit aynı)")
+
+    print("=" * 60)
+    # ── Ö9: YATAY KANALA SÖNÜMLEME (D terimi) ──
+    # Kullanıcı uçuşu 185753: hafif bir manevrada (aileron 1733) araç 4.3 m'den
+    # 25 m'ye savruldu, arada iki kez gidip geldi. Yatay kanal SAF ORANSAL;
+    # gecikmeli sistemde saf-P zorunlu olarak salınır.
+    class _Sonum(ib.Cfg):
+        SONUM_T = 0.30
+
+    _argS = (CX + 100.0, C.CY_NISAN, 20, 20, 0.0, 14.0, 0.05)
+    # araç SAĞA dönüyor (yaw_hizi>0) ve hedef de sağda → komut GERİ ÇEKİLMELİ
+    _s_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.8)
+    _s_yok = ib.komut(*_argS, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.8)
+    kontrol("B48 araç zaten dönüyorken sönümleme komutu GERİ ÇEKER",
+            _s_var[3] < _s_yok[3] - math.radians(5.0),
+            f"yaw hızı 0.8 rad/s: sönümsüz {math.degrees(_s_yok[3]):.1f}° → "
+            f"sönümlü {math.degrees(_s_var[3]):.1f}° "
+            f"(fark {math.degrees(_s_yok[3]-_s_var[3]):.1f}°)")
+
+    # B49: araç DÖNMÜYORSA (yaw_hizi=0) sönümleme etkisiz — düz uçuş korunur
+    _d_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0)
+    _d_yok = ib.komut(*_argS, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0)
+    kontrol("B49 araç dönmüyorken (ω=0) sönümleme yaw'ı DEĞİŞTİRMEZ",
+            abs(_d_var[3] - _d_yok[3]) < 1e-12,
+            "düz takipte ω≈0 → sönümleme terimi 0; kullanıcının doğruladığı "
+            "düz uçuş davranışı bit bit korunur")
+
+    # B50: TERS yönde dönerken komutu İLERİ iter (simetrik, tek yönlü değil)
+    _t_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, -0.8)
+    kontrol("B50 sönümleme simetriktir (ters dönüşte komutu ileri iter)",
+            _t_var[3] > _s_yok[3] + math.radians(5.0),
+            f"yaw hızı −0.8 rad/s → {math.degrees(_t_var[3]):.1f}° "
+            f"(sönümsüz {math.degrees(_s_yok[3]):.1f}°)")
+
+    # B51: tavan bağlar — sönümleme komutu ters yöne çevirmesin
+    _b_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 9.0)
+    kontrol("B51 sönümleme SONUM_MAX_DEG tavanında kesilir",
+            abs(math.degrees(_b_var[5]["sonum"])) <= _Sonum.SONUM_MAX_DEG + 1e-9,
+            f"ω=9 rad/s → sönüm {math.degrees(_b_var[5]['sonum']):.1f}° "
+            f"≤ {_Sonum.SONUM_MAX_DEG:.0f}° tavan")
+
+    # B52: kapatılabilir
+    kontrol("B52 Ö9 kapatılabilir (varsayılan KAPALI)",
+            abs(C.SONUM_T) < 1e-9 and abs(_s_yok[5]["sonum"]) < 1e-12,
+            f"SONUM_T={C.SONUM_T} → sönüm terimi 0.00°")
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

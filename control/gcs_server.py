@@ -644,24 +644,75 @@ def get_guidance_mode():
 # görünmez ve kullanıcı deneyemez.
 from control.guidance import bbox_ibvs as _ibvs_mod           # noqa: E402
 
-# ad → (Cfg alanı, tip, etiket, açıklama, env anahtarı, açık değeri)
+# Araç parametrelerinin GERİ OKUMASI — listener PARAM_VALUE'yu buraya yazar
+_param_cache = {}
+_IRIS_SYSID = 5          # ArduPilot SITL: iris/copter sysid=5, plane sysid=2
+
+
+def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
+    """Uçuş SIRASINDA araç parametresi yazar (ANGLE_MAX gibi).
+
+    ⚠ Paylaşılan _mav_conn üzerinde ASLA blocking recv yapılmaz — async
+    listener aynı soketi okuyor, ikinci okuyucu mesaj yarışı yaratır ve
+    telemetri saniyelerce donar (manuel kontrol thread'inin dersi). Bu yüzden
+    yazma ATEŞLE-UNUT; teyit listener'ın doldurduğu _param_cache'ten okunur.
+    """
+    if _mav_conn is None:
+        return False, "MAVLink bağlantısı yok"
+    onceki = _mav_conn.target_system
+    try:
+        _mav_conn.target_system = sysid
+        _mav_conn.mav.param_set_send(
+            sysid, 1, ad.encode()[:16].ljust(16, b'\x00')[:16],
+            float(deger), mavutil.mavlink.MAV_PARAM_TYPE_INT32)
+        _mav_conn.mav.param_request_read_send(
+            sysid, 1, ad.encode()[:16].ljust(16, b'\x00')[:16], -1)
+    except Exception as e:
+        return False, str(e)
+    finally:
+        _mav_conn.target_system = onceki
+    return True, None
+
+
+# ad → (alan, tip, etiket, açıklama, env/param anahtarı, açık değeri)
+#   tip "bool"   : bbox_ibvs.Cfg üzerinde True/False
+#   tip "kazanc" : bbox_ibvs.Cfg üzerinde sayı (0 = kapalı)
+#   tip "param"  : ARAÇ parametresi (ArduPilot) — (kapalı_değer, açık_değer)
+#
+# ⚠ PANELDE YALNIZ O ANKİ ADIMIN ÖZELLİĞİ DURUR (kullanıcı kuralı 2026-08-10,
+# CLAUDE.md §5). Bir özelliğin kararı verilince — ister sisteme GİRSİN ister
+# ELENSİN — düğmesi buradan SİLİNİR. Panel birikmiş düğme çöplüğüne dönmesin;
+# kullanıcı o adımda neyi denediğini tek bakışta görsün.
+# Silmek özelliği yok etmez: kill-switch env anahtarı kodda kalır, karar ve
+# ölçümler UYGULANACAK.md'de durur.
+#
+# KARARI VERİLMİŞ, PANELDEN ÇIKARILMIŞ ÖZELLİKLER (env ile hâlâ denenebilir):
+#   T1a yatay roll telafisi   AVCI_IBVS_ROLL=0        GİRDİ (varsayılan açık)
+#   Kapanma ölçekleme         AVCI_IBVS_KAPANMA=0     GİRDİ (varsayılan açık)
+#   M3 erken lead             AVCI_IBVS_LEAD_ERKEN=1  daire/25 m'de NÖTR
+#   Ö1 kaçış telafisi         AVCI_IBVS_KD=1.0        ölçüt çelişkisi → kapalı
+#   Ö6 yüksek yatış           ANGLE_MAX 5500          ELENDİ (aşağıya bak)
+#   Ö7 yaw hız tavanı         AVCI_IBVS_YAWRATE=200   sinyal yok
+#   Ö8 yanal/kaçırma mesafesi AVCI_IBVS_YANAL=3.0     ELENDİ: n=6'da
+#       en yakın menzil kötüleşti (1.96→2.76 m), isabet 1/6→0/6, ve tek
+#       olumlu bulgusu (salınım 0.000) ÖLÇÜT ARTEFAKTIYDI — salınım yalnız
+#       kutu olan karelerde sayılıyor, hedefi kaybeden koşu sakin görünüyor.
+#
+# Ö6 NEDEN ELENDİ (2026-08-10): kullanıcı gözlemi + verinin yeniden okunması.
+# Saf takip kutunun BULUNDUĞU yere nişan alıyor; hedef yanal kırılınca 8 m'de
+# LOS 107°/s süpürüyor ve 0.2 s'lik döngü gecikmesi ~21° nişan hatası
+# demek. Yatış tavanını açmak bu GECİKMEYİ düzeltmez — yalnız yanlış yöne
+# daha hızlı gitmeyi sağlar; sonuç aşırı düzeltme ve salınım.
+# Ayrıca ölçüm de zayıftı: arşivli 4 koşunun Ö6 kolunda araç 38-40°'de kaldı,
+# yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
+# Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
 _OZELLIKLER = {
-    "t1a_yatay_telafi": (
-        "ROLL_TELAFI", "bool", "T1a · Yatay roll telafisi",
-        "Kamera azimutunu araç duruşuyla seviye çerçevesine döndürür. "
-        "Manevrada yatay salınımın kök nedeni.", "AVCI_IBVS_ROLL", True),
-    "kapanma_olcek": (
-        "KAPANMA", "bool", "Dikey komut kapanma hızıyla ölçeklenir",
-        "vz = −ṙ·tan(elev). Kapalıyken drone hızıyla ölçeklenir ve son anda "
-        "hedefin üstünden geçer.", "AVCI_IBVS_KAPANMA", True),
-    "m3_erken_lead": (
-        "LEAD_ERKEN", "bool", "M3 · Erken lead (terminal kapısı kalkar)",
-        "Lead'i yalnız son 6 m yerine kutu olan her karede uygular. "
-        "10 uçuşta nötr çıktı.", "AVCI_IBVS_LEAD_ERKEN", True),
-    "o1_kacis_telafisi": (
-        "KACIS_KD", "kazanc", "Ö1 · Kaçış telafisi",
-        "Hedef uzaklaşırken (ṙ<0) seyir hızını anında artırır. Yalnız "
-        "hızlandırma yönü — fren yapmaz.", "AVCI_IBVS_KD", 1.0),
+    "o9_sonumleme": (
+        "SONUM_T", "deger", "Ö9 · Yatay sönümleme (D terimi)",
+        "Yatay kanal şu an SAF ORANSAL — türev terimi yok, o yüzden "
+        "gecikmeli sistemde zorunlu olarak salınıyor. Bu terim aracın KENDİ "
+        "dönüş hızına karşı koyar: 'yeterince döndüm, yavaşla'. Düz uçuşta "
+        "etkisiz (ω≈0).", "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 
 
@@ -673,7 +724,22 @@ class OzellikCmd(BaseModel):
 def _ozellik_durumu():
     d = []
     for ad, (alan, tip, etiket, aciklama, env, acik_deger) in _OZELLIKLER.items():
+        if tip == "param":
+            kapali_d, acik_d = acik_deger
+            v = _param_cache.get((_IRIS_SYSID, alan))
+            # Araç henüz cevap vermediyse .parm varsayılanı (kapalı) varsayılır
+            acik = (v is not None and abs(v - acik_d) < 1.0)
+            d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
+                      "env": env, "acik": acik,
+                      "deger": (v if v is not None else "araç okunmadı")})
+            continue
         v = getattr(_ibvs_mod.Cfg, alan)
+        if tip == "deger":
+            kapali_d, acik_d = acik_deger
+            acik = abs(float(v) - float(acik_d)) < 1e-6
+            d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
+                      "env": env, "acik": acik, "deger": v})
+            continue
         acik = bool(v) if tip == "bool" else (float(v) > 0.0)
         d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
                   "env": env, "acik": acik,
@@ -691,12 +757,145 @@ def set_gudum_ozellik(cmd: OzellikCmd):
     if cmd.ad not in _OZELLIKLER:
         return {"status": "error", "message": f"Bilinmeyen özellik: {cmd.ad}"}
     alan, tip, etiket, _a, _e, acik_deger = _OZELLIKLER[cmd.ad]
-    yeni = (cmd.acik if tip == "bool"
-            else (float(acik_deger) if cmd.acik else 0.0))
+    if tip == "param":
+        kapali_d, acik_d = acik_deger
+        yeni = acik_d if cmd.acik else kapali_d
+        ok, hata = _arac_param_yaz(alan, yeni)
+        if not ok:
+            return {"status": "error", "message": f"{alan} yazılamadı: {hata}",
+                    "ozellikler": _ozellik_durumu()}
+        print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
+              f"(araç {alan} = {yeni})")
+        return {"status": "success", "ozellikler": _ozellik_durumu()}
+    if tip == "deger":
+        kapali_d, acik_d = acik_deger
+        yeni = float(acik_d if cmd.acik else kapali_d)
+    else:
+        yeni = (cmd.acik if tip == "bool"
+                else (float(acik_deger) if cmd.acik else 0.0))
     setattr(_ibvs_mod.Cfg, alan, yeni)
     print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
           f"(Cfg.{alan} = {yeni})")
     return {"status": "success", "ozellikler": _ozellik_durumu()}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# KAÇAMAK TESTİ — panelden tek düğmeyle (kullanıcı isteği, 2026-08-11)
+# ═══════════════════════════════════════════════════════════════════════
+# tools/kacamak_testi.py'yi alt süreç olarak koşar, bitince tools/
+# vurus_kalitesi.py ile sonucu sınıflandırır. Kullanıcının terminalden
+# komut yazması gerekmez; kol seçimi de yukarıdaki özellik düğmeleriyle
+# yapıldığı için tek arayüzden tam A/B koşulabilir.
+_kacamak = {"proc": None, "ad": None, "dizin": None, "kacamak": None,
+            "tetik": None, "baslangic": None, "sonuc": None, "gecmis": []}
+_KACAMAK_KOK = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "kacamak")
+
+
+class KacamakCmd(BaseModel):
+    kacamak: str = "yatay"
+    tetik_m: float = 8.0
+    kayit_s: float = 100.0
+    ad: str = ""
+
+
+def _kacamak_sonuc_oku(dizin):
+    """olay.json + vurus_kalitesi → panele basılacak özet."""
+    try:
+        import json as _json
+        o = _json.load(open(os.path.join(dizin, "olay.json")))
+    except Exception:
+        return None
+    ozet = {"imha": bool(o.get("imha")), "en_yakin": o.get("en_yakin"),
+            "kacamak": o.get("kacamak"), "tetik_t": o.get("tetik_t"),
+            "sinif": "—", "cx_salinim": None, "roll_p90": None,
+            "gerekce": "", "olcut": {}}
+    try:
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+        import vurus_kalitesi as _vk
+        k = _vk.olc(dizin)
+        if k and not k.get("hata"):
+            ozet.update(sinif=k.get("sinif", "—"),
+                        cx_salinim=k.get("cx_degisim_hz"),
+                        roll_p90=k.get("roll_p90"),
+                        gerekce=k.get("gerekce", ""),
+                        olcut={a: list(b) for a, b in (k.get("olcut") or {}).items()})
+    except Exception as e:
+        ozet["gerekce"] = f"kalite analizi yapılamadı: {e}"
+    return ozet
+
+
+@app.post("/api/kacamak/basla")
+def kacamak_basla(cmd: KacamakCmd):
+    global _kacamak
+    p = _kacamak.get("proc")
+    if p is not None and p.poll() is None:
+        return {"status": "error", "message": "Bir kaçamak testi zaten koşuyor"}
+    kok = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # kol adını özellik durumundan üret — hangi ayarla koşulduğu dosya adında dursun
+    kol = "-".join(o["ad"] for o in _ozellik_durumu() if o["acik"]) or "taban"
+    ad = cmd.ad or f"{time.strftime('%H%M%S')}_{cmd.kacamak}_{kol}"
+    dizin = os.path.join(_KACAMAK_KOK, ad)
+    os.makedirs(dizin, exist_ok=True)
+    try:
+        proc = subprocess.Popen(
+            # -u: tamponsuz çıktı — canlı satırlar panele akabilsin
+            ["python3", "-u", os.path.join(kok, "tools", "kacamak_testi.py"),
+             dizin, cmd.kacamak, str(cmd.tetik_m), str(cmd.kayit_s)],
+            cwd=kok, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, start_new_session=True)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    _kacamak.update(proc=proc, ad=ad, dizin=dizin, kacamak=cmd.kacamak,
+                    tetik=cmd.tetik_m, baslangic=time.time(), sonuc=None,
+                    satirlar=[])
+
+    def _oku():
+        for satir in proc.stdout:
+            s = satir.rstrip()
+            if s:
+                _kacamak.setdefault("satirlar", []).append(s)
+                print(f"[KAÇAMAK] {s}")
+        proc.wait()
+        _kacamak["sonuc"] = _kacamak_sonuc_oku(_kacamak["dizin"])
+        if _kacamak["sonuc"]:
+            _kacamak["sonuc"]["ad"] = _kacamak["ad"]
+            _kacamak["gecmis"].insert(0, _kacamak["sonuc"])
+            del _kacamak["gecmis"][8:]
+
+    threading.Thread(target=_oku, daemon=True).start()
+    print(f"[KAÇAMAK] test başladı: {ad} (tetik {cmd.tetik_m:.0f} m)")
+    return {"status": "success", "ad": ad, "dizin": dizin}
+
+
+@app.post("/api/kacamak/durdur")
+def kacamak_durdur():
+    p = _kacamak.get("proc")
+    if p is None or p.poll() is not None:
+        return {"status": "error", "message": "Koşan test yok"}
+    try:
+        os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+    except Exception:
+        p.terminate()
+    return {"status": "success"}
+
+
+@app.get("/api/kacamak/durum")
+def kacamak_durum():
+    p = _kacamak.get("proc")
+    kosuyor = p is not None and p.poll() is None
+    return {
+        "kosuyor": kosuyor,
+        "ad": _kacamak.get("ad"),
+        "kacamak": _kacamak.get("kacamak"),
+        "tetik": _kacamak.get("tetik"),
+        "gecen_s": (round(time.time() - _kacamak["baslangic"], 0)
+                    if kosuyor and _kacamak.get("baslangic") else None),
+        "satirlar": (_kacamak.get("satirlar") or [])[-6:],
+        "sonuc": _kacamak.get("sonuc"),
+        "gecmis": _kacamak.get("gecmis", []),
+    }
 
 
 # -----------------------------------------------------------------------
@@ -1869,13 +2068,20 @@ async def mavlink_listener():
         while okunan < BATCH:
             msg = _mav_conn.recv_match(
                 type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
-                      'ATTITUDE', 'HEARTBEAT'],
+                      'ATTITUDE', 'HEARTBEAT', 'PARAM_VALUE'],
                 blocking=False
             )
             if msg is None:
                 break
             okunan += 1
             sys_id = msg.get_srcSystem()
+            # PARAM_VALUE: panelden yazılan araç parametrelerinin GERİ OKUMASI
+            # (bkz. _arac_param_yaz). Burada yakalanır çünkü _mav_conn üzerinde
+            # ikinci bir blocking recv yapmak listener ile yarışır.
+            if msg.get_type() == 'PARAM_VALUE':
+                _param_cache[(sys_id, msg.param_id.strip('\x00'))] = \
+                    float(msg.param_value)
+                continue
             if msg.get_type() == 'HEARTBEAT' and sys_id != 255:
                 # msg.type: 1=FixedWing, 2=Quadrotor, vs.
                 # Eğer daha önce tespit edilmediyse kontrol et
