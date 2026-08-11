@@ -150,7 +150,38 @@ Kutuya HİÇ bakmaz → görsel temas kopsa bile ölçer (eski ölçütün kusur
 hedefi kaybeden koşu "sakin" görünüyordu).
 Geometri doğrulandı: |yanal²+boyuna²| − mesafe = 0.0000 m.
 
-### 2 · ⚑ ASIL ARIZA BULUNDU — yaklaşma değil, GERİ DÖNEMEME
+### 2 · ⚠⚠ İKİ KEZ DÜZELTİLDİ — "geri dönemiyor" hükmü YANLIŞTI
+
+İlk hüküm: "22 koşunun 21'inde drone geri dönemedi, asıl arıza bu."
+**BU YANLIŞTI ve kendi §5.2 kuralım yakaladı.** Kaçırmadan sonraki gözlem
+süresi MEDYAN 6 s; 22 koşunun 13'ünde 10 s'den az. 76 m'yi ~2.5 m/s
+kapanmayla kapatmak ~30 s ister. Geri dönebilen tek koşu (P07), gözlem
+süresi en uzun olan koşuydu (40 s) — yani "dönebilen" değil "zamanı olan".
+
+KAYIT 230 s'ye uzatılıp GERÇEK ölçüm yapıldı (R01, R02):
+    R02: t=88 tetik → t=115'te 283 m'ye açıldı → t=211'de 0.11 m'ye DÖNDÜ
+    R01: t=94 tetik → t=145'te 0.33 m ve İSABET
+**Yeniden temas ÇALIŞIYOR**, ~50-100 s sürüyor. 100 s'lik kayıtlar bunu
+yapısal olarak göremiyordu. Kaçamak testinin varsayılan süresi ARTIRILMALI.
+
+### 3 · ⚑ GERÇEK DURUM: kesişim ÇÖZÜLDÜ, kalan iş DİKEY SANTİMETRELER
+
+Uzun kayıtlı iki koşunun temas anı, bileşenlerine ayrılmış:
+
+| koşu | yatay | dikey | sonuç |
+|---|---|---|---|
+| R01 | 0.33 m | **+0.05 m** | **İSABET** |
+| R02 | 0.12 m | **−0.11 m** | ıska (zarf sınırında) |
+
+Zarf: yatay ±0.65 m, dikey **+0.29 / −0.13 m** — dikey eksen **5 kat dar**.
+Güdüm kesişimi 10-40 cm'ye kadar çözüyor; isabetle ıska arasındaki fark
+artık SANTİMETRE ve DİKEY eksende.
+
+⇒ Sıradaki iş: **T1b — dikey kanalda roll/pitch telafisi.** T1a yatayda
+uygulandı ve doğrulandı; dikey, tek-değişken kuralı gereği bilerek
+bırakılmıştı. Ölçülen okuma hatası dikeyde 33° (yataydakinin 2.5 katı).
+
+### 4 · (geçersiz kılınan ilk hüküm — kayıt için)
 
 22 koşu (Ö9 kampanyası 12 + Ö5 kampanyası 10), tetik 8 m:
 

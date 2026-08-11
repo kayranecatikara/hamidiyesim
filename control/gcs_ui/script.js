@@ -1276,7 +1276,7 @@ function kacSecimCiz() {
 function kacBasla() {
     fetch('/api/kacamak/basla', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kacamak: kacTur, tetik_m: kacTetik, kayit_s: 100 })
+        body: JSON.stringify({ kacamak: kacTur, tetik_m: kacTetik, kayit_s: 240 })
     }).then(r => r.json()).then(d => {
         const el = document.getElementById('kac-durum');
         if (el && d.status !== 'success') el.textContent = 'HATA: ' + (d.message || '');

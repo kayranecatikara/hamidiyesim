@@ -111,7 +111,12 @@ def main():
     dizin = sys.argv[1]
     kacamak = sys.argv[2]
     tetik_m = float(sys.argv[3]) if len(sys.argv) > 3 else 25.0
-    kayit_s = float(sys.argv[4]) if len(sys.argv) > 4 else 120.0
+    # ⚠ VARSAYILAN 120 → 240 (2026-08-11): kaçamak tipik olarak t=60-95 s'de
+    # tetikleniyor; 100-120 s'lik kayıt kaçırmadan sonra yalnız ~6 s (medyan)
+    # gözlem bırakıyordu ve "geri dönemiyor" diye YANLIŞ hüküm ürettirdi.
+    # Gerçek yeniden temas 50-100 s sürüyor (R01/R02 ölçümü) — pencere
+    # bunu görecek kadar uzun olmalı.
+    kayit_s = float(sys.argv[4]) if len(sys.argv) > 4 else 240.0
     if kacamak not in KACAMAKLAR:
         print(f"bilinmeyen kaçamak: {kacamak}  ({'|'.join(KACAMAKLAR)})")
         raise SystemExit(1)

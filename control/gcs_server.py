@@ -797,7 +797,7 @@ _KACAMAK_KOK = os.path.join(
 class KacamakCmd(BaseModel):
     kacamak: str = "yatay"
     tetik_m: float = 8.0
-    kayit_s: float = 100.0
+    kayit_s: float = 240.0
     ad: str = ""
 
 
