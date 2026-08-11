@@ -488,6 +488,28 @@ class Cfg:
     DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
     DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
 
+    # ══ T1b · DİKEY KANALDA ROLL/PITCH TELAFİSİ ══
+    # NEDEN ŞİMDİ (2026-08-11 gece ölçümü): kesişim artık 10-40 cm'ye kadar
+    # çözülüyor. İki uzun kayıtlı koşunun temas anı bileşenlerine ayrıldı:
+    #     R01  yatay 0.33 m   dikey +0.05 m  → İSABET
+    #     R02  yatay 0.12 m   dikey −0.11 m  → ıska (zarf sınırında)
+    # İsabet zarfı yatayda ±0.65 m ama DİKEYDE +0.29 / −0.13 m — 5 KAT DAR.
+    # Yani isabetle ıska arasındaki fark artık SANTİMETRE ve DİKEY eksende.
+    #
+    # T1a (yatay telafi) uygulanıp uçuşta doğrulandı; DİKEY, tek-değişken
+    # kuralı gereği bilerek dokunulmadan bırakılmıştı. Ölçülen okuma hatası
+    # dikeyde YATAYDAKİNDEN BÜYÜK: kullanıcının uçuşunda (log 091554) araç
+    # 30° yatıktayken ham dikey okuma −22.1° derken telafili okuma +4.8°
+    # diyordu — İŞARET TERS, en büyük sapma 33.1°.
+    #
+    # ÇÖZÜM: eps_elev, ham piksel farkı yerine los_seviye()'nin SEVİYE
+    # çerçevesindeki yükseliş çıktısından kurulur. Nişan noktası da aynı
+    # çerçeveye taşınır (CY_NISAN'ın seviye karşılığı), böylece hata tanımı
+    # değişmez — yalnız okuma düzelir.
+    # ⚠ DÜZ UÇUŞTA ETKİSİZ: roll=pitch=0'da los_seviye = piksel_elev, fark 0.
+    # AVCI_IBVS_DIKEY_ROLL=0 → eski (telafisiz) dikey yol aynen geri gelir.
+    DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 0.0) >= 0.5
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -499,7 +521,7 @@ _LOG_DIR = os.path.join(
 
 _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
-    "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
+    "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg", "eps_elev_ham_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
@@ -650,7 +672,26 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     vx_ned = v_los * math.cos(hiz_yonu)
     vy_ned = v_los * math.sin(hiz_yonu)
 
-    eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
+    # T1b (bkz. Cfg.DIKEY_ROLL): ham piksel farkı KAMERA çerçevesindedir;
+    # araç yattığında bu SEVİYE çerçevesindeki yükseliş DEĞİLDİR.
+    eps_elev_ham = math.atan((cy - cfg.CY_NISAN) / geo.FY)  # cy büyük → altta
+    eps_elev = eps_elev_ham
+    if cfg.DIKEY_ROLL:
+        # ⚠ TELAFİ, FARK OLARAK uygulanır — hata TANIMI değişmez.
+        # Birim testi B58 şunu yakaladı: seviye yükselişini doğrudan hata
+        # yerine koymak, roll=pitch=0'da BİLE komutu 0.51 m/s değiştiriyordu
+        # (25° tilt yüzünden piksel farkı ile açı farkı aynı fonksiyon değil).
+        # Doğrusu: duruşun getirdiği SAPMAYI çıkarmak.
+        # ⚠ YALNIZ ROLL izole edilir; pitch İKİ terimde de aynı bırakılır.
+        # Sebep: nişan noktası CY_NISAN, aracın seyir pitch'i (18 m/s'de
+        # burun ~28° aşağı) ile BİRLİKTE uçuşta ayarlanmıştı. Pitch'i de
+        # telafi etmek nişan noktasını kaydırır — bu ayrı bir değişkendir,
+        # bu adımın konusu değil. (İlk sürüm pitch'i de içeriyordu ve
+        # terminalde +5.9° kayma üretiyordu; tek-değişken kuralına aykırı.)
+        _, _el_roll = los_seviye(cx, cy, iris_roll, iris_pitch, cfg)
+        _, _el_norm = los_seviye(cx, cy, 0.0, iris_pitch, cfg)
+        # el_roll > el_norm ⇒ hedef sandığımızdan YUKARIDA ⇒ daha çok tırman
+        eps_elev = eps_elev_ham - (_el_roll - _el_norm)
     if terminal:
         # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
         # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
@@ -693,6 +734,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
+            "eps_elev_ham": eps_elev_ham,
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "eps_hiz": eps_hiz, "sonum": sonum,
             "donus_tavan": donus_tavan,
@@ -975,6 +1017,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 # görülür. Yalnız log — güdüm bunu kullanmaz.
                 "eps_yaw_ham_deg": round(math.degrees(tani["eps_yaw_ham"]), 1),
                 "eps_elev_deg": round(math.degrees(tani["eps_elev"]), 1),
+                "eps_elev_ham_deg": round(math.degrees(tani["eps_elev_ham"]), 1),
                 "iris_roll_deg": round(math.degrees(iroll), 1),
                 "iris_pitch_deg": round(math.degrees(ipitch), 1),
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),

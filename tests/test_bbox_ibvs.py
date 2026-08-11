@@ -783,6 +783,59 @@ def main():
             abs(C.DONUS_A) < 1e-9 and _d_ka[5]["donus_tavan"] is None,
             f"DONUS_A={C.DONUS_A} → tavan hiç uygulanmaz")
 
+    print("=" * 60)
+    # ── T1b: DİKEY KANALDA ROLL/PITCH TELAFİSİ ──
+    # Gece ölçümü: kesişim 10-40 cm'ye çözülüyor, isabet/ıska farkı DİKEYDE.
+    # Zarf yatayda ±0.65 m ama dikeyde +0.29/−0.13 m — 5 kat dar.
+    class _DikeyT(ib.Cfg):
+        DIKEY_ROLL = True
+
+    # DÜZ UÇUŞ: roll=pitch=0'da telafi dikey hatayı DEĞİŞTİRMEMELİ
+    _enb = 0.0
+    for _cyd in (200.0, 260.0, 300.0, 340.0, 400.0):
+        _a = ib.komut(CX, _cyd, 20, 20, 0.0, 12.0, 0.05, _DikeyT, False,
+                      (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+        _k = ib.komut(CX, _cyd, 20, 20, 0.0, 12.0, 0.05, C, False,
+                      (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+        _enb = max(_enb, abs(_a[2] - _k[2]))
+    kontrol("B58 T1b düz uçuşta (roll=pitch=0) dikey komutu DEĞİŞTİRMEZ",
+            _enb < 0.02,
+            f"tüm kadrajda en büyük vz farkı {_enb:.4f} m/s "
+            "(kullanıcının doğruladığı dikey davranış korunur)")
+
+    # YATIŞTA: okuma ciddi biçimde DEĞİŞMELİ (uçuşta 33° sapma ölçülmüştü)
+    _rl = math.radians(30.0)
+    _ay = ib.komut(350.0, 234.0, 20, 20, 0.0, 12.0, 0.05, _DikeyT, False,
+                   (0.0, 0.0), math.radians(5.0), 0.0, 3.0, _rl)
+    _ky = ib.komut(350.0, 234.0, 20, 20, 0.0, 12.0, 0.05, C, False,
+                   (0.0, 0.0), math.radians(5.0), 0.0, 3.0, _rl)
+    _fark = math.degrees(abs(_ay[5]["eps_elev"] - _ky[5]["eps_elev"]))
+    # ⚠ ÖNCEKİ İDDİA DÜZELTİLDİ: "dikeyde 33° sapma" iki FARKLI büyüklüğü
+    # kıyaslıyordu (seviye yükselişi ↔ piksel farkı hatası) — geçersizdi.
+    # Gerçek roll kaynaklı sapma hedefin kadraj merkezinden uzaklığıyla büyür:
+    #   yatış 30°: cx=320'de 3.5° | cx=420'de 18.0° | cx=500'de 23.5°
+    # Terminal yaklaşmada hedef merkeze yakın (|cx−320| medyan 14-18 px) ve
+    # araç neredeyse düz (yatış medyan 4°) olduğu için gerçek uçuş
+    # kayıtlarında düzeltme MEDYANI −0.06° çıktı — pratikte sıfır.
+    kontrol("B59 T1b yatışta dikey okumayı düzeltir (etki cx ile büyür)",
+            _fark > 3.0,
+            f"yatış 30°, cx=350, cy=234: ham {math.degrees(_ky[5]['eps_elev']):+.1f}° → "
+            f"telafili {math.degrees(_ay[5]['eps_elev']):+.1f}° (fark {_fark:.1f}°). "
+            "⚠ Terminal fazda gerçek düzeltme medyanı −0.06° — bu özellik "
+            "santimetrelik dikey ıskanın çaresi DEĞİL (uçmadan ölçüldü)")
+
+    # T1b YATAY kanala dokunmamalı (tek değişken)
+    kontrol("B60 T1b YATAY kanala DOKUNMAZ (yaw komutu birebir aynı)",
+            abs(_ay[3] - _ky[3]) < 1e-12,
+            f"yaw telafili {math.degrees(_ay[3]):.2f}° = "
+            f"telafisiz {math.degrees(_ky[3]):.2f}°")
+
+    # kapatılabilir
+    kontrol("B61 T1b kapatılabilir (varsayılan KAPALI)",
+            not C.DIKEY_ROLL
+            and abs(_ky[5]["eps_elev"] - _ky[5]["eps_elev_ham"]) < 1e-12,
+            f"DIKEY_ROLL={C.DIKEY_ROLL} → eps_elev = ham okuma")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

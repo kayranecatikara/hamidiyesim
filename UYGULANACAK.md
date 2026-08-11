@@ -177,9 +177,35 @@ Zarf: yatay ±0.65 m, dikey **+0.29 / −0.13 m** — dikey eksen **5 kat dar**.
 Güdüm kesişimi 10-40 cm'ye kadar çözüyor; isabetle ıska arasındaki fark
 artık SANTİMETRE ve DİKEY eksende.
 
-⇒ Sıradaki iş: **T1b — dikey kanalda roll/pitch telafisi.** T1a yatayda
-uygulandı ve doğrulandı; dikey, tek-değişken kuralı gereği bilerek
-bırakılmıştı. Ölçülen okuma hatası dikeyde 33° (yataydakinin 2.5 katı).
+### 3b · T1b KODLANDI ama UÇULMADI — mekanizma kapısı (§5.1) uçmadan eledi
+
+`AVCI_IBVS_DIKEY_ROLL` (varsayılan 0). Dikey hataya roll telafisi FARK
+olarak eklenir; pitch iki terimde de aynı bırakılır (nişan noktası CY_NISAN
+seyir pitch'iyle birlikte ayarlanmıştı — onu kaydırmak ayrı bir değişken).
+
+⚠ **"Dikeyde 33° okuma hatası" İDDİAM GEÇERSİZDİ.** İki FARKLI büyüklüğü
+kıyaslıyordum (seviye yükselişi ↔ piksel farkı hatası). Birim testi B58 bunu
+yakaladı: ilk sürüm roll=pitch=0'da bile komutu 0.51 m/s değiştiriyordu.
+
+GERÇEK roll kaynaklı dikey sapma, hedefin kadraj merkezinden uzaklığıyla
+büyür (cy=240 için):
+
+| yatış | cx=320 | cx=360 | cx=420 | cx=500 |
+|---|---|---|---|---|
+| 30° | 3.5° | 10.4° | 18.0° | 23.5° |
+| 45° | 7.6° | 17.1° | 27.4° | 35.1° |
+
+Ama TERMİNAL yaklaşmada hedef merkeze yakın (|cx−320| medyan 14-18 px) ve
+araç neredeyse düz (yatış medyan 4°). Gerçek uçuş kayıtlarında (R01/R02)
+terminal fazdaki düzeltme **MEDYAN −0.06°** — pratikte sıfır.
+
+⇒ **T1b, santimetrelik dikey ıskanın çaresi DEĞİL.** §5.1 mekanizma kapısı
+bunu UÇMADAN önce gösterdi; 10 uçuşluk kampanya boşa gitmedi.
+Kod, kill-switch ve testler (B58-B61) duruyor — dikey sapmanın büyüdüğü
+başka bir rejimde (hedef kadraj kenarında + sert yatış) işe yarayabilir.
+
+⇒ Sıradaki iş AÇIK DEĞİL. Dikey ıska bir OKUMA hatası değil; nişan noktası
+(CY_NISAN) / dikey kontrol yasası sorusu. Kullanıcıyla konuşulmalı.
 
 ### 4 · (geçersiz kılınan ilk hüküm — kayıt için)
 
