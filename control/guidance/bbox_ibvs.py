@@ -260,6 +260,19 @@ class Cfg:
     # lead tavanı — ~8-10° — terminal tavanı 25°'de kalsın.
     # AVCI_IBVS_LEAD_ERKEN=1 → ölçülen bu davranış geri gelir.
     LEAD_ERKEN = _env_f("AVCI_IBVS_LEAD_ERKEN", 0.0) >= 0.5
+
+    # ── M3b · SEYİR FAZI İÇİN AYRI LEAD TAVANI (2026-08-11) ──
+    # Yukarıdaki "SIRADAKİ DENEY" notunun uygulaması. 08-10 kampanyasında
+    # (158 koşu) ölçüldü: lead karelerin %71-77'sinde TAM SIFIR, çünkü
+    # `if terminal or LEAD_ERKEN` kapısı LEAD_ERKEN kapalıyken lead'i yalnız
+    # terminale (kutu>25 px ≈ 6.4 m) bırakıyor. Hedef 25 m'de kaçmaya
+    # başlıyor; lead devreye girene kadar iş bitmiş oluyor. Sonuç: kaçamakta
+    # ilk geçiş ıskası medyan 4.2-4.6 m (kaçamaksız 0.6 m).
+    # 08-09'da erken lead denenip GERİ ALINDI, ama sebep YÖN değil GENLİKTİ:
+    # terminal için ayarlanmış 25° tavanı seyirde de uygulanınca araç kesişmek
+    # yerine hedefi gölge ediyordu. Bu yüzden tavan artık FAZA GÖRE ayrı.
+    # Seyirde küçük tut; terminal 25°'de kalır.
+    LEAD_MAX_SEYIR_DEG = _env_f("AVCI_IBVS_LEAD_MAX_SEYIR", 8.0)  # °
     VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
 
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
@@ -516,10 +529,13 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     lead_az = 0.0
     # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE).
     # M3: kapı kalktı — artık kutu olan her karede (bkz. Cfg.LEAD_ERKEN).
+    # M3b: SEYİR fazının tavanı AYRI ve küçük (bkz. Cfg.LEAD_MAX_SEYIR_DEG);
+    # terminal tavanı 25°'de kalır — 08-09'da bozulan yaklaşmanın sebebi
+    # terminal tavanının seyirde de uygulanmasıydı, genlik yanlıştı.
     if terminal or cfg.LEAD_ERKEN:
+        _tavan = (cfg.LEAD_MAX_DEG if terminal else cfg.LEAD_MAX_SEYIR_DEG)
         lead_az = clamp(lead_sure * los_hiz[0],
-                        -math.radians(cfg.LEAD_MAX_DEG),
-                        math.radians(cfg.LEAD_MAX_DEG))
+                        -math.radians(_tavan), math.radians(_tavan))
     yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
 
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)

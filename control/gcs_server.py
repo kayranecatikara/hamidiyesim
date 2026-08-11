@@ -716,7 +716,16 @@ _OZELLIKLER = {
     "m3_erken_lead": (
         "LEAD_ERKEN", "bool", "M3 · Erken lead (terminal kapısı kalkar)",
         "Lead'i yalnız son 6 m yerine kutu olan her karede uygular. "
-        "10 uçuşta nötr çıktı.", "AVCI_IBVS_LEAD_ERKEN", True),
+        "08-10 kampanyasında ölçüldü: kapalıyken lead karelerin %71-77'sinde "
+        "TAM SIFIR — hedef 25 m'de kaçarken drone saf takip yapıyor.",
+        "AVCI_IBVS_LEAD_ERKEN", True),
+    "m3b_lead_seyir_tavan": (
+        "LEAD_MAX_SEYIR_DEG", "kazanc", "M3b · Seyir fazı lead tavanı (°)",
+        "Erken lead açıkken SEYİRDE uygulanan en büyük lead açısı; terminal "
+        "tavanı 25°'de kalır. 08-09'da erken lead terminal tavanıyla (25°) "
+        "denenip geri alınmıştı — araç kesişmek yerine hedefi gölge ediyordu. "
+        "Yön doğruydu, genlik yanlıştı; küçük tut (8-15°).",
+        "AVCI_IBVS_LEAD_MAX_SEYIR", 8.0),
     "o5_manevra": (
         "MANEVRA", "bool", "Ö5 · Ani kaçış: dönüş-farkında hız tavanı",
         "Hedef yakında (<12 m) bize göre >8 m/s yana kayarsa hızı "

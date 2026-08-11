@@ -689,6 +689,58 @@ def main():
             _m55[5]["v_los"] > _man[5]["v_los"] + 1.0,
             f"45° → {_man[5]['v_los']:.2f} m/s, 55° → {_m55[5]['v_los']:.2f} m/s")
 
+    # ══ B49-B53: M3b — SEYİR FAZI İÇİN AYRI LEAD TAVANI ══
+    # 08-10 kampanyası (158 koşu): lead karelerin %71-77'sinde TAM SIFIR,
+    # çünkü kapı `if terminal or LEAD_ERKEN` ve LEAD_ERKEN varsayılan kapalı.
+    # 08-09'da erken lead terminal tavanıyla (25°) denenip geri alınmıştı —
+    # yön doğru, genlik yanlıştı. Tavan artık faza göre AYRI.
+    class _LeadKapali(C):
+        LEAD_ERKEN = False
+        LEAD_MAX_SEYIR_DEG = 8.0
+
+    class _LeadAcik(_LeadKapali):
+        LEAD_ERKEN = True
+
+    class _LeadAcik20(_LeadAcik):
+        LEAD_MAX_SEYIR_DEG = 20.0
+
+    # boyut 12 px → R ≈ 13 m (seyir, terminal DEĞİL). λ̇ = 1.0 rad/s.
+    _argL = (CX, C.CY_NISAN, 12, 12, 0.0, 18.0, 0.05)
+    _lk = ib.komut(*_argL, _LeadKapali, False, (1.0, 0.0), 0.0, 0.0, None, 0.0)
+    _la = ib.komut(*_argL, _LeadAcik,   False, (1.0, 0.0), 0.0, 0.0, None, 0.0)
+
+    kontrol("B49 SEYİRDE lead erken KAPALIYKEN sıfırdır (ölçülen kusur)",
+            abs(_lk[5]["lead_az"]) < 1e-12,
+            f"terminal=False, LEAD_ERKEN=0 → lead {_lk[5]['lead_az']:.3f} rad "
+            f"— kampanyada karelerin %71-77'sinde görülen durum")
+
+    kontrol("B50 SEYİRDE lead erken AÇIKKEN sıfırdan farklıdır",
+            abs(_la[5]["lead_az"]) > 1e-6,
+            f"λ̇=1.0 rad/s → lead {math.degrees(_la[5]['lead_az']):.2f}°")
+
+    kontrol("B51 SEYİR tavanı LEAD_MAX_SEYIR_DEG'i AŞMAZ",
+            abs(math.degrees(_la[5]["lead_az"]))
+            <= _LeadAcik.LEAD_MAX_SEYIR_DEG + 1e-9,
+            f"|lead| {abs(math.degrees(_la[5]['lead_az'])):.2f}° ≤ "
+            f"{_LeadAcik.LEAD_MAX_SEYIR_DEG:.0f}° (terminal tavanı "
+            f"{C.LEAD_MAX_DEG:.0f}° DEĞİL)")
+
+    # Aynı girdide seyir tavanı 8→20 olunca lead büyümeli (tavan bağlayıcı)
+    _l20 = ib.komut(*_argL, _LeadAcik20, False, (1.0, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B52 seyir tavanı büyütülünce lead BÜYÜR (tavan gerçekten bağlıyor)",
+            abs(_l20[5]["lead_az"]) > abs(_la[5]["lead_az"]) + 1e-6,
+            f"8° → {math.degrees(_la[5]['lead_az']):.2f}°, "
+            f"20° → {math.degrees(_l20[5]['lead_az']):.2f}°")
+
+    # TERMİNALDE tavan hâlâ LEAD_MAX_DEG (25°) — seyir tavanı onu KISMAMALI
+    _term = ib.komut(*_argL, _LeadKapali, True, (3.0, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B53 TERMİNAL tavanı seyir tavanından etkilenmez (25° korunur)",
+            abs(math.degrees(_term[5]["lead_az"]))
+            > _LeadKapali.LEAD_MAX_SEYIR_DEG + 1e-6,
+            f"terminal lead {abs(math.degrees(_term[5]['lead_az'])):.2f}° > "
+            f"seyir tavanı {_LeadKapali.LEAD_MAX_SEYIR_DEG:.0f}° — "
+            f"08-09'da doğrulanmış terminal davranışı bozulmadı")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

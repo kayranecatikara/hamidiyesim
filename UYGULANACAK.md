@@ -164,6 +164,55 @@ nadir çalışıyor. Ama müdahale ~0.5 s sürdüğü için sonuca yansımadı.
 sonra kol başına 3 koşuyla tekrarla. Düzeltilmemiş testle alınacak sonuç
 kabul edilemez.
 
+---
+
+#### Ö5 · BÜYÜK KAMPANYA — HÜKÜM: ETKİSİZ, KAPALI KALIYOR (2026-08-11)
+
+Test onarıldıktan sonra 11.5 saatlik gözetimsiz kampanya: **158 koşu, 14 tur,
+153 geçerli**, 4 kol × 3 kaçamak dönüşümlü, her koşuda tam sim restart, kol
+`/api/gudum_ozellikleri`'nden doğrulandı. Sürücü: `tools/kampanya.py`.
+Ölçüt koşmadan önce ilan edildi: **birincil = imha oranı**.
+
+**Birincil ölçüt — kaçamaklı koşularda (Ö5'in hedeflediği durum):**
+
+| kıyas | kapalı | açık | z | p |
+|---|---|---|---|---|
+| A vs C (45°) | 15/26 %58 | 15/26 %58 | 0.00 | 1.00 |
+| B vs D (55°) | 17/26 %65 | 16/26 %62 | +0.29 | 0.77 |
+| 45° vs 55° | 30/52 %58 | 33/52 %63 | −0.60 | 0.55 |
+
+**HÜKÜM: Ö5 ETKİSİZ — varsayılan KAPALI kalıyor.** A vs C birebir aynı.
+Bu sefer "test ayırt etmiyor" mazereti YOK: aynı testte kaçamağın kendi etkisi
+net ölçülüyor (kaçamaksız %92 → kaçamaklı %61, z=+3.96, **p=0.000075**).
+Güç: kol başına n≈38 → ±7.7 puan; 21 puandan büyük bir fark görülürdü.
+
+**Neden işe yaramadı — üç ölçüm:**
+
+1. **Neredeyse hiç tetiklenmiyor.** C+D'de 435/18155 kare = **%2.4**;
+   75 koşunun **24'ünde hiç tetiklenmedi**. `v_yanal_p90` medyanı 7.6 m/s,
+   eşik 8.0 — eşik dağılımın tam ortasına düşmüş, sinyali değil gürültü
+   sınırını kesiyor.
+2. **Yatış tavanı zaten bağlayıcı değil.** Kaçamaklı koşularda roll p99
+   39-44°, 40°'yi aşan kare oranı **%0.7-1.9**. Tavan 45→55 yapmak bu yüzden
+   hiçbir şey değiştirmedi (B/D ≈ A/C) — araç mevcut yatışını kullanmıyor ki.
+3. **Görsel temas zaten kopmuyor.** Kaçamakta KUTU_YOK %6.8-8.0 (kaçamaksız
+   %2-3), kutu merkez hatası medyan 5-6 px / p90 58-60 px (yarı-genişlik 320).
+   Yani "hedef kadrajdan çıkıyor" hipotezi **doğrulanmadı**; hedef kadrajda
+   kalıyor, drone roll'u p90 4-10°'den 32-33°'ye çıkarıp takip ediyor.
+   Ö5 açık/kapalı bu üç ölçünün hiçbirini değiştirmiyor (6.8 vs 8.0 %,
+   5.0 vs 6.0 px, 10.6 vs 10.2 px boyut, 32.4 vs 33.3° roll).
+
+**ASIL DARBOĞAZ (post-hoc tanı, ölçüt sonradan seçildi — kanıt değil, yön):**
+İlk geçiş ıskası (tetikten sonraki 15 s, 10 Hz logdan) kaçamaksız medyan
+**0.6 m**, kaçamaklı **4.2-4.6 m** — kol farkı yok. Kaçamaklı imhaların yalnız
+%3-16'sı ilk geçişte; gecikme medyanı **52 s**, yani vuruş uzun bir yeniden
+dalıştan geliyor. Sorun görsel temas değil, **ilk geçişte dönüş yarıçapı**.
+Bu, Ö5'in "hızı kes" fikrinin doğru teşhise dayandığını ama müdahalenin
+tetiklenme penceresi (%2.4) yüzünden asla iş göremediğini gösteriyor.
+
+**Kanıt:** `logs/kampanya_20260810/` (koşu başına kare+telemetri+olay.json),
+video `logs/kosu_005_A_yatay_45.mp4`, `logs/kosu_066_C_yatay_45.mp4`.
+
 ### M5 — KAÇAMAK TESTİYLE ÖLÇÜLEN ASIL DARBOĞAZ: manevra sonrası HIZ ÇÖKÜŞÜ
 
 Kaçamak testi mimarisiyle (bkz. CLAUDE.md §3.3) 16 uçuş. Kullanıcının kendi
