@@ -702,8 +702,12 @@ def get_guidance_mode():
 # AVCI_* davranış anahtarının buraya bir satırı olacak, yoksa panelde
 # görünmez ve kullanıcı deneyemez.
 from control.guidance import bbox_ibvs as _ibvs_mod           # noqa: E402
+from control.guidance import supervisor as _sup_mod           # noqa: E402
 
-# ad → (Cfg alanı, tip, etiket, açıklama, env anahtarı, açık değeri)
+# ad → (Cfg alanı, tip, etiket, açıklama, env anahtarı, açık değeri[, Cfg sınıfı])
+# 7. öğe İSTEĞE BAĞLI: hangi Cfg sınıfına yazılacağı. Verilmezse bbox_ibvs.Cfg.
+# 2026-08-11'de eklendi — devir ölçütü supervisor.SupCfg'de yaşıyor ve panelden
+# doğrulanamadığı sürece o kolu koşan kampanya kolu DOĞRULAYAMAZ (§4 disiplini).
 _OZELLIKLER = {
     "t1a_yatay_telafi": (
         "ROLL_TELAFI", "bool", "T1a · Yatay roll telafisi",
@@ -726,6 +730,20 @@ _OZELLIKLER = {
         "denenip geri alınmıştı — araç kesişmek yerine hedefi gölge ediyordu. "
         "Yön doğruydu, genlik yanlıştı; küçük tut (8-15°).",
         "AVCI_IBVS_LEAD_MAX_SEYIR", 8.0),
+    "d0_ardisik": (
+        "KILIT_ARDISIK", "bool", "D0 · Devir: ARDIŞIK kare (kayan pencere yerine)",
+        "Görsel faza devir ölçütü. AÇIK: üst üste KILIT_N kare tespit — "
+        "yarışma ölçütüne birebir sadık. KAPALI: son 15 karenin 10'u (eski "
+        "kayan pencere). ⚠ ARDIŞIK gürültülü tespitte devri GECİKTİREBİLİR; "
+        "kayan pencere tam bu yüzden konmuştu (07-31).",
+        "AVCI_HYBRID_ARDISIK", True, _sup_mod.SupCfg),
+    "d0_conf_esigi": (
+        "KILIT_CONF_MIN", "kazanc", "D0 · Devir için ekstra güven eşiği",
+        "Supervisor'ın devir için istediği ek güven. 0 = ekstra eşik YOK "
+        "(dedektörün kendi 0.35 eşiği geçerli). 0.5 yapmak ESKİ hâle döner ve "
+        "0.35-0.50 bandında görsel temas varken GPS güdümü sürer — bu D0 "
+        "İHLALİDİR, yalnız kıyas koşusu için açılır.",
+        "AVCI_HYBRID_CONF", 0.5, _sup_mod.SupCfg),
     "o5_manevra": (
         "MANEVRA", "bool", "Ö5 · Ani kaçış: dönüş-farkında hız tavanı",
         "Hedef yakında (<12 m) bize göre >8 m/s yana kayarsa hızı "
@@ -744,10 +762,16 @@ class OzellikCmd(BaseModel):
     acik: bool
 
 
+def _ozellik_cfg(kayit):
+    """Özelliğin yaşadığı Cfg sınıfı — 7. öğe yoksa bbox_ibvs.Cfg."""
+    return kayit[6] if len(kayit) > 6 else _ibvs_mod.Cfg
+
+
 def _ozellik_durumu():
     d = []
-    for ad, (alan, tip, etiket, aciklama, env, acik_deger) in _OZELLIKLER.items():
-        v = getattr(_ibvs_mod.Cfg, alan)
+    for ad, kayit in _OZELLIKLER.items():
+        alan, tip, etiket, aciklama, env = kayit[0], kayit[1], kayit[2], kayit[3], kayit[4]
+        v = getattr(_ozellik_cfg(kayit), alan)
         acik = bool(v) if tip == "bool" else (float(v) > 0.0)
         d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
                   "env": env, "acik": acik,
@@ -764,12 +788,14 @@ def get_gudum_ozellikleri():
 def set_gudum_ozellik(cmd: OzellikCmd):
     if cmd.ad not in _OZELLIKLER:
         return {"status": "error", "message": f"Bilinmeyen özellik: {cmd.ad}"}
-    alan, tip, etiket, _a, _e, acik_deger = _OZELLIKLER[cmd.ad]
+    kayit = _OZELLIKLER[cmd.ad]
+    alan, tip, etiket, acik_deger = kayit[0], kayit[1], kayit[2], kayit[5]
+    hedef = _ozellik_cfg(kayit)
     yeni = (cmd.acik if tip == "bool"
             else (float(acik_deger) if cmd.acik else 0.0))
-    setattr(_ibvs_mod.Cfg, alan, yeni)
+    setattr(hedef, alan, yeni)
     print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
-          f"(Cfg.{alan} = {yeni})")
+          f"({hedef.__name__}.{alan} = {yeni})")
     return {"status": "success", "ozellikler": _ozellik_durumu()}
 
 

@@ -4,8 +4,8 @@ supervisor.py — Faz 4: GPS ↔ görsel güdüm geçişi (hibrit müdahale).
 run_hybrid tek görev döngüsüdür (start_chase bunu çalıştırır):
 
   GPS fazı (gps_guidance) hedefe yaklaşır. Görsel temas oturunca
-  (KILIT_PENCERE karenin KILIT_N'inde tespit, conf ≥ KILIT_CONF_MIN, VE handoff
-  menzili içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (visual_lead)
+  (ARDIŞIK KILIT_N karede tespit — conf eşiği D0 gereği KALDIRILDI, VE handoff
+  menzili içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (bbox_ibvs)
   geçilir. Görsel temas kesilirse ya da hedef GEÇİLİRSE (B5 fly-past) → GPS
   fazına dönülür. stop_chase gelene (veya araç vurulana) kadar bu döngü sürer.
 
@@ -90,7 +90,29 @@ class SupCfg:
     # Değeri değiştirmek DAVRANIŞI DEĞİŞTİRMEZ; eşiği ayarlamak isteyen
     # guidance_core'daki o iki sabite bakmalı.
     KAYIP_M = 20
-    KILIT_CONF_MIN = 0.5
+
+    # ══ D0 KURAL UYUMU — DEVİR ÖLÇÜTÜ SADELEŞTİRİLDİ ══
+    # Kayra'nın `kayramin_super_gudumu` dalından alındı (2b8d68c, 2026-08-10).
+    # Kullanıcı tespiti: "görsel temas sağlandıktan sonra GPS'ten güdüm
+    # üretmek yasak; üst üste N kare dedektör algıladıysa görsel güdüme geç."
+    #
+    # ⚠ ASIL SEBEP — KURAL İHLALİ RİSKİ (bu depoda doğrulandı):
+    # Eski KILIT_CONF_MIN=0.5 iken dedektörün kendi kabul eşiği
+    # bbox_ibvs.Cfg.CONF_MIN=0.35'ti. Arada kalan 0.35-0.50 bandında GÖRSEL
+    # TEMAS VAR sayılıyor ama supervisor devretmiyordu → görsel temas varken
+    # GPS güdümü sürüyordu. D0 tam olarak bunu yasaklıyor.
+    #
+    # İkinci sapma: kayan pencere (son 15'in 10'u) "üst üste 10" değildi.
+    # Bu şart GEVŞEKTİ, yani devri erkene alıyordu (kural lehine, ama ölçüte
+    # sadık değil).
+    #
+    # ⚠ RİSK (Kayra'nın kendi notu, aynen taşındı): "üst üste N" gürültülü
+    # tespitte GEÇ sağlanabilir — kayan pencere tam bu yüzden konmuştu
+    # (2026-07-31). Devir menzili ölçülecek; kötüleşirse ARDISIK=0 yapılır.
+    # Geri dönüş: AVCI_HYBRID_ARDISIK=0 → kayan pencere
+    #             AVCI_HYBRID_CONF=0.5  → eski ekstra güven eşiği
+    KILIT_ARDISIK = os.environ.get("AVCI_HYBRID_ARDISIK", "1") == "1"
+    KILIT_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.0))
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
     #
@@ -188,6 +210,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
 
         def izci():
             pencere = collections.deque(maxlen=sup_cfg.KILIT_PENCERE)
+            ardisik = 0
             son_seq = 0
             while not faz_stop.is_set():
                 # ── GPS FAZINDA VURUŞ (2026-08-09, kullanıcı isteği) ──
@@ -218,11 +241,18 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                 det = kayit["det"]
                 # GT modunda kilit sinyali tespit DEĞİL, GT akışının canlılığıdır.
                 if gt_modu:
-                    pencere.append(get_gt() is not None)
+                    gorulen = get_gt() is not None
                 else:
-                    pencere.append(det is not None
-                                   and det.get("conf", 0.0) >= sup_cfg.KILIT_CONF_MIN)
-                sayac = sum(pencere)          # kayan pencerede güvenli kare sayısı
+                    gorulen = (det is not None
+                               and det.get("conf", 0.0) >= sup_cfg.KILIT_CONF_MIN)
+                # D0: ARDIŞIK sayım — tek bir tespitsiz kare sayacı sıfırlar.
+                # ARDISIK=0 iken eski kayan pencere davranışı (bkz. SupCfg).
+                if sup_cfg.KILIT_ARDISIK:
+                    ardisik = (ardisik + 1) if gorulen else 0
+                    sayac = ardisik
+                else:
+                    pencere.append(gorulen)
+                    sayac = sum(pencere)      # kayan pencerede güvenli kare sayısı
                 status["kilit_sayac"] = sayac
                 if sayac >= sup_cfg.KILIT_N:
                     d_h = _ga.status.get("d_h")
@@ -237,8 +267,10 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         threading.Thread(target=izci, daemon=True).start()
         print(f"[SUPERVISOR] GPS fazı "
               f"({'GT akışı' if gt_modu else 'görsel kilit'}: "
-              f"{sup_cfg.KILIT_N}/{sup_cfg.KILIT_PENCERE} kare"
-              f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
+              + (f"{sup_cfg.KILIT_N} ARDIŞIK kare" if sup_cfg.KILIT_ARDISIK
+                 else f"{sup_cfg.KILIT_N}/{sup_cfg.KILIT_PENCERE} kayan kare")
+              + f", conf≥{sup_cfg.KILIT_CONF_MIN:.2f}"
+              + f"{' + handoff/DROPOUT kapısı' if sup_cfg.GATE_KILIT else ''})")
         run_gps_guidance(conn, get_plane, get_iris, faz_stop)
 
         # ── FAZ BİTİŞ SEBEBİ (2026-08-10, TEŞHİS — davranışa etkisi YOK) ──

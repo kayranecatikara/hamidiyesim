@@ -63,8 +63,13 @@ class _Kosum:
         return s.gorsel_sonuc
 
 
-def _kos(cfg, kosum, det_var=True, d_h=5.0, sure=3.0):
-    """run_hybrid'i sahte fazlarla koştur; (faz, son_sebep) döndür."""
+def _kos(cfg, kosum, det_var=True, d_h=5.0, sure=3.0, conf=0.9, desen=None):
+    """run_hybrid'i sahte fazlarla koştur; (faz, son_sebep) döndür.
+
+    conf  : sahte tespitin güveni (D0 eşik testleri için)
+    desen : kare_no -> bool; None ise det_var sabiti kullanılır (kesintili
+            tespit üretip ARDIŞIK vs KAYAN PENCERE ayrımını sınamak için)
+    """
     eski_gps, eski_bbox = sv.run_gps_guidance, sv.run_bbox_ibvs
     eski_dh = sv._ga.status.get("d_h")
     sv.run_gps_guidance = kosum.gps
@@ -75,8 +80,9 @@ def _kos(cfg, kosum, det_var=True, d_h=5.0, sure=3.0):
 
     def wait_kare(son_seq, timeout=0.5):
         # Her çağrıda bir "kare": tespit var/yok
-        return {"seq": son_seq + 1,
-                "det": ({"conf": 0.9} if det_var else None)}
+        n = son_seq + 1
+        var = desen(n) if desen else det_var
+        return {"seq": n, "det": ({"conf": conf} if var else None)}
 
     t = threading.Thread(
         target=sv.run_hybrid,
@@ -147,6 +153,44 @@ def main():
     kontrol("S5  kilit + menzil kapısı sağlanınca görsel faza devredilir",
             k.vis_cagri >= 1 and faz == "VURULDU" and sebep == "vuruldu",
             f"görsel faz çağrısı={k.vis_cagri} faz={faz} sebep={sebep}")
+
+    # ══ S6-S8: D0 DEVİR ÖLÇÜTÜ (Kayra 2b8d68c'den taşındı, 2026-08-11) ══
+    # S6 ASIL KURAL BEKÇİSİ: dedektörün kabul eşiği bbox_ibvs.CONF_MIN=0.35.
+    # Supervisor'ın kendi eşiği ondan YÜKSEK olursa, arada kalan bantta model
+    # "gördüm" derken güdüm GPS'te kalır — D0 tam olarak bunu yasaklıyor.
+    carpisma_state.sifirla()
+    carpisma_state.kaynak_bildir(True)
+    k = _Kosum(gorsel_sonuc="vuruldu")
+    faz, _ = _kos(_cfg(), k, det_var=True, d_h=5.0, conf=0.40)
+    kontrol("S6  conf 0.40 (dedektör eşiği 0.35 üstü) DEVREDİYOR — D0 uyumu",
+            k.vis_cagri >= 1 and faz == "VURULDU",
+            f"görsel faz çağrısı={k.vis_cagri}; supervisor eşiği "
+            f"{sv.SupCfg.KILIT_CONF_MIN:.2f} ≤ dedektör eşiği 0.35 olmalı")
+
+    # S7: eski 0.5 eşiği geri alınınca aynı tespit devretmez (ihlalin kanıtı)
+    carpisma_state.sifirla()
+    k = _Kosum(gorsel_sonuc="vuruldu")
+    faz, _ = _kos(_cfg(KILIT_CONF_MIN=0.5), k, det_var=True, d_h=5.0, conf=0.40)
+    kontrol("S7  AVCI_HYBRID_CONF=0.5 geri alınırsa AYNI tespit devretMEZ",
+            k.vis_cagri == 0,
+            f"görsel faz çağrısı={k.vis_cagri} — 0.35-0.50 bandı eskiden "
+            f"görsel temas varken GPS'te kalıyordu (giderilen ihlal)")
+
+    # S8: ARDIŞIK sayaç tek tespitsiz karede sıfırlanır; kayan pencere sıfırlamaz.
+    # Desen: her 10. kare tespitsiz → ardışık en fazla 9 (KILIT_N=10'a ulaşmaz),
+    # kayan pencerede ise 15 karenin ~13'ü dolu → devreder.
+    kesintili = lambda n: (n % 10) != 0
+    carpisma_state.sifirla()
+    k_ard = _Kosum(gorsel_sonuc="vuruldu")
+    _kos(_cfg(KILIT_ARDISIK=True), k_ard, d_h=5.0, desen=kesintili, sure=2.5)
+    carpisma_state.sifirla()
+    k_pen = _Kosum(gorsel_sonuc="vuruldu")
+    _kos(_cfg(KILIT_ARDISIK=False), k_pen, d_h=5.0, desen=kesintili, sure=2.5)
+    kontrol("S8  ARDIŞIK kesintili tespitte devretmez, KAYAN PENCERE devreder",
+            k_ard.vis_cagri == 0 and k_pen.vis_cagri >= 1,
+            f"her 10. kare tespitsiz → ardışık={k_ard.vis_cagri} çağrı, "
+            f"kayan pencere={k_pen.vis_cagri} çağrı (ARDIŞIK'ın bilinen riski: "
+            f"gürültülü tespitte devir GECİKİR)")
 
     carpisma_state.sifirla()
     print("=" * 60)

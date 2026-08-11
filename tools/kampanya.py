@@ -39,10 +39,17 @@ BASE = "http://127.0.0.1:8000"
 # yapıyor; ıska ilk geçişte medyan 4.2-4.6 m (kaçamaksız 0.6 m).
 # Tavan iki değerde deneniyor: 08-09'da 25° gölge etmeye yol açmıştı, kodun
 # notu 8-10° öneriyordu — 8 ve 15 ile alt/üst sınırı tarıyoruz.
+#
+# G kolu AYRI BİR SORU: D0 devir ölçütü (2026-08-11'de Kayra'dan alındı).
+# "Ardışık N kare" kural ölçütüne sadık ama gürültülü tespitte devri
+# GECİKTİREBİLİR — kayan pencere tam bu yüzden konmuştu (07-31). G, E ile
+# YALNIZ bu anahtarda ayrılır, yani E↔G tek değişkenli kıyastır.
 KOLLAR = [
     ("A", {},                                                          45),
     ("E", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "8"},  45),
     ("F", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15"}, 45),
+    ("G", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "8",
+           "AVCI_HYBRID_ARDISIK": "0"},                                45),
 ]
 # Kaçamaklar — `yok` TABAN koşusudur, CLAUDE.md §3.3 gereği her turda koşulur.
 # 08-11: altı kaçamağın TAMAMI (§3.3 "hepsi denenmeli"). Dikey üçlü ilk kez
@@ -59,6 +66,7 @@ SCN_ALT = os.environ.get("KAMPANYA_ALT", "30")
 
 # Matristeki TÜM anahtarlar — kol değişince öncekiler sızmasın diye temizlenir.
 _MATRIS_ANAHTARLARI = ("AVCI_IBVS_LEAD_ERKEN", "AVCI_IBVS_LEAD_MAX_SEYIR",
+                       "AVCI_HYBRID_ARDISIK", "AVCI_HYBRID_CONF",
                        "AVCI_IBVS_MANEVRA", "AVCI_IBVS_MANEVRA_ACI")
 
 
@@ -125,16 +133,20 @@ def kol_dogrula(env_ek):
     """
     bek_lead = env_ek.get("AVCI_IBVS_LEAD_ERKEN") == "1"
     bek_tavan = env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR")
+    bek_ardisik = env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"
     try:
         d = json.loads(urllib.request.urlopen(
             BASE + "/api/gudum_ozellikleri", timeout=5).read())
         oz = {x["ad"]: x for x in d["ozellikler"]}
         lead = bool(oz["m3_erken_lead"]["acik"])
         tavan = float(oz["m3b_lead_seyir_tavan"]["deger"])
-        gercek = f"lead={int(lead)} tavan={tavan:.0f}"
+        ardisik = bool(oz["d0_ardisik"]["acik"])
+        gercek = f"lead={int(lead)} tavan={tavan:.0f} ardisik={int(ardisik)}"
         if lead != bek_lead:
             return False, gercek
         if bek_tavan is not None and abs(tavan - float(bek_tavan)) > 1e-6:
+            return False, gercek
+        if ardisik != bek_ardisik:
             return False, gercek
         return True, gercek
     except Exception as e:
@@ -161,9 +173,9 @@ def main():
     gcs_log = os.path.join(dizin, "gcs.log")
 
     # ilk15_m = BİRİNCİL ÖLÇÜT (bkz. olcumle); en_yakin_m ikincil.
-    alanlar = ["kosu", "kol", "lead", "tavan", "aci", "kacamak", "gecerli", "sebep",
+    alanlar = ["kosu", "kol", "lead", "tavan", "ardisik", "aci", "kacamak", "gecerli", "sebep",
                "tetik_m", "tetiklendi", "ilk15_m", "gecikme_s", "en_yakin_m", "imha",
-               "lead_kare", "lead_med_deg", "toplam_kare",
+               "lead_kare", "lead_med_deg", "toplam_kare", "devir_m",
                "hedef_hiz", "hedef_irtifa", "hedef_irt_min", "wall"]
     if not os.path.exists(sonuc_csv):
         with open(sonuc_csv, "w", newline="") as f:
@@ -202,6 +214,7 @@ def main():
                 sat.update(kosu=kosu, kol=kol_ad, aci=aci, kacamak=kacamak,
                            lead=int(env_ek.get("AVCI_IBVS_LEAD_ERKEN") == "1"),
                            tavan=env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR", ""),
+                           ardisik=int(env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"),
                            wall=time.strftime("%Y-%m-%d %H:%M:%S"))
 
                 if not sim_kur(dizin, aci, sim_log):
@@ -251,7 +264,7 @@ def olcumle(kdizin, t0):
     """Koşunun sonucunu topla: olay.json + meta.csv + o aralıktaki bbox logu."""
     out = {"gecerli": 0, "sebep": "", "tetik_m": "", "tetiklendi": 0,
            "ilk15_m": "", "gecikme_s": "", "en_yakin_m": "", "imha": "",
-           "lead_kare": 0, "lead_med_deg": "", "toplam_kare": 0,
+           "lead_kare": 0, "lead_med_deg": "", "toplam_kare": 0, "devir_m": "",
            "hedef_hiz": "", "hedef_irtifa": "", "hedef_irt_min": ""}
     oj = os.path.join(kdizin, "olay.json")
     if os.path.exists(oj):
@@ -334,14 +347,21 @@ def olcumle(kdizin, t0):
     # sıfırdan farklı lead kare sayısı her koşuda kaydedilir.
     try:
         import glob
-        top = 0; ld = []
-        for f in glob.glob(os.path.join(KOK, "logs", "bbox_ibvs_*.csv")):
-            if os.path.getmtime(f) < t0:
-                continue
+        top = 0; ld = []; ilk_boyut = None
+        # Dosyalar ZAMAN SIRASINDA gezilir — ilk kutulu kare devir anıdır.
+        for f in sorted((f for f in glob.glob(os.path.join(KOK, "logs",
+                                                           "bbox_ibvs_*.csv"))
+                         if os.path.getmtime(f) >= t0), key=os.path.getmtime):
             for x in csv.DictReader(open(f)):
                 if not x.get("boyut"):
                     continue
                 top += 1
+                try:
+                    b = float(x["boyut"])
+                    if ilk_boyut is None and b > 0:
+                        ilk_boyut = b
+                except (ValueError, TypeError):
+                    pass
                 try:
                     ld.append(abs(float(x["lead_az_deg"])))
                 except (ValueError, TypeError, KeyError):
@@ -351,6 +371,13 @@ def olcumle(kdizin, t0):
         nz = sorted(x for x in ld if x > 0.01)
         if nz:
             out["lead_med_deg"] = round(nz[len(nz)//2], 2)
+        # ── DEVİR MENZİLİ: E↔G kıyasının ASIL ölçütü ──
+        # Görsel faz devir anında başlar, yani bbox logunun İLK kutulu karesi
+        # devir anıdır. Menzil kutu boyutundan: R = MENZIL_PX_M / boyut.
+        # "Ardışık N" ölçütünün bilinen riski devri GECİKTİRMEK; gecikirse
+        # devir DAHA YAKINDA olur ve bu sayı düşer.
+        if ilk_boyut:
+            out["devir_m"] = round(160.0 / ilk_boyut, 1)
     except Exception:
         pass
     return out
