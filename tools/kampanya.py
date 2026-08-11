@@ -325,7 +325,23 @@ def olcumle(kdizin, t0):
                         tt = json.load(open(oj)).get("tetik_t")
                     except Exception:
                         pass
-                    ust = (tt + 20.0) if tt else 1e9
+                    # ⚠ PENCERE VURUŞTA DA KAPANIR (08-11, ilk koşuda yakalandı):
+                    # hedef imha olunca enkaz düşüyor ve irtifa −60 m'ye
+                    # iniyor. Pencere yalnız tetik+20 olsaydı VURAN koşular
+                    # "bant dışı" diye geçersiz sayılırdı — yani ölçüt başarıyı
+                    # cezalandırırdı, kolları sistematik olarak yanıltan bir
+                    # yanlılık. En yakın andan sonrası ölçüme girmiyor zaten.
+                    ey_t = None
+                    try:
+                        ey_t = json.load(open(oj)).get("en_yakin_t")
+                    except Exception:
+                        pass
+                    if tt:
+                        ust = tt + 20.0
+                        if ey_t and out["imha"] == 1:
+                            ust = min(ust, ey_t)
+                    else:
+                        ust = 1e9
                     w = [(float(x["plane_spd"]), float(x["plane_alt"])) for x in kr
                          if x.get("plane_spd") and float(x["t"]) <= ust
                          and float(x["plane_spd"]) > 3.0]
