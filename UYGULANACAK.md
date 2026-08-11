@@ -134,6 +134,71 @@ Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
 5. **Ö5 · Yatış-farkında hız bütçesi** — komut 18 m/s, yatıktayken ulaşılan
    10.8-14.3 m/s.
 
+## ⚑⚑ GECE ÇALIŞMASI SONUCU (2026-08-11 gecesi, 22 uçuş) — ARIZA YERİ DEĞİŞTİ
+
+### 1 · Doğru salınım ölçütü kuruldu: `tools/salinim.py`
+
+Kullanıcı eski ölçütü çürüttü: "salınımı bbox'ın oynamasından ölçme; bizim
+dronun hedefe göre hareketine bak — hedefin solundayken sağına geçiyor mu,
+hedef sağa kırınca biz onun DAHA DA sağına mı taşıyoruz?"
+
+Yeni araç iki aracın GPS'inden hedefin çerçevesini kurar:
+    ĥ = hedefin gidiş yönü ; n̂ = ĥ'nin 90° sağı
+    yanal  = (drone − hedef)·n̂   (+ = drone hedefin SAĞINDA)
+    boyuna = (drone − hedef)·ĥ   (− = drone ARKADA)
+Kutuya HİÇ bakmaz → görsel temas kopsa bile ölçer (eski ölçütün kusuru buydu:
+hedefi kaybeden koşu "sakin" görünüyordu).
+Geometri doğrulandı: |yanal²+boyuna²| − mesafe = 0.0000 m.
+
+### 2 · ⚑ ASIL ARIZA BULUNDU — yaklaşma değil, GERİ DÖNEMEME
+
+22 koşu (Ö9 kampanyası 12 + Ö5 kampanyası 10), tetik 8 m:
+
+    en yakın menzil                       0.26 - 3.63 m  ← YAKLAŞMA ÇALIŞIYOR
+    kaçırma sonrası açılan maks mesafe    MEDYAN 76 m
+    20 m'ye geri dönebilen koşu           1 / 22          ← ASIL ARIZA
+
+Drone hedefe 0.3-3.6 metreye kadar giriyor, 1-3 m ile ıskalıyor ve
+**bir daha asla dönemiyor**. Kayıt penceresi (100 s) boyunca 21 koşuda
+mesafe bir daha 20 m'nin altına inmedi.
+
+Mekanizma (D09, kaçamak yatay, saniye saniye):
+    t+1.5s   mesafe 2.3 m   drone 18.8 m/s   ← neredeyse temas
+    t+2.5s   mesafe 15.0 m
+    t+4.5s   mesafe 60.2 m  ← 2 saniyede 45 m açıldı = 22.5 m/s ayrılma
+    t+5.5s   mesafe 84.9 m  drone 8.3 m/s
+22.5 m/s ayrılma, |v_drone|=18.2 ve |v_hedef|=15.4 iken ancak hız
+vektörleri **~84° ayrışmışsa** olur. Yani drone kaçamağı takip ederken
+vektörünü sertçe çeviriyor, yanından geçiyor ve hedefe göre neredeyse DİK
+uçar hâle geliyor. Sonra 18 m/s'den dönmeye çalışırken 76 m açılıyor.
+
+**SONUÇ: bütün gece nişan/salınım/dönüş ayarları denendi (7 özellik), oysa
+arıza orada değil.** Sıradaki iki yön:
+  A) TERMİNAL İSABET — son 1-3 metreyi kapatmak (zarf yatayda ±0.65 m)
+  B) YENİDEN TEMAS — ıskadan sonra hedefe geri dönebilmek. 22 koşuda 1 kez
+     olabildi. Bunu çözen sistem her kaçırmada yeni şans kazanır; çözmeyen
+     tek şansla kalır. **Muhtemelen daha değerli olan bu.**
+
+### 3 · Ö5 — DÖNÜŞ-FARKINDA HIZ TAVANI · 10 UÇUŞ · GİRMEDİ
+
+`v ≤ DONUS_A/λ̇` (yalnız kısar). `AVCI_IBVS_DONUS` (varsayılan 0).
+Mekanizma doğrulandı: tavan karelerin %6-36'sında BAĞLADI, bağlıyken hız
+10 m/s tabanına indi (yarıçap 33 m → 10 m; birim testi B53).
+
+| ölçüt | KONTROL n=5 | Ö5 n=5 |
+|---|---|---|
+| SAĞA AŞIM (birincil 1) | 14.6 m | 14.2 m — berabere |
+| yandan yana geçiş (birincil 2) | 2 | **1** |
+| en yakın menzil | **1.89 m** | 3.23 m — **kötüleşti** |
+| isabet | 0/5 | 0/5 |
+
+Dönüş sıkışıyor ama kapanma bitiyor (1.7 kat uzakta kalıyor). Varsayılan KAPALI.
+
+### 4 · Ö9 yeniden değerlendirildi — DOĞRU ölçütle de fayda yok
+
+Doğru pencereyle (tetik → kayıt sonu) SAĞA AŞIM: kontrol 14.75 m, Ö9 16.45 m.
+Ö9'un "sakinleştirme" bulgusu gerçek salınımı azaltmıyor.
+
 ### Ö9 — YATAY SÖNÜMLEME (D terimi) · 12 UÇUŞ · SAKİNLEŞTİRDİ, YAKLAŞTIRMADI
 
 `yaw_cmd = iris_yaw + K_YAW·eps_yaw − SONUM_T·ω` (ω = aracın KENDİ yaw hızı).

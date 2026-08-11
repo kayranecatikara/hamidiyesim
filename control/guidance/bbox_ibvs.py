@@ -466,6 +466,28 @@ class Cfg:
     SONUM_T = _env_f("AVCI_IBVS_SONUM", 0.0)   # s; 0 = kapalı, açık ~0.30
     SONUM_MAX_DEG = 30.0    # °; sönümleme teriminin tavanı (ters yöne itmesin)
 
+    # ══ Ö5 · DÖNÜŞ-FARKINDA HIZ TAVANI ══
+    # KULLANICI ÖLÇÜTÜYLE BULUNDU (2026-08-11): salınım artık hedefin
+    # çerçevesindeki YANAL konumdan ölçülüyor (tools/salinim.py). 12 koşuda
+    # SAĞA AŞIM 8-47 m — yani drone hedefin arkasında kalıyor ama YANINA
+    # 8-47 metre savruluyor. "önde %" ise ~0: sorun boyuna değil, YANAL.
+    #
+    # FİZİK: dönüş yarıçapı R = V²/a. Aracın a tavanı g·tan(ANGLE_MAX 45°)
+    # = 9.81 m/s². 18 m/s'de R = 33 m; hedef (Talon, 15 m/s, 60° yatış)
+    # R = 13 m çiziyor. Drone 2.5 kat geniş yay çizdiği için DIŞARI taşıyor.
+    # Yatışı artırmak denendi (Ö6) — çalışmadı, kanal zaten doymuş.
+    # Geriye tek kaldıraç: HIZI KISMAK. R hızın KARESİYLE düşer:
+    #     18 m/s → 33.0 m       12 m/s → 14.7 m       9 m/s → 8.3 m
+    #
+    # YASA: gereken yanal ivme = V·λ̇ ; bu a_max'ı aşıyorsa hız kısılır.
+    #     v_tavan = DONUS_A / λ̇        (λ̇ = LOS azimut oranı, zaten ölçülü)
+    # Yalnız KISAR; hızı asla artırmaz. Düz uçuşta λ̇≈0 → tavan sonsuz →
+    # etkisiz (kullanıcının doğruladığı düz uçuş davranışı korunur).
+    # ⚠ Taban: DONUS_V_MIN altına inmez — hedeften tamamen kopmayalım.
+    # AVCI_IBVS_DONUS=0 → kapalı (varsayılan).
+    DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
+    DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -479,7 +501,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -594,6 +616,17 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
                       cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
+    # Ö5 DÖNÜŞ TAVANI (bkz. Cfg.DONUS_A): gereken yanal ivme V·λ̇ aracın
+    # tavanını aşıyorsa hızı kıs — yarıçap V² ile düştüğü için dönüş sıkışır.
+    # ⚠ YALNIZ KISAR. Düz uçuşta λ̇≈0 → tavan çok büyük → etkisiz.
+    donus_tavan = None
+    if cfg.DONUS_A > 0.0:
+        _lam = abs(los_hiz[0])
+        if _lam > 1e-3:
+            donus_tavan = max(cfg.DONUS_V_MIN, cfg.DONUS_A / _lam)
+            if donus_tavan < v_los:
+                v_los = donus_tavan
+
     # ══ Ö8 · YANAL KOMUT AÇIYLA DEĞİL, KAÇIRMA MESAFESİYLE ══
     # Hız vektörünün yönü artık ayrı hesaplanır (bkz. Cfg.YANAL_K).
     # BURUN (yaw_cmd) tam eps_yaw'da kalır — kamera hedefi izlemeye devam eder.
@@ -662,6 +695,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "eps_hiz": eps_hiz, "sonum": sonum,
+            "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "eps_yaw_ham": eps_yaw_ham}
@@ -951,6 +985,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                               if gecikme_s is not None else ""),
                 "eps_hiz_deg": round(math.degrees(tani["eps_hiz"]), 1),
                 "sonum_deg": round(math.degrees(tani["sonum"]), 2),
+                "donus_tavan": ("" if tani["donus_tavan"] is None
+                                else round(tani["donus_tavan"], 2)),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),

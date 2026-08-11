@@ -693,6 +693,8 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #   Ö1 kaçış telafisi         AVCI_IBVS_KD=1.0        ölçüt çelişkisi → kapalı
 #   Ö6 yüksek yatış           ANGLE_MAX 5500          ELENDİ (aşağıya bak)
 #   Ö7 yaw hız tavanı         AVCI_IBVS_YAWRATE=200   sinyal yok
+#   Ö9 yatay sönümleme        AVCI_IBVS_SONUM=0.30    sakinleştirdi ama
+#       yaklaştırmadı; DOĞRU salınım ölçütüyle (tools/salinim.py) de fark yok
 #   Ö8 yanal/kaçırma mesafesi AVCI_IBVS_YANAL=3.0     ELENDİ: n=6'da
 #       en yakın menzil kötüleşti (1.96→2.76 m), isabet 1/6→0/6, ve tek
 #       olumlu bulgusu (salınım 0.000) ÖLÇÜT ARTEFAKTIYDI — salınım yalnız
@@ -707,12 +709,12 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 # yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
 # Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
 _OZELLIKLER = {
-    "o9_sonumleme": (
-        "SONUM_T", "deger", "Ö9 · Yatay sönümleme (D terimi)",
-        "Yatay kanal şu an SAF ORANSAL — türev terimi yok, o yüzden "
-        "gecikmeli sistemde zorunlu olarak salınıyor. Bu terim aracın KENDİ "
-        "dönüş hızına karşı koyar: 'yeterince döndüm, yavaşla'. Düz uçuşta "
-        "etkisiz (ω≈0).", "AVCI_IBVS_SONUM", (0.0, 0.30)),
+    "o5_donus_tavani": (
+        "DONUS_A", "deger", "Ö5 · Dönüş-farkında hız tavanı",
+        "Drone hedefin arkasında kalıyor ama YANINA 8-47 m savruluyor. "
+        "Yarıçap R=V²/a: 18 m/s'de 33 m, hedef 13 m çiziyor. Tek kaldıraç "
+        "hızı kısmak — R hızın KARESİYLE düşer. λ̇ büyükken v ≤ a/λ̇. "
+        "Düz uçuşta etkisiz.", "AVCI_IBVS_DONUS", (0.0, 9.0)),
 }
 
 

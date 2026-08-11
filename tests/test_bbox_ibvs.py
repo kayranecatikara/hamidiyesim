@@ -730,6 +730,59 @@ def main():
             abs(C.SONUM_T) < 1e-9 and abs(_s_yok[5]["sonum"]) < 1e-12,
             f"SONUM_T={C.SONUM_T} → sönüm terimi 0.00°")
 
+    print("=" * 60)
+    # ── Ö5: DÖNÜŞ-FARKINDA HIZ TAVANI ──
+    # Kullanıcı ölçütüyle bulundu: SAĞA AŞIM 8-47 m (drone hedefin YANINA
+    # savruluyor), "önde %" ~0. Yarıçap R=V²/a; 18 m/s'de 33 m, hedef 13 m.
+    # Tek kaldıraç hızı kısmak (R, V'nin KARESİYLE düşer).
+    class _Donus(ib.Cfg):
+        DONUS_A = 9.0
+
+    # DÖNÜŞTE (λ̇ büyük) hız kısılmalı: λ̇=1.2 → tavan 9.0/1.2 = 7.5 → taban 10
+    _argD5 = (CX + 40.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05)
+    _d_ac = ib.komut(*_argD5, _Donus, True, (1.2, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _d_ka = ib.komut(*_argD5, C, True, (1.2, 0.0), 0.0, 0.0, 3.0, 0.0)
+    kontrol("B53 sert dönüşte (λ̇=1.2) Ö5 hızı KISAR",
+            _d_ac[5]["v_los"] < _d_ka[5]["v_los"] - 3.0,
+            f"λ̇=1.2 rad/s: tavansız {_d_ka[5]['v_los']:.1f} → "
+            f"tavanlı {_d_ac[5]['v_los']:.1f} m/s "
+            f"(yarıçap {_d_ka[5]['v_los']**2/9.81:.0f} → "
+            f"{_d_ac[5]['v_los']**2/9.81:.0f} m)")
+
+    # B54: DÜZ UÇUŞTA (λ̇≈0) etkisiz — kullanıcının doğruladığı davranış
+    _z_ac = ib.komut(*_argD5, _Donus, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _z_ka = ib.komut(*_argD5, C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    kontrol("B54 düz uçuşta (λ̇≈0) Ö5 hızı DEĞİŞTİRMEZ",
+            abs(_z_ac[5]["v_los"] - _z_ka[5]["v_los"]) < 1e-12
+            and _z_ac[5]["donus_tavan"] is None,
+            f"λ̇=0 → tavan uygulanmadı, v_los {_z_ac[5]['v_los']:.1f} m/s "
+            "(düz uçuş davranışı bit bit korunur)")
+
+    # B55: TABAN bağlar — hedeften tamamen kopmayalım
+    _b_ac = ib.komut(*_argD5, _Donus, True, (5.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    kontrol("B55 Ö5 hızı DONUS_V_MIN altına indirmez",
+            _b_ac[5]["v_los"] >= _Donus.DONUS_V_MIN - 1e-9,
+            f"λ̇=5 rad/s (tavan {_Donus.DONUS_A/5:.1f}) → v_los "
+            f"{_b_ac[5]['v_los']:.1f} ≥ taban {_Donus.DONUS_V_MIN:.0f} m/s")
+
+    # B56: ASLA HIZLANDIRMAZ — yalnız kısan bir tavan
+    _hizli = False
+    for _lam in (0.05, 0.2, 0.5, 1.0, 2.0):
+        for _b in (8, 20, 40):
+            _a = ib.komut(CX + 40.0, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
+                          _Donus, True, (_lam, 0.0), 0.0, 0.0, 3.0, 0.0)
+            _k = ib.komut(CX + 40.0, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
+                          C, True, (_lam, 0.0), 0.0, 0.0, 3.0, 0.0)
+            if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
+                _hizli = True
+    kontrol("B56 Ö5 hızı ASLA artırmaz (yalnız kısan tavan)",
+            not _hizli, "15 kombinasyonda hiçbirinde hızlanma yok")
+
+    # B57: kapatılabilir
+    kontrol("B57 Ö5 kapatılabilir (varsayılan KAPALI)",
+            abs(C.DONUS_A) < 1e-9 and _d_ka[5]["donus_tavan"] is None,
+            f"DONUS_A={C.DONUS_A} → tavan hiç uygulanmaz")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
