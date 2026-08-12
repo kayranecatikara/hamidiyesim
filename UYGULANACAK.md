@@ -213,6 +213,90 @@ tetiklenme penceresi (%2.4) yüzünden asla iş göremediğini gösteriyor.
 **Kanıt:** `logs/kampanya_20260810/` (koşu başına kare+telemetri+olay.json),
 video `logs/kosu_005_A_yatay_45.mp4`, `logs/kosu_066_C_yatay_45.mp4`.
 
+---
+
+### M3b — SEYİR FAZI LEAD'İ · GİRDİ (2026-08-11, 165 koşu)
+
+Ölçülen kusur: lead karelerin **%71-77'sinde TAM SIFIR**di, çünkü kapı
+`if terminal or LEAD_ERKEN` ve LEAD_ERKEN kapalıydı — lead yalnız son 6.4 m'de
+çalışıyordu. Hedef 25 m'de kaçmaya başlıyor; drone dönen hedefe **saf takip**
+yapıyordu. Çözüm: seyir fazına AYRI (küçük) lead tavanı; terminal 25°'de kaldı.
+08-09'da erken lead geri alınmıştı ama sebep yön değil GENLİKTİ.
+
+**SONUÇ — kaçamaklı koşularda imha: A(lead yok) 9/33 %27 → F(15°) 17/33 %52,
+z=−2.02, p=0.044.** Projede uzun süredir ilk istatistiksel anlamlı kazanç.
+
+| kaçamak | A | E (8°) | F (15°) | G |
+|---|---|---|---|---|
+| yok | 0.30 | 0.39 | 0.44 | 0.47 |
+| yatay | 13.8 | 14.1 | 13.7 | 12.5 |
+| capraz | 13.0 | 6.7 | **3.5** | 7.4 |
+| hizlan | 2.3 | 2.9 | 3.7 | 4.4 |
+| dikey_yukari | 4.6 | 3.0 | **1.2** | 1.2 |
+| dikey_asagi | 0.44 | 0.33 | 0.82 | 0.66 |
+
+(`ilk15_m` medyanı = tetikten sonraki 15 s'de en yakın menzil.)
+
+⚠ **AMA hiçbir imha ilk geçişte değil** — gecikme medyanı yatay 52 s,
+capraz 38 s, hizlan 70 s. %52 bile "ıskala → dolan → tekrar dal" demek.
+⚠ **`yatay` YAPISAL olarak bağışık:** dört kolda da 12-14 m. Avcı kutuyu
+kadrajda kusursuz merkezliyor (`|eps_yaw|` medyan 2.20°, `|dx|` 6 px) ve yine
+de ıskalıyor — **merkezleme ≠ kesişme**, klasik gölge etme.
+
+### M4 — SEYİR FAZI DİKEY SÖNÜMLEMESİ · SONUÇSUZ, KAPALI KALIYOR (2026-08-12)
+
+**Teşhis (kullanıcının gözlemi: "avcı çok yükseliyo, sonra inmeye çalışıyo"):**
+Kaçamak sonrası 15 s'de avcı hedefin ÜSTÜNE çıkıyor — capraz medyan +16.2 m,
+yatay +11.9 m. Örnek (kosu_005_A_yatay_45):
+
+```
+t+2   mesafe  15.7 m   avcı −2.0 m   hız 20.6   ← en yakın
+t+10  mesafe  94.2 m   avcı +13.6 m  hız 11.1   ← tepe, hız çöktü
+```
+
+**Mekanizma — o anın kareleri, durum=IBVS** (GPS değil, BU yasa komut
+ediyordu): kutu KÜÇÜLÜRKEN (9.2→7.9 px) vz komutu tek yönde büyüyor
+−1.22 → −2.54 m/s. Sönümlemesiz P imzası. Sebep: türev terimi yalnız terminal
+dalındaydı (`K_VZ_D`); seyir dalı saf oransaldı.
+
+**ELENEN ALTERNATİF — roll kirlenmesi:** dikey kanal ham piksel kullanıyor,
+yatay kanal roll telafili (`los_seviye` telafili yükselişi hesaplayıp `_` ile
+atıyor). 54 290 kare üzerinde AYNI piksel için roll=0 karşı-olgusu hesaplandı:
+dikey kayma medyan **0.0-2.1°**, gözlenen hata −20°. Katkı ~%10.
+*Yöntem doğrulaması:* aynı hesap YATAY kanalda 25-40° yatışta **12.0°** veriyor
+= kodun T1a için belgelediği "11-14°" ile birebir. Bu, çevrimdışı ATIF
+hesabıdır (kabul kararı değil) — CLAUDE.md §2'ye aykırı değil.
+
+**A/B (34 koşu, 32 geçerli): F(sönüm 0) vs H(0.6), tek değişken.**
+
+| kaçamak | F | H | p |
+|---|---|---|---|
+| yok | 23.4 | 9.3 | 0.242 |
+| yatay | 13.4 | **8.9** | 0.268 |
+| capraz | 15.8 | 15.1 | 0.762 |
+
+Eşleştirilmiş (aynı tur F→H), 15 çift: medyan fark **+2.9 m**, 9/15 çiftte H
+daha iyi, işaret testi **p=0.304**.
+
+**HÜKÜM: SONUÇSUZ — varsayılan KAPALI (0.0) kalıyor.** İlan edilen karar kuralı
+"H şişmeyi belirgin düşürürse girer" idi; hiçbir kıyas anlamlılığa ulaşmadı.
+
+**Ama yön tutarlı ve mekanizma kareleerde görünüyor.** `yatay`da 6 çiftin
+**5'i** H lehine (+9.1, −9.4, +4.6, +6.6, +2.9, +5.7). Eşleştirilmiş zaman
+serisi (kosu_021_F vs kosu_022_H): F t+9'da hâlâ +12.6 m'de, H t+6'da +5.6
+tepe yapıp t+9'da +0.7'ye dönüyor. Karelerde F yüksekte aşağı bakıyor ve kutu
+"tahmin" (tespit kaybı); H ufku ~45° yatık, hedef seviyesinde, **dönüyor**.
+
+⚠ **ÖLÇÜT ÇOK GÜRÜLTÜLÜ:** F kolu M3b'de `yok` şişmesi 9.8 m verirken M4'te
+**23.4 m** verdi — AYNI ayarlarla. n=5 ile medyan oynak. Karar için `yatay`a
+odaklanmış, kol başına ≥15 koşuluk bir tekrar gerekiyor.
+
+**BOZMA TESTİ TEMİZ:** düz uçuş bozulmadı — F imha 4/5, H 4/6; ilk15 0.73 vs
+0.71 m.
+
+**Kanıt:** `logs/kampanya_m4_20260812/`, video `logs/m4_kosu_021_F_yatay_45.mp4`
+ve `logs/m4_kosu_022_H_yatay_45.mp4`.
+
 ### M5 — KAÇAMAK TESTİYLE ÖLÇÜLEN ASIL DARBOĞAZ: manevra sonrası HIZ ÇÖKÜŞÜ
 
 Kaçamak testi mimarisiyle (bkz. CLAUDE.md §3.3) 16 uçuş. Kullanıcının kendi
