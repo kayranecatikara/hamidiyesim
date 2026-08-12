@@ -45,6 +45,26 @@ def fl(x, k):
         return None
 
 
+def hedef_cercevesi(vx, vy, dx, dy):
+    """Bağıl konumu hedefin (sağ, ileri) eksenlerine dönüştür.
+
+    Yerel konumlar NED yatay düzlemindedir: x=kuzey, y=doğu. Bu düzlemde
+    ileri birim vektörü ``(hx, hy)`` ise saat yönündeki 90° dönüş, yani
+    hedefin SAĞI, ``(-hy, hx)`` olur. Eski ``(hy, -hx)`` ifadesi hedefin
+    SOLUNU gösteriyordu; geçiş/mutlak salınımı bozmasa da "sağa aşım"
+    etiketini ters çeviriyordu.
+
+    Dönüş: ``(yanal, boyuna, hiz)``; yanal pozitifse drone hedefin
+    sağında, boyuna pozitifse hedefin önündedir. Hız yetersizse ``None``.
+    """
+    hiz = math.hypot(vx, vy)
+    if hiz < HIZ_MIN:
+        return None
+    hx, hy = vx / hiz, vy / hiz
+    nx, ny = -hy, hx
+    return dx * nx + dy * ny, dx * hx + dy * hy, hiz
+
+
 def coz(dizin):
     """telem.csv (10 Hz) → hedef çerçevesinde (t, yanal, boyuna, mesafe)."""
     yol = os.path.join(dizin, "telem.csv")
@@ -75,16 +95,15 @@ def coz(dizin):
         if dt < 1e-3:
             continue
         vx, vy = (b[1] - a[1]) / dt, (b[2] - a[2]) / dt
-        hiz = math.hypot(vx, vy)
-        if hiz < HIZ_MIN:
-            continue
-        hx, hy = vx / hiz, vy / hiz          # ĥ birim yön
-        nx, ny = hy, -hx                     # n̂ = ĥ'nin 90° sağı (NED: x kuzey, y doğu)
         dx, dy = ham[i][3] - ham[i][1], ham[i][4] - ham[i][2]
+        cerceve = hedef_cercevesi(vx, vy, dx, dy)
+        if cerceve is None:
+            continue
+        yanal, boyuna, _ = cerceve
         seri.append({
             "t": ham[i][0],
-            "yanal": dx * nx + dy * ny,
-            "boyuna": dx * hx + dy * hy,
+            "yanal": yanal,
+            "boyuna": boyuna,
             "mesafe": math.hypot(dx, dy),
             "faz": ham[i][5],
         })

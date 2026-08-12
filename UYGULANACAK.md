@@ -136,6 +136,36 @@ Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
 
 ## ⚑⚑ GECE ÇALIŞMASI SONUCU (2026-08-11 gecesi, 22 uçuş) — ARIZA YERİ DEĞİŞTİ
 
+### 0 · ⚠⚠ İŞARET HATASI — GECE RAPORUNUN BİR HÜKMÜ YANLIŞTI (2026-08-12)
+
+`tools/salinim.py`'de gidiş yönünün SAĞI `(hy, −hx)` yazılmıştı; NED'de
+(x=kuzey, y=doğu, z=aşağı) doğrusu `ẑ×ĥ = (−hy, hx)`. Yazdığım ifade SOLU
+veriyordu → "SAĞA AŞIM" sütunu TERS TARAFI ölçüyordu.
+Etkilenmeyenler: en yakın menzil, isabet, temas %, |yanal| medyanı, yandan
+yana geçiş sayısı (işaretten bağımsız). Etkilenen: `asim_sag`.
+Düzeltildi + `tests/test_salinim.py` bekçisi (5/5). Hata GPT Codex tarafından
+bulundu, matematiği bağımsız doğrulandı.
+
+**DÜZELTİLMİŞ RAKAMLAR (aynı 22 uçuş, yeniden hesap):**
+
+| ölçüt | KONTROL | Ö9 | KONTROL | Ö5 |
+|---|---|---|---|---|
+| **SAĞA AŞIM** | 39.00 m | **25.35 m** ✅ | 37.40 m | 43.20 m ❌ |
+| yandan yana geçiş | 1 | 1 | 2 | **1** |
+| yanal medyan | **5.90 m** | 6.70 m | **6.20 m** | 8.50 m |
+| en yakın menzil | **1.82 m** | 2.33 m | **1.89 m** | 3.23 m |
+| isabet | 0/6 | 0/6 | 0/5 | 0/5 |
+
+⇒ **Ö9 hakkındaki "fayda yok" hükmüm YANLIŞTI.** Ö9 kullanıcının şikâyet
+ettiği şeyi — kaçamak yönünde aşım — **%35 azaltıyor**. Bedeli: en yakın
+menzil 1.82 → 2.33 m. Ö5 ise doğru işaretle daha da kötü çıktı.
+⇒ Ö9 TAZE A/B ile yeniden sınanacak; birincil ölçüt SAĞA AŞIM.
+
+⚠ **GÜDÜM DAVRANIŞI ETKİLENMEDİ:** işaret hatası yalnız ÖLÇÜM aracındaydı.
+Gece öncesi etiket ↔ bugün, 1080 girdi kombinasyonunda güdüm çıktısı BİT BİT
+AYNI (fark 0, sapma 0.00e+00). Gece eklenen her şey varsayılan-KAPALI
+seçenek + ölçüm aracı + belgeydi.
+
 ### 1 · Doğru salınım ölçütü kuruldu: `tools/salinim.py`
 
 Kullanıcı eski ölçütü çürüttü: "salınımı bbox'ın oynamasından ölçme; bizim
