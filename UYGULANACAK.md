@@ -156,6 +156,39 @@ bulundu, matematiği bağımsız doğrulandı.
 | en yakın menzil | **1.82 m** | 2.33 m | **1.89 m** | 3.23 m |
 | isabet | 0/6 | 0/6 | 0/5 | 0/5 |
 
+### ⚑ TAZE A/B + EŞLENMİŞ ANALİZ (2026-08-12, 10 uçuş) — "%35" DE ŞİŞİKMİŞ
+
+Taze kampanya (S01-S10) koşuldu. İki şey çıktı:
+
+**1) Kol dengesizliği (benim kurulum hatam):** kontrolde 3 yatay + 2 capraz,
+Ö9'da 2 yatay + 3 capraz. `yatay` aşımı ~66 m, `capraz` ~31 m olduğu için
+kaba medyan kıyası (65.7 → 34.8) KARIŞIM ORANINI ölçüyor, kolları değil.
+→ CLAUDE.md §5.9 olarak kural yazıldı.
+
+**2) Tür-içi eşlenmiş gerçek etki (22 uçuş birleşik):**
+
+| manevra | KONTROL | Ö9 | fark |
+|---|---|---|---|
+| yatay (n=6v5) | 66.8 m | 56.0 m | **−16%** |
+| capraz (n=5v6) | 31.5 m | 29.9 m | **−5%** |
+
+Ö9'un etkisi GERÇEK ama MÜTEVAZI (%5-16), gece iddia ettiğim %35 değil.
+Koşu-içi değişkenlik çok yüksek (Ö9 yatay ham: 5.0 / 23.1 / 56.0 / 60.7 /
+66.8 m). İsabet ve en yakın menzilde tür-içi fark YOK.
+
+### ⚑⚑ ASIL BULGU: 66 m AŞIM BİR SALINIM DEĞİL, DÖNÜŞ ÇEMBERİ
+
+Aşımın NE ZAMAN olduğu ölçüldü — beş koşuda da **tetikten tam +7 s sonra**
+ve **66-69 m**:
+
+    R = V²/(g·tan45°) = 18²/9.81 = 33 m   →   U-dönüşü 2R = 66 m
+
+Yani drone hedefi geçiyor ve geri dönmek için minimum çemberini çiziyor.
+En yakın an ise çok SONRA (+68…+145 s) geliyor.
+⇒ Bu bir kazanç/nişan sorunu DEĞİL. Ö5/Ö8/Ö9'un üçü de yanlış katmandaydı.
+⇒ Çare: dönüş anında HIZI KISMAK. R ∝ V²: 18 m/s'de 2R=66 m, 9 m/s'de
+2R=17 m — dört kat dar.
+
 ⇒ **Ö9 hakkındaki "fayda yok" hükmüm YANLIŞTI.** Ö9 kullanıcının şikâyet
 ettiği şeyi — kaçamak yönünde aşım — **%35 azaltıyor**. Bedeli: en yakın
 menzil 1.82 → 2.33 m. Ö5 ise doğru işaretle daha da kötü çıktı.

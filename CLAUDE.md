@@ -275,6 +275,33 @@ Her rapor öncesi yazılı olarak cevaplanır:
 
 Üçünden birine cevap verilemiyorsa rapor değil, **eksik listesi** sunulur.
 
+## 5.9 · KOLLAR SENARYO KARIŞIMINA GÖRE EŞLENİR
+
+A/B kollarında **her senaryo/kaçamak türünden EŞİT sayıda koşu** olmalı; ve
+kıyas **senaryo türü içinde** yapılır. Taban değeri türe göre çok
+değişiyorsa, kaba medyan kıyası kolları değil KARIŞIM ORANINI ölçer.
+
+*Yaşandı (2026-08-12):* `yatay` kaçamağında aşım ~66 m, `capraz`ta ~31 m.
+Kontrol koluna 3 yatay + 2 capraz, deney koluna 2 yatay + 3 capraz denk
+geldi (10. uçuşu yanlış etiketledim). Kaba medyan "65.7 → 34.8 m, %47
+iyileşme" dedi. Türe göre eşlenince gerçek etki: yatay −9%, capraz +2%.
+Aynı hata daha büyük veride de vardı: "%35 iyileşme" iddiası, eşlenince
+yatay −16% / capraz −5%'e indi.
+
+**Kontrol listesi:** kolların tür dağılımını RAPORDAN ÖNCE yazdır; eşit
+değilse ya dengele ya da yalnız tür-içi kıyas raporla.
+
+## 5.10 · "SALINIM" SANDIĞIN ŞEY FİZİK OLABİLİR
+
+Bir sapmayı kontrol kusuru saymadan önce **aracın geometrik sınırıyla**
+kıyasla. Dönüş yarıçapı R = V²/(g·tan θ_max); bir U-dönüşü 2R yanal
+süpürür.
+
+*Yaşandı:* 66 m'lik "sağa aşım" kazanç ayarıyla çözülmeye çalışıldı
+(Ö5/Ö8/Ö9). Sonra ölçüldü: aşım HER koşuda tetikten tam +7 s sonra
+oluyor ve 66-69 m — yani 18 m/s'de 2R = 66 m, aracın MİNİMUM dönüş
+çemberi. Kazanç değil GEOMETRİ. Çare hızı kısmak (R ∝ V²).
+
 ---
 
 # 6 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
