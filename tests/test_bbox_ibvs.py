@@ -741,6 +741,64 @@ def main():
             f"seyir tavanı {_LeadKapali.LEAD_MAX_SEYIR_DEG:.0f}° — "
             f"08-09'da doğrulanmış terminal davranışı bozulmadı")
 
+    # ══ B54-B58: M4 — SEYİR FAZI DİKEY SÖNÜMLEMESİ ══
+    # 165 koşuluk M3b kampanyası: kaçamak sonrası avcı hedefin ÜSTÜNE çıkıyor
+    # (capraz +16.2 m, yatay +11.9 m). Uçuş anı kareleri (durum=IBVS, yani BU
+    # yasa komut ediyordu): kutu küçülürken vz komutu −1.22 → −2.54 m/s
+    # büyüyor = sönümlemesiz P imzası. Terminalde türev terimi vardı, seyirde
+    # yoktu.
+    class _SeyirSonumsuz(C):
+        K_VZ_D_SEYIR = 0.0          # eski davranış
+    class _SeyirSonumlu(C):
+        K_VZ_D_SEYIR = 0.6
+
+    # Hedef nişanın ÜSTÜNDE (cy < CY_NISAN) → tırmanma komutu (NED: vz<0).
+    # boyut 12 px → R≈13 m, terminal DEĞİL (seyir dalı).
+    _cy_ust = C.CY_NISAN - 40
+    _argV = (CX, _cy_ust, 12, 12, 0.0, 18.0, 0.05)
+
+    _v_dur = ib.komut(*_argV, _SeyirSonumsuz, False, (0.0, 0.0), 0.0, 0.0,
+                      None, 0.0)          # iris_vz=0: araç henüz tırmanmıyor
+    kontrol("B54 sönümleme KAPALI iken seyir dikey komutu eski formülle aynı",
+            abs(_v_dur[2] - ib.clamp(C.K_VZ * C.V_NOM
+                                     * math.atan((_cy_ust - C.CY_NISAN) / geo.FY),
+                                     -C.VZ_MAX, C.VZ_MAX)) < 1e-9,
+            f"vz={_v_dur[2]:.3f} m/s — K_VZ·V_NOM·eps_elev ile birebir")
+
+    # Araç ZATEN komuttan hızlı tırmanıyorsa (iris_vz çok negatif) sönümleme
+    # komutu geri çekmeli — asıl aranan davranış bu.
+    _hizli = -4.0                          # m/s; NED'de yukarı
+    _s_kapali = ib.komut(*_argV, _SeyirSonumsuz, False, (0.0, 0.0), 0.0,
+                         _hizli, None, 0.0)
+    _s_acik = ib.komut(*_argV, _SeyirSonumlu, False, (0.0, 0.0), 0.0,
+                       _hizli, None, 0.0)
+    kontrol("B55 araç fazla tırmanıyorken sönümleme komutu GERİ ÇEKER",
+            _s_acik[2] > _s_kapali[2] + 0.5,
+            f"iris_vz={_hizli:.1f} m/s iken vz: kapalı {_s_kapali[2]:.2f} → "
+            f"açık {_s_acik[2]:.2f} (daha az tırmanma)")
+
+    kontrol("B56 sönümleme KAPALI iken araç hızı komutu HİÇ etkilemez",
+            abs(_s_kapali[2] - _v_dur[2]) < 1e-9,
+            f"iris_vz 0 → {_v_dur[2]:.2f}, iris_vz {_hizli:.1f} → "
+            f"{_s_kapali[2]:.2f} (saf P: araç hızına kör)")
+
+    # Araç tırmanması gerekirken tırmanmıyorsa komut BÜYÜMELİ (tek yönlü değil)
+    _yavas = ib.komut(*_argV, _SeyirSonumlu, False, (0.0, 0.0), 0.0, 0.0,
+                      None, 0.0)
+    kontrol("B57 araç yavaş kalmışsa sönümleme komutu BÜYÜTÜR (simetrik)",
+            _yavas[2] < _v_dur[2] - 1e-9,
+            f"iris_vz=0 iken kapalı {_v_dur[2]:.2f} → açık {_yavas[2]:.2f}")
+
+    # Terminal dalı BU değişiklikten etkilenmemeli (tek değişken kuralı)
+    _t_kapali = ib.komut(*_argV, _SeyirSonumsuz, True, (0.0, 0.0), 0.0,
+                         _hizli, None, 0.0)
+    _t_acik = ib.komut(*_argV, _SeyirSonumlu, True, (0.0, 0.0), 0.0,
+                       _hizli, None, 0.0)
+    kontrol("B58 TERMİNAL dikey komutu M4'ten ETKİLENMEZ (dokunulmadı)",
+            abs(_t_kapali[2] - _t_acik[2]) < 1e-9,
+            f"terminal vz: {_t_kapali[2]:.3f} = {_t_acik[2]:.3f} — "
+            f"terminal sönümlemesi K_VZ_D ayrı kalıyor")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

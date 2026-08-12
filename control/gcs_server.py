@@ -730,6 +730,13 @@ _OZELLIKLER = {
         "denenip geri alınmıştı — araç kesişmek yerine hedefi gölge ediyordu. "
         "Yön doğruydu, genlik yanlıştı; küçük tut (8-15°).",
         "AVCI_IBVS_LEAD_MAX_SEYIR", 8.0),
+    "m4_seyir_dikey_sonum": (
+        "K_VZ_D_SEYIR", "kazanc", "M4 · Seyir fazı dikey sönümlemesi",
+        "Seyir dikey kanalı saf oransaldı (türev terimi yalnız terminalde "
+        "vardı). Ölçüldü: kaçamak sonrası avcı hedefin ÜSTÜNE çıkıyor — "
+        "capraz +16.2 m, yatay +11.9 m; kutu küçülürken vz komutu −1.22'den "
+        "−2.54'e büyüyor (sönümlemesiz P imzası). 0 = eski davranış.",
+        "AVCI_IBVS_KVZD_SEYIR", 0.6),
     "d0_ardisik": (
         "KILIT_ARDISIK", "bool", "D0 · Devir: ARDIŞIK kare (kayan pencere yerine)",
         "Görsel faza devir ölçütü. AÇIK: üst üste KILIT_N kare tespit — "

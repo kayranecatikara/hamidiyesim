@@ -293,6 +293,34 @@ class Cfg:
     # Girdi drone'un KENDİ sensörü — yarışma kuralı serbest.
     K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.6)   # dikey sönümleme kazancı
 
+    # ══ M4 · SEYİR FAZI DİKEY SÖNÜMLEMESİ (2026-08-11) ══
+    # Yukarıdaki sönümleme YALNIZ TERMİNAL dalında. Seyir dalı saf oransal:
+    #     vz = K_VZ · V_NOM · eps_elev          ← türev terimi YOK
+    # 165 koşuluk M3b kampanyasında bunun bedeli ölçüldü: kaçamak sonrası
+    # 15 s içinde avcı hedefin ÜSTÜNE çıkıyor — capraz'da medyan +16.2 m,
+    # yatay'da +11.9 m. Örnek (kosu_005_A_yatay_45, tetik anından itibaren):
+    #     t+2   mesafe  15.7 m   avcı −2.0 m   hız 20.6   ← en yakın
+    #     t+10  mesafe  94.2 m   avcı +13.6 m  hız 11.1   ← tepe, hız çöktü
+    # Dönüş için gereken enerji dikey kanala harcanıyor, kutu kaybediliyor.
+    #
+    # MEKANİZMA KANITI (uçuş anı kareleri, durum=IBVS, yani BU yasa komut
+    # ediyordu — GPS fazı değil): kutu KÜÇÜLÜRKEN (9.2→7.9 px, hedef
+    # uzaklaşıyor) vz komutu tek yönde büyüyor −1.22 → −2.54 m/s.
+    # Sönümlemesiz P denetleyicinin imzası: hata büyüyor, komut büyüyor,
+    # karşı koyan terim yok.
+    #
+    # ⚠ ELENEN ALTERNATİF: "roll kirlenmesi" (dikey kanal ham piksel kullanıyor,
+    # yatay kanal roll telafili). 54 290 kare üzerinde AYNI piksel için
+    # roll=0 karşı-olgusuyla ölçüldü: dikey kayma medyan 0.0-2.1°, oysa
+    # gözlenen hata −20°. Yani kirlenme etkinin ~%10'u. (Yöntem doğrulaması:
+    # aynı hesap YATAY kanalda 25-40° yatışta 12.0° veriyor = kodun T1a için
+    # belgelediği "11-14°" ile birebir.) Roll telafisi ayrı bir iş olarak
+    # durabilir ama şişmenin sebebi O DEĞİL.
+    #
+    # Varsayılan 0.0 = MEVCUT DAVRANIŞ (kill-switch kapalı); değerini ölçüm
+    # belirleyecek. Terminal sönümlemesi (K_VZ_D) BUNDAN BAĞIMSIZ, dokunulmadı.
+    K_VZ_D_SEYIR = _env_f("AVCI_IBVS_KVZD_SEYIR", 0.0)
+
     # ══ DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR (2026-08-09) ══
     # KULLANICI GÖZLEMİ (uçuş kaydı): "tam vuracağı sırada yukarı manevra
     # yapıp aracın üstünden geçiyoruz."
@@ -612,8 +640,14 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
     else:
-        # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
-        vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
+        # TUTUŞ: hedefi CY_NISAN'da tut
+        vz_nisan_seyir = cfg.K_VZ * cfg.V_NOM * eps_elev
+        # M4: türev sönümlemesi (bkz. Cfg.K_VZ_D_SEYIR). Terminaldekiyle AYNI
+        # biçim: zaten gerekenden hızlı tırmanıyorsak komut geri çekilir.
+        # K_VZ_D_SEYIR=0 iken ifade tam olarak eski hâle indirgenir.
+        vz = clamp(vz_nisan_seyir
+                   + cfg.K_VZ_D_SEYIR * (vz_nisan_seyir - iris_vz),
+                   -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "hata": hata, "v_los": v_los, "terminal": terminal,
