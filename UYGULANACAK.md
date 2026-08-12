@@ -16,7 +16,100 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
-## DURUM — 2026-08-09 · MANEVRA (en güncel)
+## DURUM — 2026-08-12 · Ö9 DOĞRU SAĞ/SOL ÖLÇÜMÜYLE YENİDEN AÇILDI
+
+Kullanıcının birincil hedefi: "hedef sağa manevra yaptığında bizim araç
+onun daha da sağına geçmesin; hafif sağa yönelip hedefin arkasında kalsın."
+Bu nedenle karar ölçütü bbox/cx değil, hedefin hareketli çerçevesindeki
+gerçek avcı konumudur.
+
+### Ölçüm hatası — eski "SAĞA AŞIM" aslında solu gösteriyordu
+
+`tools/salinim.py`, NED düzleminde hedefin sağ normalini `(hy, -hx)`
+kurmuştu. Bu vektör hedefin **soludur**. Doğrusu `(-hy, hx)`:
+
+    hedef ileri  ĥ = (hx, hy)
+    hedef sağı  n̂ = (-hy, hx)
+
+Geçiş sayısı ve mutlak yanal uzaklık etkilenmiyordu; fakat sağ/sol etiketi
+ve `asim_sag = max(yanal)` hükmü ters dönüyordu. Düzeltme beş sentetik NED
+regresyon kontrolüyle korunuyor (`tests/test_salinim.py`: 5/5).
+
+### Kullanıcı kaydının gerçek geometrisi
+
+`logs/kayit/ucus_20260811_185753`, 27 sıralı kare + 1 Hz durum,
+`bbox_ibvs_20260811_185751.csv` (20 Hz) ve ArduPilot `424/425.BIN` birlikte:
+
+- hedef yaklaşık 111°'den 136°'ye sağa kırıyor;
+- avcı önce 6.7 m iç/sol tarafa, sonra **21.6 m sağa**, ardından
+  8.8 m sola aşıyor; ±2 m ölü bantla iki taraf değiştiriyor;
+- avcı bütün pencere boyunca hedefin arkasında; sorun boyuna değil yanal;
+- yatış −35.0° / +37.5°, p90 27.3°; ilk manevrada sınırlanmış hız
+  komutu→gerçek hız yönü gecikmesi yaklaşık 1.95 s;
+- kutulu komut kaydının %30'u `TERM_KOR`; kopuşlar sonraki salınımı
+  büyütürüyor, fakat ilk büyük aşım kopuştan önce başlıyor;
+- bu uçuşta Ö8 **aktifti** (`eps_yaw=14.8°` iken `eps_hiz=3.7°` gibi).
+  Yalnız komut açısını kısmak gerçek salınımı çözmemiş.
+
+### Ö9 tarihsel verisinin düzeltilmiş yeniden okuması — kabul kanıtı DEĞİL
+
+Arşivdeki `P01..P12` koşuları (kontrol/`AVCI_IBVS_SONUM=0.30`, n=6/kol)
+doğru sağ normaliyle yeniden hesaplandı. Eski uçuşu yeniden okumak yalnız
+hipotez üretir; CLAUDE.md uyarınca taze uçuş kabul kanıtıdır.
+
+| ölçüt | KONTROL n=6 | Ö9 n=6 | okuma |
+|---|---:|---:|---|
+| gerçek **sağa aşım** medyanı | 39.0 m | **25.3 m** | %35 azalma |
+| eşleştirilmiş sağa aşım | — | **6/6 çiftte daha az** | tutarlı sinyal |
+| mutlak yanal p90 medyanı | 32.5 m | **20.7 m** | %36 azalma |
+| en yakın menzil | **1.82 m** | 2.34 m | Ö9 daha kötü |
+| açılan maks. menzil medyanı | **67.4 m** | 75.2 m | yaklaşık %12 kötü |
+
+Önceki "Ö9 doğru ölçütle de faydasız" hükmü **geri çekildi**:
+o tablo sağ yerine solu kıyaslıyordu. Yeni hüküm de henüz "Ö9 girsin"
+değildir; salınım lehine, yakınlık aleyhine bölünmüş bir hipotezdir.
+Ö5 doğru işaretle de sağa aşımı 37.4→43.2 m kötüleştirdiği için
+elenmiş kalır.
+
+### Taze deney — koşmadan önce ilan edilen plan ve karar kapıları
+
+**Tek davranış değişkeni:** `AVCI_IBVS_SONUM=0` (K) ile `0.30` (Ö9).
+Kodun varsayılanı kapalıdır; panelde yalnız bu güncel deney görünür.
+Geri dönüş: panelden KAPALI veya env `0`.
+
+1. **Mekanizma kapısı:** kontrol kolunda `sonum_deg` tam 0 olmalı. Deney
+   kolunda geçerli kutulu karelerin en az %20'sinde `|sonum_deg| ≥ 0.5°` ve
+   tepe en az 5° olmalı; değilse koşu veri noktası değildir.
+2. **Ana kampanya:** `duz` + 8 m'de tetiklenen `yatay`, 240 s; dönüşümlü
+   K,Ö9,K,Ö9,K,Ö9,K,Ö9 = en az n=4/kol. Her koşuda sağlık bekçisi,
+   1 fps kare/video, 10 Hz gerçek konum, 20 Hz bbox ve iki `.BIN`.
+3. **Düz/taban gerilemesi:** ana kapı geçerse `yok` kolunda aynı dönüşümlü
+   n=4/kol. Düz uçuş kabulü bu bacak olmadan verilmez.
+4. **Birincil kapılar:** gerçek sağa aşım medyanı en az %25, mutlak yanal
+   p90 en az %20 azalmalı; ±2 m yandan-yana geçiş sayısı artmamalı.
+5. **Gerileme kapıları:** maks. açılma medyanı kontrolün %15'inden fazla,
+   en yakın menzil medyanı 0.75 m'den fazla kötüleşmemeli; görsel temas
+   10 yüzde puandan fazla düşmemeli; geçerlilik veya güvenlik ihlali
+   olmamalı.
+6. **İnsan kapısı:** sayılar geçse bile kullanıcı videoda hedef manevrası
+   sonrası yatışın ve taraf değiştirmenin gerçekten sakinleştiğini görmeden
+   varsayılan değişmez.
+
+Manuel panel kaydı, 1 Hz kare/`kayit.csv` yanında 10 Hz `telem.csv` yazacak
+şekilde hazırlandı. **Henüz taze uçuş koşulmadı; Ö9 varsayılan KAPALI.**
+
+Hazırlık doğrulaması (uçuşsuz, 2026-08-12):
+
+- `tests.test_salinim`: 5/5; `tests.test_bbox_ibvs`: 57/57;
+  `tests.test_visual_lead`: 59/59; `tests.test_gps_guidance`: 34/34.
+- Panel mekanizma kontrolü: yalnız Ö9 görünür, ilk durum kapalı ve
+  `Cfg.SONUM_T` canlı aç/kapat ile `0.30/0.0` olur.
+- 1.35 s kayıt mekanizma kontrolü: 2 adet 1 Hz `kayit.csv` satırı ve
+  14 adet `telem.csv` satırı; telemetri medyan aralığı 0.100 s.
+- Dört değişen Python dosyası AST, panel JavaScript'i `node --check` ve
+  yama `git diff --check` kontrolünden geçti. Bunlar uçuş kabulü değildir.
+
+## DURUM — 2026-08-09 · MANEVRA (tarihsel bölüm)
 
 Kullanıcı gözlemi: "düz uçuşta ıskalamıyor, hedef **manevra** yapınca görsel
 güdüm sapıtıyor, yatayda çok salınım oluyor."
@@ -150,64 +243,7 @@ Kutuya HİÇ bakmaz → görsel temas kopsa bile ölçer (eski ölçütün kusur
 hedefi kaybeden koşu "sakin" görünüyordu).
 Geometri doğrulandı: |yanal²+boyuna²| − mesafe = 0.0000 m.
 
-### 2 · ⚠⚠ İKİ KEZ DÜZELTİLDİ — "geri dönemiyor" hükmü YANLIŞTI
-
-İlk hüküm: "22 koşunun 21'inde drone geri dönemedi, asıl arıza bu."
-**BU YANLIŞTI ve kendi §5.2 kuralım yakaladı.** Kaçırmadan sonraki gözlem
-süresi MEDYAN 6 s; 22 koşunun 13'ünde 10 s'den az. 76 m'yi ~2.5 m/s
-kapanmayla kapatmak ~30 s ister. Geri dönebilen tek koşu (P07), gözlem
-süresi en uzun olan koşuydu (40 s) — yani "dönebilen" değil "zamanı olan".
-
-KAYIT 230 s'ye uzatılıp GERÇEK ölçüm yapıldı (R01, R02):
-    R02: t=88 tetik → t=115'te 283 m'ye açıldı → t=211'de 0.11 m'ye DÖNDÜ
-    R01: t=94 tetik → t=145'te 0.33 m ve İSABET
-**Yeniden temas ÇALIŞIYOR**, ~50-100 s sürüyor. 100 s'lik kayıtlar bunu
-yapısal olarak göremiyordu. Kaçamak testinin varsayılan süresi ARTIRILMALI.
-
-### 3 · ⚑ GERÇEK DURUM: kesişim ÇÖZÜLDÜ, kalan iş DİKEY SANTİMETRELER
-
-Uzun kayıtlı iki koşunun temas anı, bileşenlerine ayrılmış:
-
-| koşu | yatay | dikey | sonuç |
-|---|---|---|---|
-| R01 | 0.33 m | **+0.05 m** | **İSABET** |
-| R02 | 0.12 m | **−0.11 m** | ıska (zarf sınırında) |
-
-Zarf: yatay ±0.65 m, dikey **+0.29 / −0.13 m** — dikey eksen **5 kat dar**.
-Güdüm kesişimi 10-40 cm'ye kadar çözüyor; isabetle ıska arasındaki fark
-artık SANTİMETRE ve DİKEY eksende.
-
-### 3b · T1b KODLANDI ama UÇULMADI — mekanizma kapısı (§5.1) uçmadan eledi
-
-`AVCI_IBVS_DIKEY_ROLL` (varsayılan 0). Dikey hataya roll telafisi FARK
-olarak eklenir; pitch iki terimde de aynı bırakılır (nişan noktası CY_NISAN
-seyir pitch'iyle birlikte ayarlanmıştı — onu kaydırmak ayrı bir değişken).
-
-⚠ **"Dikeyde 33° okuma hatası" İDDİAM GEÇERSİZDİ.** İki FARKLI büyüklüğü
-kıyaslıyordum (seviye yükselişi ↔ piksel farkı hatası). Birim testi B58 bunu
-yakaladı: ilk sürüm roll=pitch=0'da bile komutu 0.51 m/s değiştiriyordu.
-
-GERÇEK roll kaynaklı dikey sapma, hedefin kadraj merkezinden uzaklığıyla
-büyür (cy=240 için):
-
-| yatış | cx=320 | cx=360 | cx=420 | cx=500 |
-|---|---|---|---|---|
-| 30° | 3.5° | 10.4° | 18.0° | 23.5° |
-| 45° | 7.6° | 17.1° | 27.4° | 35.1° |
-
-Ama TERMİNAL yaklaşmada hedef merkeze yakın (|cx−320| medyan 14-18 px) ve
-araç neredeyse düz (yatış medyan 4°). Gerçek uçuş kayıtlarında (R01/R02)
-terminal fazdaki düzeltme **MEDYAN −0.06°** — pratikte sıfır.
-
-⇒ **T1b, santimetrelik dikey ıskanın çaresi DEĞİL.** §5.1 mekanizma kapısı
-bunu UÇMADAN önce gösterdi; 10 uçuşluk kampanya boşa gitmedi.
-Kod, kill-switch ve testler (B58-B61) duruyor — dikey sapmanın büyüdüğü
-başka bir rejimde (hedef kadraj kenarında + sert yatış) işe yarayabilir.
-
-⇒ Sıradaki iş AÇIK DEĞİL. Dikey ıska bir OKUMA hatası değil; nişan noktası
-(CY_NISAN) / dikey kontrol yasası sorusu. Kullanıcıyla konuşulmalı.
-
-### 4 · (geçersiz kılınan ilk hüküm — kayıt için)
+### 2 · ⚑ ASIL ARIZA BULUNDU — yaklaşma değil, GERİ DÖNEMEME
 
 22 koşu (Ö9 kampanyası 12 + Ö5 kampanyası 10), tetik 8 m:
 

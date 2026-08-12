@@ -693,10 +693,8 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #   Ö1 kaçış telafisi         AVCI_IBVS_KD=1.0        ölçüt çelişkisi → kapalı
 #   Ö6 yüksek yatış           ANGLE_MAX 5500          ELENDİ (aşağıya bak)
 #   Ö7 yaw hız tavanı         AVCI_IBVS_YAWRATE=200   sinyal yok
-#   Ö5 dönüş-farkında tavan   AVCI_IBVS_DONUS=9.0     10 uçuş: aşım berabere,
-#       en yakın menzil kötüleşti (1.89→3.23 m)
-#   Ö9 yatay sönümleme        AVCI_IBVS_SONUM=0.30    sakinleştirdi ama
-#       yaklaştırmadı; DOĞRU salınım ölçütüyle (tools/salinim.py) de fark yok
+#   Ö5 dönüş-farkında tavan   AVCI_IBVS_DONUS=9.0     doğru sağ/sol hesabıyla
+#       sağa aşımı da kötüleştirdi (37.4→43.2 m); kapalı
 #   Ö8 yanal/kaçırma mesafesi AVCI_IBVS_YANAL=3.0     ELENDİ: n=6'da
 #       en yakın menzil kötüleşti (1.96→2.76 m), isabet 1/6→0/6, ve tek
 #       olumlu bulgusu (salınım 0.000) ÖLÇÜT ARTEFAKTIYDI — salınım yalnız
@@ -711,12 +709,14 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 # yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
 # Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
 _OZELLIKLER = {
-    "t1b_dikey_telafi": (
-        "DIKEY_ROLL", "bool", "T1b · Dikey roll/pitch telafisi",
-        "Kesişim 10-40 cm'ye çözülüyor; isabet/ıska farkı artık DİKEYDE "
-        "(zarf yatayda ±0.65 m, dikeyde +0.29/−0.13 m — 5 kat dar). Dikey "
-        "okuma yatışta 33° sapıyor, işareti bile ters dönüyor. Düz uçuşta "
-        "etkisiz.", "AVCI_IBVS_DIKEY_ROLL", True),
+    "o9_yatay_sonum": (
+        "SONUM_T", "deger", "Ö9 · Yatay sönümleme (yeniden test)",
+        "Drone'un kendi yaw hızına karşı koyarak gecikmeli aşımı sönümler. "
+        "Düzeltilmiş hedef-göreli ölçümde tarihsel 6/6 A/B çiftinde "
+        "sağa aşım azaldı (medyan 39.0→25.3 m); fakat en yakın mesafe "
+        "1.82→2.34 m ve açılma yaklaşık %12 kötüleşti. Taze 240 s A/B "
+        "doğrulaması bekliyor; varsayılan KAPALI.",
+        "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 
 
@@ -1204,7 +1204,12 @@ def _hasar_izleyici():
 
 
 def _kayit_dongusu():
-    """Saniyede 1: kamera karesi + tam durum satırı. Kayıt durana dek sürer."""
+    """1 Hz görüntü/durum + 10 Hz gerçek hareket telemetrisi kaydet.
+
+    ``kayit.csv`` ve kareler insan görsel incelemesi için 1 Hz kalır.
+    ``telem.csv`` ise hedef-göreli salınımı bbox'tan değil iki aracın
+    konumundan ölçebilmek için 10 Hz yazılır (tools/salinim.py).
+    """
     import csv as _csv
     d = _kayit["dizin"]
     kare_dizin = os.path.join(d, "frames")
@@ -1217,53 +1222,94 @@ def _kayit_dongusu():
         "plane_x", "plane_y", "plane_z", "plane_hiz",
         "iris_x", "iris_y", "iris_z", "iris_hiz", "imha"])
     w.writeheader()
+    tf = open(os.path.join(d, "telem.csv"), "w", newline="")
+    tw = _csv.DictWriter(tf, fieldnames=[
+        "wall_t", "gecen_s", "mesafe", "faz",
+        "plane_x", "plane_y", "plane_z",
+        "iris_x", "iris_y", "iris_z"])
+    tw.writeheader()
     _kayit["csv"], _kayit["dosya"] = w, f
     n = 0
     t0 = _kayit["t0"]
-    while _kayit["aktif"]:
-        dongu_bas = time.time()
-        n += 1
-        kare = latest_frames["iris"]["data"]
-        if kare:
-            with open(os.path.join(kare_dizin, f"f{n:04d}.jpg"), "wb") as g:
-                g.write(kare)
-        det = get_detection()
-        p, i = telemetry_state["plane"], telemetry_state["iris"]
-        try:
-            m_ger = sim_truth.menzil()
-        except Exception:
-            m_ger = None
-        w.writerow({
-            "kare": n, "t": round(dongu_bas, 2),
-            "gecen_s": round(dongu_bas - t0, 1),
-            "gudum_modu": _guidance_mode,
-            "faz": _supervisor_mod.status.get("faz"),
-            "mesafe_telem": round(math.sqrt(
-                (p["x"] - i["x"]) ** 2 + (p["y"] - i["y"]) ** 2
-                + (p["z"] - i["z"]) ** 2), 2),
-            "mesafe_gercek": round(m_ger, 2) if m_ger else None,
-            "tespit_conf": round(det["conf"], 3) if det else None,
-            # ⚠ MANUEL KUMANDA KONUMLARI: kullanıcı manuel uçarken videoyu
-            # yorumlayabilmek için şart ("o an ne yapıyordun" sorusu).
-            "manuel_aktif": int(_manual_active),
-            "manuel_aileron": _manual_aileron,
-            "manuel_elevator": _manual_elevator,
-            "manuel_throttle": _manual_throttle,
-            "hedef_gaz": _plane_throttle,
-            "senaryo": _scenario_name,
-            "plane_x": p["x"], "plane_y": p["y"], "plane_z": p["z"],
-            "plane_hiz": p.get("speed"),
-            "iris_x": i["x"], "iris_y": i["y"], "iris_z": i["z"],
-            "iris_hiz": i.get("speed"),
-            "imha": int(bool(hasar_durumu.get("imha"))),
-        })
-        f.flush()
-        _kayit["kare"] = n
-        kalan = 1.0 - (time.time() - dongu_bas)
-        if kalan > 0:
-            time.sleep(kalan)
-    f.close()
-    print(f"[KAYIT] durdu — {n} kare + kayit.csv → {d}")
+    sonraki_kare = time.monotonic()
+    try:
+        while _kayit["aktif"]:
+            dongu_mono = time.monotonic()
+            dongu_bas = time.time()
+            # Dinleyici thread'leri sözlükleri güncellerken tek satır için
+            # tutarlı bir anlık görüntü al.
+            p = dict(telemetry_state["plane"])
+            i = dict(telemetry_state["iris"])
+            faz = _supervisor_mod.status.get("faz")
+            try:
+                m_telem = math.sqrt(
+                    (p["x"] - i["x"]) ** 2 + (p["y"] - i["y"]) ** 2
+                    + (p["z"] - i["z"]) ** 2)
+            except (KeyError, TypeError):
+                m_telem = None
+
+            # 10 Hz: bbox'tan bağımsız gerçek yanal hareket ölçümü.
+            tw.writerow({
+                "wall_t": round(dongu_bas, 3),
+                "gecen_s": round(dongu_bas - t0, 3),
+                "mesafe": round(m_telem, 3) if m_telem is not None else None,
+                "faz": faz,
+                "plane_x": p.get("x"), "plane_y": p.get("y"),
+                "plane_z": p.get("z"),
+                "iris_x": i.get("x"), "iris_y": i.get("y"),
+                "iris_z": i.get("z"),
+            })
+            tf.flush()
+
+            # 1 Hz: JPEG + operatör/görev durumu. Bu yapı eski kayıt
+            # sözleşmesini ve kare numarası=saniye ilişkisini korur.
+            if dongu_mono >= sonraki_kare:
+                n += 1
+                kare = latest_frames["iris"]["data"]
+                if kare:
+                    with open(os.path.join(kare_dizin, f"f{n:04d}.jpg"), "wb") as g:
+                        g.write(kare)
+                det = get_detection()
+                try:
+                    m_ger = sim_truth.menzil()
+                except Exception:
+                    m_ger = None
+                w.writerow({
+                    "kare": n, "t": round(dongu_bas, 2),
+                    "gecen_s": round(dongu_bas - t0, 1),
+                    "gudum_modu": _guidance_mode,
+                    "faz": faz,
+                    "mesafe_telem": (round(m_telem, 2)
+                                       if m_telem is not None else None),
+                    "mesafe_gercek": (round(m_ger, 2)
+                                       if m_ger is not None else None),
+                    "tespit_conf": round(det["conf"], 3) if det else None,
+                    # ⚠ MANUEL KUMANDA KONUMLARI: kullanıcı manuel uçarken
+                    # videoyu yorumlamak için şart ("o an ne yapıyordun?").
+                    "manuel_aktif": int(_manual_active),
+                    "manuel_aileron": _manual_aileron,
+                    "manuel_elevator": _manual_elevator,
+                    "manuel_throttle": _manual_throttle,
+                    "hedef_gaz": _plane_throttle,
+                    "senaryo": _scenario_name,
+                    "plane_x": p.get("x"), "plane_y": p.get("y"),
+                    "plane_z": p.get("z"), "plane_hiz": p.get("speed"),
+                    "iris_x": i.get("x"), "iris_y": i.get("y"),
+                    "iris_z": i.get("z"), "iris_hiz": i.get("speed"),
+                    "imha": int(bool(hasar_durumu.get("imha"))),
+                })
+                f.flush()
+                _kayit["kare"] = n
+                while sonraki_kare <= dongu_mono:
+                    sonraki_kare += 1.0
+
+            kalan = 0.1 - (time.monotonic() - dongu_mono)
+            if kalan > 0:
+                time.sleep(kalan)
+    finally:
+        tf.close()
+        f.close()
+    print(f"[KAYIT] durdu — {n} kare + kayit.csv + 10 Hz telem.csv → {d}")
 
 
 @app.post("/api/kayit/basla")
@@ -1594,8 +1640,8 @@ latest_frames = {
 #  UÇUŞ KAYDI (arayüzdeki "KAYIT" butonu) — 2026-08-09, kullanıcı isteği
 # ══════════════════════════════════════════════════════════════════════
 # Kullanıcının MANUEL uçuşlarını da inceleyebilmek için: saniyede 1 kamera
-# karesi + o anki tam durum (faz, mesafe, telemetri, GÜDÜM MODU ve MANUEL
-# KUMANDA konumları) tek dizine yazılır. Otomatik testlerde bunu araç
+# karesi + o anki tam durum (faz, mesafe, GÜDÜM MODU ve MANUEL KUMANDA)
+# ile ayrı 10 Hz konum telemetrisi aynı dizine yazılır. Otomatik testlerde bunu araç
 # (tools/ucus_kaydi.py) yapıyordu; manuel uçuşta panelden tetiklenir.
 # Kumanda konumları kayda giriyor çünkü "o anda ne yapıyordun" sorusunun
 # cevabı olmadan manuel uçuş videosu yorumlanamıyor.
