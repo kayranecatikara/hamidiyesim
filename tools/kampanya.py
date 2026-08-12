@@ -45,16 +45,20 @@ BASE = "http://127.0.0.1:8000"
 # GECİKTİREBİLİR — kayan pencere tam bu yüzden konmuştu (07-31). G, E ile
 # YALNIZ bu anahtarda ayrılır, yani E↔G tek değişkenli kıyastır.
 KOLLAR = [
-    ("A", {},                                                          45),
-    ("E", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "8"},  45),
-    ("F", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15"}, 45),
-    ("G", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "8",
-           "AVCI_HYBRID_ARDISIK": "0"},                                45),
+    # M4 A/B (2026-08-11): TEK DEĞİŞKEN = seyir fazı dikey sönümlemesi.
+    # İki kol da lead 15° kullanıyor (F kolu ölçülmüş kazanç: kaçamaklı
+    # koşularda imha 9/33 → 17/33, p=0.044) — o sabit tutuluyor.
+    ("F", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15",
+           "AVCI_IBVS_KVZD_SEYIR": "0"},                                45),
+    ("H", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15",
+           "AVCI_IBVS_KVZD_SEYIR": "0.6"},                              45),
 ]
 # Kaçamaklar — `yok` TABAN koşusudur, CLAUDE.md §3.3 gereği her turda koşulur.
 # 08-11: altı kaçamağın TAMAMI (§3.3 "hepsi denenmeli"). Dikey üçlü ilk kez
 # uçuyor; kamera sabit +25° yukarı baktığı için asıl kör nokta orada olabilir.
-KACAMAKLAR = ["yok", "yatay", "capraz", "dikey_yukari", "dikey_asagi", "hizlan"]
+# M4: şişmenin en büyük olduğu ikisi (capraz +16.2 m, yatay +11.9 m)
+# + `yok` tabanı. Dar matris, kol başına çok tekrar (CLAUDE.md §3.1).
+KACAMAKLAR = ["yok", "yatay", "capraz"]
 
 # ── HEDEFİN SEYİR İRTİFASI ──
 # 08-11 pilotu: 60 m DENENDİ ve GERİ ALINDI. Drone 60 m'ye tırmanırken ~90 s
@@ -66,7 +70,7 @@ SCN_ALT = os.environ.get("KAMPANYA_ALT", "30")
 
 # Matristeki TÜM anahtarlar — kol değişince öncekiler sızmasın diye temizlenir.
 _MATRIS_ANAHTARLARI = ("AVCI_IBVS_LEAD_ERKEN", "AVCI_IBVS_LEAD_MAX_SEYIR",
-                       "AVCI_HYBRID_ARDISIK", "AVCI_HYBRID_CONF",
+                       "AVCI_HYBRID_ARDISIK", "AVCI_HYBRID_CONF", "AVCI_IBVS_KVZD_SEYIR",
                        "AVCI_IBVS_MANEVRA", "AVCI_IBVS_MANEVRA_ACI")
 
 
@@ -134,6 +138,7 @@ def kol_dogrula(env_ek):
     bek_lead = env_ek.get("AVCI_IBVS_LEAD_ERKEN") == "1"
     bek_tavan = env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR")
     bek_ardisik = env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"
+    bek_sonum = env_ek.get("AVCI_IBVS_KVZD_SEYIR")
     try:
         d = json.loads(urllib.request.urlopen(
             BASE + "/api/gudum_ozellikleri", timeout=5).read())
@@ -141,12 +146,17 @@ def kol_dogrula(env_ek):
         lead = bool(oz["m3_erken_lead"]["acik"])
         tavan = float(oz["m3b_lead_seyir_tavan"]["deger"])
         ardisik = bool(oz["d0_ardisik"]["acik"])
-        gercek = f"lead={int(lead)} tavan={tavan:.0f} ardisik={int(ardisik)}"
+        sonum = float(oz["m4_seyir_dikey_sonum"]["deger"])
+        gercek = (f"lead={int(lead)} tavan={tavan:.0f} "
+                  f"ardisik={int(ardisik)} sonum={sonum:.2f}")
         if lead != bek_lead:
             return False, gercek
         if bek_tavan is not None and abs(tavan - float(bek_tavan)) > 1e-6:
             return False, gercek
         if ardisik != bek_ardisik:
+            return False, gercek
+        # M4 A/B'nin TEK değişkeni bu — yanlışsa iki kol aynı şeyi uçurur.
+        if bek_sonum is not None and abs(sonum - float(bek_sonum)) > 1e-6:
             return False, gercek
         return True, gercek
     except Exception as e:
@@ -173,8 +183,9 @@ def main():
     gcs_log = os.path.join(dizin, "gcs.log")
 
     # ilk15_m = BİRİNCİL ÖLÇÜT (bkz. olcumle); en_yakin_m ikincil.
-    alanlar = ["kosu", "kol", "lead", "tavan", "ardisik", "aci", "kacamak", "gecerli", "sebep",
-               "tetik_m", "tetiklendi", "ilk15_m", "gecikme_s", "en_yakin_m", "imha",
+    alanlar = ["kosu", "kol", "sonum", "lead", "tavan", "ardisik", "aci", "kacamak", "gecerli", "sebep",
+               "tetik_m", "tetiklendi", "sisme_m", "hiz_kaybi", "ilk15_m", "gecikme_s",
+               "en_yakin_m", "imha",
                "lead_kare", "lead_med_deg", "toplam_kare", "devir_m",
                "hedef_hiz", "hedef_irtifa", "hedef_irt_min", "wall"]
     if not os.path.exists(sonuc_csv):
@@ -189,6 +200,12 @@ def main():
     kollar = [k for k in KOLLAR if k[0] in _kf.split(",")] if _kf else KOLLAR
     kacamaklar = _af.split(",") if _af else KACAMAKLAR
     max_kosu = int(os.environ.get("KAMPANYA_MAX_KOSU", "0")) or None
+    # Yarım kalan zaman kampanyalarını ayrı bir dizinde, özgün sıra numaralarıyla
+    # tamamlamak için. Örn. sıra 160, 24 elemanlı turun 16. elemanıdır (0 tabanlı
+    # indeks 15). Varsayılanlar eski davranışı aynen korur.
+    baslangic_kosu = int(os.environ.get("KAMPANYA_BASLANGIC_KOSU", "1"))
+    baslangic_indeks = int(os.environ.get("KAMPANYA_BASLANGIC_INDEKS", "0"))
+    tamamlanani_atla = os.environ.get("KAMPANYA_TAMAMLANANI_ATLA", "0") == "1"
 
     gunluk(dizin, f"KAMPANYA BAŞLIYOR — {saat:.1f} saat, kayıt {kayit_s:.0f} s/koşu")
     gunluk(dizin, f"  matris: {len(kollar)} kol × {len(kacamaklar)} kaçamak, DÖNÜŞÜMLÜ")
@@ -196,25 +213,39 @@ def main():
     gunluk(dizin, f"  hedef seyir irtifası: {SCN_ALT} m (AVCI_SCN_ALT)")
     if max_kosu:
         gunluk(dizin, f"  ⚠ PİLOT MODU — en fazla {max_kosu} koşu")
+    if baslangic_kosu != 1 or baslangic_indeks:
+        gunluk(dizin, f"  TAMAMLAMA MODU — ilk koşu {baslangic_kosu}, "
+                      f"matris indeksi {baslangic_indeks}")
 
-    kosu = 0
+    kosu = baslangic_kosu - 1
+    uretilen = 0
     tur = 0
-    while time.time() < bitis and not (max_kosu and kosu >= max_kosu):
+    while time.time() < bitis and not (max_kosu and uretilen >= max_kosu):
         tur += 1
-        for kacamak in kacamaklar:
-            for kol_ad, env_ek, aci in kollar:
-                if time.time() >= bitis or (max_kosu and kosu >= max_kosu):
+        matris = [(kacamak, kol) for kacamak in kacamaklar for kol in kollar]
+        if tur == 1 and baslangic_indeks:
+            matris = matris[baslangic_indeks:]
+        for kacamak, (kol_ad, env_ek, aci) in matris:
+                if time.time() >= bitis or (max_kosu and uretilen >= max_kosu):
                     break
                 kosu += 1
+                uretilen += 1
                 etiket = f"{kosu:03d}_{kol_ad}_{kacamak}_{aci}"
                 kalan = (bitis - time.time()) / 3600.0
                 gunluk(dizin, f"── KOŞU {etiket}  (tur {tur}, kalan {kalan:.1f} sa)")
+
+                # Tamamlama işi kapanırsa aynı komutla güvenle sürdür: sonuç
+                # satırı bulunan koşuyu yeniden uçurma ve arşivini ezme.
+                if tamamlanani_atla and sonuc_var(sonuc_csv, kosu):
+                    gunluk(dizin, "  ↷ sonuç zaten var, atlandı")
+                    continue
 
                 sat = {a: "" for a in alanlar}
                 sat.update(kosu=kosu, kol=kol_ad, aci=aci, kacamak=kacamak,
                            lead=int(env_ek.get("AVCI_IBVS_LEAD_ERKEN") == "1"),
                            tavan=env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR", ""),
                            ardisik=int(env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"),
+                           sonum=env_ek.get("AVCI_IBVS_KVZD_SEYIR", ""),
                            wall=time.strftime("%Y-%m-%d %H:%M:%S"))
 
                 if not sim_kur(dizin, aci, sim_log):
@@ -244,14 +275,15 @@ def main():
                 sat["gecerli"] = olc.get("gecerli", 0)
                 sat["sebep"] = olc.get("sebep", "" if rc == 0 else f"rc={rc}")
                 yaz(sonuc_csv, alanlar, sat)
-                gunluk(dizin, f"  → geçerli={sat['gecerli']} ilk15={sat['ilk15_m']} m "
+                gunluk(dizin, f"  → geçerli={sat['gecerli']} ŞİŞME={sat['sisme_m']} m "
+                              f"ilk15={sat['ilk15_m']} m "
                               f"imha={sat['imha']} en_yakın={sat['en_yakin_m']} m "
                               f"lead={sat['lead_kare']}/{sat['toplam_kare']} kare "
                               f"med {sat['lead_med_deg']}° ({sure:.0f} s)"
                               + (f"  ⚠ {sat['sebep']}" if sat['sebep'] else ""))
                 sim_kapat()
 
-    gunluk(dizin, f"KAMPANYA BİTTİ — {kosu} koşu, {tur} tur")
+    gunluk(dizin, f"KAMPANYA BİTTİ — {uretilen} koşu üretildi, son sıra {kosu}, {tur} tur")
     sim_kapat()
 
 
@@ -260,11 +292,21 @@ def yaz(yol, alanlar, sat):
         csv.DictWriter(f, alanlar).writerow(sat)
 
 
+def sonuc_var(yol, kosu):
+    if not os.path.exists(yol):
+        return False
+    try:
+        return any(int(x.get("kosu", -1)) == kosu for x in csv.DictReader(open(yol)))
+    except (OSError, ValueError):
+        return False
+
+
 def olcumle(kdizin, t0):
     """Koşunun sonucunu topla: olay.json + meta.csv + o aralıktaki bbox logu."""
     out = {"gecerli": 0, "sebep": "", "tetik_m": "", "tetiklendi": 0,
            "ilk15_m": "", "gecikme_s": "", "en_yakin_m": "", "imha": "",
            "lead_kare": 0, "lead_med_deg": "", "toplam_kare": 0, "devir_m": "",
+           "sisme_m": "", "hiz_kaybi": "",
            "hedef_hiz": "", "hedef_irtifa": "", "hedef_irt_min": ""}
     oj = os.path.join(kdizin, "olay.json")
     if os.path.exists(oj):
@@ -291,10 +333,28 @@ def olcumle(kdizin, t0):
                 # ezip aşağıdaki bbox mtime filtresini sessizce devre dışı
                 # bırakıyordu (08-11'de yakalandı: toplam_kare 128 yerine 39405).
                 t_tet = d["tetik_t"]
-                v = [float(x["mesafe"]) for x in csv.DictReader(open(kc))
+                _kr = list(csv.DictReader(open(kc)))
+                v = [float(x["mesafe"]) for x in _kr
                      if x.get("mesafe") and t_tet <= float(x["t"]) <= t_tet + 15.0]
                 if v:
                     out["ilk15_m"] = round(min(v), 2)
+                # ── M4 BİRİNCİL ÖLÇÜTÜ: DİKEY ŞİŞME ──
+                # Kaçamak sonrası 15 s'de avcının hedefe göre EN YÜKSEK irtifa
+                # farkı. Taban (165 koşu): capraz +16.2 m, yatay +11.9 m.
+                # Avcı bu tepeye çıkarken hızını da kaybediyor (20.6→11.1 m/s)
+                # ve kutuyu düşürüyor; dönüş enerjisi dikey kanala gidiyor.
+                s = [float(x["iris_alt"]) - float(x["plane_alt"]) for x in _kr
+                     if x.get("iris_alt") and x.get("plane_alt")
+                     and t_tet <= float(x["t"]) <= t_tet + 15.0]
+                if s:
+                    out["sisme_m"] = round(max(s), 1)
+                    out["hiz_kaybi"] = round(
+                        max(float(x["iris_spd"]) for x in _kr
+                            if x.get("iris_spd")
+                            and t_tet <= float(x["t"]) <= t_tet + 15.0)
+                        - min(float(x["iris_spd"]) for x in _kr
+                              if x.get("iris_spd")
+                              and t_tet <= float(x["t"]) <= t_tet + 15.0), 1)
         except Exception:
             pass
     # GEÇERLİLİK: hedef 20-250 m irtifa / 6-25 m/s bandında kaldı mı (CLAUDE.md §4)
