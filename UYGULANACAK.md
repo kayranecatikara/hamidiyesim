@@ -134,6 +134,42 @@ Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
 5. **Ö5 · Yatış-farkında hız bütçesi** — komut 18 m/s, yatıktayken ulaşılan
    10.8-14.3 m/s.
 
+## ⚑ Ö11 · ISKA SONRASI DÖNÜŞ YAVAŞLAMASI — 12 UÇUŞ (2026-08-12)
+
+`AVCI_IBVS_DONUS_YAVAS` (varsayılan 0 = kapalı; denenen 9.0 m/s).
+Tetik yalnız kutudan: `kapanma < −5 m/s` (hedefi geçtik) **ve**
+`|eps_yaw| > 45°` (dönmemiz gerek). Durum tutmaz — dönüş ilerledikçe
+eps_yaw küçülür ve kendiliğinden serbest bırakır. CANLI GPS YOK, D0 temiz.
+
+**Gerekçe (ölçüm):** 66 m'lik aşım bir salınım değil, 18 m/s'deki minimum
+dönüş çemberi (2R = 66 m). R ∝ V² olduğu için 9 m/s'de 2R = 17 m.
+
+**MEKANİZMA (§5.1):** deney kolunun 3 koşusunda yavaşlama 8-18 karede aktif,
+hız 9.0 m/s'ye indi. **T12 koşusunda HİÇ tetiklenmedi → GEÇERSİZ sayıldı.**
+
+**YATAY KIRILMA — kullanıcının şikâyet ettiği manevra (n=4 vs 3):**
+
+| ölçüt | KONTROL | Ö11 | değişim |
+|---|---|---|---|
+| **SAĞA AŞIM** (birincil) | 61.8 m | **24.2 m** | **−61%** |
+| İSABET (birincil) | 2/4 | 2/3 | ~ |
+| en yakın menzil | 0.44 m | **0.36 m** | −19% |
+| yanal medyan | 3.05 m | **1.80 m** | −41% |
+| yandan yana geçiş | 3.5 | 4.0 | +14% |
+
+Ham aşım: kontrol [22.8, 56.8, 66.8, 69.6] → Ö11 [22.1, 24.2, 28.9].
+Kontrolün 4'ünden 3'ü Ö11'in TAMAMININ üstünde; bir kontrol koşusu (22.8)
+Ö11 bandına giriyor — tam ayrışma YOK ama yön çok net.
+Ölçülen etki, fizikten ÖNCEDEN hesaplanan değerle uyuşuyor (2R: 66→17 m
+tahmin, 62→24 m ölçüm).
+
+**ÇAPRAZ kaçamak (n=2v2, AZ VERİ):** aşım 36.1 → 42.1 m (kötüleşti),
+en yakın 1.3 → 0.6 m (iyileşti). Ham [36.3, 36.0] → [48.9, 35.4] — bir
+koşu kötü, örtüşüyor. **Hüküm için yetersiz (§5.4).**
+
+⇒ **DURUM:** yatayda güçlü ve fizikle tutarlı kazanım; çaprazda belirsiz.
+Varsayılan KAPALI, karar kullanıcıda. Çapraz kolu n=4'e çıkarılmalı.
+
 ## ⚑⚑ GECE ÇALIŞMASI SONUCU (2026-08-11 gecesi, 22 uçuş) — ARIZA YERİ DEĞİŞTİ
 
 ### 0 · ⚠⚠ İŞARET HATASI — GECE RAPORUNUN BİR HÜKMÜ YANLIŞTI (2026-08-12)

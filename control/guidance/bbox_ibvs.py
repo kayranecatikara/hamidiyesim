@@ -510,6 +510,31 @@ class Cfg:
     # AVCI_IBVS_DIKEY_ROLL=0 → eski (telafisiz) dikey yol aynen geri gelir.
     DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 0.0) >= 0.5
 
+    # ══ Ö11 · ISKA SONRASI DÖNÜŞ İÇİN YAVAŞLAMA ══
+    # ÖLÇÜLDÜ (2026-08-12, S01-S10): "sağa aşım" bir KONTROL SALINIMI DEĞİL.
+    # Aşım BEŞ koşuda da tetikten TAM +7 s sonra oluyor ve 66-69 m:
+    #     R = V²/(g·tan45°) = 18²/9.81 = 33 m  →  U-dönüşü 2R = 66 m
+    # Yani drone hedefi geçiyor ve geri dönmek için MİNİMUM ÇEMBERİNİ çiziyor.
+    # Ö5/Ö8/Ö9 (kazanç ve nişan ayarları) bu yüzden işe yaramadı — sınır
+    # fiziksel, ayar değil.
+    #
+    # ÇÖZÜM: yarıçap hızın KARESİYLE düşer.
+    #     18 m/s → 2R = 66 m      12 m/s → 29 m      9 m/s → 17 m
+    # Geçişten SONRA, dönüşü tamamlayana kadar hız kısılır.
+    #
+    # TETİK (yalnız kutudan — CANLI GPS YOK, D0 temiz):
+    #   kapanma < −DONUS_YAVAS_RDOT  → kutu hızla küçülüyor = hedefi GEÇTİK
+    #   |eps_yaw| > DONUS_YAVAS_ACI  → daha çok dönmemiz gerekiyor
+    # Koşul DURUM TUTMAZ: dönüş ilerledikçe eps_yaw küçülür ve kendiliğinden
+    # serbest bırakır. Hedefe yeniden nişan alınca hız geri gelir.
+    # ⚠ Ö5'ten farkı: Ö5 λ̇'ya bakıyordu ve geçiş ANINDA bağlamıyordu;
+    # bu doğrudan "geçtik, şimdi dön" durumunu hedefler.
+    # ⚠ DÜZ TAKİPTE ETKİSİZ: yaklaşırken kapanma > 0, koşul hiç kurulmaz.
+    # AVCI_IBVS_DONUS_YAVAS=0 → kapalı (varsayılan).
+    DONUS_YAVAS = _env_f("AVCI_IBVS_DONUS_YAVAS", 0.0)   # m/s; açık ~9.0
+    DONUS_YAVAS_RDOT = _env_f("AVCI_IBVS_DY_RDOT", 5.0)  # m/s; uzaklaşma eşiği
+    DONUS_YAVAS_ACI = _env_f("AVCI_IBVS_DY_ACI", 45.0)   # °; dönüş gereği eşiği
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -523,7 +548,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg", "eps_elev_ham_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "donus_yavas", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -638,6 +663,16 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
                       cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
+    # Ö11 ISKA SONRASI YAVAŞLAMA (bkz. Cfg.DONUS_YAVAS): hedefi geçtik ve
+    # geri dönmemiz gerekiyorsa hızı kıs — dönüş çemberi V² ile daralır.
+    donus_yavas = False
+    if (cfg.DONUS_YAVAS > 0.0 and kapanma is not None
+            and kapanma < -cfg.DONUS_YAVAS_RDOT
+            and abs(eps_yaw) > math.radians(cfg.DONUS_YAVAS_ACI)
+            and cfg.DONUS_YAVAS < v_los):
+        v_los = cfg.DONUS_YAVAS
+        donus_yavas = True
+
     # Ö5 DÖNÜŞ TAVANI (bkz. Cfg.DONUS_A): gereken yanal ivme V·λ̇ aracın
     # tavanını aşıyorsa hızı kıs — yarıçap V² ile düştüğü için dönüş sıkışır.
     # ⚠ YALNIZ KISAR. Düz uçuşta λ̇≈0 → tavan çok büyük → etkisiz.
@@ -737,7 +772,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             "eps_elev_ham": eps_elev_ham,
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "eps_hiz": eps_hiz, "sonum": sonum,
-            "donus_tavan": donus_tavan,
+            "donus_tavan": donus_tavan, "donus_yavas": donus_yavas,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "eps_yaw_ham": eps_yaw_ham}
@@ -1030,6 +1065,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "sonum_deg": round(math.degrees(tani["sonum"]), 2),
                 "donus_tavan": ("" if tani["donus_tavan"] is None
                                 else round(tani["donus_tavan"], 2)),
+                "donus_yavas": int(tani["donus_yavas"]),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),

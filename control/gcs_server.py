@@ -693,6 +693,8 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #   Ö1 kaçış telafisi         AVCI_IBVS_KD=1.0        ölçüt çelişkisi → kapalı
 #   Ö6 yüksek yatış           ANGLE_MAX 5500          ELENDİ (aşağıya bak)
 #   Ö7 yaw hız tavanı         AVCI_IBVS_YAWRATE=200   sinyal yok
+#   Ö9 yatay sönümleme        AVCI_IBVS_SONUM=0.30    tür-içi eşlenmiş
+#       gerçek etki mütevazı: yatay −16%, capraz −5%; isabet/menzil fark yok
 #   Ö5 dönüş-farkında tavan   AVCI_IBVS_DONUS=9.0     ELENDİ: düzeltilmiş
 #       işaretle SAĞA AŞIMI da kötüleştirdi (37.4→43.2 m)
 #   T1b dikey roll telafisi   AVCI_IBVS_DIKEY_ROLL=1  UÇULMADI: terminal
@@ -715,13 +717,12 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 # yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
 # Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
 _OZELLIKLER = {
-    "o9_yatay_sonum": (
-        "SONUM_T", "deger", "Ö9 · Yatay sönümleme (D terimi)",
-        "Yatay kanal saf ORANSAL; 300 ms komut gecikmesiyle zorunlu olarak "
-        "aşıyor. Bu terim aracın KENDİ yaw hızına karşı koyar. DÜZELTİLMİŞ "
-        "işaretle 22 uçuşta SAĞA AŞIMI %35 azalttı (39.0 → 25.4 m); bedeli "
-        "en yakın menzil 1.82 → 2.33 m. Taze A/B doğrulaması koşuluyor.",
-        "AVCI_IBVS_SONUM", (0.0, 0.30)),
+    "o11_donus_yavas": (
+        "DONUS_YAVAS", "deger", "Ö11 · Iska sonrası dönüş için yavaşlama",
+        "66 m'lik aşım bir salınım DEĞİL — aracın minimum dönüş çemberi "
+        "(2R, 18 m/s'de 66 m). Hedefi geçtikten sonra (kutu hızla küçülüyor) "
+        "ve dönmemiz gerekirken hız 9 m/s'ye kısılır → 2R = 17 m, dört kat "
+        "dar. Düz takipte etkisiz.", "AVCI_IBVS_DONUS_YAVAS", (0.0, 9.0)),
 }
 
 

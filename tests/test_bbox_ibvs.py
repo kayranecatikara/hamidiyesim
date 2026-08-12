@@ -836,6 +836,65 @@ def main():
             and abs(_ky[5]["eps_elev"] - _ky[5]["eps_elev_ham"]) < 1e-12,
             f"DIKEY_ROLL={C.DIKEY_ROLL} → eps_elev = ham okuma")
 
+    print("=" * 60)
+    # ── Ö11: ISKA SONRASI DÖNÜŞ İÇİN YAVAŞLAMA ──
+    # Ölçüldü: aşım her koşuda tetikten +7 s sonra, 66-69 m = 2R (minimum
+    # dönüş çemberi). Kazanç değil GEOMETRİ; çare hızı kısmak (R ∝ V²).
+    class _DY(ib.Cfg):
+        DONUS_YAVAS = 9.0
+
+    _uzak = CX + 300.0          # eps_yaw ≈ 61° → dönmemiz gerekiyor
+    _yakin_aci = CX + 40.0      # eps_yaw ≈ 13.5° → hedefe nişanlıyız
+    _argDY = (_uzak, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05)
+
+    # GEÇTİK + DÖNMEMİZ GEREK → hız kısılmalı
+    _g_ac = ib.komut(*_argDY, _DY, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
+    _g_ka = ib.komut(*_argDY, C, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
+    _R = lambda v: v * v / 9.81
+    kontrol("B62 hedefi geçince (ṙ<−5) ve dönüş gerekince Ö11 hızı KISAR",
+            _g_ac[5]["v_los"] < _g_ka[5]["v_los"] - 3.0
+            and _g_ac[5]["donus_yavas"],
+            f"ṙ=−10, açı 61°: {_g_ka[5]['v_los']:.1f} → {_g_ac[5]['v_los']:.1f} m/s "
+            f"(U-dönüşü 2R: {2*_R(_g_ka[5]['v_los']):.0f} → "
+            f"{2*_R(_g_ac[5]['v_los']):.0f} m — uçuşta ölçülen aşım 66 m)")
+
+    # YAKLAŞIRKEN (ṙ>0) etkisiz — düz takip bozulmaz
+    _y_ac = ib.komut(*_argDY, _DY, False, (0.0, 0.0), 0.0, 0.0, +3.0, 0.0)
+    _y_ka = ib.komut(*_argDY, C, False, (0.0, 0.0), 0.0, 0.0, +3.0, 0.0)
+    kontrol("B63 yaklaşırken (ṙ>0) Ö11 ETKİSİZ (düz takip bozulmaz)",
+            abs(_y_ac[5]["v_los"] - _y_ka[5]["v_los"]) < 1e-12
+            and not _y_ac[5]["donus_yavas"],
+            f"ṙ=+3 → hız {_y_ac[5]['v_los']:.1f} m/s, kısma yok")
+
+    # HEDEFE NİŞANLIYKEN (küçük açı) serbest bırakır — kendiliğinden çıkış
+    _n_ac = ib.komut(_yakin_aci, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05,
+                     _DY, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
+    _n_ka = ib.komut(_yakin_aci, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05,
+                     C, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
+    kontrol("B64 hedefe nişan alınca (açı<45°) Ö11 KENDİLİĞİNDEN bırakır",
+            abs(_n_ac[5]["v_los"] - _n_ka[5]["v_los"]) < 1e-12
+            and not _n_ac[5]["donus_yavas"],
+            f"açı 13.5° → hız {_n_ac[5]['v_los']:.1f} m/s, durum tutulmuyor "
+            "(dönüş ilerledikçe kendiliğinden serbest)")
+
+    # ASLA HIZLANDIRMAZ
+    _hizlandi = False
+    for _cxq in (CX + 40, CX + 150, CX + 300):
+        for _bq in (8, 20, 40):
+            for _kq in (-12.0, -6.0, 0.0, 4.0):
+                _a = ib.komut(_cxq, C.CY_NISAN, _bq, _bq, 0.0, 16.0, 0.05,
+                              _DY, False, (0.0, 0.0), 0.0, 0.0, _kq, 0.0)
+                _k = ib.komut(_cxq, C.CY_NISAN, _bq, _bq, 0.0, 16.0, 0.05,
+                              C, False, (0.0, 0.0), 0.0, 0.0, _kq, 0.0)
+                if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
+                    _hizlandi = True
+    kontrol("B65 Ö11 hızı ASLA artırmaz (yalnız kısan tavan)",
+            not _hizlandi, "36 kombinasyonda hiçbirinde hızlanma yok")
+
+    kontrol("B66 Ö11 kapatılabilir (varsayılan KAPALI)",
+            abs(C.DONUS_YAVAS) < 1e-9 and not _g_ka[5]["donus_yavas"],
+            f"DONUS_YAVAS={C.DONUS_YAVAS} → hiç devreye girmez")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
