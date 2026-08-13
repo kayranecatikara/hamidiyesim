@@ -124,6 +124,15 @@ def main():
     if kacamak not in KACAMAKLAR:
         print(f"bilinmeyen kaçamak: {kacamak}  ({'|'.join(KACAMAKLAR)})")
         raise SystemExit(1)
+    # ⛔ ÜZERİNE YAZMA KORUMASI (2026-08-13'te YAŞANDI): Ö-D kampanyasına
+    # D01 adıyla başlandı; D01_K_yatay Ö5 kampanyasında zaten vardı ve o
+    # koşunun olay.json + kacamak.csv + kareleri ÜZERİNE YAZILDI, geri
+    # getirilemedi. Dolu bir dizine yazmak artık HATA (CLAUDE.md §5.7).
+    if os.path.isdir(dizin) and any(
+            f in os.listdir(dizin) for f in ("olay.json", "kacamak.csv")):
+        print(f"⛔ '{dizin}' ZATEN BİR KOŞU İÇERİYOR — üzerine yazılmaz.\n"
+              f"   Başka bir ad seç ya da o dizini önce taşı/sil.")
+        raise SystemExit(3)
     os.makedirs(dizin, exist_ok=True)
 
     t_bas = time.time()          # arşivleme için koşu başlangıcı

@@ -733,6 +733,16 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #       Gerileme de var: isabet 7/8 → 5/8, en yakın menzil 0.39 → 0.67 m.
 #       ⇒ Sıradaki iş: hedefi kadrajda TUTMAK (Ö-D, FOV kısıtı).
 _OZELLIKLER = {
+    "od_fov": (
+        "FOV_YAW_HATA", "deger", "Ö-D · FOV kısıtı (burun borcu)",
+        "Pas geçerken hedef 2-3 m'de kadrajın kenarından çıkıyor, kutu "
+        "kayboluyor ve araç o anda gövdeden 40° ÖNDE olan bayat komutu "
+        "kovalarken 550°/s savruluyor (ölçüm: U05, W02). Bu kısıt burun "
+        "komutunun gövdeden en fazla 25° önde olmasına izin verir — kutu "
+        "gidince ödenecek borç kalmaz. ⚠ Sakin takipte ÖLÜ (borç birkaç "
+        "derece). ⚠ YALNIZ BURUN — hız vektörü ve uçuş yolu DEĞİŞMEZ "
+        "(test B75: 162 girdi kombinasyonunda bit bit aynı).",
+        "AVCI_IBVS_FOV", (0.0, 25.0)),
 }
 
 
