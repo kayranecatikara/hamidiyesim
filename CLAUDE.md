@@ -291,7 +291,40 @@ yatay −16% / capraz −5%'e indi.
 **Kontrol listesi:** kolların tür dağılımını RAPORDAN ÖNCE yazdır; eşit
 değilse ya dengele ya da yalnız tür-içi kıyas raporla.
 
-## 5.10 · "SALINIM" SANDIĞIN ŞEY FİZİK OLABİLİR
+## 5.10 · ⛔ BİR DURUMU DÜZELTİRKEN BAŞKASINI BOZMA — REGRESYON ZORUNLU
+
+**Kullanıcı kuralı (2026-08-12):** "Sistemi bir durumda iyileştirmeye
+çalışırken başka durumlardaki halini bozmayalım."
+
+Bir özellik ÖLÇÜLDÜĞÜ senaryoda kazandı diye giremez. Önce şu soru yazılı
+cevaplanır: **"bu değişikliğin ETKİLEYEBİLECEĞİ başka hangi durumlar var?"**
+Cevaptaki HER durum için regresyon testi koşulur.
+
+**Etki alanı nasıl çıkarılır — tetik koşuluna bak:**
+Özellik hangi koşulda devreye giriyorsa, o koşulun sağlanabileceği TÜM
+senaryolar etki alanındadır.
+*Örnek:* Ö11 `kapanma < −5 m/s` ve `|eps_yaw| > 45°` iken hızı 9 m/s'ye
+kısıyor. Bu koşul yalnız "ıska sonrası dönüş"te değil, **sürekli dönen bir
+hedefte de sürekli** sağlanabilir → araç kalıcı olarak yavaş kalır ve 15 m/s
+hedefi hiç yakalayamaz. Bu yüzden `duz`+kaçamakta kazanması YETMEZ;
+`circle` senaryosunda da sınanmalıdır.
+
+**Zorunlu regresyon listesi** (özellik güdüm davranışını değiştiriyorsa):
+1. `duz` + kaçamak (özelliğin hedeflendiği durum)
+2. `circle` — sürekli manevra; hız/dönüş kısıtları burada kalıcı olur
+3. `duz` + `yok` kaçamağı — TABAN; sakin takipte hiçbir şey bozulmamalı
+
+**EN İYİSİ: YAPISAL GARANTİ.** Regresyon testinden daha güçlü olan,
+değişikliğin diğer kanalı MATEMATİKSEL OLARAK etkileyememesidir. Böyle bir
+tasarım bulunursa birim testiyle KANITLA.
+*Örnek (doğru yapıldı):* Ö12 yaw slew tavanını kısıyor ama hız vektörü
+`hiz_yonu`ndan hesaplanıp bu sınırdan GEÇMİYOR. Test B67 — 32 girdi
+kombinasyonunda `komut()` çıktısı bit bit aynı. Uçuş yolu DEĞİŞEMEZ.
+
+**Kabul edilebilir gerileme yoktur diye bir kural yok** — ama gerileme
+VARSA ölçülüp raporlanır ve kararı kullanıcı verir; sessizce geçilmez.
+
+## 5.11 · "SALINIM" SANDIĞIN ŞEY FİZİK OLABİLİR
 
 Bir sapmayı kontrol kusuru saymadan önce **aracın geometrik sınırıyla**
 kıyasla. Dönüş yarıçapı R = V²/(g·tan θ_max); bir U-dönüşü 2R yanal
