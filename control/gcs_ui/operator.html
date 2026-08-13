@@ -1308,6 +1308,103 @@ function gecerliSayi(v, alt, ust){
   return n;
 }
 
+/* ══ BATARYA ŞİDDET DEĞERLENDİRMESİ — TEK DOĞRULUK KAYNAĞI ══════════════
+   NEDEN VAR (SITL bulgusu, 2026-08-13): eşikler altı ayrı yere
+   "v < 20.5 / v < 21.8" diye gömülüydü ve şiddet şöyle hesaplanıyordu:
+       kritik ⟸ (yüzde ≤ 15) VEYA (voltaj < 20.5 V)
+   Gerçek SITL aracı 12.6 V (3S, TAM DOLU) ve %100 bildirdi. Yüzde kuralı
+   "sorun yok" derken voltaj kuralı VEYA üzerinden onu EZDİ ve ekranda
+   kesintisiz "BATARYA KRİTİK — %100" alarmı çıktı.
+
+   20.5/21.8 V eşikleri simülasyonun 6S paketinden (25.2 V) miras kalmıştı;
+   hücre başına 3.42/3.63 V olarak makul ama HANGİ hücre sayısına ait
+   oldukları hiçbir yerde yazmıyordu. 3S'te voltaj hep 20.5'in altındadır
+   (sürekli sahte alarm), 12S'te hiç altına inmez (gerçek kritik hiç
+   bildirilmez). Evrensel voltaj eşiği KALDIRILDI.
+
+   YENİ KURAL SIRASI:
+     1) batt_pct varsa → şiddeti YALNIZ yüzde belirler. Uçuş kontrolcüsü
+        yüzdeyi kendi yapılandırılmış kapasitesiyle hesaplar ve paket
+        boyutundan bağımsızdır. Voltaj yalnız BİLGİ olarak gösterilir,
+        hücre tahmini şiddeti ASLA override etmez.
+     2) batt_pct yok, voltaj varsa → hücre sayısı gözlenen en yüksek
+        voltajdan TÜRETİLİR (1-14S sınırı). Bu bir ÖLÇÜM DEĞİL TAHMİNDİR
+        ve her gösterildiği yerde "TAHMİN" diye işaretlenir. Kısmen boşalmış
+        bir paketle açılışta yanlış çıkabilir — etiketin sebebi budur.
+     3) İkisi de yoksa → VERİ YOK, alarm ÜRETİLMEZ.
+
+   ⚠ UZUN VADELİ DOĞRU ÇÖZÜM: MAVLink BATTERY_STATUS (msg 147) mesajının
+   voltages[10] dizisi hücre başına voltajı taşır — hücre sayısı tahmin
+   edilmez, ÖLÇÜLÜR. Bu tur kapsamında UYGULANMADI (sunucu değişikliği
+   gerektirir ve SITL'in bu diziyi gerçekten hücre-başı doldurup
+   doldurmadığı önce doğrulanmalıdır).
+
+   Simülasyonun kendi 6S paketi (D.batarya_v) bu yoldan AYRIDIR ve
+   değişmemiştir — çevrimdışı davranış korunur. */
+const HUCRE_DOLU_V = 4.2, HUCRE_UYARI_V = 3.63, HUCRE_KRITIK_V = 3.42;
+const BATT_HUCRE = { n:null, vmax:0 };
+
+/* ⚠ ceil, round DEĞİL — SITL testinde bulundu (2026-08-13).
+   round() ile 10.0 V "2S" çıkıyordu → hücre başı 5.00 V, LiPo için fiziksel
+   olarak İMKÂNSIZ. Sonuç: eşik 6.8 V'a düşüyor ve gerçekten düşük olan bir
+   3S paket (10.0 V = 3.33 V/hücre) "sorun yok" gösteriliyordu — güvenlik
+   açısından YANLIŞ NEGATİF.
+   ceil = o voltajı üretebilecek EN AZ hücre sayısı. Hücre sayısını asla
+   OLDUĞUNDAN AZ tahmin etmez; hata yaparsa fazla tahmin eder ve eşik yükselir
+   (fazladan uyarı = güvenli yön). Ölçülen 9 tipik paket voltajında da doğru. */
+function bataryaHucreTahmini(v){
+  if (v === null || v === undefined) return BATT_HUCRE.n;
+  if (v > BATT_HUCRE.vmax){
+    BATT_HUCRE.vmax = v;
+    const n = Math.ceil(v / HUCRE_DOLU_V);
+    BATT_HUCRE.n = (n >= 1 && n <= 14) ? n : null;   /* 1-14S dışı → türetme yok */
+  }
+  return BATT_HUCRE.n;
+}
+
+function bataryaDurumu(){
+  const p = D.batt_pct, v = D.batt_v;
+
+  /* 1 · YÜZDE VAR → şiddet yalnız yüzdeden. */
+  if (p !== null && p !== undefined){
+    bataryaHucreTahmini(v);          /* tahmini güncel tut ama şiddete KARIŞTIRMA */
+    const d = p <= 15 ? "kritik" : p <= 30 ? "uyari" : "ok";
+    return {
+      veriVar:true, tahmin:false, hucre:BATT_HUCRE.n, d:d,
+      tam: p + " %" + (v !== null && v !== undefined ? " · " + v.toFixed(1) + " V" : ""),
+      kisa: p + " %",
+      /* d === "ok" iken alarm YOKTUR — aksi halde %100'de bile uyarı üretilir. */
+      alarm: d === "ok" ? null
+           : "BATARYA " + (d === "kritik" ? "KRİTİK" : "DÜŞÜK") + " — %" + p,
+      esik: "eşik %15 kritik / %30 uyarı · SYS_STATUS yüzdesi"
+    };
+  }
+
+  /* 2 · YÜZDE YOK, VOLTAJ VAR → hücre TAHMİNİ (ölçüm değil). */
+  if (v !== null && v !== undefined){
+    const n = bataryaHucreTahmini(v);
+    if (n === null) return {
+      veriVar:true, tahmin:true, hucre:null, d:"",
+      tam: v.toFixed(1) + " V", kisa: v.toFixed(1) + " V", alarm:null,
+      esik: "hücre sayısı türetilemedi — şiddet değerlendirilmiyor"
+    };
+    const kr = n * HUCRE_KRITIK_V, uy = n * HUCRE_UYARI_V;
+    const d = v < kr ? "kritik" : v < uy ? "uyari" : "ok";
+    return {
+      veriVar:true, tahmin:true, hucre:n, d:d,
+      tam: v.toFixed(1) + " V", kisa: v.toFixed(1) + " V",
+      alarm: d === "ok" ? null
+           : "BATARYA " + (d === "kritik" ? "KRİTİK" : "DÜŞÜK") + " — "
+             + v.toFixed(1) + " V (TAHMİNİ " + n + "S eşiğine göre)",
+      esik: "TAHMİN " + n + "S · eşik " + kr.toFixed(1) + " / " + uy.toFixed(1) + " V"
+    };
+  }
+
+  /* 3 · HİÇ VERİ YOK → alarm üretilmez. */
+  return { veriVar:false, tahmin:false, hucre:null, d:"",
+           tam:"VERİ YOK", kisa:"VERİ YOK", alarm:null, esik:"" };
+}
+
 /* ── TAZELİK ─────────────────────────────────────────────────────────────
    "Veri geldi" ile "veri GÜNCEL" aynı şey değil. 30 sn önce gelmiş bir
    batarya değeri hâlâ CANLI gibi gösterilmemeli. Her kritik alan kendi
@@ -2081,10 +2178,19 @@ function altSistemleriDegerlendir(){
   else
     sistemYaz("gps", D.gps_sabit ? "ok" : "kritik", D.gps_sabit ? "SİMÜLE" : "ÇÖZÜM YOK");
 
-  /* İtki, batarya voltajından türetiliyor — batarya sunucudan gelmiyor. */
-  sistemYaz("itki", D.batarya_v < 20.5 ? "kritik" : (D.batarya_v < 21.8 ? "uyari" : "ok"),
-            canli ? "VERİ YOK"
-                  : (D.batarya_v < 20.5 ? "KRİTİK" : (D.batarya_v < 21.8 ? "DÜŞÜK" : "NOMİNAL")));
+  /* İtki, batarya durumundan türetilir. Canlıda GERÇEK batarya kullanılır;
+     eskiden şiddet SİM voltajından hesaplanıp metin "VERİ YOK" yazılıyordu
+     (tutarsız). Çevrimdışında sim paketinin kendi eşikleri geçerlidir. */
+  if (canli){
+    const bi = bataryaDurumu();
+    sistemYaz("itki", bi.veriVar ? (bi.d || "ok") : "uyari",
+              bi.veriVar ? (bi.d === "kritik" ? "KRİTİK" : bi.d === "uyari" ? "DÜŞÜK" : "NOMİNAL")
+                           + (bi.tahmin ? " (TAHMİN)" : "")
+                         : "VERİ YOK");
+  } else {
+    sistemYaz("itki", D.batarya_v < 20.5 ? "kritik" : (D.batarya_v < 21.8 ? "uyari" : "ok"),
+              D.batarya_v < 20.5 ? "KRİTİK" : (D.batarya_v < 21.8 ? "DÜŞÜK" : "NOMİNAL"));
+  }
 
   const mavYas = (simdi() - (TAZE["hiz"] || 0)) / 1000;
   sistemYaz("mavlink", mavYas > 3 ? "kritik" : (mavYas > 1 ? "uyari" : "ok"),
@@ -2150,13 +2256,18 @@ function ustSeritYaz(){
   /* BATARYA — tek doğruluk kaynağı D.batt_*. Gerçek varsa gerçek, yoksa
      simülasyon AÇIKÇA "SİM" öneki ve rozetle. İkisi karışmaz. */
   const bRozet = $("#miniBataryaKaynak");
-  if (D.batt_pct !== null || D.batt_v !== null){
-    const p = D.batt_pct, v = D.batt_v;
-    $("#vBatarya").textContent = (p !== null ? p + " % · " : "") + (v !== null ? v.toFixed(1) + " V" : "");
-    $("#miniBatarya").dataset.durum =
-      (p !== null && p <= 15) || (v !== null && v < 20.5) ? "kritik"
-      : (p !== null && p <= 30) || (v !== null && v < 21.8) ? "uyari" : "";
-    if (bRozet && bRozet.textContent !== "GERÇEK"){ bRozet.textContent = "GERÇEK"; bRozet.dataset.k = "gercek"; }
+  const bd = bataryaDurumu();
+  if (bd.veriVar){
+    $("#vBatarya").textContent = bd.tam;
+    $("#miniBatarya").dataset.durum = bd.d === "ok" ? "" : bd.d;
+    /* Rozet: yüzde gerçek ölçümdür; yalnız voltajdan şiddet çıkarıldıysa
+       kullanıcı bunun TAHMİN olduğunu rozetten de görmeli. */
+    const rm = bd.tahmin ? "TAHMİN" : "GERÇEK";
+    if (bRozet && bRozet.textContent !== rm){
+      bRozet.textContent = rm;
+      bRozet.dataset.k = bd.tahmin ? "simule" : "gercek";
+    }
+    if (bRozet) bRozet.title = bd.esik;
   } else if (CANLI && CANLI_AKTIF){
     $("#vBatarya").textContent = "VERİ YOK";
     $("#miniBatarya").dataset.durum = "";
@@ -4628,14 +4739,11 @@ function alarmlariDegerlendir(){
     else alarmKapatId("elrslq");
   } else alarmKapatId("elrslq");
 
-  /* BATARYA — artık GERÇEK (SYS_STATUS). Aynı D.batt_* alanlarını okur;
-     üst şerit, telemetri paneli ve bu alarm asla farklı sayı gösteremez. */
-  if (D.batt_pct !== null || D.batt_v !== null){
-    const p = D.batt_pct, v = D.batt_v;
-    if ((p !== null && p <= 15) || (v !== null && v < 20.5))
-      alarmAc("bat", "kritik", "BATARYA KRİTİK — " + (p !== null ? "%" + p : v.toFixed(1) + " V"));
-    else if ((p !== null && p <= 30) || (v !== null && v < 21.8))
-      alarmAc("bat", "uyari", "BATARYA DÜŞÜK — " + (p !== null ? "%" + p : v.toFixed(1) + " V"));
+  /* BATARYA — şiddet TEK kaynaktan: bataryaDurumu(). Eski "yüzde VEYA
+     voltaj" ölçütü kaldırıldı; %100'de sahte kritik alarm üretiyordu. */
+  const bd = bataryaDurumu();
+  if (bd.veriVar){
+    if (bd.alarm) alarmAc("bat", bd.d === "kritik" ? "kritik" : "uyari", bd.alarm);
     else alarmKapatId("bat");
   } else if (!CANLI && D.batarya_sn < 180){
     alarmAc("bat", "uyari", "SİMÜLE BATARYA KRİTİK — " + ss(D.batarya_sn) + " kaldı");
@@ -4700,12 +4808,10 @@ function saglikDegerlendir(){
               + (D.gps_sat !== null ? " · " + D.gps_sat : ""));
   else saglikYaz("gps", D.konum_gecerli ? "ok" : "uyari", D.konum_gecerli ? "KONUM VAR" : "BEKLİYOR");
 
-  /* BATARYA — gerçek veri varsa sağlık hücresi de onu gösterir. */
-  if (D.batt_pct !== null || D.batt_v !== null){
-    const p = D.batt_pct, v = D.batt_v;
-    const d = (p !== null && p <= 15) || (v !== null && v < 20.5) ? "kritik"
-            : (p !== null && p <= 30) || (v !== null && v < 21.8) ? "uyari" : "ok";
-    saglikYaz("batarya", d, p !== null ? p + " %" : v.toFixed(1) + " V");
+  /* BATARYA — şiddet bataryaDurumu()'ndan; tahminse hücrede de belli olur. */
+  const bs = bataryaDurumu();
+  if (bs.veriVar){
+    saglikYaz("batarya", bs.d || "ok", bs.kisa + (bs.tahmin ? " ~" + (bs.hucre ? bs.hucre + "S" : "?") : ""));
   } else if (CANLI && CANLI_AKTIF) saglikYaz("batarya", "uyari", "VERİ YOK");
   else saglikYaz("batarya", "uyari", "SİMÜLE");
 
@@ -4784,19 +4890,23 @@ function telemetriV2Yaz(){
   } else {
     battGecmisEkle(D.batt_pct);
     const pct = D.batt_pct;
-    const bas = (pct !== null ? pct + " %" : "") +
-                (D.batt_v !== null ? (pct !== null ? " · " : "") + D.batt_v.toFixed(1) + " V" : "");
-    yaz2("#tBatt", bas || "VERİ YOK");
+    const bd = bataryaDurumu();
+    yaz2("#tBatt", bd.tam);
+
+    /* Alt satır kaynağı AÇIKÇA söyler: ölçülen yüzde mi, yoksa hücre
+       sayısı TAHMİN edilerek voltajdan mı çıkarıldı. */
     const yan = [];
     if (D.batt_a !== null) yan.push(D.batt_a.toFixed(1) + " A");
     if (pct === null) yan.push("kapasite tanımsız — yüzde yok");
+    yan.push(bd.esik);
     yan.push(battTaze === TAZELIK.BAYAT ? "VERİ GÜNCEL DEĞİL" : "SYS_STATUS");
-    yaz2("#tBattYan", yan.join(" · "));
+    yaz2("#tBattYan", yan.filter(Boolean).join(" · "));
 
-    const d = pct !== null ? (pct <= 15 ? "kritik" : pct <= 30 ? "uyari" : "")
-                           : (D.batt_v !== null && D.batt_v < 20.5 ? "kritik" : "");
+    const d = bd.d === "ok" ? "" : bd.d;
     nitelik(bSat, "d", d); nitelik(bSat, "taze", battTaze === TAZELIK.TAZE ? "" : battTaze);
     nitelik(bOlcek, "d", d || "");
+    /* Ölçek YALNIZ gerçek yüzdeyle dolar. Voltajdan yüzde uydurulmaz —
+       ölçek boş kalır ve durum yan satırdan okunur. */
     bOlcek.firstElementChild.style.width = (pct !== null ? kis(pct, 0, 100) : 0) + "%";
 
     const eg = battEgilim();
