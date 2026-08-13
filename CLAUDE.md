@@ -314,6 +314,22 @@ hedefi hiç yakalayamaz. Bu yüzden `duz`+kaçamakta kazanması YETMEZ;
 2. `circle` — sürekli manevra; hız/dönüş kısıtları burada kalıcı olur
 3. `duz` + `yok` kaçamağı — TABAN; sakin takipte hiçbir şey bozulmamalı
 
+
+**⛔ ETKİ ALANI TESTİ ZORUNLU** (kullanıcı kuralı 2026-08-13): "bir özellik
+eklerken veya bir sorunu çözerken BAŞKA BOZULMA İHTİMALİ OLAN bir şey varsa
+onu da uygun bir senaryoda TEST EDELİM."
+
+Kodu yazmadan önce şu tablo doldurulur ve rapora KONULUR:
+
+| etkilenebilecek davranış | neden etkilenebilir | hangi senaryoda sınanır |
+|---|---|---|
+| ... | ... | ... |
+
+Tabloda yazan HER satır için koşu yapılır. Koşulmayan satır varsa rapor
+"eksik listesi"dir, sonuç değildir. Ve şu cümle açıkça cevaplanır:
+**"hedeflenen yeri iyileştirdi ama başka bir yeri bozdu mu?"** — bozduysa
+gizlenmez, ölçüsüyle raporlanır ve kararı kullanıcı verir.
+
 **EN İYİSİ: YAPISAL GARANTİ.** Regresyon testinden daha güçlü olan,
 değişikliğin diğer kanalı MATEMATİKSEL OLARAK etkileyememesidir. Böyle bir
 tasarım bulunursa birim testiyle KANITLA.

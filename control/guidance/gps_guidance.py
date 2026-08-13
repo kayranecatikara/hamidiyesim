@@ -307,6 +307,30 @@ class Cfg:
     YAW_DEADBAND = math.radians(3.0)
     YAW_RATE_MAX = math.radians(120.0)
 
+    # ══ Ö-D2 · BURUN BORCU SINIRI (GPS FAZI) ══════════════════════════
+    # NEDEN (kullanıcının uçuş kaydı ucus_20260813_175002, ÖLÇÜLDÜ):
+    # Hedef geride kalınca `bearing` ~175° dönüyor. `cmd_yaw` 120°/s ile
+    # yürüyüp yeni yöne ARACIN ÇOK ÖNCESİNDE varıyor; araç komutun 175°
+    # GERİSİNDE kalıyor. ArduPilot bu borcu kapatmak için yaw'ı sertçe
+    # sürüyor → 300-530°/s → kurtarma bekçisi tetikleniyor ve araç 12-16 s
+    # donuyor. Ölçüm: uçuşun %24.6'sı (2261 karenin 557'si) KURTARMA'da.
+    # Tetik anında araç TAMAMEN DÜZDÜ (roll 2°, pitch −3°) — takla değil,
+    # sadece kendisine emredilen dönüşü yapıyordu.
+    #
+    # NE YAPAR: slew'den SONRA komutun gövdeden ne kadar önde olabileceğini
+    # sınırlar:  cmd_yaw = iyaw + clamp(cmd_yaw − iyaw, ∓FOV_YAW_HATA)
+    # Borç birikemezse araç 300°/s'ye hiç çıkmaz, bekçi hiç tetiklenmez.
+    #
+    # Bu, görsel fazdaki Ö-D'nin BİREBİR aynısıdır — hastalık aynıydı,
+    # sınır yalnız bir fazda vardı.
+    #
+    # ⚠ YAPISAL GARANTİ: hız vektörü (vx, vy) konum hatasından hesaplanır
+    # (bkz. "6) YATAY HIZ") ve `cmd_yaw` ONDAN SONRA gelir; hıza HİÇ
+    # girmez. Uçuş yolu DEĞİŞEMEZ. Birim testi bunu bit bit sınar.
+    # ⚠ SAKİN TAKİPTE ÖLÜ: kuyruk takibinde burun zaten hedefte, borç
+    # birkaç derece → sınır bağlamaz.
+    GPS_FOV_YAW = _env_f("AVCI_GPS_FOV", 0.0)   # °; 0 = KAPALI, ~25 denenir
+
     # --- HEDEF TELEMETRİ FİLTRESİ ---
     POS_EMA = 0.4
     VEL_EMA = 0.3
@@ -666,6 +690,19 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 step = clamp(yaw_err, -cfg.YAW_RATE_MAX * dt, cfg.YAW_RATE_MAX * dt)
                 cmd_yaw = normalize_angle(cmd_yaw + step)
 
+            # ── Ö-D2 BURUN BORCU SINIRI (bkz. Cfg.GPS_FOV_YAW) ──
+            # Komut gövdeden şu kadar dereceden fazla ÖNDE olamaz. Borç
+            # birikemezse araç 300°/s'ye çıkmaz ve bekçi tetiklenmez.
+            # ⚠ YALNIZ KISAR, yalnız BURNU etkiler; vx/vy/vz yukarıda
+            # hesaplandı ve bu satırdan GEÇMİYOR.
+            fov_kis = 0.0
+            if cfg.GPS_FOV_YAW > 0.0:
+                _borc = normalize_angle(cmd_yaw - iyaw)
+                _lim = math.radians(cfg.GPS_FOV_YAW)
+                if abs(_borc) > _lim:
+                    fov_kis = math.degrees(abs(_borc) - _lim)
+                    cmd_yaw = normalize_angle(iyaw + clamp(_borc, -_lim, _lim))
+
             # ── 8) İVME SINIRI + GÖNDER ──
             vx, vy, vz = limit_acceleration(
                 vx, vy, vz, vx_prev, vy_prev, vz_prev, cfg.MAX_ACCEL, dt)
@@ -704,6 +741,7 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
                 "st_x": round(st_x, 2), "st_y": round(st_y, 2), "st_z": round(st_z, 2),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2), "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(cmd_yaw), 1),
+                "fov_kis": round(fov_kis, 1),
                 "kadraj_yaw_deg": round(math.degrees(kad["yaw_hata"]), 2),
                 "kadraj_elev_deg": round(math.degrees(kad["elev"]), 2),
                 "kadraj_pitch_hata_deg": round(math.degrees(kad["pitch_hata"]), 2),

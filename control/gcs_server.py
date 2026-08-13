@@ -746,11 +746,25 @@ def _hedef_cfg(alan):
         if modul == "kurtarma":
             from control.guidance import kurtarma as _k
             return _k.KurtCfg, ad
+        if modul == "gps":
+            from control.guidance import gps_guidance as _g
+            return _g.Cfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
 
 _OZELLIKLER = {
+    "od2_gps_fov": (
+        "gps:GPS_FOV_YAW", "deger", "Ö-D2 · GPS fazında burun borcu sınırı",
+        "ÖLÇÜLDÜ (kullanıcı uçuşu 175002): hedef geride kalınca bearing ~175° "
+        "dönüyor; cmd_yaw 120°/s ile yürüyüp aracın çok öncesinde varıyor ve "
+        "araç komutun 175° GERİSİNDE kalıyor. ArduPilot bu borcu kapatmak "
+        "için yaw'ı sertçe sürüyor (300-530°/s) → kurtarma bekçisi "
+        "tetikleniyor ve araç 12-16 s DONUYOR. Uçuşun %24.6'sı KURTARMA'da "
+        "geçti; tetik anında araç TAMAMEN DÜZDÜ (roll 2°). Bu sınır borcun "
+        "birikmesini engeller. ⚠ Sakin takipte ÖLÜ. ⚠ YALNIZ BURUN — hız "
+        "vektörü konum hatasından hesaplanır ve bu satırdan GEÇMEZ (G17e).",
+        "AVCI_GPS_FOV", (0.0, 25.0)),
     "kurt_v2": (
         "kurtarma:KURT_V2", "bool", "K-V2 · Kurtarma bekçisi kilitlenme düzeltmesi",
         "ÖLÇÜLDÜ (kullanıcı uçuşu 154505): bekçi 70 s'de 4 kez tetiklendi ve "

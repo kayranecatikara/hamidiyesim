@@ -16,6 +16,7 @@ Kapsam:
   G15    arka kısaltma: dönüşte arka bileşen erir, düzde tam kalır
 """
 
+import inspect
 import math
 import threading
 import time
@@ -473,6 +474,75 @@ def main():
             f"→ sıçrama {sicrama:.0f}° (eski kod ~150° üretirdi)")
 
     print("=" * 60)
+    # ══════════════════════════════════════════════════════════════════
+    # G17 · Ö-D2 — BURUN BORCU SINIRI (GPS FAZI)
+    # ══════════════════════════════════════════════════════════════════
+    # Kısıt döngüde, slew'den SONRA uygulanıyor; yasayı burada birebir kurar.
+    def _od2(cfg, cmd_yaw_deg, iris_yaw_deg):
+        borc = math.degrees(gg.normalize_angle(
+            math.radians(cmd_yaw_deg - iris_yaw_deg)))
+        if cfg.GPS_FOV_YAW > 0.0 and abs(borc) > cfg.GPS_FOV_YAW:
+            borc = max(-cfg.GPS_FOV_YAW, min(cfg.GPS_FOV_YAW, borc))
+        return math.degrees(gg.normalize_angle(
+            math.radians(iris_yaw_deg + borc)))
+
+    class _D2(gg.Cfg):
+        GPS_FOV_YAW = 25.0
+
+    # G17a — kullanıcının OLAY 1'i: 175° borç 25°'ye iner
+    _o1 = _od2(_D2, -173.0, 2.0)
+    kontrol("G17a Ö-D2: kullanıcının OLAY 1'i (175° borç) kısılır",
+            abs(_o1 - (-23.0)) < 1e-6,
+            f"yaw_cmd −173° / iris_yaw +2° (borç −175°) → komut {_o1:.0f}° "
+            f"(borç −25°). Araç 300°/s'ye çıkmaz, bekçi tetiklenmez.")
+
+    # G17b — SAKİN TAKİPTE ÖLÜ (kuyruk takibinde borç birkaç derece)
+    _sakin = [(_od2(_D2, a, b), a) for a, b in
+              ((3.0, 0.0), (-8.0, 0.0), (100.0, 80.0), (-175.0, 170.0))]
+    kontrol("G17b Ö-D2 sakin takipte ÖLÜ (borç < 25° → komut BİT BİT aynı)",
+            all(abs(gg.normalize_angle(math.radians(y - a))) < 1e-9
+                for y, a in _sakin),
+            "borç 3°/8°/20°/15° → dördünde de komut değişmedi; "
+            "kuyruk takibi ve istasyon tutma ETKİLENMEZ")
+
+    # G17c — ±180° sarması doğru
+    _w = _od2(_D2, -175.0, 170.0)
+    kontrol("G17c Ö-D2 ±180° sarmasında borç doğru",
+            abs(gg.normalize_angle(math.radians(_w - (-175.0)))) < 1e-9,
+            f"cmd −175° / iris 170° gerçek borç 15° (345° DEĞİL) → değişmedi")
+
+    # G17d — YALNIZ KISAR
+    _b = []
+    for a in range(-180, 181, 15):
+        for c in range(-180, 181, 45):
+            o = abs(math.degrees(gg.normalize_angle(math.radians(a - c))))
+            y = abs(math.degrees(gg.normalize_angle(
+                math.radians(_od2(_D2, float(a), float(c)) - c))))
+            _b.append(y <= o + 1e-9)
+    kontrol("G17d Ö-D2 YALNIZ KISAR, borcu asla büyütmez",
+            all(_b), f"{len(_b)} (cmd, iris) kombinasyonunda |borç| hiç artmadı")
+
+    # G17e — YAPISAL GARANTİ: hız vektörü cmd_yaw'dan ÖNCE hesaplanır
+    # Kaynak sırası bit bit denetlenir: vx/vy satırı, Ö-D2 kısıtından ÖNCE
+    # olmalı ve limit_acceleration çağrısı cmd_yaw kullanmamalı.
+    _src = inspect.getsource(gg.run_gps_guidance).splitlines()
+    _i_vx = next(i for i, L in enumerate(_src) if "vx = ff_x" in L)
+    _i_kis = next(i for i, L in enumerate(_src) if "Ö-D2 BURUN BORCU" in L)
+    _i_acc = next(i for i, L in enumerate(_src) if "limit_acceleration(" in L)
+    _acc_blok = " ".join(_src[_i_acc:_i_acc + 3])
+    kontrol("G17e YAPISAL GARANTİ: hız cmd_yaw'dan ÖNCE ve ondan BAĞIMSIZ",
+            _i_vx < _i_kis and "cmd_yaw" not in _acc_blok,
+            f"vx/vy satır {_i_vx} · Ö-D2 satır {_i_kis} (sonra) · "
+            f"limit_acceleration girdisinde cmd_yaw YOK → "
+            f"UÇUŞ YOLU DEĞİŞEMEZ, yalnız BURUN")
+
+    # G17f — kapatılabilir (varsayılan KAPALI)
+    kontrol("G17f Ö-D2 kapatılabilir (varsayılan KAPALI)",
+            abs(gg.Cfg.GPS_FOV_YAW) < 1e-9
+            and abs(_od2(gg.Cfg, -173.0, 2.0) - (-173.0)) < 1e-6,
+            f"GPS_FOV_YAW={gg.Cfg.GPS_FOV_YAW} → 175° borç aynen geçer "
+            f"(eski davranış bit bit korunur)")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
