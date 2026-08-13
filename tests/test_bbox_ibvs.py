@@ -799,6 +799,100 @@ def main():
             f"terminal vz: {_t_kapali[2]:.3f} = {_t_acik[2]:.3f} — "
             f"terminal sönümlemesi K_VZ_D ayrı kalıyor")
 
+    # ══ B59-B66: KAYRA'NIN DÖRT ÖZELLİĞİ (2026-08-13 port) ══
+    # Hepsi VARSAYILAN KAPALI. En kritik bekçi B59: dördü de kapalıyken
+    # komut çıktısı port ÖNCESİ değerlerle BİREBİR aynı olmalı — yoksa
+    # ölçülmemiş bir davranış sessizce uçmaya başlar.
+    class _Kapali(C):
+        YANAL_K = 0.0; SONUM_T = 0.0; DONUS_A = 0.0; DIKEY_ROLL = False
+
+    _argK = (CX + 60, C.CY_NISAN - 30, 14, 14, 0.0, 18.0, 0.05)
+    _k = ib.komut(*_argK, _Kapali, False, (0.5, 0.0), 0.0, 0.0, 8.0, 0.35, 0.8)
+    # Elle beklenen: eps_hiz == eps_yaw, sonum == 0, eps_elev == ham
+    kontrol("B59 dördü KAPALIYKEN yasa eski hâline birebir indirgenir",
+            abs(_k[5]["eps_hiz"] - _k[5]["eps_yaw"]) < 1e-12
+            and abs(_k[5]["sonum"]) < 1e-12
+            and abs(_k[5]["eps_elev"] - _k[5]["eps_elev_ham"]) < 1e-12
+            and _k[5]["donus_tavan"] is None,
+            "eps_hiz=eps_yaw, sonum=0, eps_elev=ham, donus_tavan=None")
+
+    # ── Ö8: yakında AÇI büyük ama KAÇIRMA küçükse komut kısılır ──
+    class _O8(_Kapali):
+        YANAL_K = 1.0
+    # ⚠ SEYİR fazı olmalı: boyut < TERMINAL_BOYUT(25). Ayrıca V_MIN=0 olduğu
+    # için çok yakında v_los sıfıra iniyor ve Ö8'in v_los>0.1 koruması devreye
+    # giriyor — o rejim zaten TERMİNAL'dir. boyut 24 px → R ≈ 6.7 m.
+    _a8 = (CX + 150, C.CY_NISAN, 24, 24, 0.0, 18.0, 0.05)
+    _o8k = ib.komut(*_a8, _Kapali, False, (0.0, 0.0), 0.0, 0.0, 5.0, 0.0)
+    _o8a = ib.komut(*_a8, _O8,     False, (0.0, 0.0), 0.0, 0.0, 5.0, 0.0)
+    kontrol("B60 Ö8 YAKINDA komutu kısar (6.7 m'de 40° = yalnız 4.3 m ıska)",
+            abs(_o8a[5]["eps_hiz"]) < abs(_o8k[5]["eps_hiz"]) - 1e-6,
+            f"R≈{160/24:.1f} m: eps_yaw {math.degrees(_o8k[5]['eps_yaw']):.1f}° → "
+            f"eps_hiz {math.degrees(_o8a[5]['eps_hiz']):.1f}°")
+
+    # UZAKTA aynı açı GERÇEK bir kaçırmadır — kısılmamalı
+    _a8u = (CX + 150, C.CY_NISAN, 8, 8, 0.0, 18.0, 0.05)   # R = 20 m
+    _o8u = ib.komut(*_a8u, _O8, False, (0.0, 0.0), 0.0, 0.0, 2.0, 0.0)
+    kontrol("B61 Ö8 UZAKTA kısmaz (20 m'de aynı açı 13 m ıska demek)",
+            abs(_o8u[5]["eps_hiz"] - _o8u[5]["eps_yaw"]) < 1e-9,
+            f"R={160/8:.0f} m > YANAL_MENZIL={C.YANAL_MENZIL:.0f} → ağırlık 0")
+
+    kontrol("B62 Ö8 burun yönünü (yaw_cmd) DEĞİŞTİRMEZ — yalnız hız vektörü",
+            abs(_o8a[3] - _o8k[3]) < 1e-12,
+            f"yaw_cmd {_o8k[3]:.6f} = {_o8a[3]:.6f}; ayrışan şey hiz_yonu")
+
+    # ── Ö9: araç dönerken komut geri çekilir ──
+    class _O9(_Kapali):
+        SONUM_T = 0.3
+    _a9 = (CX + 60, C.CY_NISAN, 14, 14, 0.0, 18.0, 0.05)
+    _o9k = ib.komut(*_a9, _Kapali, False, (0.0, 0.0), 0.0, 0.0, None, 0.0, 1.0)
+    _o9a = ib.komut(*_a9, _O9,     False, (0.0, 0.0), 0.0, 0.0, None, 0.0, 1.0)
+    kontrol("B63 Ö9 araç dönerken yaw komutunu GERİ ÇEKER",
+            _o9a[3] < _o9k[3] - 1e-6
+            and abs(_o9a[5]["sonum"] - 0.3) < 1e-9,
+            f"yaw_hızı=1.0 rad/s → sönüm {math.degrees(_o9a[5]['sonum']):.1f}°, "
+            f"yaw_cmd {_o9k[3]:.3f} → {_o9a[3]:.3f}")
+
+    _o9d = ib.komut(*_a9, _O9, False, (0.0, 0.0), 0.0, 0.0, None, 0.0, 0.0)
+    kontrol("B64 Ö9 DÜZ uçuşta etkisiz (araç dönmüyorsa terim sıfır)",
+            abs(_o9d[3] - _o9k[3]) < 1e-12,
+            "yaw_hızı=0 → sönüm 0, komut değişmez")
+
+    # ── Ö5-kapısız: λ̇ büyükse hız kısılır, kapı YOK ──
+    class _O5B(_Kapali):
+        DONUS_A = 9.0
+    # UZAK hedef (R=20 m) — bizim eski Ö5 buna kapı yüzünden DOKUNMAZDI
+    _a5 = (CX, C.CY_NISAN, 8, 8, 0.0, 18.0, 0.05)
+    # λ̇=0.5 → ham tavan 9.0/0.5 = 18.0 m/s (DONUS_V_MIN=10 tabanının üstünde,
+    # yani formülün kendisi sınanıyor, taban değil).
+    _o5k = ib.komut(*_a5, _Kapali, False, (0.5, 0.0), 0.0, 0.0, None, 0.0)
+    _o5a = ib.komut(*_a5, _O5B,    False, (0.5, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B65 Ö5-kapısız UZAKTA da kısar (eski sürüm kapı yüzünden kısmazdı)",
+            _o5a[5]["v_los"] < _o5k[5]["v_los"] - 1e-6
+            and abs(_o5a[5]["donus_tavan"] - 18.0) < 1e-9,
+            f"λ̇=0.5 → tavan {_o5a[5]['donus_tavan']:.1f} m/s (=DONUS_A/λ̇); "
+            f"v_los {_o5k[5]['v_los']:.1f} → {_o5a[5]['v_los']:.1f}, R=20 m "
+            f"(eski MANEVRA sürümü R≤12 kapısı yüzünden dokunmazdı)")
+
+    # ── T1b: yatıkken dikey okuma düzelir, düz uçuşta değişmez ──
+    class _T1B(_Kapali):
+        DIKEY_ROLL = True
+    _at = (CX + 120, C.CY_NISAN - 20, 14, 14, 0.0, 18.0, 0.05)
+    _t_duz = ib.komut(*_at, _T1B, False, (0.0, 0.0), 0.0, 0.0, None, 0.0)
+    kontrol("B66 T1b DÜZ uçuşta (roll=0) dikey okumayı DEĞİŞTİRMEZ",
+            abs(_t_duz[5]["eps_elev"] - _t_duz[5]["eps_elev_ham"]) < 1e-12,
+            "roll=0 → telafi farkı tam sıfır")
+
+    _t_yat = ib.komut(*_at, _T1B, False, (0.0, 0.0), 0.0, 0.0, None,
+                      math.radians(35.0))
+    _t_ham = ib.komut(*_at, _Kapali, False, (0.0, 0.0), 0.0, 0.0, None,
+                      math.radians(35.0))
+    kontrol("B67 T1b 35° yatışta dikey okumayı DÜZELTİR (kenardaki hedef)",
+            abs(_t_yat[5]["eps_elev"] - _t_ham[5]["eps_elev"]) > math.radians(3.0),
+            f"|dx|=120 px, roll=35° → ham "
+            f"{math.degrees(_t_ham[5]['eps_elev']):.1f}° vs telafili "
+            f"{math.degrees(_t_yat[5]['eps_elev']):.1f}°")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

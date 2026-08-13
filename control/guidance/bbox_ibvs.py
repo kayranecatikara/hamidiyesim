@@ -321,6 +321,92 @@ class Cfg:
     # belirleyecek. Terminal sönümlemesi (K_VZ_D) BUNDAN BAĞIMSIZ, dokunulmadı.
     K_VZ_D_SEYIR = _env_f("AVCI_IBVS_KVZD_SEYIR", 0.0)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # KAYRA'NIN DALINDAN ALINAN DÖRT ÖZELLİK (2026-08-13, `kayramin_super_gudumu`)
+    # Dosya komple alınamadı: Kayra'nın sürümü hâlâ wait_pose/kayit["pose"]
+    # köprü adlarını kullanıyor (bizde wait_kare/["det"]) ve bizim M3b
+    # (LEAD_MAX_SEYIR_DEG) + M4 (K_VZ_D_SEYIR) eklerini içermiyor. Bu yüzden
+    # dört özellik TEK TEK taşındı; hepsi VARSAYILAN KAPALI ve ölçülmemiştir.
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ══ Ö8 · YANAL KOMUT: AÇI DEĞİL, KAÇIRMA MESAFESİ ══
+    # KULLANICI GÖZLEMİ (Kayra'nın notu): "araç tam çarpacakken hedef hafif
+    # sağa manevra yaptı; bbox ekranın en sağına geldiği için araç sağa öyle
+    # bir manevra yapıyor ki sonra salınım oluyor."
+    #
+    # KÖK NEDEN: eps_yaw = atan((cx−CX)/FX) geometrik olarak DOĞRU ama AÇIDIR.
+    # 1.5 m'de 58° yalnızca 1.5·sin(58°) = 1.3 m yanal kaçırma demek; aynı 58°
+    # 30 m'de 25 metrelik kaçırmadır. Güdüm ikisine AYNI komutu veriyor.
+    # 18 m/s'lik vektörü 58° döndürmek 17.5 m/s'lik hız değişimi ister;
+    # MAX_ACCEL=12 ile 1.45 s sürer, geometri 0.08 s bırakır → komut doyar,
+    # araç savrulur, geri savrulur = SALINIM.
+    #
+    # ÇÖZÜM: nişan açısı yerine "kalan sürede kapatılması gereken YANAL
+    # MESAFE"den bir hız kur:  v_yanal_gerek = K · R·sin(eps) / t_go
+    # Bunun karşılığı olan açı asin(v_yanal/v_los). YALNIZ KISAR, büyütmez.
+    # Menzille ağırlıklandırılır: uzakta eski davranış, yakında tam etki.
+    #
+    # ⚠ BU BİZİM "KATMAN 2" TEŞHİSİMİZLE AYNI ŞEY: 165 koşuda avcı kutuyu
+    # 2.20° hatayla merkezleyip yine 12-14 m ıskalıyordu — merkezleme ≠
+    # kesişme. Kayra kök nedeni bağımsız olarak bulmuş.
+    # ⚠ YAPISAL: burun yönü (yaw_cmd) ile HIZ VEKTÖRÜ yönü (hiz_yonu) ayrışır.
+    YANAL_K = _env_f("AVCI_IBVS_YANAL", 0.0)      # 0 = kapalı, açık ~1.0
+    YANAL_RDOT_MIN = 1.5                          # m/s; t_go için kapanma tabanı
+    YANAL_TGO_MIN = 0.20                          # s; t_go tabanı (0'a bölme yok)
+    YANAL_MENZIL = _env_f("AVCI_IBVS_YANAL_M", 12.0)   # m; tam etki menzili
+
+    # ══ Ö9 · YATAY KANALA SÖNÜMLEME (D terimi) ══
+    # KULLANICI GÖZLEMİ (Kayra'nın notu): "hedefin ilk manevrasında araç o
+    # kadar sağa yönelmese, hafif yönelip hedefin arkasında kalsa."
+    # KÖK NEDEN — YAPISAL: yatay kanal SAF ORANSAL (yaw_cmd = iris_yaw +
+    # K_YAW·eps_yaw, K_YAW=1.0 TAM düzeltme). Türev terimi YOK; gecikmeli
+    # sistemde saf-P ZORUNLU olarak salınır. Ayar değil YAPI eksiği.
+    # ÇÖZÜM: eps_sonumlu = eps_yaw − SONUM_T · yaw_hızı (klasik PD).
+    #
+    # ⚠ BU, BİZİM M4'ÜMÜZÜN YATAY EKSENDEKİ İKİZİ. Biz aynı teşhisi DİKEY
+    # kanal için koyduk (K_VZ_D_SEYIR); Kayra yatay için. Aynı yapısal kusur,
+    # iki ayrı eksen — birbirinden bağımsız bulundu.
+    # ⚠ Girdi aracın KENDİ IMU'su (yaw türevi) — canlı hedef GPS'i yok, D0 temiz.
+    # ⚠ Düz uçuşta etkisiz: hedef düz giderken ω≈0 → terim 0.
+    SONUM_T = _env_f("AVCI_IBVS_SONUM", 0.0)      # s; 0 = kapalı, açık ~0.3
+    SONUM_MAX_DEG = 30.0                          # °; sönümleme tavanı
+
+    # ══ Ö5-KAPISIZ · DÖNÜŞ-FARKINDA HIZ TAVANI ══
+    # FİZİK: dönüş yarıçapı R = V²/a. Avcının a tavanı g·tan(45°) = 9.81 m/s²
+    # → 18 m/s'de R = 33 m. Hedef (15 m/s, 60° yatış) R = 13 m çiziyor.
+    # Avcı 2.5 kat geniş yay çizdiği için DIŞARI taşıyor. Yatışı artırmak
+    # denendi (Ö6) — kanal zaten doymuş. Geriye tek kaldıraç HIZI KISMAK.
+    #     v_tavan = DONUS_A / λ̇      (yalnız KISAR, asla artırmaz)
+    #
+    # ⚠ BİZİM Ö5'İMİZDEN FARKI — ÖNEMLİ: bizimki MENZİL KAPISI (R ≤ 12 m) ve
+    # EŞİK (v_yanal ≥ 8 m/s) içeriyordu, bu yüzden karelerin yalnız %2.4'ünde
+    # tetiklendi ve 158 koşuda ETKİSİZ çıktı. Bu sürüm KAPISIZ: λ̇ büyüdüğünde
+    # doğrudan uygular. Yani "Ö5 etkisiz" hükmümüz BU sürüm için GEÇERSİZ.
+    # Düz uçuşta λ̇≈0 → tavan sonsuz → etkisiz (düz davranış korunur).
+    DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)      # m/s²; 0 = kapalı, açık ~9.0
+    DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
+
+    # ══ T1b · DİKEY KANALDA ROLL TELAFİSİ ══
+    # T1a (yatay telafi) uçuşta doğrulanmıştı; dikey, tek-değişken kuralı
+    # gereği dokunulmadan bırakılmıştı. Kayra'nın ölçümü: araç 30° yatıktayken
+    # ham dikey okuma −22.1° derken telafili okuma +4.8° — İŞARET TERS,
+    # en büyük sapma 33.1°.
+    #
+    # ⚠ BİZİM 08-12'DEKİ "ELENDİ" HÜKMÜMÜZ YANLIŞTI, DÜZELTİLDİ: 54 290 kare
+    # üzerinde kirlenmeyi TÜM karelerin medyanı olarak ölçüp 0.0-2.1° bulmuş
+    # ve "katkı ~%10" demiştik. Kirlenme ≈ |dx|·sin(roll) olduğu için hedef
+    # kadrajın ORTASINDAYKEN (karelerin %84'ü) gerçekten ~0; ama:
+    #     |dx| 60-150 px + roll 30-90° → medyan 17.6°, p90 32.5°
+    #     |dx| 150+ px  + roll 30-90° → medyan 25.7°, maks 42.0°
+    # Kaçamak anı TAM OLARAK "hedef kenarda + sert yatış" hâlidir, yani
+    # kararı veren anlar kuyrukta. Kayra'nın 26.9°'si oradan geliyor.
+    #
+    # ⚠ TELAFİ FARK OLARAK uygulanır — hata TANIMI değişmez, yalnız okuma
+    # düzelir. YALNIZ ROLL izole edilir; pitch iki terimde de aynı bırakılır
+    # (nişan noktası CY_NISAN seyir pitch'iyle birlikte ayarlanmıştı; pitch'i
+    # de telafi etmek nişanı kaydırır = ayrı değişken).
+    DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 0.0) >= 0.5
+
     # ══ DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR (2026-08-09) ══
     # KULLANICI GÖZLEMİ (uçuş kaydı): "tam vuracağı sırada yukarı manevra
     # yapıp aracın üstünden geçiyoruz."
@@ -469,7 +555,8 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "manevra", "v_yanal", "hiz_I", "v_los", "kacis_ek", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "manevra", "v_yanal", "hiz_I", "v_los", "kacis_ek", "lead_az_deg", "eps_hiz_deg", "sonum_deg", "donus_tavan", "eps_elev_ham_deg",
+    "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -524,7 +611,7 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -564,7 +651,14 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         _tavan = (cfg.LEAD_MAX_DEG if terminal else cfg.LEAD_MAX_SEYIR_DEG)
         lead_az = clamp(lead_sure * los_hiz[0],
                         -math.radians(_tavan), math.radians(_tavan))
-    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw + lead_az)
+    # Ö9 · YATAY SÖNÜMLEME (bkz. Cfg.SONUM_T): aracın KENDİ dönüş hızına
+    # karşı koyan D terimi. SONUM_T=0 iken ifade eski hâline indirgenir.
+    sonum = 0.0
+    if cfg.SONUM_T > 0.0:
+        sonum = clamp(cfg.SONUM_T * yaw_hizi,
+                      -math.radians(cfg.SONUM_MAX_DEG),
+                      math.radians(cfg.SONUM_MAX_DEG))
+    yaw_cmd = normalize_angle(iris_yaw + cfg.K_YAW * eps_yaw - sonum + lead_az)
 
     # HIZ: kutu boyutu hatası üzerinden PI (terminalde TAM taahhüt)
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
@@ -597,11 +691,48 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             v_tavan = max(a_max / lam, cfg.MANEVRA_VMIN)
             v_los = min(v_los, v_tavan)
 
-    # SAF TAKİP: tüm hız LOS/burun yönünde
-    vx_ned = v_los * math.cos(yaw_cmd)
-    vy_ned = v_los * math.sin(yaw_cmd)
+    # Ö5-KAPISIZ · dönüş-farkında hız tavanı (bkz. Cfg.DONUS_A).
+    # Bizim MANEVRA sürümünden farkı: menzil/eşik kapısı YOK.
+    donus_tavan = None
+    if cfg.DONUS_A > 0.0:
+        _lam = abs(los_hiz[0])
+        if _lam > 1e-3:
+            donus_tavan = max(cfg.DONUS_V_MIN, cfg.DONUS_A / _lam)
+            if donus_tavan < v_los:
+                v_los = donus_tavan          # YALNIZ kısar
 
-    eps_elev = math.atan((cy - cfg.CY_NISAN) / geo.FY)   # cy büyük → hedef altta
+    # ── Ö8 · YANAL KOMUT: AÇI DEĞİL KAÇIRMA MESAFESİ (bkz. Cfg.YANAL_K) ──
+    # Burun yönü (yaw_cmd) hedefe bakmayı sürdürür; HIZ VEKTÖRÜ ayrı bir
+    # açıyla (eps_hiz) sürülür. YANAL_K=0 iken eps_hiz = eps_yaw, yani
+    # ifade tam olarak eski "saf takip" hâline indirgenir.
+    eps_hiz = eps_yaw
+    if cfg.YANAL_K > 0.0 and boyut > 1e-6 and v_los > 0.1:
+        _R = cfg.MENZIL_PX_M / boyut                  # m; kutu boyutundan menzil
+        _y = _R * math.sin(eps_yaw)                   # m; YANAL KAÇIRMA
+        _rdot = max(abs(kapanma) if kapanma is not None else 0.0,
+                    cfg.YANAL_RDOT_MIN)
+        _tgo = max(_R / _rdot, cfg.YANAL_TGO_MIN)     # s; kalan süre
+        _vy = cfg.YANAL_K * _y / _tgo                 # m/s; gereken yanal hız
+        _eps_eff = math.asin(clamp(_vy / v_los, -1.0, 1.0))
+        if abs(_eps_eff) < abs(eps_yaw):              # YALNIZ KISAR, büyütmez
+            _w = clamp((cfg.YANAL_MENZIL - _R) / (0.5 * cfg.YANAL_MENZIL),
+                       0.0, 1.0)                      # uzakta 0, yakında 1
+            eps_hiz = eps_yaw + _w * (_eps_eff - eps_yaw)
+
+    # SAF TAKİP: hız LOS yönünde — ama yönü eps_hiz belirler (Ö8)
+    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum + lead_az)
+    vx_ned = v_los * math.cos(hiz_yonu)
+    vy_ned = v_los * math.sin(hiz_yonu)
+
+    # T1b (bkz. Cfg.DIKEY_ROLL): ham piksel farkı KAMERA çerçevesindedir;
+    # araç yattığında bu SEVİYE çerçevesindeki yükseliş DEĞİLDİR.
+    # Telafi FARK olarak uygulanır — hata tanımı değişmez, okuma düzelir.
+    eps_elev_ham = math.atan((cy - cfg.CY_NISAN) / geo.FY)  # cy büyük → altta
+    eps_elev = eps_elev_ham
+    if cfg.DIKEY_ROLL:
+        _, _el_roll = los_seviye(cx, cy, iris_roll, iris_pitch, cfg)
+        _, _el_norm = los_seviye(cx, cy, 0.0, iris_pitch, cfg)
+        eps_elev = eps_elev_ham - (_el_roll - _el_norm)
     if terminal:
         # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
         # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
@@ -632,8 +763,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         t_ = abs(math.tan(nisan_elev))
         if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:
             v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
-            vx_ned = v_los * math.cos(yaw_cmd)
-            vy_ned = v_los * math.sin(yaw_cmd)
+            vx_ned = v_los * math.cos(hiz_yonu)
+            vy_ned = v_los * math.sin(hiz_yonu)
         vz_nisan = -v_dikey * math.tan(nisan_elev)
         # TÜREV SÖNÜMLEMESİ: aracın kendi dikey hızı nişanın ötesine geçtiyse
         # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
@@ -650,6 +781,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
                    -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
+            "eps_elev_ham": eps_elev_ham, "eps_hiz": eps_hiz,
+            "sonum": sonum, "donus_tavan": donus_tavan,
             "hata": hata, "v_los": v_los, "terminal": terminal,
             "kacis_ek": kacis_ek,
             "manevra": manevra, "v_yanal": v_yanal,
@@ -725,6 +858,8 @@ def run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, cfg=Cfg,
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
     boyut_onceki = None       # kapanma hızı için (bkz. Cfg.KAPANMA)
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
+    iyaw_onceki = None        # Ö9 sönümlemesi için (bkz. Cfg.SONUM_T)
+    yaw_hizi = 0.0            # rad/s; aracın KENDİ dönüş hızı, EMA'lı
 
     def _vuruldu():
         if get_temas is None:
@@ -769,6 +904,12 @@ def run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, cfg=Cfg,
 
             iris = get_iris()
             iyaw = iris.get("yaw", 0.0)
+            # Ö9 için aracın KENDİ dönüş hızı (rad/s) — kendi IMU'su, D0 temiz.
+            # EMA: yaw gürültüsü sönümleme terimini titretmesin.
+            if iyaw_onceki is not None and 1e-3 < dt < 0.5:
+                _yr = normalize_angle(iyaw - iyaw_onceki) / dt
+                yaw_hizi = 0.3 * _yr + 0.7 * yaw_hizi
+            iyaw_onceki = iyaw
 
             # ── KURTARMA BEKÇİSİ (bkz. kurtarma.py) — takla/kaçak dönmede
             # güdüm komutu kesilir. Terminal kör hücumdan da ÖNCE gelir:
@@ -886,7 +1027,8 @@ def run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, cfg=Cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
-                                                       kapanma, iroll)
+                                                       kapanma, iroll,
+                                                       yaw_hizi)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -925,6 +1067,11 @@ def run_bbox_ibvs(conn, get_iris, wait_kare, stop_event, cfg=Cfg,
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
+                "eps_hiz_deg": round(math.degrees(tani["eps_hiz"]), 2),
+                "sonum_deg": round(math.degrees(tani["sonum"]), 2),
+                "donus_tavan": ("" if tani["donus_tavan"] is None
+                                else round(tani["donus_tavan"], 2)),
+                "eps_elev_ham_deg": round(math.degrees(tani["eps_elev_ham"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),

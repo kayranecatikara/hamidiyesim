@@ -730,6 +730,32 @@ _OZELLIKLER = {
         "denenip geri alınmıştı — araç kesişmek yerine hedefi gölge ediyordu. "
         "Yön doğruydu, genlik yanlıştı; küçük tut (8-15°).",
         "AVCI_IBVS_LEAD_MAX_SEYIR", 8.0),
+    "o8_yanal_kacirma": (
+        "YANAL_K", "kazanc", "Ö8 · Yanal komut: açı değil kaçırma mesafesi",
+        "Hız vektörünü nişan AÇISI yerine 'kalan sürede kapatılacak yanal "
+        "MESAFE'den kurar. 1.5 m'de 58°'lik hata yalnız 1.3 m ıska demek ama "
+        "yasa 58° dönüş emri verip savruluyordu. Yalnız KISAR. Burun hedefte "
+        "kalır, ayrışan şey hız vektörü. Kayra'nın dalından, ÖLÇÜLMEDİ.",
+        "AVCI_IBVS_YANAL", 1.0),
+    "o9_yatay_sonum": (
+        "SONUM_T", "kazanc", "Ö9 · Yatay kanala sönümleme (D terimi)",
+        "Yatay kanal saf oransaldı (K_YAW=1.0, türev yok) — gecikmeli "
+        "sistemde saf-P zorunlu salınır. eps − SONUM_T·yaw_hızı. Bizim M4'ün "
+        "yatay eksendeki ikizi. Düz uçuşta etkisiz (ω≈0). ÖLÇÜLMEDİ.",
+        "AVCI_IBVS_SONUM", 0.3),
+    "o5b_donus_hiz_tavani": (
+        "DONUS_A", "kazanc", "Ö5-kapısız · Dönüş-farkında hız tavanı",
+        "v ≤ DONUS_A/λ̇ — yalnız kısar. Bizim MANEVRA sürümünden farkı: "
+        "menzil/eşik KAPISI YOK. Bizimki karelerin %2.4'ünde tetiklenip "
+        "etkisiz çıkmıştı; bu sürüm için o hüküm GEÇERSİZ. ÖLÇÜLMEDİ.",
+        "AVCI_IBVS_DONUS", 9.0),
+    "t1b_dikey_roll": (
+        "DIKEY_ROLL", "bool", "T1b · Dikey kanalda roll telafisi",
+        "Dikey kanal ham piksel kullanıyordu; yatay kanal (T1a) telafiliydi. "
+        "Kirlenme hedef ORTADAYKEN ~0 ama kenarda+sert yatışta medyan 17.6°, "
+        "maks 42° — kaçamak anı tam olarak o hâl. Telafi FARK olarak "
+        "uygulanır, yalnız roll izole edilir. ÖLÇÜLMEDİ.",
+        "AVCI_IBVS_DIKEY_ROLL", True),
     "m4_seyir_dikey_sonum": (
         "K_VZ_D_SEYIR", "kazanc", "M4 · Seyir fazı dikey sönümlemesi",
         "Seyir dikey kanalı saf oransaldı (türev terimi yalnız terminalde "
