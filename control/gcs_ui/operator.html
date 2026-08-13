@@ -1198,6 +1198,17 @@ button{background:none;border:0;cursor:pointer}
           <div class="gel-sat"><b>Ağ</b><span id="gElrsAg">—</span></div>
         </div>
         <div class="gel-kutu">
+          <h3>GÖRÜŞ HATTI · /api/telemetry/pnp</h3>
+          <div class="gel-sat"><b>Uç</b><span id="gPnp">—</span></div>
+          <div class="gel-sat"><b>Tespit var</b><span id="gPnpVar">—</span></div>
+          <div class="gel-sat"><b>Tespit güveni</b><span id="gPnpConf">—</span></div>
+          <div class="gel-sat"><b>Pose güveni</b><span id="gPnpPose">—</span></div>
+          <div class="gel-sat"><b>Kilit eşiği</b><span id="gPnpKilit">—</span></div>
+          <div class="gel-sat"><b>Menzil kapısı</b><span id="gPnpGate">—</span></div>
+          <div class="gel-sat"><b>Engel</b><span id="gPnpEngel">—</span></div>
+          <div class="gel-sat"><b>Kapanma kaynağı</b><span id="gKapanma">—</span></div>
+        </div>
+        <div class="gel-kutu">
           <h3>ARAYÜZ</h3>
           <div class="gel-sat"><b>Çizim FPS</b><span id="gUiFps">—</span></div>
           <div class="gel-sat"><b>Tuval</b><span id="gTuval">—</span></div>
@@ -1344,7 +1355,10 @@ const D = {
   /* telemetri alanları (tazelik takibi bunlar üzerinden yürür) */
   irtifa_agl:0, irtifa_msl:0, hiz:0, dikey_hiz:0, pitch:0, roll:0, yaw:0,
   menzil_m:0, kapanma_ms:0, kerteriz:0,
-  yatay_menzil:0, tespit_conf:0, ardisik_tespit:0, ardisik_kayip:0,
+  /* tespit_conf başlangıçta null: "henüz ölçüm yok". 0 olsaydı canlıda
+     pnp cevap vermeden önce ekranda "0.00 güven" yazardı — bu bir ölçüm
+     gibi görünürdü. Sim motoru mock modda kendi sayısını yazar. */
+  yatay_menzil:0, tespit_conf:null, ardisik_tespit:0, ardisik_kayip:0,
   batarya_v:25.2, batarya_sn:1125, gecikme_ms:24,
 
   /* görü */
@@ -1368,6 +1382,16 @@ const D = {
   /* ÖLÇÜLEN gidiş-dönüş gecikmesi (chase_status isteğinin süresi).
      Simülasyonun ürettiği gecikme_ms ile KARIŞTIRILMAZ. */
   rtt_ms:null,
+
+  /* GÖRÜŞ HATTI — /api/telemetry/pnp'den GERÇEK (bkz. 18J).
+     tespit_conf başlangıçta 0 DEĞİL null: "tespit yok" ile "güven sıfır"
+     farklı şeylerdir ve arayüz ikisini ayırt etmelidir. */
+  pose_conf:null, tespit_var:false, gorus_menzil:null,
+  kilit_n:null, kilit_pencere:null, gate_menzil:null, kilit_sayac_g:null, engel:null,
+
+  /* KAPANMA HIZI — iki aracın GERÇEK hız vektörlerinden türetilir (bkz.
+     telemetriUygula). Sim motoru kendi değerini yazar; canlıda burası dolar. */
+  kapanma_gercek:null,
   etkiNoktasi:null, etkiSaati:"", toplanma:null,
   kameraKesik:false, hedefCamDonan:null
 };
@@ -1602,7 +1626,8 @@ function kilitGuncelle(){
   const kareSessiz = (simdi() - D.sonKare) / 1000 > ESIK.KARE_SESSIZLIK;
   if (!D.kilitli && D.ardisik_tespit >= ESIK.TESPIT_KARE && !kareSessiz){
     D.kilitli = true; D.kilitBaslangic = D.t;
-    kayit("GÖRÜ", "BİLGİ", "Hedef kilidi kuruldu — 10 ardışık kare, güven " + D.tespit_conf.toFixed(2));
+    kayit("GÖRÜ", "BİLGİ", "Hedef kilidi kuruldu — " + ESIK.TESPIT_KARE + " ardışık kare, güven "
+          + (D.tespit_conf !== null ? D.tespit_conf.toFixed(2) : "—"));
   } else if (D.kilitli && (D.ardisik_kayip >= ESIK.KAYIP_KARE || kareSessiz)){
     D.kilitli = false; D.kilitYasi = 0; D.kilitBaslangic = 0;
     kayit("GÖRÜ", "UYARI", kareSessiz ? "Kare akışı sessiz — hedef kilidi bırakıldı"
@@ -2142,13 +2167,33 @@ function sagPaneliYaz(){
   $("#vYatay").textContent = nf(D.yatay_menzil, 1) + " m";
   $("#vKerteriz").textContent = nf(D.kerteriz, 0) + " °";
   $("#vKilitYasi").textContent = kilitVar() ? nf(D.kilitYasi || 0, 1) + " s" : "—";
-  $("#vGuven").textContent = D.tespit_conf > 0 ? D.tespit_conf.toFixed(2) : "—";
-  $("#guvenBar").style.width = (kis(D.tespit_conf, 0, 1) * 100).toFixed(0) + "%";
+  /* TESPİT GÜVENİ — artık GERÇEK YOLO çıktısı (pnp.tespit_conf, 18J).
+     Üç durum ayrı ayrı gösterilir; eskiden üçü de sayıya çevriliyordu:
+       null  → uç cevap vermiyor ya da tespit yok  → "VERİ YOK" / "TESPİT YOK"
+       sayı  → dedektörün gerçek güveni */
+  const gv = $("#vGuven"), gb = $("#guvenBar");
+  if (D.tespit_conf === null || D.tespit_conf === undefined){
+    const m = (CANLI && CANLI_AKTIF)
+      ? (PNP.bagli ? (D.tespit_var ? "—" : "TESPİT YOK") : "VERİ YOK")
+      : "—";
+    if (gv.textContent !== m) gv.textContent = m;
+    gb.style.width = "0%";
+  } else {
+    const m = D.tespit_conf.toFixed(2);
+    if (gv.textContent !== m) gv.textContent = m;
+    gb.style.width = (kis(D.tespit_conf, 0, 1) * 100).toFixed(0) + "%";
+  }
 
-  const p = Math.min(D.ardisik_tespit, ESIK.TESPIT_KARE), k = Math.min(D.ardisik_kayip, ESIK.KAYIP_KARE);
-  $("#barTespit").style.width = (p / ESIK.TESPIT_KARE * 100) + "%";
+  /* Kilit eşiği (payda) artık SUNUCUDAN gelen gerçek kilit_n'dir.
+     Eskiden sabit 10 yazıyordu: operatör AVCI_HYBRID_KILIT_N env'ini
+     değiştirdiğinde ekran yalan söylüyordu. Gerçek değer yoksa arayüz
+     sabitine düşülür ve yanına ~ işareti konur (kesin değil demek). */
+  const eN = esikKilitN();
+  const p = Math.min(D.ardisik_tespit, eN.v), k = Math.min(D.ardisik_kayip, ESIK.KAYIP_KARE);
+  $("#barTespit").style.width = (p / eN.v * 100) + "%";
   $("#barKayip").style.width = (k / ESIK.KAYIP_KARE * 100) + "%";
-  $("#vArdisikTespit").textContent = p + "/" + ESIK.TESPIT_KARE + " tespit";
+  $("#vArdisikTespit").textContent = p + "/" + (eN.gercek ? eN.v : "~" + eN.v)
+    + " tespit" + (D.kilit_pencere ? " (" + D.kilit_pencere + " kare pencere)" : "");
   $("#vArdisikKayip").textContent = k + "/" + ESIK.KAYIP_KARE + " kayıp";
 
   const gm = $("#guduModu");
@@ -2161,8 +2206,17 @@ function sagPaneliYaz(){
   const not = $("#gecisNot");
   let m;
   if (D.faz === "GPS"){
-    if (!kilitVar()) m = "Görsel faz için " + (ESIK.TESPIT_KARE - D.ardisik_tespit) + " kare daha tespit gerekiyor.";
-    else m = "Kilit hazır — yatay menzil " + nf(D.yatay_menzil, 1) + " m, eşik 20 m.";
+    /* "Neden hâlâ geçmedi?" — sunucu bunu ZATEN hesaplıyor (pnp.engel:
+       POSE KİLİDİ / MENZİL KAPISI / POSE + MENZİL). Varsa onu göster;
+       arayüzün kendi tahminini yürütme. */
+    const kalan = Math.max(0, esikKilitN().v - D.ardisik_tespit);
+    if (D.engel && D.engel !== "—")
+      m = "Faz geçişini engelleyen: " + D.engel
+        + (D.gate_menzil !== null ? " · menzil kapısı " + D.gate_menzil + " m" : "")
+        + (kalan > 0 ? " · " + kalan + " kare daha tespit" : "");
+    else if (!kilitVar()) m = "Görsel faz için " + kalan + " kare daha tespit gerekiyor.";
+    else m = "Kilit hazır — yatay menzil " + nf(D.yatay_menzil, 1) + " m"
+           + (D.gate_menzil !== null ? ", eşik " + D.gate_menzil + " m." : ".");
   } else if (D.faz === "GORSEL"){
     m = D.angaje ? "Angajman yetkisi verildi — dalış açılıyor."
                  : "Kareye kilitli. 15 m istasyonda bekleniyor; dalış için angajman gerek.";
@@ -2742,9 +2796,14 @@ function hedefKutusu(c){
     const ex = kis(p.x + yariG + 8, 8, W - 150), ey = kis(p.y - yariY, 34, H - 60);
     metinZemin(c, ex, ey - 14, 132, 42);
     c.fillStyle = renk;
-    c.fillText("conf " + D.tespit_conf.toFixed(2), ex, ey - 14);
+    /* conf: GERÇEK dedektör güveni (18J). Yoksa "—" — 0.90 uydurulmaz. */
+    c.fillText("conf " + (D.tespit_conf !== null && D.tespit_conf !== undefined
+                          ? D.tespit_conf.toFixed(2) : "—"), ex, ey - 14);
     c.fillText("MENZİL " + nf(D.menzil_m, 1) + " m", ex, ey);
-    c.fillText("KAPANMA " + nf(Math.max(0, D.kapanma_ms), 1) + " m/s", ex, ey + 14);
+    /* KAPANMA: canlıda gerçek hız vektörlerinden türetilir. Negatif değer
+       "uzaklaşıyor" demektir ve GİZLENMEZ — eski kod Math.max(0,..) ile
+       uzaklaşmayı 0 gösteriyordu, bu da bilgi kaybıydı. */
+    c.fillText("KAPANMA " + (isFinite(D.kapanma_ms) ? nf(D.kapanma_ms, 1) + " m/s" : "—"), ex, ey + 14);
 
     /* kutu merkezinin kadraj merkezine göre sapması — ince yatay hata çubuğu */
     const bg = Math.min(W * 0.34, 190), by = p.y + yariY + 12;
@@ -2761,7 +2820,8 @@ function hedefKutusu(c){
     const ex = kis(p.x - yariG, 8, W - 120), ey = kis(p.y - yariY - 5, 40, H - 8);
     metinZemin(c, ex, ey - 11, 108, 12);
     c.fillStyle = renk;
-    c.fillText("ARIYOR " + D.tespit_conf.toFixed(2), ex, ey);
+    c.fillText("ARIYOR " + (D.tespit_conf !== null && D.tespit_conf !== undefined
+                            ? D.tespit_conf.toFixed(2) : "—"), ex, ey);
   }
   c.restore();
 }
@@ -3181,7 +3241,10 @@ function cizHarita3B(){
       c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x - koni, b.y); c.stroke();
       c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x + koni, b.y); c.stroke();
       c.globalAlpha = 1;
-      const et = nf(D.menzil_m, 1) + " m · " + nf(Math.max(0, D.kapanma_ms), 1) + " m/s";
+      /* Uzaklaşma (negatif kapanma) artık gizlenmiyor — operatör hedefin
+         kaçtığını görmeli. Eski Math.max(0,..) bunu 0 gösteriyordu. */
+      const et = nf(D.menzil_m, 1) + " m · "
+               + (isFinite(D.kapanma_ms) ? nf(D.kapanma_ms, 1, true) + " m/s" : "—");
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       c.font = "11px ui-monospace, monospace"; c.textAlign = "center"; c.textBaseline = "middle";
       const g = c.measureText(et).width;
@@ -3773,6 +3836,7 @@ const UC = {
                  "HEDEF CAM":"/api/video_feed/plane", "SAHA İZLEME":null },
   telemetri  : (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws",
   durum      : "/api/chase_status",            // GET  (faz + menzil)
+  pnp        : "/api/telemetry/pnp",           // GET  (GERÇEK tespit güveni + faz kapıları)
   angaje     : "/api/command/iris/start_chase",// POST
   iptal      : "/api/command/iris/stop_chase", // POST
   filo       : "/api/logistics/dispatch"       // POST {araclar:[], hedef:{x,y}} — sunucuda yoksa yutulur
@@ -3887,6 +3951,29 @@ function telemetriUygula(p){
       if (!_menzilSunucudan) yaz("menzil_m", Math.hypot(dx, dy, dz));
       yaz("kerteriz", ((Math.atan2(dy, dx) * DEG) + 360) % 360);
     }
+
+    /* ══ KAPANMA HIZI — GERÇEK ÖLÇÜMDEN TÜRETİLİR ══════════════════════
+       ÖNCEKİ DURUM: kapanma_ms'i YALNIZCA sim motoru yazıyordu ve sim
+       canlıda erken dönüyor. Sonuç: canlı uçuşta manşet "KAPANMA" ölçümü
+       başlangıç değeri 0'da DONUYORDU — üstü çizili "0.0" olarak.
+
+       ÇÖZÜM: menzilin zamana göre türevi, iki aracın GERÇEK hız
+       vektörlerinden analitik olarak hesaplanır (sayısal türev değil —
+       gürültüyü büyütmez):
+           d|r|/dt = (r · Δv) / |r|          r = p_hedef − p_avci
+           kapanma = −d|r|/dt                Δv = v_hedef − v_avci
+       Kaynak: her iki aracın LOCAL_POSITION_NED mesajındaki vx/vy/vz.
+       Konum ve hız aynı çerçevede (NED) olduğu için doğrudan kıyaslanır;
+       çerçeve ofseti bir ÖTELEME olduğundan hız farkını etkilemez. */
+    const R = Math.hypot(dx, dy, dz);
+    const dvx = (+P.vx) - (+I.vx), dvy = (+P.vy) - (+I.vy), dvz = (+P.vz) - (+I.vz);
+    if (R > 0.5 && isFinite(dvx) && isFinite(dvy) && isFinite(dvz)){
+      const menzilHizi = (dx * dvx + dy * dvy + dz * dvz) / R;
+      D.kapanma_gercek = -menzilHizi;
+      yaz("kapanma_ms", D.kapanma_gercek);
+    } else {
+      D.kapanma_gercek = null;    /* hız yoksa uydurma yok — UI "VERİ YOK" der */
+    }
     /* Harita için dünya konumları. Sunucu NED verir (x=kuzey, y=doğu);
        iç model x=doğu, y=kuzey kullanır — eksenler burada takas edilir. */
     D.avci.x = +I.y; D.avci.y = +I.x; D.avci.z = -(+I.z); D.avci.yaw = (+I.yaw || 0) * RAD;
@@ -3923,10 +4010,16 @@ function durumCek(){
     if (g.d_h !== null && g.d_h !== undefined) yaz("yatay_menzil", +g.d_h);
     if (sup.kilit_sayac !== undefined) D.ardisik_tespit = +sup.kilit_sayac;
     if (g.none_count !== undefined) D.ardisik_kayip = +g.none_count;
-    D.kilitli = (g.durum === "KILIT") || D.ardisik_tespit >= ESIK.TESPIT_KARE;
+    /* Kilit eşiği artık sunucudan gelen GERÇEK kilit_n ile kıyaslanır
+       (yoksa arayüz sabitine düşer). Eskiden her koşulda sabit 10'du. */
+    D.kilitli = (g.durum === "KILIT") || D.ardisik_tespit >= esikKilitN().v;
     if (D.kilitli && !D.kilitBaslangic) D.kilitBaslangic = D.t;
     if (!D.kilitli){ D.kilitBaslangic = 0; D.kilitYasi = 0; }
-    yaz("tespit_conf", g.durum === "KILIT" ? 0.9 : (g.durum === "ARAMA" ? 0.35 : 0));
+    /* ⚠ KALDIRILDI: yaz("tespit_conf", g.durum === "KILIT" ? 0.9 : 0.35)
+       Bu bir ölçüm değil, durum adının sayıya çevrilmesiydi ve ekranda
+       gerçek dedektör güveni gibi görünüyordu. Gerçek değer artık
+       /api/telemetry/pnp'den geliyor (18J). Burada hiçbir şey yazılmaz;
+       o uç cevap vermiyorsa tespit_conf null kalır ve UI "VERİ YOK" der. */
     /* kadraj açıları → HUD kutusunun kare içi konumu */
     if (g.kadraj_yaw_deg !== null && g.kadraj_yaw_deg !== undefined){
       D.hata_x = kis(+g.kadraj_yaw_deg / (HFOV / 2), -1.2, 1.2);
@@ -3993,6 +4086,73 @@ function wsPlanla(){
   WS.deneme++;
   canliRozet(false);
   WS.saat = setTimeout(() => { if (!document.hidden) wsBagla(); else WS.deneme--; }, wsGecikme());
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18J · GÖRÜŞ HATTI TELEMETRİSİ  →  /api/telemetry/pnp  (2 Hz)
+
+   NEDEN EKLENDİ: arayüz tespit güvenini UYDURUYORDU —
+       yaz("tespit_conf", g.durum === "KILIT" ? 0.9 : 0.35)
+   Ekranda "TESPİT GÜVENİ 0.90" ve HUD'da "conf 0.90" gerçek dedektör
+   çıktısı gibi görünüyordu; oysa sunucunun guidance.status'ü güven
+   YAYINLAMIYOR (yalnız durum adı: ARAMA/KILIT/DROPOUT). Arayüz durum adını
+   sayıya çeviriyordu.
+
+   Gerçek değer başka bir uçta zaten duruyordu: /api/telemetry/pnp
+   YOLO dedektörünün det["conf"] değerini olduğu gibi yayınlıyor. Aynı uç
+   faz kapılarının GERÇEK eşiklerini de veriyor (kilit_n, kilit_pencere,
+   gate_menzil) — arayüz bunları da sabit kodluyordu.
+
+   Bu uç güdüme HİÇBİR ŞEY göndermez, salt gözlemdir (sunucudaki docstring'i
+   de bunu söylüyor). Tespit yoksa tespit_conf null döner; arayüz o zaman
+   sayı uydurmaz, "VERİ YOK" gösterir.
+   ══════════════════════════════════════════════════════════════════════════ */
+const PNP = { veri:null, son:0, bagli:false, hataLog:0 };
+let _pnpUcusta = false;
+
+function pnpCek(){
+  if (!CANLI || _pnpUcusta) return;
+  _pnpUcusta = true;
+  fetch(UC.pnp, { cache:"no-store", signal: AbortSignal.timeout(2000) })
+    .then(y => { if (!y.ok) throw new Error("HTTP " + y.status); return y.json(); })
+    .then(p => {
+      PNP.veri = p; PNP.son = simdi();
+      if (!PNP.bagli) kayit("GÖRÜ", "BİLGİ", "Görüş hattı telemetrisi bağlandı — gerçek tespit güveni aktif");
+      PNP.bagli = true;
+
+      /* GERÇEK tespit güveni. Tespit yoksa null — sıfır DEĞİL, çünkü
+         "0.00 güven" ile "tespit yok" farklı şeylerdir. */
+      D.tespit_conf = gecerliSayi(p.tespit_conf, 0, 1);
+      D.pose_conf   = gecerliSayi(p.pose_conf, 0, 1);
+      D.tespit_var  = !!p.tespit_var;
+      TAZE["conf"]  = simdi();
+
+      /* GERÇEK faz kapısı eşikleri — arayüzdeki sabitlerin yerine geçer. */
+      D.kilit_n       = gecerliSayi(p.kilit_n, 1, 1000);
+      D.kilit_pencere = gecerliSayi(p.kilit_pencere, 1, 1000);
+      D.gate_menzil   = gecerliSayi(p.gate_menzil, 0, 100000);
+      D.kilit_sayac_g = gecerliSayi(p.kilit_sayac, 0, 100000);
+      D.engel         = typeof p.engel === "string" ? p.engel : null;
+      D.gorus_menzil  = gecerliSayi(p.gorus_menzil, 0, 100000);
+    })
+    .catch(() => {
+      /* Uç yoksa (eski sunucu) ya da hata verdiyse: SESSİZCE eski değere
+         dönmek YANLIŞ olurdu — bayatlığı görünür kılmak için işaretleriz. */
+      if (PNP.bagli || simdi() - PNP.hataLog > 20000){
+        if (PNP.bagli) kayit("GÖRÜ", "UYARI", "Görüş hattı telemetrisi kesildi — tespit güveni VERİ YOK");
+        PNP.hataLog = simdi();
+      }
+      PNP.bagli = false;
+    })
+    .finally(() => { _pnpUcusta = false; });
+}
+
+/* Faz kapısı eşikleri: GERÇEK değer varsa o, yoksa arayüzün sim sabiti.
+   Hangisinin kullanıldığı çağıran tarafta görünür olsun diye ikinci
+   dönüş değeri "gercek mi" bayrağıdır. */
+function esikKilitN(){
+  return D.kilit_n !== null && D.kilit_n !== undefined
+    ? { v:D.kilit_n, gercek:true } : { v:ESIK.TESPIT_KARE, gercek:false };
 }
 
 function canliBagla(){
@@ -4832,6 +4992,21 @@ function gelismisYaz(){
     : "AP " + es.ap_ip + " (" + (es.ap_clients || 0) + ")"
       + (es.sta_enabled ? (es.sta_connected ? " · STA " + es.sta_ip + " " + es.sta_rssi + " dBm" : " · STA yok") : ""));
 
+  /* Görüş hattı — hangi değerin GERÇEKTEN sunucudan geldiği burada görünür. */
+  y("#gPnp", !CANLI ? "çevrimdışı" : (PNP.bagli ? "BAĞLI (2 Hz)" : "CEVAP YOK"));
+  y("#gPnpVar", PNP.bagli ? (D.tespit_var ? "EVET" : "HAYIR") : "VERİ YOK");
+  y("#gPnpConf", D.tespit_conf !== null && D.tespit_conf !== undefined
+      ? D.tespit_conf.toFixed(2) + "  (YOLO det.conf)" : "VERİ YOK");
+  y("#gPnpPose", D.pose_conf !== null && D.pose_conf !== undefined
+      ? D.pose_conf.toFixed(2) : "VERİ YOK");
+  y("#gPnpKilit", D.kilit_n !== null
+      ? D.ardisik_tespit + "/" + D.kilit_n + (D.kilit_pencere ? " · pencere " + D.kilit_pencere : "") + "  (sunucu)"
+      : "sabit " + ESIK.TESPIT_KARE + "  (arayüz sabiti — sunucu vermedi)");
+  y("#gPnpGate", D.gate_menzil !== null ? D.gate_menzil + " m  (sunucu)" : "VERİ YOK");
+  y("#gPnpEngel", D.engel || "VERİ YOK");
+  y("#gKapanma", !CANLI ? "simülasyon motoru"
+      : (D.kapanma_gercek !== null ? "LOCAL_POSITION_NED vx/vy/vz türevi" : "VERİ YOK (hız alanı yok)"));
+
   y("#gUiFps", UIF.fps ? UIF.fps.toFixed(1) + " FPS" : "—");
   y("#gTuval", W + "×" + H + " @ DPR " + DPR);
   y("#gLog", kayitGovde.childElementCount + " satır");
@@ -4870,6 +5045,7 @@ function ac(){
   setInterval(yavasTik, 1000); /* 1 Hz — batarya, gecikme, filo, bütçe */
   setInterval(elrsYokla, 500); /* 2 Hz — ESP32 gerçek RF/görev durumu */
   setInterval(durumYokla, 200);/* 5 Hz — chase_status (faz, menzil, sayaçlar) */
+  setInterval(pnpYokla, 500);  /* 2 Hz — pnp (GERÇEK tespit güveni + faz kapıları) */
   requestAnimationFrame(cerceve);
 }
 
@@ -4880,11 +5056,13 @@ function ac(){
    sunucusu için gereksiz yük. Sekme geri geldiğinde HEMEN tazelenir. */
 function elrsYokla(){ if (!document.hidden) elrsDurumCek(); }
 function durumYokla(){ if (!document.hidden) durumCek(); }
+function pnpYokla(){ if (!document.hidden) pnpCek(); }
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   /* Geri dönüşte bekleme yok: hem veriyi hem bağlantıyı hemen tazele. */
   durumCek();
+  pnpCek();
   elrsDurumCek();
   if (CANLI && (!ws || ws.readyState > 1)){ WS.deneme = 0; clearTimeout(WS.saat); wsBagla(); }
   if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali"){
