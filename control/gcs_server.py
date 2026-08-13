@@ -82,11 +82,35 @@ def log_paneli():
 # -----------------------------------------------------------------------
 # GLOBAL STATE
 # -----------------------------------------------------------------------
+# ── SALT-OKUNUR TELEMETRİ ALANLARI (2026-08-13) ────────────────────────
+# batt_*, gps_fix, gps_sat, gps_eph ve mode_ms alanları SYS_STATUS /
+# GPS_RAW_INT mesajlarından doldurulur. Bu mesajlar zaten UDP soketine
+# geliyordu ama recv_match filtresinde eleniyordu; yani veri vardı, okunmuyordu.
+#
+# NEDEN EKLENDİ: operatör arayüzü batarya voltajını, uydu sayısını ve GPS fix
+# tipini gösteremediği için bu üçünü SİMÜLE etiketiyle uydurmak zorunda
+# kalıyordu. Artık gerçek değer yayınlanıyor.
+#
+# RİSK: yok. Yalnızca OKUMA yapılır; güdüm, komut akışı ve MAVLink gönderimi
+# bu değişiklikten etkilenmez. Mesaj gelmezse alanlar None kalır ve arayüz
+# "VERİ YOK" gösterir — sıfır göstermez.
+_TELEM_BOS = {
+    "x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0,
+    "roll": 0, "pitch": 0, "yaw": 0, "armed": False,
+    "lat": 0.0, "lon": 0.0, "alt_amsl": 0.0,
+    # SYS_STATUS — mesaj gelmeden None
+    "batt_v": None,        # volt
+    "batt_a": None,        # amper
+    "batt_pct": None,      # % (ArduPilot kapasite tanımlıysa; değilse -1 → None)
+    # GPS_RAW_INT — mesaj gelmeden None
+    "gps_fix": None,       # 0 yok · 1 no-fix · 2 2B · 3 3B · 4 DGPS · 5/6 RTK
+    "gps_sat": None,       # görünür uydu
+    "gps_eph": None,       # yatay seyreltme (HDOP)
+}
+
 telemetry_state = {
-    "iris":  {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False,
-              "lat": 0.0, "lon": 0.0, "alt_amsl": 0.0},
-    "plane": {"x": 0, "y": 0, "z": 0, "vx": 0, "vy": 0, "vz": 0, "speed": 0, "roll": 0, "pitch": 0, "yaw": 0, "armed": False,
-              "lat": 0.0, "lon": 0.0, "alt_amsl": 0.0},
+    "iris":  dict(_TELEM_BOS),
+    "plane": dict(_TELEM_BOS),
 }
 
 # ── NED ÇERÇEVE OFSETİ (iris ↔ plane) ──────────────────────────────────
@@ -1205,9 +1229,15 @@ def _read_iris_telem_from_conn(conn):
     # (2026-08-03 12:16 uçuşu, gerçek menzil 6-9 m iken d_h=158.9). Tavan
     # yalnız güvenlik içindir; tek çağrıda tüm birikim tüketilip en taze
     # mesajda durulur.
+    # SYS_STATUS / GPS_RAW_INT bu listeye 2026-08-13'te eklendi. Güdüm
+    # fazındayken iris telemetri thread'i DURDURULUR ve iris'i okuyan tek yer
+    # burasıdır; listeye eklenmeselerdi batarya ve uydu sayısı tam da en
+    # kritik anda donardı. İkisi de ~1-2 Hz'lik salt-okunur mesajdır, boşaltma
+    # döngüsünün davranışını değiştirmez.
     for _ in range(2000):
         msg = conn.recv_match(
-            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT'],
+            type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'HEARTBEAT',
+                  'SYS_STATUS', 'GPS_RAW_INT'],
             blocking=False
         )
         if not msg:
@@ -1839,6 +1869,25 @@ def _process_mavlink_msg(msg, vehicle_name):
             roll=round(math.degrees(msg.roll), 1),
             pitch=round(math.degrees(msg.pitch), 1),
             yaw=round(math.degrees(msg.yaw), 1))
+    elif msg_type == 'SYS_STATUS':
+        # Batarya. ArduPilot voltajı mV, akımı cA (10 mA) birimiyle yollar.
+        # Kapasite tanımlı değilse battery_remaining -1 gelir → None yaz ki
+        # arayüz "%-1" yerine "VERİ YOK" göstersin.
+        v = getattr(msg, 'voltage_battery', 0)
+        a = getattr(msg, 'current_battery', -1)
+        p = getattr(msg, 'battery_remaining', -1)
+        telemetry_state[vehicle_name].update(
+            batt_v=round(v / 1000.0, 2) if v not in (0, 65535) else None,
+            batt_a=round(a / 100.0, 2) if a >= 0 else None,
+            batt_pct=int(p) if 0 <= p <= 100 else None)
+    elif msg_type == 'GPS_RAW_INT':
+        # Uydu sayısı ve fix tipi. 255 = "bilinmiyor" demek, 0 uydu demek değil.
+        sat = getattr(msg, 'satellites_visible', 255)
+        eph = getattr(msg, 'eph', 65535)
+        telemetry_state[vehicle_name].update(
+            gps_fix=int(getattr(msg, 'fix_type', 0)),
+            gps_sat=int(sat) if sat != 255 else None,
+            gps_eph=round(eph / 100.0, 2) if eph not in (0, 65535) else None)
     elif msg_type == 'HEARTBEAT' and sys_id != 255:
         telemetry_state[vehicle_name]["armed"] = (
             msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED != 0)
@@ -1869,7 +1918,7 @@ async def mavlink_listener():
         while okunan < BATCH:
             msg = _mav_conn.recv_match(
                 type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
-                      'ATTITUDE', 'HEARTBEAT'],
+                      'ATTITUDE', 'HEARTBEAT', 'SYS_STATUS', 'GPS_RAW_INT'],
                 blocking=False
             )
             if msg is None:
@@ -1940,7 +1989,7 @@ def _iris_telem_worker():
             while okunan < BATCH:
                 msg = _iris_telem_conn.recv_match(
                     type=['LOCAL_POSITION_NED', 'GLOBAL_POSITION_INT',
-                          'ATTITUDE', 'HEARTBEAT'],
+                          'ATTITUDE', 'HEARTBEAT', 'SYS_STATUS', 'GPS_RAW_INT'],
                     blocking=False
                 )
                 if msg is None:
