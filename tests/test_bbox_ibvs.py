@@ -895,6 +895,59 @@ def main():
             abs(C.DONUS_YAVAS) < 1e-9 and not _g_ka[5]["donus_yavas"],
             f"DONUS_YAVAS={C.DONUS_YAVAS} → hiç devreye girmez")
 
+    print("=" * 60)
+    # ── Ö12: YAKIN MENZİLDE YAW SLEW TAVANI (kendi ekseninde dönme çaresi) ──
+    # 30 koşunun 10'unda KURTARMA tetiklenmiş; öncesinde yaw komutu tavanda
+    # sürekli kaçıyor (122/118/122 °/s) ve aracın gerçek yaw hızı 300°/s'yi
+    # aşıyor. Menzil küçüldükçe hedefin açısal hızı 1/R ile patlıyor.
+    class _YawM(ib.Cfg):
+        YAW_MENZIL_REF = 15.0
+
+    # B67 — YAPISAL GARANTİ: yaw slew sınırı komut() çıktısına HİÇ DOKUNMAZ.
+    # Hız vektörü ve nişan yönü bu sınırdan geçmez; sınır yalnız döngüdeki
+    # BURUN slew'ine uygulanır. Bu, "başka durumu bozmama" şartının kanıtı.
+    _bozdu = False
+    for _cxz in (CX - 200, CX, CX + 120, CX + 300):
+        for _bz in (8, 25, 60, 100):
+            for _tz in (False, True):
+                _a = ib.komut(_cxz, C.CY_NISAN, _bz, _bz, 0.3, 14.0, 0.05,
+                              _YawM, _tz, (0.5, 0.1), 0.0, 0.0, 2.0, 0.2)
+                _k = ib.komut(_cxz, C.CY_NISAN, _bz, _bz, 0.3, 14.0, 0.05,
+                              C, _tz, (0.5, 0.1), 0.0, 0.0, 2.0, 0.2)
+                if any(abs(_a[i] - _k[i]) > 1e-12 for i in range(4)):
+                    _bozdu = True
+    kontrol("B67 Ö12 komut() çıktısını HİÇ DEĞİŞTİRMEZ (hız vektörü korunur)",
+            not _bozdu,
+            "32 kombinasyonda vx/vy/vz/yaw bit bit aynı — sınır yalnız "
+            "döngüdeki BURUN slew'ine uygulanır, uçuş yolu etkilenmez")
+
+    # B68 — tavan menzille ölçeklenir: yakında kısılır
+    def _tavan(cfg, menzil):
+        b = ib.Cfg.MENZIL_PX_M / menzil
+        t = cfg.YAW_RATE_MAX_DEG
+        if cfg.YAW_MENZIL_REF > 0.0:
+            t *= max(cfg.YAW_MIN_KAT, min(menzil / cfg.YAW_MENZIL_REF, 1.0))
+        return t
+    _t20, _t8, _t3 = (_tavan(_YawM, 20.0), _tavan(_YawM, 8.0),
+                      _tavan(_YawM, 3.0))
+    kontrol("B68 yaw tavanı yakın menzilde KISILIR",
+            _t8 < _YawM.YAW_RATE_MAX_DEG * 0.8 and _t3 < _t8 + 1e-9,
+            f"20 m → {_t20:.0f}°/s   8 m → {_t8:.0f}°/s   3 m → {_t3:.0f}°/s "
+            f"(taban {_YawM.YAW_MIN_KAT:.2f}× = {_YawM.YAW_RATE_MAX_DEG*_YawM.YAW_MIN_KAT:.0f}°/s)")
+
+    # B69 — UZAK menzilde tavan AYNEN kalır (normal takip bozulmaz)
+    kontrol("B69 uzak menzilde (R ≥ ref) yaw tavanı DEĞİŞMEZ",
+            abs(_t20 - _YawM.YAW_RATE_MAX_DEG) < 1e-9,
+            f"20 m ≥ ref 15 m → tavan {_t20:.0f}°/s = varsayılan "
+            f"{_YawM.YAW_RATE_MAX_DEG:.0f}°/s (uzak takip aynen)")
+
+    # B70 — kapatılabilir
+    kontrol("B70 Ö12 kapatılabilir (varsayılan KAPALI)",
+            abs(C.YAW_MENZIL_REF) < 1e-9
+            and abs(_tavan(C, 3.0) - C.YAW_RATE_MAX_DEG) < 1e-9,
+            f"YAW_MENZIL_REF={C.YAW_MENZIL_REF} → 3 m'de bile tavan "
+            f"{_tavan(C, 3.0):.0f}°/s, hiç kısılmaz")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

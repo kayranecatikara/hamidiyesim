@@ -717,6 +717,13 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 # yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
 # Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
 _OZELLIKLER = {
+    "o12_yaw_menzil": (
+        "YAW_MENZIL_REF", "deger", "Ö12 · Yakın menzilde yaw tavanı",
+        "Pas geçerken hedefin açısal hızı 1/R ile patlıyor; araç takip "
+        "edemiyor, yaw doyup savruluyor ve kurtarma bekçisi güdümü kesiyor "
+        "(30 koşunun 10'unda). Yakında yaw tavanı kısılır. ⚠ YALNIZ BURNU "
+        "etkiler — hız vektörü ve uçuş yolu DEĞİŞMEZ (test B67).",
+        "AVCI_IBVS_YAW_MENZIL", (0.0, 15.0)),
     "o11_donus_yavas": (
         "DONUS_YAVAS", "deger", "Ö11 · Iska sonrası dönüş için yavaşlama",
         "66 m'lik aşım bir salınım DEĞİL — aracın minimum dönüş çemberi "

@@ -134,6 +134,47 @@ Ve seyirde v_los = 11 + 0.35·11 ≈ **14.9 m/s** — hedefin 15.1'inin ALTINDA.
 5. **Ö5 · Yatış-farkında hız bütçesi** — komut 18 m/s, yatıktayken ulaşılan
    10.8-14.3 m/s.
 
+## ⚑ Ö12 · YAKIN MENZİLDE YAW TAVANI — "kendi ekseninde dönme" (8 uçuş)
+
+`AVCI_IBVS_YAW_MENZIL` (varsayılan 0 = kapalı; denenen 15 m).
+`tavan = YAW_RATE_MAX · clamp(R/15, 0.35, 1)` → 20 m'de 120°/s (değişmez),
+8 m'de 64°/s, 3 m'de 42°/s.
+
+**KÖK NEDEN (ölçüm):** 30 koşunun 10'unda kurtarma bekçisi tetiklenmiş.
+T09'da tetikten hemen önce: cx 208→222→262→280 (pas geçiş, hedef kadrajı
+tarıyor), yaw komut hızı 122/118/122 °/s — **YAW_RATE_MAX tavanında sürekli
+kaçıyor**. Aracın gerçek yaw hızı 300°/s'yi aşınca bekçi güdümü kesiyor →
+araç olduğu yerde dönüyor. Menzil küçüldükçe hedefin açısal hızı 1/R ile
+patlıyor (8 m'de ~100°/s, 2 m'de ~400°/s) — araç zaten TAKİP EDEMEZ.
+
+**⚠ YAPISAL GARANTİ (kullanıcının şartı):** yaw slew sınırı YALNIZ BURNU
+etkiler. Hız vektörü `hiz_yonu`ndan hesaplanır ve bu sınırdan GEÇMEZ.
+Birim testi **B67**: 32 girdi kombinasyonunda `komut()` çıktısı (vx,vy,vz,yaw)
+BİT BİT AYNI. Yani uçuş yolu/kesişim geometrisi değişemez.
+
+| ölçüt | KONTROL n=4 | Ö12 n=4 |
+|---|---|---|
+| KURTARMA yaşayan koşu (birincil) | 1/4 (19 kare) | **0/4 (0 kare)** |
+| yaw komut doyma medyanı | 17% | **5%** |
+| İSABET | 3/4 | 3/4 — gerileme yok |
+| en yakın menzil | 0.70 m | 0.64 m — gerileme yok |
+
+**MEKANİZMA ÇALIŞIYOR** (doyma %17 → %5). Ama KURTARMA olayı seyrek
+(taban ~%33); 1/4 → 0/4 farkı **n=4'te gürültüden ayrılamaz** (§5.4).
+⚠ Yan gözlem: `yatay` SAĞA AŞIM 41.3 → 69.4 m (n=2v2) — gerileme olabilir,
+DOĞRULANMALI.
+
+⇒ Karar için n=8+/kol gerekiyor (seyrek olay). Varsayılan KAPALI.
+
+### ⚠ AÇIK KALAN: Ö11 SÜREKLİ MANEVRADA (daire) SINANMADI
+
+Kullanıcı haklı olarak sordu: "hedef sürekli sert manevra yaparsa, daire
+çizerse Ö11 takibi kötüleştirmez mi?" Ö11 yalnız `kapanma < −5 m/s` VE
+`|eps_yaw| > 45°` iken tetikleniyor; sürekli dönen hedefte bu koşul sık
+sağlanabilir ve araç sürekli 9 m/s'de kalabilir → hedefi hiç yakalayamaz.
+**Bu senaryoda HİÇ test edilmedi.** Ö11 varsayılan yapılmadan önce
+`circle` senaryosunda kontrol/Ö11 kıyası ZORUNLU.
+
 ## ⚑ Ö11 · ISKA SONRASI DÖNÜŞ YAVAŞLAMASI — 12 UÇUŞ (2026-08-12)
 
 `AVCI_IBVS_DONUS_YAVAS` (varsayılan 0 = kapalı; denenen 9.0 m/s).

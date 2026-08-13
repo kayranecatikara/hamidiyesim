@@ -535,6 +535,36 @@ class Cfg:
     DONUS_YAVAS_RDOT = _env_f("AVCI_IBVS_DY_RDOT", 5.0)  # m/s; uzaklaşma eşiği
     DONUS_YAVAS_ACI = _env_f("AVCI_IBVS_DY_ACI", 45.0)   # °; dönüş gereği eşiği
 
+    # ══ Ö12 · YAKIN MENZİLDE YAW SLEW TAVANI (KENDİ EKSENİNDE DÖNME ÇARESİ) ══
+    # KULLANICI GÖZLEMİ (2026-08-12): "araç manevra limitleri zorlandığında ya
+    # da hedefi pas geçtiğinde kendi etrafında dönmeye başlıyor, çok hızlı yaw
+    # yapıp olduğu yerde kalıyor, 15 saniyede düzeliyor."
+    #
+    # ÖLÇÜLDÜ — 30 koşunun 10'unda KURTARMA bekçisi tetiklenmiş. T09'da
+    # tetikten hemen önceki kareler:
+    #     cx 208 → 222 → 262 → 280 (hedef kadrajı tarıyor, pas geçiş)
+    #     yaw komut hızı 122 / 118 / 122 °/s  → YAW_RATE_MAX TAVANINDA
+    # Yaw hedefi tavanda SÜREKLİ kaçıyor; aracın GERÇEK yaw hızı 300°/s'yi
+    # aşınca kurtarma bekçisi güdümü kesiyor (kurtarma.py) → araç olduğu
+    # yerde kalıp dönüyor, hedef bu arada uzaklaşıyor.
+    #
+    # KÖK NEDEN: menzil küçüldükçe hedefin AÇISAL hızı 1/R ile patlıyor.
+    # 8 m'de ~100°/s, 2 m'de ~400°/s. Araç bunu zaten TAKİP EDEMEZ; peşinden
+    # gitmeye çalışmak yaw'ı doyurup savurmaktan başka işe yaramıyor.
+    #
+    # ÇÖZÜM: yaw slew tavanı menzille ölçeklenir — uzakta tam, yakında kısık.
+    #     tavan_eff = YAW_RATE_MAX_DEG · clamp(R/YAW_MENZIL_REF, YAW_MIN_KAT, 1)
+    #
+    # ⚠ NEDEN BAŞKA DURUMU BOZAMAZ (yapısal): yaw slew sınırı YALNIZ BURNU
+    # etkiler. Hız vektörü (vx, vy) `hiz_yonu`ndan hesaplanır ve bu sınırdan
+    # GEÇMEZ — uçuş yolu, kesişim geometrisi, dikey kanal aynen kalır.
+    # Tek risk kameranın hedefi kadrajda tutması; o da zaten pas geçişte
+    # kaybediliyordu. Birim testi B67 hız vektörünün değişmediğini bekçiler.
+    # ⚠ UZAK MENZİLDE ETKİSİZ: R ≥ YAW_MENZIL_REF iken tavan aynen 120°/s.
+    # AVCI_IBVS_YAW_MENZIL=0 → kapalı (varsayılan).
+    YAW_MENZIL_REF = _env_f("AVCI_IBVS_YAW_MENZIL", 0.0)  # m; 0 = kapalı, ~15
+    YAW_MIN_KAT = _env_f("AVCI_IBVS_YAW_MINKAT", 0.35)    # tavanın alt sınırı
+
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
@@ -1027,9 +1057,16 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
             if cmd_yaw is None:
                 cmd_yaw = iyaw
+            # Ö12: yaw slew tavanı menzille ölçeklenir (bkz. Cfg.YAW_MENZIL_REF).
+            # YALNIZ BURUN — hız vektörü yukarıda hesaplandı, dokunulmuyor.
+            _yaw_tavan = cfg.YAW_RATE_MAX_DEG
+            if cfg.YAW_MENZIL_REF > 0.0 and tani["boyut"] > 1e-6:
+                _Ryaw = cfg.MENZIL_PX_M / tani["boyut"]
+                _yaw_tavan *= clamp(_Ryaw / cfg.YAW_MENZIL_REF,
+                                    cfg.YAW_MIN_KAT, 1.0)
             yaw_err = normalize_angle(yaw_hedef - cmd_yaw)
-            adim = clamp(yaw_err, -math.radians(cfg.YAW_RATE_MAX_DEG) * dt,
-                         math.radians(cfg.YAW_RATE_MAX_DEG) * dt)
+            adim = clamp(yaw_err, -math.radians(_yaw_tavan) * dt,
+                         math.radians(_yaw_tavan) * dt)
             cmd_yaw = normalize_angle(cmd_yaw + adim)
             yaw_cmd = cmd_yaw
 
