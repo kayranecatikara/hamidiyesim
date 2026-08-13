@@ -732,9 +732,27 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #       (37°/s) ve olay yine oldu — komut değil, GÖRSEL TEMAS KAYBI sebep.
 #       Gerileme de var: isabet 7/8 → 5/8, en yakın menzil 0.39 → 0.67 m.
 #       ⇒ Sıradaki iş: hedefi kadrajda TUTMAK (Ö-D, FOV kısıtı).
+
+def _hedef_cfg(alan):
+    """Alan adını YAZILACAK SINIFA çöz.
+
+    ⚠ 2026-08-13'te YAŞANDI: K-V2 düğmesi `bbox_ibvs.Cfg`'ye yazıyordu ama
+    alan `kurtarma.KurtCfg`'de. Panel "AÇIK" diyordu, özellik HİÇ çalışmadı
+    ve iki uçuş fiilen KONTROL koşusu oldu (§5.1 mekanizma kapısı yakaladı).
+    Artık alan adı "modul:ALAN" biçiminde verilebilir.
+    """
+    if ":" in alan:
+        modul, ad = alan.split(":", 1)
+        if modul == "kurtarma":
+            from control.guidance import kurtarma as _k
+            return _k.KurtCfg, ad
+        raise KeyError(f"bilinmeyen modül: {modul}")
+    return _ibvs_mod.Cfg, alan
+
+
 _OZELLIKLER = {
     "kurt_v2": (
-        "KURT_V2", "bool", "K-V2 · Kurtarma bekçisi kilitlenme düzeltmesi",
+        "kurtarma:KURT_V2", "bool", "K-V2 · Kurtarma bekçisi kilitlenme düzeltmesi",
         "ÖLÇÜLDÜ (kullanıcı uçuşu 154505): bekçi 70 s'de 4 kez tetiklendi ve "
         "her seferinde 8.6-14.9 s BIRAKMADI; araç havada asılı kaldı, hedef "
         "60→125 m açıldı. İki kusur: (1) yaw hedefi her turda yeniden "
@@ -774,7 +792,8 @@ def _ozellik_durumu():
                       "env": env, "acik": acik,
                       "deger": (v if v is not None else "araç okunmadı")})
             continue
-        v = getattr(_ibvs_mod.Cfg, alan)
+        _c, _a = _hedef_cfg(alan)
+        v = getattr(_c, _a)
         if tip == "deger":
             kapali_d, acik_d = acik_deger
             acik = abs(float(v) - float(acik_d)) < 1e-6
@@ -814,9 +833,10 @@ def set_gudum_ozellik(cmd: OzellikCmd):
     else:
         yeni = (cmd.acik if tip == "bool"
                 else (float(acik_deger) if cmd.acik else 0.0))
-    setattr(_ibvs_mod.Cfg, alan, yeni)
+    _cfg_sinif, _cfg_alan = _hedef_cfg(alan)
+    setattr(_cfg_sinif, _cfg_alan, yeni)
     print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
-          f"(Cfg.{alan} = {yeni})")
+          f"({_cfg_sinif.__name__}.{_cfg_alan} = {yeni})")
     return {"status": "success", "ozellikler": _ozellik_durumu()}
 
 
