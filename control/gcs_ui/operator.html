@@ -431,10 +431,17 @@ button{background:none;border:0;cursor:pointer}
   padding:5px 6px;background:var(--oyuk);border:1px solid var(--hat-yumusak);border-radius:var(--r1);
   border-left:2px solid var(--murekkep-sonuk);
 }
+/* Durum noktası: renk TEK BAŞINA anlam taşımaz — nokta biçimi de değişir
+   (dolu / halka / çarpı), böylece renk körlüğünde de ayırt edilir. */
 .saglik-h .d{
+  display:flex;align-items:baseline;gap:5px;
   font-family:var(--f-veri);font-size:var(--y1);letter-spacing:.04em;
   color:var(--murekkep-sonuk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.saglik-h .d::before{content:"○";flex:none;font-size:9px;line-height:1.6;opacity:.7}
+.saglik-h[data-d="ok"] .d::before{content:"●";opacity:1}
+.saglik-h[data-d="uyari"] .d::before{content:"◐";opacity:1}
+.saglik-h[data-d="kritik"] .d::before{content:"✕";opacity:1}
 .saglik-h[data-d="ok"]{border-left-color:var(--avci)}      .saglik-h[data-d="ok"] .d{color:var(--avci)}
 .saglik-h[data-d="uyari"]{border-left-color:var(--uyari)}  .saglik-h[data-d="uyari"] .d{color:var(--uyari)}
 .saglik-h[data-d="kritik"]{border-left-color:var(--kilit)} .saglik-h[data-d="kritik"] .d{color:var(--kilit)}
@@ -861,13 +868,15 @@ button{background:none;border:0;cursor:pointer}
       </div>
       <div class="saglik" id="saglik">
         <div class="saglik-h" data-d="" data-h="drone"><span class="etiket">ARAÇ</span><span class="d">—</span></div>
-        <div class="saglik-h" data-d="" data-h="telemetri"><span class="etiket">TELEMETRİ</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="mod"><span class="etiket">UÇUŞ MODU</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="mavlink"><span class="etiket">MAVLINK</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="telemetri"><span class="etiket">WEBSOCKET</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="link"><span class="etiket">SUNUCU</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="video"><span class="etiket">VİDEO</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="gps"><span class="etiket">GPS</span><span class="d">—</span></div>
-        <div class="saglik-h" data-d="" data-h="link"><span class="etiket">BAĞLANTI</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="batarya"><span class="etiket">BATARYA</span><span class="d">—</span></div>
-        <div class="saglik-h" data-d="" data-h="elrs"><span class="etiket">ELRS</span><span class="d">—</span></div>
-        <div class="saglik-h" data-d="" data-h="mod"><span class="etiket">UÇUŞ MODU</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="elrs"><span class="etiket">RF LİNK</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="hedef"><span class="etiket">HEDEF</span><span class="d">—</span></div>
       </div>
     </section>
 
@@ -1404,6 +1413,48 @@ function bataryaDurumu(){
   return { veriVar:false, tahmin:false, hucre:null, d:"",
            tam:"VERİ YOK", kisa:"VERİ YOK", alarm:null, esik:"" };
 }
+
+/* ══ ARAÇ VERİSİ DEĞİŞİM DENETÇİSİ ═════════════════════════════════════
+   BULUNAN HATA (audit, 2026-08-13): telemetriUygula her WS paketinde
+   D.sonKare'yi ve tüm TAZE damgalarını yeniliyor. Ama gcs_server, MAVLink
+   hattı ÖLSE BİLE elindeki son telemetry_state'i 10 Hz yayınlamayı sürdürür.
+   Sonuç: MAVLink kesilirse arayüz "TELEMETRİ 10 Hz · CANLI" demeye devam
+   eder ve sayılar donmuş olduğu hâlde operatör bunu GÖREMEZ.
+
+   "Paket geldi" ile "araç veri üretiyor" farklı şeylerdir. Bu denetçi
+   ikincisini ölçer: araç alanlarının imzası değişiyor mu?
+
+   ⚠ DÜRÜSTLÜK SINIRI: bu, "MAVLink öldü" KANITI değildir. Yerde duran,
+   disarm bir araç da bir süre aynı değerleri üretebilir. Bu yüzden gösterge
+   "MAVLINK YOK" demez; ölçtüğü şeyi söyler: DEĞİŞMİYOR. Eşikler de bu
+   belirsizliği hesaba katacak kadar geniştir (5 sn uyarı / 12 sn kritik). */
+const MAV = { imza:"", sonDegisim:0, degisimSayac:0, pencere:0, hz:0 };
+
+function mavDegisimGuncelle(I, P){
+  if (!I) return;
+  /* Konum, irtifa, yönelme, hız, mod ve ARM — biri bile oynarsa araç canlı. */
+  const imza = [I.lat, I.lon, I.z, I.yaw, I.roll, I.pitch, I.speed,
+                I.armed, I.mode, P && P.z, P && P.yaw].join("|");
+  if (imza !== MAV.imza){
+    MAV.imza = imza;
+    MAV.sonDegisim = simdi();
+    MAV.degisimSayac++;
+  }
+  const g = (simdi() - MAV.pencere) / 1000;
+  if (g >= 1){ MAV.hz = MAV.degisimSayac / g; MAV.degisimSayac = 0; MAV.pencere = simdi(); }
+}
+function mavDegisimYasi(){ return MAV.sonDegisim ? (simdi() - MAV.sonDegisim) / 1000 : Infinity; }
+
+/* ══ TEK DURUM SÖZLÜĞÜ ═════════════════════════════════════════════════
+   Sağlık ızgarasında 14 farklı ifade dolaşıyordu (KOPUK / ZAMAN AŞIMI /
+   VERİ YOK / SENTETİK / UÇ YOK / YEREL / BAĞLI DEĞİL / DENEME N ...).
+   Operatörün bunları zihninde sıralaması gerekiyordu. Artık tek sözlük:
+     CANLI · BAYAT · KOPUK · VERİ YOK · SİMÜLE · TAHMİN
+   Ayrıntı (Hz, ms, çözünürlük) durumun YANINDA verilir, yerine değil. */
+const DUR = { CANLI:"CANLI", BAYAT:"BAYAT", KOPUK:"KOPUK",
+              YOK:"VERİ YOK", SIM:"SİMÜLE", TAHMIN:"TAHMİN" };
+const DUR_SIDDET = { CANLI:"ok", BAYAT:"uyari", KOPUK:"kritik",
+                     "VERİ YOK":"", "SİMÜLE":"uyari", "TAHMİN":"uyari" };
 
 /* ── TAZELİK ─────────────────────────────────────────────────────────────
    "Veri geldi" ile "veri GÜNCEL" aynı şey değil. 30 sn önce gelmiş bir
@@ -4211,6 +4262,9 @@ function telemetriUygula(p){
   const gecen = (simdi() - WSM.pencere) / 1000;
   if (gecen >= 1){ WSM.hz = WSM.sayac / gecen; WSM.sayac = 0; WSM.pencere = simdi(); }
 
+  /* Paket geldi ≠ araç veri üretiyor. İkincisini ayrıca ölç. */
+  mavDegisimGuncelle(p.iris, p.plane);
+
   if (I){
     yaz("irtifa_agl", -(+I.z || 0));
     if (I.alt_amsl) yaz("irtifa_msl", +I.alt_amsl);
@@ -4726,6 +4780,15 @@ function alarmlariDegerlendir(){
   if (CANLI && CANLI_AKTIF && tlmYas > 3) alarmAc("tlm", "kritik", "TELEMETRİ ZAMAN AŞIMI — " + tlmYas.toFixed(0) + " sn veri yok");
   else alarmKapatId("tlm");
 
+  /* ARAÇ VERİSİ DONDU — paket akıyor ama değerler değişmiyor.
+     Bu, WebSocket kopmasından FARKLI bir arızadır: sunucu ayakta,
+     MAVLink hattı sessiz. Eskiden hiç görünmüyordu. */
+  const mvY2 = mavDegisimYasi();
+  if (CANLI && CANLI_AKTIF && isFinite(mvY2) && mvY2 > 5)
+    alarmAc("mavdon", mvY2 > 12 ? "kritik" : "uyari",
+            "ARAÇ VERİSİ DEĞİŞMİYOR — " + mvY2.toFixed(0) + " sn (paket akıyor, MAVLink sessiz olabilir)");
+  else alarmKapatId("mavdon");
+
   if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali")
     alarmAc("video", VID.durum === "hata" ? "kritik" : "uyari", "VİDEO AKIŞI YOK — " + (VID_DURUMLAR[VID.durum] || {}).bas);
   else alarmKapatId("video");
@@ -4778,7 +4841,11 @@ $$("[data-h]").forEach(e => { saglikEl[e.dataset.h] = { kutu:e, d:$(".d", e) }; 
 function saglikYaz(ad, d, metin){
   const e = saglikEl[ad]; if (!e) return;
   if (e.kutu.dataset.d !== d) e.kutu.dataset.d = d;
-  if (e.d.textContent !== metin) e.d.textContent = metin;
+  if (e.d.textContent !== metin){
+    e.d.textContent = metin;
+    /* Dar hücrede metin kesilebilir — tam hâli tooltip'te kalsın. */
+    e.kutu.title = (e.kutu.querySelector(".etiket") || {}).textContent + ": " + metin;
+  }
 }
 function saglikDegerlendir(){
   const tlmYas = (simdi() - D.sonKare) / 1000;
@@ -4787,15 +4854,31 @@ function saglikDegerlendir(){
   else if (!CANLI_AKTIF) saglikYaz("drone", "kritik", "BAĞLI DEĞİL");
   else saglikYaz("drone", D.armed ? "ok" : "uyari", D.armed ? "ARM · " + ucusModuAdi() : "DISARM");
 
-  if (!CANLI) saglikYaz("telemetri", "uyari", "SİMÜLE");
-  else if (!CANLI_AKTIF) saglikYaz("telemetri", "kritik", "KOPUK");
-  else if (tlmYas > 3) saglikYaz("telemetri", "kritik", "ZAMAN AŞIMI");
-  else saglikYaz("telemetri", "ok", WSM.hz ? WSM.hz.toFixed(0) + " Hz" : "AKTİF");
+  /* WEBSOCKET — tarayıcı ↔ gcs_server taşıma katmanı. Paket akıyor mu? */
+  if (!CANLI) saglikYaz("telemetri", "uyari", DUR.SIM);
+  else if (!CANLI_AKTIF) saglikYaz("telemetri", "kritik", DUR.KOPUK);
+  else if (tlmYas > 3) saglikYaz("telemetri", "kritik", DUR.BAYAT + " · " + tlmYas.toFixed(0) + " sn");
+  else saglikYaz("telemetri", "ok", DUR.CANLI + (WSM.hz ? " · " + WSM.hz.toFixed(0) + " Hz" : ""));
 
-  if (!CANLI) saglikYaz("video", "uyari", "SENTETİK");
-  else if (VID.durum === "akis") saglikYaz("video", "ok", VID.gen ? VID.gen + "×" + VID.yuk : "AKTİF");
-  else if (VID.durum === "kapali") saglikYaz("video", "uyari", "UÇ YOK");
-  else saglikYaz("video", "kritik", (VID_DURUMLAR[VID.durum] || {}).bas || "YOK");
+  /* MAVLINK — araç GERÇEKTEN veri üretiyor mu? WebSocket'ten AYRI ölçülür:
+     sunucu MAVLink ölse bile son durumu 10 Hz yayınlamayı sürdürür, o yüzden
+     "paket geldi" araç canlı demek DEĞİLDİR (bkz. mavDegisimGuncelle). */
+  const mvY = mavDegisimYasi();
+  if (!CANLI) saglikYaz("mavlink", "uyari", DUR.SIM);
+  else if (!CANLI_AKTIF) saglikYaz("mavlink", "kritik", DUR.KOPUK);
+  else if (!isFinite(mvY)) saglikYaz("mavlink", "", DUR.YOK);
+  else if (mvY > 12) saglikYaz("mavlink", "kritik", "DEĞİŞMİYOR · " + mvY.toFixed(0) + " sn");
+  else if (mvY > 5) saglikYaz("mavlink", "uyari", "DEĞİŞMİYOR · " + mvY.toFixed(0) + " sn");
+  else saglikYaz("mavlink", "ok", DUR.CANLI + (MAV.hz ? " · " + MAV.hz.toFixed(0) + " Hz" : ""));
+
+  if (!CANLI) saglikYaz("video", "uyari", DUR.SIM + " · SENTETİK");
+  else if (VID.durum === "akis"){
+    const vy = vidYas();
+    saglikYaz("video", vy > 2 ? "uyari" : "ok",
+              (vy > 2 ? DUR.BAYAT : DUR.CANLI) + (VID.gen ? " · " + VID.gen + "×" + VID.yuk : ""));
+  }
+  else if (VID.durum === "kapali") saglikYaz("video", "", DUR.YOK + " · UÇ YOK");
+  else saglikYaz("video", "kritik", DUR.KOPUK + " · " + ((VID_DURUMLAR[VID.durum] || {}).bas || ""));
 
   /* GPS — artık GERÇEK fix tipi ve uydu sayısı var (GPS_RAW_INT).
      Mesaj gelmiyorsa uydurmuyoruz, elimizdeki tek gerçek göstergeye düşüyoruz. */
@@ -4815,14 +4898,22 @@ function saglikDegerlendir(){
   } else if (CANLI && CANLI_AKTIF) saglikYaz("batarya", "uyari", "VERİ YOK");
   else saglikYaz("batarya", "uyari", "SİMÜLE");
 
-  if (!CANLI) saglikYaz("link", "uyari", "YEREL");
-  else if (!CANLI_AKTIF) saglikYaz("link", "kritik", WS.deneme ? "DENEME " + WS.deneme : "KOPUK");
-  else saglikYaz("link", "ok", "SUNUCU BAĞLI");
+  /* SUNUCU — HTTP yolu, ölçülen RTT ile. WebSocket'ten ayrı bir kanaldır. */
+  if (!CANLI) saglikYaz("link", "uyari", DUR.SIM + " · YEREL");
+  else if (!CANLI_AKTIF) saglikYaz("link", "kritik", DUR.KOPUK + (WS.deneme ? " · DENEME " + WS.deneme : ""));
+  else saglikYaz("link", D.rtt_ms !== null && D.rtt_ms > 400 ? "uyari" : "ok",
+                 DUR.CANLI + (D.rtt_ms !== null ? " · " + Math.round(D.rtt_ms) + " ms" : ""));
 
-  if (!ELRS.bagli) saglikYaz("elrs", "uyari", "BAĞLI DEĞİL");
+  /* RF LİNK — YALNIZ ELRS/CRSF. Sunucu RTT'siyle asla karıştırılmaz. */
+  if (!ELRS.bagli) saglikYaz("elrs", "", DUR.YOK);
   else {
     const lq = Number((ELRS.veri || {}).lq);
-    saglikYaz("elrs", isFinite(lq) && lq >= 70 ? "ok" : "uyari", isFinite(lq) && lq >= 0 ? "LQ %" + lq : "TELEMETRİ YOK");
+    const taze = (simdi() - ELRS.son) < 1600;
+    if (!taze) saglikYaz("elrs", "uyari", DUR.BAYAT);
+    else if (!isFinite(lq) || lq < 0) saglikYaz("elrs", "uyari", DUR.YOK + " · CRSF sessiz");
+    else saglikYaz("elrs", lq >= 70 ? "ok" : lq >= 40 ? "uyari" : "kritik",
+                   DUR.CANLI + " · LQ %" + lq
+                   + (Number.isFinite(+ELRS.veri.rssi_dbm) ? " · " + ELRS.veri.rssi_dbm + " dBm" : ""));
   }
 
   /* UÇUŞ MODU + ARM — gerçek HEARTBEAT alanları; buton durumundan DEĞİL. */
@@ -4830,6 +4921,17 @@ function saglikDegerlendir(){
   else if (!CANLI_AKTIF) saglikYaz("mod", "kritik", "VERİ YOK");
   else if (D.ucus_modu === null) saglikYaz("mod", "uyari", D.armed ? "ARM" : "DISARM");
   else saglikYaz("mod", D.armed ? "ok" : "", ucusModuAdi() + (D.armed ? "" : " · DISARM"));
+
+  /* HEDEF — tespit/kilit durumu tek bakışta. Menzil ve güven GERÇEK
+     kaynaklardan; tespit yoksa menzil gösterilmez (uydurma yok). */
+  if (!CANLI) saglikYaz("hedef", "uyari", DUR.SIM);
+  else if (!CANLI_AKTIF) saglikYaz("hedef", "", DUR.YOK);
+  else if (kilitVar())
+    saglikYaz("hedef", "ok", "KİLİT" + (isFinite(D.menzil_m) && D.menzil_m > 0 ? " · " + nf(D.menzil_m, 0) + " m" : ""));
+  else if (D.tespit_conf !== null && D.tespit_conf !== undefined)
+    saglikYaz("hedef", "uyari", "TESPİT " + D.tespit_conf.toFixed(2));
+  else if (PNP.bagli) saglikYaz("hedef", "", "TESPİT YOK");
+  else saglikYaz("hedef", "", DUR.YOK);
 
   const kaynak = $("#saglikKaynak");
   if (kaynak){
