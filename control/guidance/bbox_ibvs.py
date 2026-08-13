@@ -973,10 +973,14 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # Kayıp sayacı işlemeye devam eder → uzun sürerse GPS'e dönülür.
             if kurt.guncelle(iris.get("roll", 0.0), iris.get("pitch", 0.0),
                              iyaw, now):
-                send_velocity(conn, 0.0, 0.0, 0.0, iyaw)
+                # V2 KUSUR 1: kilitli yaw hedefi. `iyaw` yollarsak "olduğun
+                # yerde dur" hedefi araçla birlikte kayar ve dönme hiç durmaz
+                # (bkz. kurtarma.py — kullanıcının 154505 kaydında ölçüldü).
+                _kyaw = kurt.kilit_yaw if kurt.kilit_yaw is not None else iyaw
+                send_velocity(conn, 0.0, 0.0, 0.0, _kyaw)
                 vx_p = vy_p = vz_p = 0.0
                 son_v_cmd = None
-                cmd_yaw = iyaw
+                cmd_yaw = _kyaw
                 kayip_sayac += 1
                 if kayip_sayac >= kayip_kare_esik:
                     print("[IBVS] kurtarma sırasında temas koptu → 'kayip'")
@@ -984,7 +988,12 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KURTARMA",
                                 "kayip_sayac": kayip_sayac,
-                                "iris_yaw_deg": round(math.degrees(iyaw), 1)})
+                                "iris_roll_deg": round(
+                                    math.degrees(iris.get("roll", 0.0)), 1),
+                                "iris_pitch_deg": round(
+                                    math.degrees(iris.get("pitch", 0.0)), 1),
+                                "iris_yaw_deg": round(math.degrees(iyaw), 1),
+                                "yaw_cmd_deg": round(math.degrees(_kyaw), 1)})
                 f.flush()
                 continue
 

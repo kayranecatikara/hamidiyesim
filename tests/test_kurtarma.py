@@ -42,6 +42,77 @@ def _kosu(ornekler, cfg=KurtCfg):
 
 def main():
     print("Uçuş kurtarma bekçisi kabul kriterleri")
+    # ══════════════════════════════════════════════════════════════════
+    # V2 · BEKÇİ KİLİTLENMESİ DÜZELTMESİ (AVCI_KURT_V2)
+    # ══════════════════════════════════════════════════════════════════
+    class _V2(KurtCfg):
+        KURT_V2 = True
+
+    def _kos(cfg, dizi, dt=0.05):
+        """dizi = [(roll°, pitch°, yaw°)...] → (aktif_kareler, kurt)"""
+        k = Kurtarma(cfg)
+        aktif = []
+        for i, (r, p_, y) in enumerate(dizi):
+            a = k.guncelle(math.radians(r), math.radians(p_),
+                           math.radians(y), i * dt)
+            aktif.append(a)
+        return aktif, k
+
+    # K8 — YAW KİLİTLENİYOR MU (kusur 1)
+    # Tetik anında yaw = 40°; sonraki karelerde araç dönmeye devam ediyor.
+    # kilit_yaw 40°'de SABİT kalmalı, aracı takip ETMEMELİ.
+    _diz = [(0, 0, 0), (0, 0, 20), (0, 0, 40)]          # 400°/s → tetikler
+    _diz += [(0, 0, 40 + 5 * i) for i in range(1, 8)]    # araç dönmeye devam
+    _akt, _k = _kos(_V2, _diz)
+    kontrol("K8 V2: yaw hedefi TETİK ANINDA kilitlenir, aracı takip etmez",
+            _k.kilit_yaw is not None
+            and abs(math.degrees(_k.kilit_yaw) - 20.0) < 1e-6,
+            f"tetik karesinde yaw 20° → kilit_yaw {math.degrees(_k.kilit_yaw):.1f}° "
+            f"— araç 75°'ye kadar dönmeye devam etti, hedef KAYMADI")
+
+    # K9 — ESKİ DAVRANIŞ BİT BİT AYNI (varsayılan KAPALI)
+    _akt_v1, _k1 = _kos(KurtCfg, _diz)
+    _akt_v2, _k2 = _kos(_V2, _diz)
+    kontrol("K9 V2 KAPALIYKEN kilit_yaw kurulmaz (eski davranış korunur)",
+            KurtCfg.KURT_V2 is False and _k1.kilit_yaw is None,
+            f"AVCI_KURT_V2 varsayılan {KurtCfg.KURT_V2} → kilit_yaw "
+            f"{_k1.kilit_yaw} (çağıran eskisi gibi iyaw yollar)")
+
+    # K10 — FRENLEME PITCH'İ ARTIK BIRAKMAYI ENGELLEMİYOR (kusur 2)
+    # Senaryo: kaçak dönme tetikler; sonra dönme durur ve roll düzelir,
+    # AMA araç 18 m/s'den frenlediği için pitch −46°'de kalır.
+    _fren = [(0, 0, 0), (0, 0, 20), (0, 0, 40)]           # tetik
+    _fren += [(2, -46, 40) for _ in range(40)]            # 2 s: roll temiz,
+    #                                                       pitch frenlemede
+    _a_v1, _kk1 = _kos(KurtCfg, _fren)
+    _a_v2, _kk2 = _kos(_V2, _fren)
+    kontrol("K10 V2: frenleme pitch'i (−46°) bırakmayı ENGELLEMEZ",
+            _a_v1[-1] is True and _a_v2[-1] is False,
+            f"2 s boyunca roll 2° / pitch −46° / yaw sabit → "
+            f"ESKİ: hâlâ aktif (kilitli) · V2: BIRAKTI")
+
+    # K11 — ama gerçek TAKLA (roll) hâlâ tutuyor
+    _takla = [(0, 0, 0), (0, 0, 20), (0, 0, 40)]
+    _takla += [(75, 0, 40) for _ in range(40)]            # roll 75° = takla
+    _a_t, _kt = _kos(_V2, _takla)
+    kontrol("K11 V2: gerçek takla (roll 75°) bekçiyi BIRAKTIRMAZ",
+            _a_t[-1] is True,
+            "roll 75° 2 s boyunca → bekçi aktif kaldı (emniyet korunuyor)")
+
+    # K12 — pitch TETİKTE duruyor: burun aşağı devrilme hâlâ yakalanır
+    _dev = [(0, 0, 0), (0, 75, 0), (0, 75, 0), (0, 75, 0)]
+    _a_d, _kd = _kos(_V2, _dev)
+    kontrol("K12 V2: pitch TETİKTE kaldı (75° burun aşağı yakalanır)",
+            any(_a_d) and _kd.son_sebep is not None
+            and "açı" in _kd.son_sebep,
+            f"pitch 75° → tetiklendi, sebep: {_kd.son_sebep} "
+            f"(gevşeyen yalnız ÇIKIŞ şartı, tetik değil)")
+
+    # K13 — bırakınca kilit_yaw temizlenir (bir sonraki olaya sızmasın)
+    kontrol("K13 V2: bırakınca kilit_yaw temizlenir",
+            _kk2.aktif is False and _kk2.kilit_yaw is None,
+            "toparlandıktan sonra kilit_yaw = None")
+
     print("=" * 60)
     C = KurtCfg
 

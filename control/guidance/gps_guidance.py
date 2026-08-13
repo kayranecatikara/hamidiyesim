@@ -426,10 +426,28 @@ def run_gps_guidance(conn, get_plane, get_iris, stop_event, cfg=Cfg):
             # yaw olduğu yerde tutulur → araç toparlanır, uçuş kurtulur.
             # Normal uçuşta tetiklenmez (eşikler ölçülen zarfın çok üstünde).
             if kurt.guncelle(iroll, ipitch, iyaw, now):
-                send_velocity(conn, 0.0, 0.0, 0.0, iyaw)
+                # V2 KUSUR 1: kilitli yaw hedefi. `iyaw` yollarsak hedef
+                # araçla birlikte kayar ve dönme hiç durmaz (bkz. kurtarma.py).
+                _kyaw = kurt.kilit_yaw if kurt.kilit_yaw is not None else iyaw
+                send_velocity(conn, 0.0, 0.0, 0.0, _kyaw)
                 vx_prev = vy_prev = vz_prev = 0.0
-                cmd_yaw = iyaw          # güdüm devralınca sıçrama olmasın
+                cmd_yaw = _kyaw         # güdüm devralınca sıçrama olmasın
                 status.update(durum="KURTARMA")
+                # V2 KUSUR 3: kurtarma sırasında da SATIR YAZ. Eskiden buradaki
+                # `continue` CSV yazımından ÖNCEydi; 10-15 saniyelik olayların
+                # tamamı loglarda BOŞLUK olarak görünüyordu ve teşhis
+                # edilemiyordu. Tam da anlamamız gereken anda kördük.
+                w.writerow({
+                    "t": round(now, 3), "dt": round(dt, 4), "durum": "KURTARMA",
+                    "iris_x": round(ix, 2), "iris_y": round(iy, 2),
+                    "iris_z": round(iz, 2),
+                    "iris_roll_deg": round(math.degrees(iroll), 1),
+                    "iris_pitch_deg": round(math.degrees(ipitch), 1),
+                    "iris_yaw_deg": round(math.degrees(iyaw), 1),
+                    "vx_cmd": 0.0, "vy_cmd": 0.0, "vz_cmd": 0.0,
+                    "yaw_cmd_deg": round(math.degrees(_kyaw), 1),
+                })
+                f.flush()
                 loop_count += 1
                 _sleep(now, loop_period)
                 continue

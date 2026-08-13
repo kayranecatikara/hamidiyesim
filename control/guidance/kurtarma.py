@@ -55,6 +55,35 @@ class KurtCfg:
 
     AKTIF = _env_f("AVCI_KURT", 1.0) >= 0.5   # 0 = bekçi kapalı (eski davranış)
 
+    # ══════════════════════════════════════════════════════════════════
+    # V2 · BEKÇİ KİLİTLENMESİ DÜZELTMESİ  (AVCI_KURT_V2)
+    # ══════════════════════════════════════════════════════════════════
+    # NEDEN (kullanıcının 2026-08-13 uçuş kaydı, ucus_20260813_154505):
+    # Bekçi 70 saniyede DÖRT kez tetiklendi ve her seferinde 8.6-14.9 s
+    # boyunca bırakmadı. O sürede araç havada asılı kaldı (hız 0.0 m/s),
+    # hedef 60 → 125 m açıldı. Kullanıcının "olduğu yerde kalıp bi 15
+    # saniyede düzeliyor" dediği davranış BUDUR.
+    #
+    # ÜÇ KUSUR ÖLÇÜLDÜ:
+    #
+    # 1) YAW HEDEFİ ARACIN PEŞİNDEN KOŞUYOR. Çağıran her turda
+    #    `send_velocity(conn, 0,0,0, iyaw)` yolluyor ve `iyaw` her turda
+    #    YENİDEN OKUNUYOR. Yani "olduğun yerde dur" hedefi araç döndükçe
+    #    onunla birlikte kayıyor → dönmeyi durduracak geri çağırma kuvveti
+    #    HİÇ oluşmuyor. Hedef bir kez KİLİTLENMELİ.
+    #    → V2: `kilit_yaw` tetik anında saklanır, aktifken sabit kalır.
+    #
+    # 2) BEKÇİ KENDİ EYLEMİYLE KENDİNİ KİLİTLİYOR. Bırakma şartı
+    #    `max(|roll|,|pitch|) < 20°` idi. Ama hız sıfıra çekilince
+    #    multirotor 18 m/s'den frenlemek için burnunu KALDIRMAK ZORUNDA
+    #    (ölçüldü: pitch −46°). Yani bekçinin kendi komutu, kendi çıkış
+    #    şartını sağlanamaz yapıyor; araç tamamen durana kadar çıkamıyor.
+    #    → V2: bırakma şartında YALNIZ |roll| ve yaw hızı bakılır.
+    #    ⚠ pitch TETİKTE KALIR (>60° hâlâ tetikler) — araç gerçekten burun
+    #    aşağı devrilirse yeniden tetiklenir. Gevşeyen yalnız ÇIKIŞ.
+    #    Gerekçe: takla ROLL'dur; pitch normal uçuşun (ve frenlemenin) parçası.
+    KURT_V2 = _env_f("AVCI_KURT_V2", 0.0) >= 0.5   # 0 = eski davranış
+
 
 class Kurtarma:
     """Duruş bekçisi. Her güdüm turunda guncelle() çağrılır.
@@ -77,6 +106,9 @@ class Kurtarma:
         self._uyardi = False
         self.sayac = 0            # kaç kez devreye girdi (log/teşhis)
         self.son_sebep = None
+        # V2: tetik anında kilitlenen yaw hedefi (rad). Aktif değilken None.
+        # Çağıran bunu KULLANIR: send_velocity(..., kurt.kilit_yaw)
+        self.kilit_yaw = None
 
     def yaw_hizi(self, yaw, now):
         """Ardışık yaw'dan açısal hız (°/s). İlk turda 0."""
@@ -109,6 +141,10 @@ class Kurtarma:
                 self._baslangic = now
                 self._temiz_baslangic = None
                 self._uyardi = False
+                # V2 KUSUR 1: yaw hedefini TETİK ANINDA kilitle. Çağıran her
+                # turda `iyaw` yollarsa hedef araçla birlikte kayar ve dönme
+                # hiç durmaz. Kilitli hedef sabit bir geri çağırma verir.
+                self.kilit_yaw = yaw if c.KURT_V2 else None
                 self.son_sebep = (f"açı {aci:.0f}°" if aci > c.ACI_TETIK
                                   else f"yaw {abs(hiz):.0f}°/s")
                 print(f"[KURTARMA] ⚠ kontrol kaybı ({self.son_sebep}) — güdüm "
@@ -116,13 +152,19 @@ class Kurtarma:
             return self.aktif
 
         # aktifken: çıkış koşulu
-        temiz = (aci < c.ACI_TEMIZ) and (abs(hiz) < c.YAW_HIZ_TEMIZ)
+        # V2 KUSUR 2: bırakma şartında PITCH'e bakma. Hız sıfıra çekilince
+        # araç frenlemek için burnunu kaldırmak ZORUNDA (ölçüldü: −46°);
+        # pitch'i çıkış şartına koymak bekçinin kendi eylemiyle kendini
+        # kilitlemesi demek. Takla ROLL'dur. Pitch TETİKTE duruyor.
+        cikis_aci = (abs(math.degrees(roll)) if c.KURT_V2 else aci)
+        temiz = (cikis_aci < c.ACI_TEMIZ) and (abs(hiz) < c.YAW_HIZ_TEMIZ)
         if temiz:
             if self._temiz_baslangic is None:
                 self._temiz_baslangic = now
             elif now - self._temiz_baslangic >= c.TEMIZ_SURE:
                 sure = now - self._baslangic
                 self.aktif = False
+                self.kilit_yaw = None
                 print(f"[KURTARMA] ✓ toparlandı ({sure:.1f} s) — güdüm devraldı")
         else:
             self._temiz_baslangic = None

@@ -733,6 +733,17 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 #       Gerileme de var: isabet 7/8 → 5/8, en yakın menzil 0.39 → 0.67 m.
 #       ⇒ Sıradaki iş: hedefi kadrajda TUTMAK (Ö-D, FOV kısıtı).
 _OZELLIKLER = {
+    "kurt_v2": (
+        "KURT_V2", "bool", "K-V2 · Kurtarma bekçisi kilitlenme düzeltmesi",
+        "ÖLÇÜLDÜ (kullanıcı uçuşu 154505): bekçi 70 s'de 4 kez tetiklendi ve "
+        "her seferinde 8.6-14.9 s BIRAKMADI; araç havada asılı kaldı, hedef "
+        "60→125 m açıldı. İki kusur: (1) yaw hedefi her turda yeniden "
+        "okunuyordu, yani araçla birlikte kayıyor ve dönmeyi durduramıyordu "
+        "→ artık TETİK ANINDA kilitleniyor. (2) bırakma şartı pitch'e "
+        "bakıyordu, ama 18 m/s'den frenlemek pitch GEREKTİRİYOR (−46° "
+        "ölçüldü) → bekçi kendi eylemiyle kendini kilitliyordu; artık "
+        "çıkışta yalnız |roll| ve yaw hızına bakılıyor. Pitch TETİKTE kaldı.",
+        "AVCI_KURT_V2", True),
     "od_fov": (
         "FOV_YAW_HATA", "deger", "Ö-D · FOV kısıtı (burun borcu)",
         "Pas geçerken hedef 2-3 m'de kadrajın kenarından çıkıyor, kutu "
