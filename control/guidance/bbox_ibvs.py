@@ -422,6 +422,19 @@ class Cfg(metaclass=_CfgMeta):
     # dokunmaz (ayrı katman). 0.0 = tam pure pursuit (lead yok).
     DUZTERM_LEAD_MAX = _env_f("AVCI_IBVS_DUZTERM_LEAD_MAX", 4.0)  # derece; terminal lead tavanı
 
+    # CAPRAZLEAD — adaptif terminal lead tavanı (kill-switch, env-only, panelde YOK).
+    # ÖLÇÜLEN SORUN (kilit_20260811_155735 terminal analizi): yandan geçen hedef
+    # 5.9 m'de kadrajı süpürüp çıkıyor (cx 330→201→480), 2.14 s tespit kaybı →
+    # kesintisiz kilit resetleniyor (kümülatif kopması) VE yanal ıska — TEK KÖK.
+    # DUZTERM lead'i 4°'de sabit kapıyor; yandan geçen hedef DAHA ÇOK lead ister.
+    # ÇÖZÜM: LOS açısal hızı (|los_hiz[0]|) yükseldikçe tavanı ek ile aç → burun
+    # öne alır, hedef kadrajda kalır. Kuyrukta (LOS hızı ~0) ek=0 → 4° korunur →
+    # salınım koruması bozulmaz. KAPALI → _dlmax=DUZTERM_LEAD_MAX (bit-aynı).
+    CAPRAZLEAD = _env_bool("AVCI_IBVS_CAPRAZLEAD", False)
+    CAPRAZ_LOS_ESIK = _env_f("AVCI_IBVS_CAPRAZ_LOS_ESIK", 0.05)  # rad/s; altı = kuyruk, ek yok
+    CAPRAZ_KAZANC = _env_f("AVCI_IBVS_CAPRAZ_KAZANC", 120.0)     # derece/(rad/s)
+    CAPRAZ_EK_MAX = _env_f("AVCI_IBVS_CAPRAZ_EK_MAX", 12.0)      # derece; ek tavan üst sınırı
+
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
     # geçtik") ──
     # SORUN: terminal dikey kanalı SAF NİŞANLAMA (vz = −v·tan(elev)) — türev/
@@ -688,7 +701,18 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # doyup işaret-değiştirme salınımını kes, hedefin arkasından düz git
         # (bkz. Cfg.DUZTERM_LEAD_MAX). KAPALI → lead_az değişmez (bit-aynı).
         if _ozellik(cfg, "duzterm", "DUZTERM"):
-            _dl = math.radians(cfg.DUZTERM_LEAD_MAX)
+            _dlmax = cfg.DUZTERM_LEAD_MAX
+            # CAPRAZLEAD (kill-switch): yandan geçen hedefte (|LOS açısal hızı|
+            # yüksek) tavanı ek ile aç → burun öne alır, hedef terminalde kadrajdan
+            # süpürülüp çıkmaz (kilit kopması + yanal ıska aynı kök; bkz. Cfg).
+            # Kuyrukta (LOS hızı < eşik) ek=0 → 4° korunur, salınım koruması aynı.
+            # KAPALI → _dlmax=DUZTERM_LEAD_MAX (bit-aynı).
+            if _ozellik(cfg, "caprazlead", "CAPRAZLEAD"):
+                _ek = clamp((abs(los_hiz[0]) - cfg.CAPRAZ_LOS_ESIK) * cfg.CAPRAZ_KAZANC,
+                            0.0, cfg.CAPRAZ_EK_MAX)
+                _dlmax = cfg.DUZTERM_LEAD_MAX + _ek
+                _lead_kaynak = _lead_kaynak + "+capraz"
+            _dl = math.radians(_dlmax)
             lead_az = clamp(lead_az, -_dl, _dl)
             _lead_kaynak = _lead_kaynak + "+duz"
     # COMMIT (kill-switch): son t_go penceresinde küçük yaw hatasını YOK SAY →

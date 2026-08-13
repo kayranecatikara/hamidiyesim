@@ -1,0 +1,33 @@
+# Gece kampanya v2 — MANEVRALI UÇUŞTA VURUŞ (~12 saat). Aşamalı: tara→birleştir→doğrula.
+# Alanlar:  blok  vmax  kacamaklar(virgüllü)  cap(off|on|ab)  tekrar  ekenv(- ya da k=v,k=v)
+#   cap = AVCI_IBVS_CAPRAZLEAD.  ekenv = ERKEN_GORSEL / HYBRID_KAYIP_M / kazanç (YALNIZ env).
+#   ekenv çoklu: AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+# Sabit taban (surucu.sh): PN/PRED/TBOOST/DUZTERM=on, yapiskanlik=on, KILIT_KAYIP_SN_ON=3.5.
+#
+# blok vmax kacamaklar                                cap tekrar ekenv
+# ── Aşama 0: baseline (kaldıraçsız) ──
+S0    24   yatay,capraz,dikey_yukari                  off 3      -
+S0    24   yok                                        off 2      -
+# ── Aşama 1: tek-kaldıraç tarama (yatay) ──
+S1    24   yatay                                      on  4      -
+S1    24   yatay                                      off 4      AVCI_ERKEN_GORSEL=on
+S1    24   yatay                                      off 4      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S1    24   yatay                                      off 4      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=90
+S1    24   yatay                                      on  4      AVCI_IBVS_CAPRAZ_EK_MAX=20
+# ── Aşama 2: kombinasyon (yatay) ──
+S2    24   yatay                                      on  5      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S2    24   yatay                                      on  5      AVCI_HYBRID_KAYIP_M=60
+S2    24   yatay                                      on  5      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60,AVCI_IBVS_CAPRAZ_EK_MAX=20
+# ── Aşama 3: aday kombo × TÜM manevralar vs baseline ──
+S3    24   yatay,dikey_yukari,dikey_asagi,capraz,hizlan on 3     AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S3    24   yatay,dikey_yukari,dikey_asagi,capraz,hizlan off 3    -
+# ── Aşama 4: doğrulama + düz regresyon + 2. VMAX ──
+S4    24   yatay,capraz                               on  4      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S4    24   yok                                        on  3      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S4    22   yatay,capraz                               on  3      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+# ── Aşama 5: ek tekrar + kazanç varyantı ──
+S5    24   yatay,capraz                               on  6      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+S5    24   yatay,capraz                               on  3      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60,AVCI_IBVS_CAPRAZ_KAZANC=180
+S5    24   dikey_asagi,hizlan                         on  4      AVCI_ERKEN_GORSEL=on,AVCI_HYBRID_KAYIP_M=60
+# ── Aşama 5b: baseline güven aralığı ──
+S5b   24   yatay,capraz                               off 4      -

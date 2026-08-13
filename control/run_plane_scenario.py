@@ -188,12 +188,23 @@ def _read_vehicle_state(conn, wait=1.5):
 
 def takeoff(conn, climb_time=8.0):
     """Otonom kalkış: TAKEOFF modu motoru açıp TKOFF_ALT'a tırmandırır,
-    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir."""
-    print("[SCN] Otonom kalkış (TAKEOFF modu)...")
+    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir.
+
+    ⚠ İRTİFA KAPISI (2026-08-11, TEST ALTYAPISI): sabit climb_time=8 s ÖLÇÜLDÜ —
+    uçak yerde ~4 s hızlanma yiyor, TAKEOFF penceresinde yalnız ~4.5 m'ye
+    çıkabiliyor, FBWA + bekleme dairesi o irtifada banklayınca takla atıyordu
+    (3/3 kaza, roll→55°, canlı trace ile doğrulandı). Artık güvenli irtifaya
+    (AVCI_TKOFF_HEDEF, vars. 30 m) çıkana YA DA üst-zaman aşımına (climb_time'ın
+    en az 30 s'i) kadar TAKEOFF'ta kalınır. Güdüme dokunmaz (hedefin kalkışı)."""
+    hedef_alt = float(os.environ.get("AVCI_TKOFF_HEDEF", 30.0))
+    ust_sure = max(climb_time, 30.0)
+    print(f"[SCN] Otonom kalkış (TAKEOFF modu, hedef ~{hedef_alt:.0f} m)...")
     set_mode(conn, PLANE_MODE_TAKEOFF)
     t0 = time.time()
-    while not _abort and time.time() - t0 < climb_time:
+    while not _abort and time.time() - t0 < ust_sure:
         _pump(conn)
+        if -_pos["z"] >= hedef_alt:
+            break
         time.sleep(0.2)
     print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → FBWA")
     set_mode(conn, PLANE_MODE_FBWA)

@@ -55,6 +55,17 @@ _GPS_SET = frozenset({State.SEARCH, State.APPROACH, State.DETECT,
                       State.TRACK_LOCK, State.TRACK_LOST})
 _GORSEL_SET = frozenset({State.ENGAGE, State.STRIKE})
 
+# ── ERKEN GÖRSEL DEVİR (kill-switch, kayramin_super_gudumu fikrinin yerel portu) ──
+# Uzak dal felsefesi: "GPS'te takılma; görsel (bbox_ibvs dondurulmuş taşıyıcı)
+# hedefe daha erken/uzakta devralsın." Yerel FSM mimarisinde karşılığı: kilitlenince
+# (TRACK_LOCK) GPS istasyon-tutma yerine görsel yürütücüyü koştur. Terminal dalış
+# hâlâ ENGAGE/STRIKE'a FSM-kapılı (bbox_ibvs içinde) — 3-faz disiplini korunur.
+# Varsayılan KAPALI = byte-aynı. AÇIK iken TRACK_LOCK GPS'ten çıkıp görsel kümeye
+# taşınır (kümeler disjoint kalır; mission_fsm.py'ye DOKUNULMAZ).
+if os.environ.get("AVCI_ERKEN_GORSEL", "0").strip().lower() in ("1", "on", "true", "acik"):
+    _GPS_SET = _GPS_SET - {State.TRACK_LOCK}
+    _GORSEL_SET = _GORSEL_SET | {State.TRACK_LOCK}
+
 # GÖRSEL FAZ ALGORİTMASI (2026-08-09): FSM görsel fazına (ENGAGE/STRIKE) girince
 # hangi görsel güdüm yürütücüsü koşar?
 #   bbox_ibvs (VARSAYILAN) → kayramin IBVS algoritması (dikey-ıska çözümlü);
@@ -63,6 +74,44 @@ _GORSEL_SET = frozenset({State.ENGAGE, State.STRIKE})
 # 3 fazlı FSM YAPISI HER İKİSİNDE de aynı sürer; değişen yalnız fazların İÇİNDEKİ
 # görsel algoritma. bbox_ibvs kutu akışına wait_pose adaptörüyle bağlanır.
 _GORSEL_YASA = os.environ.get("AVCI_GORSEL_YASA", "bbox_ibvs").strip().lower()
+
+# ── SAYAÇ-BAZLI GEÇİŞ (kullanıcı isteği 2026-08-12) ──
+# GPS↔görsel DEVİR kararı FSM durumundan DEĞİL, ardışık-kare detection sayacından
+# alınır: üst üste _GOR_ESIK kare detection görülünce GÖRSEL güdüme, üst üste
+# AVCI_HYBRID_KAYIP_M kare görülmeyince GPS güdüme geçilir. Görsel↔GPS ve FSM aynı
+# anda devri TETİKLEMEZ (kullanıcı: "aynı anda devreye girmemeli"). FSM'in kümülatif/
+# kesintisiz kilit birikimi görsel yürütücünün İÇİNDE çalışmaya devam eder (şartname
+# 6.1.4 göstergesi); mission_fsm.py'ye DOKUNULMAZ. KAPALI = mevcut FSM dispatch (byte-aynı).
+_SAYAC_GECIS = os.environ.get("AVCI_HYBRID_SAYAC", "0").strip().lower() in ("1", "on", "true", "acik")
+_GOR_ESIK = int(os.environ.get("AVCI_HYBRID_GOR_N", 10))   # ardışık detection → görsele geç
+
+def _acik(ad, vars="0"):
+    return os.environ.get(ad, vars).strip().lower() in ("1", "on", "true", "acik")
+
+# ── AŞAMA 1: GEÇİŞ GEOMETRİ KAPISI (2026-08-12) ──
+# Sayaç modu görsele ÇOK ERKEN geçiyordu (yalnız 10 det; hedef ~9px/uzak iken).
+# Ölçüm (capraz): görsele geçişte cx %100 AV içinde ama kutu medyan 9px (%6'nın çok
+# altında) → takip yasası hedefi tutamıyor, kilit birikemiyor. Kapı: görsele YALNIZ
+# hedef AV merkezinde + yeterince BÜYÜK (yakın) iken geç → takip ilk kareden tutar,
+# kilit birikir. KAPALI → mevcut sayaç davranışı (yalnız 10 det). Çözünürlük kuralı:
+# piksel değil KAPLAMA oranı (bbox / kadraj) — kadraj boyutundan bağımsız.
+_GECIS_MERKEZ = _acik("AVCI_HYBRID_GECIS_MERKEZ")
+_GECIS_KAPLAMA = float(os.environ.get("AVCI_HYBRID_GECIS_KAPLAMA", 0.04))  # bbox/kadraj oranı
+_GECIS_N = int(os.environ.get("AVCI_HYBRID_GECIS_N", 6))   # ardışık geometri-ok kare
+
+# ── AŞAMA 2: YAPIŞKANLIK (titreme + erken-GPS önleme) ──
+# Görsele geçince, kilit birikene kadar GPS'e dönmeyi engelle. "min süre VEYA kilit
+# birikiyor → yapış; süre doldu VE kilit birikmiyor → bırak" (sınırsız tutma yok —
+# KAYIP_M=60 dersi). KAPALI → görsel "kayip" dönünce hemen GPS'e döner (mevcut).
+_YAPIS = _acik("AVCI_HYBRID_YAPIS")
+_YAPIS_SN = float(os.environ.get("AVCI_HYBRID_YAPIS_SN", 3.0))
+
+# ── AŞAMA 3: GÖRSEL-FAZ KAYIP TOLERANSI (koşullu) ──
+# Sayaç modunda görsel yürütücü KAYIP_M(20) kare tutamayıp sürekli "kayip" dönüp
+# yeniden başlıyordu (ölçüm: düz uçuşta 137 giriş). Görsel faza ÖZEL daha uzun kayıp
+# eşiği → coast köprüsü kaçamak/tutma boşluğunu dayanır, görsel oturum uzar, kilit
+# birikir. 0 = kapalı (sup_cfg.KAYIP_M kullan). bbox_ibvs.py parametrik → dokunulmaz.
+_KAYIP_M_GORSEL = int(os.environ.get("AVCI_HYBRID_KAYIP_M_GORSEL", 0))
 
 
 class SupCfg:
@@ -212,6 +261,9 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
     # sıfırlamak sayacı her çağrıda 0'a düşürüp arayüzde hep boş gösteriyordu.
     # Sayaç GÖREV başına anlamlı → start_chase/start_visual sıfırlıyor.
     status.update(faz="GPS", kilit_sayac=0, son_sebep=None)
+    # Sayaç modu hedef fazı: gps_izci 10 tespit görünce "gorsel" yapar; görsel
+    # yürütücü kayıpla dönünce "gps"e döner. Ana döngü bu değeri okur (FSM değil).
+    status["sayac_hedef"] = "gps"
     # Marj geri beslemeli mesafe tutucu (Adım 7) — bir kez başlar; YALNIZ VISUAL'de
     # RANGE_SET'i ayarlar (gps_guidance.py'ye dokunmadan sınıf niteliği yazımıyla).
     _tutucu.calistir(
@@ -230,9 +282,16 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
     # içinde FSM durumuna göre). GATE_KILIT/KILIT_N/GT_KILIT_BYPASS artık kullanılmaz.
     while not stop_event.is_set():
         st = get_gorev_state()
+        # Sayaç modunda devir FSM'den bağımsız: gps_izci 10 tespit görünce
+        # status["sayac_hedef"]="gorsel" yapar → ana döngü görsel yürütücüye geçer.
+        # Görsel kayıpla dönünce "gps"e döner. (Kullanıcı: FSM devri tetiklemez.)
+        if _SAYAC_GECIS:
+            gps_fazinda = (status.get("sayac_hedef", "gps") == "gps")
+        else:
+            gps_fazinda = (st is None or st in _GPS_SET)
 
         # ══ GPS YÜRÜTÜCÜSÜ ══ (FSM SEARCH/APPROACH/TRACK_LOST veya durum yok) ══
-        if st is None or st in _GPS_SET:
+        if gps_fazinda:
             status["faz"] = "GPS"
             faz_stop = threading.Event()
             _kopru(stop_event, faz_stop)
@@ -245,7 +304,37 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                              daemon=True).start()
 
             def gps_izci():
-                # FSM görsel kümeye (ENGAGE/STRIKE) girince GPS döngüsünü kır.
+                # SAYAÇ MODU: üst üste _GOR_ESIK kare detection görülünce görsele geç
+                # (FSM'e bakılmaz — kullanıcı isteği). Kare-senkron: wait_kare ile sayılır.
+                if _SAYAC_GECIS:
+                    seq = 0
+                    gor = 0
+                    esik = _GECIS_N if _GECIS_MERKEZ else _GOR_ESIK
+                    while not faz_stop.is_set():
+                        k = wait_kare(seq, 0.2)
+                        if k is None:
+                            continue
+                        seq = k["seq"]
+                        ok = k.get("det") is not None
+                        # AŞAMA 1: geometri kapısı — hedef AV merkezinde + yeterince
+                        # büyük (yakın) olduğu ardışık kareleri say; erken/uzak geçişi engeller.
+                        if ok and _GECIS_MERKEZ:
+                            kd = get_kilit_durum() or {}
+                            kap = max(kd.get("kaplama_x", 0.0) or 0.0,
+                                      kd.get("kaplama_y", 0.0) or 0.0)
+                            ok = bool(kd.get("merkez_av_icinde", False)) and kap >= _GECIS_KAPLAMA
+                        if ok:
+                            gor += 1
+                            status["kilit_sayac"] = gor
+                            if gor >= esik:
+                                status["sayac_hedef"] = "gorsel"   # ana döngü görsele geçsin
+                                faz_stop.set()
+                                return
+                        else:
+                            gor = 0
+                            status["kilit_sayac"] = 0
+                    return
+                # FSM MODU (varsayılan): görsel kümeye (ENGAGE/STRIKE) girince kır.
                 while not faz_stop.is_set():
                     s = get_gorev_state()
                     status["kilit_sayac"] = 0
@@ -266,13 +355,22 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         # ══ GÖRSEL YÜRÜTÜCÜ ══ (FSM DETECT/TRACK_LOCK/ENGAGE/STRIKE) ══
         status["faz"] = "VISUAL"
         status["gecis_sayisi"] += 1
+        _gorsel_giris_t = time.monotonic()   # AŞAMA 2 yapışkanlık: görsele giriş anı
         print(f"[SUPERVISOR] ✓ GÖRSEL YÜRÜTÜCÜ (FSM: {st.value}) — kapanma klempi "
               f"FSM türevi (geçiş #{status['gecis_sayisi']})")
         gorsel_stop = threading.Event()
         _kopru(stop_event, gorsel_stop)
 
         def gorsel_izci():
-            # FSM GPS kümesine düşerse (TRACK_LOST vb.) görsel yürütücüyü durdur.
+            # SAYAÇ MODU: görsel→GPS devrini FSM TETİKLEMEZ (kullanıcı isteği).
+            # Geçiş, görsel yürütücünün (bbox_ibvs) üst üste KAYIP_M kare detection
+            # görmeyince "kayip" dönmesiyle olur → ana döngü GPS'e döner. Burada yalnız
+            # ana stop dinlenir.
+            if _SAYAC_GECIS:
+                while not gorsel_stop.is_set():
+                    gorsel_stop.wait(0.1)
+                return
+            # FSM MODU (varsayılan): GPS kümesine düşerse (TRACK_LOST vb.) durdur.
             while not gorsel_stop.is_set():
                 s = get_gorev_state()
                 if s is not None and s in _GPS_SET:
@@ -299,8 +397,10 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                         "stamp": k.get("stamp"), "wall_recv": k.get("wall_recv"),
                         "lock": k.get("lock")}
 
+            _kayip_esik = (_KAYIP_M_GORSEL if (_SAYAC_GECIS and _KAYIP_M_GORSEL > 0)
+                           else sup_cfg.KAYIP_M)   # AŞAMA 3: görsel-faza özel kayıp toleransı
             sebep = _run_bbox_ibvs(conn, get_iris, _wait_pose, gorsel_stop,
-                                   cfg=_IbvsCfg, kayip_kare_esik=sup_cfg.KAYIP_M,
+                                   cfg=_IbvsCfg, kayip_kare_esik=_kayip_esik,
                                    ff_hiz=_ff, get_temas=get_temas,
                                    get_gorev_state=get_gorev_state)
         else:
@@ -315,8 +415,22 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
             return
         if stop_event.is_set():
             break
+        # Sayaç modu: görsel kayıpla bitti → GPS'e dön (gps_izci yeniden 10 tespit sayar).
+        if _SAYAC_GECIS:
+            _gps_don = True
+            # AŞAMA 2 yapışkanlık: kilit birikene kadar görselde kal (erken-GPS önle).
+            # "min süre VEYA kilit birikiyor → yapış; ikisi de değilse bırak."
+            if _YAPIS and sebep == "kayip":
+                gecen = time.monotonic() - _gorsel_giris_t
+                kd = get_kilit_durum() or {}
+                kes = kd.get("kesintisiz_s", 0.0) or 0.0
+                if gecen < _YAPIS_SN or kes > 0.0:
+                    _gps_don = False   # görselde kal, GPS'e dönme
+                    print(f"[SUPERVISOR] yapışkanlık: görselde kalınıyor "
+                          f"(görsel {gecen:.1f}s, kesintisiz {kes:.1f}s)")
+            status["sayac_hedef"] = "gps" if _gps_don else "gorsel"
         # kayip/durduruldu → FSM durumuna göre yeniden değerlendir (TRACK_LOST→GPS).
-        print(f"[SUPERVISOR] görsel yürütücü bitti (sebep={sebep}) → FSM'e göre devam")
+        print(f"[SUPERVISOR] görsel yürütücü bitti (sebep={sebep}) → yeniden değerlendir")
         time.sleep(0.05)                          # thrash önleme (aynı karede yeniden girme)
 
     status["faz"] = "DURDU"

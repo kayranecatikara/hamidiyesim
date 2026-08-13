@@ -1,0 +1,33 @@
+# Yalnız manevralı, dönüşümlü kontrol/deney matrisi.
+# Her çiftte tek değişken; kontrol de aynı manevrayı yapar.
+# blok vmax manevra cap tekrar ek-env
+Y_CAP_K 24 yatay off 1 -
+Y_CAP_M 24 yatay on  1 -
+Y_CAP_K 24 yatay off 1 -
+Y_CAP_M 24 yatay on  1 -
+Y_CAP_K 24 yatay off 1 -
+Y_CAP_M 24 yatay on  1 -
+C_CAP_K 24 capraz off 1 -
+C_CAP_M 24 capraz on  1 -
+C_CAP_K 24 capraz off 1 -
+C_CAP_M 24 capraz on  1 -
+C_CAP_K 24 capraz off 1 -
+C_CAP_M 24 capraz on  1 -
+Y_EG_K  24 yatay off 1 -
+Y_EG_M  24 yatay off 1 AVCI_ERKEN_GORSEL=on
+Y_EG_K  24 yatay off 1 -
+Y_EG_M  24 yatay off 1 AVCI_ERKEN_GORSEL=on
+Y_EG_K  24 yatay off 1 -
+Y_EG_M  24 yatay off 1 AVCI_ERKEN_GORSEL=on
+DY_K    24 dikey_yukari off 1 -
+DY_M    24 dikey_yukari on  1 -
+DY_K    24 dikey_yukari off 1 -
+DY_M    24 dikey_yukari on  1 -
+DA_K    24 dikey_asagi off 1 -
+DA_M    24 dikey_asagi on  1 -
+DA_K    24 dikey_asagi off 1 -
+DA_M    24 dikey_asagi on  1 -
+H_K     24 hizlan off 1 -
+H_M     24 hizlan on  1 -
+H_K     24 hizlan off 1 -
+H_M     24 hizlan on  1 -
