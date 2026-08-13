@@ -461,11 +461,11 @@
       <span class="etiket">✅ sisteme girdi</span>
     </div>
     <div class="kutucuk t-bekle">
-      <span class="sayi">5</span>
+      <span class="sayi">4</span>
       <span class="etiket">⏸ beklemede / kararsız</span>
     </div>
     <div class="kutucuk t-elendi">
-      <span class="sayi">7</span>
+      <span class="sayi">8</span>
       <span class="etiket">❌ elendi</span>
     </div>
   </section>
@@ -1457,17 +1457,29 @@
       <div class="kaynak">kaynak: commit e3a2a57, f88ec1b · logs/kacamak/T01-T12, V01-V04 · testler B62-B66</div>
     </article>
 
-    <!-- ── Ö12 ── -->
-    <article class="kart k-bekle">
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 3 — ELENENLER
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 3</span> ❌ Elenenler</h2>
+      <p>Ölçüldü; iyileştirmedi ya da kötüleştirdi. Kodu ve kill-switch'i çoğunda duruyor —
+         elenmek "yanlış" demek değil, "bu rejimde işe yaramıyor" demektir.</p>
+    </div>
+
+    <!-- ── Ö12 (ELENDİ 2026-08-13 — hipotez çürüdü) ── -->
+    <article class="kart k-elendi">
       <div class="kart-bas">
         <h3><span class="kod">Ö12</span> — Yakın menzilde yaw tavanı</h3>
-        <span class="rozet r-bekle">n yetersiz</span>
+        <span class="rozet r-elendi">elendi — hipotez çürüdü</span>
       </div>
       <div class="meta">
         <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_YAW_MENZIL · YAW_MINKAT</span></div>
         <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen 15 m · alt kat 0.35)</span></div>
-        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4, kollar dengeli: 2 yatay + 2 capraz)</span></div>
-        <div><span class="m-a">kaynak</span><span class="m-d">5b44a24</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">16 (8v8, kollar dengeli: 4 yatay + 4 capraz)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">5b44a24 · U01-U08 · W01-W08</span></div>
       </div>
       <div class="blok">
         <span class="b-a">ne yapıyor</span>
@@ -1493,38 +1505,70 @@
         (vx, vy, vz, yaw) <strong>bit bit aynı</strong>. Uçuş yolu / kesişim geometrisi
         değişemez. Bu, regresyon testinden daha güçlü olan kanıt türüdür (§5.10).</p>
       </div>
+      <div class="blok">
+        <span class="b-a">ölçüm — ilk tur (n=4v4), sonuç "n yetersiz" denmişti</span>
+        <p>KURTARMA 1/4 (19 kare) → 0/4 (0 kare); doyma %17 → %5; isabet 3/4 ↔ 3/4.
+        Umut verici görünüyordu ama KURTARMA seyrek bir olay (taban ~%33) ve 1/4 → 0/4
+        farkı n=4'te gürültüden ayrılamaz (§5.4) — bu yüzden <strong>hüküm kurulmadı</strong>,
+        kampanya n=8/kola çıkarıldı.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm — KESİN TUR (n=8v8, tür dağılımı eşit)</span>
+      </div>
       <div class="tablo-kutu">
         <table>
-          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=4</th><th class="s">Ö12 n=4</th></tr></thead>
+          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=8</th><th class="s">Ö12 n=8</th><th class="s">sonuç</th></tr></thead>
           <tbody>
-            <tr class="birincil"><td class="ad">KURTARMA yaşayan koşu (birincil)</td><td class="s">1/4 (19 kare)</td><td class="s kazanan">0/4 (0 kare)</td></tr>
-            <tr><td class="ad">yaw komut doyma medyanı (mekanizma)</td><td class="s">%17</td><td class="s kazanan">%5</td></tr>
-            <tr><td class="ad">İSABET</td><td class="s">3/4</td><td class="s">3/4 — gerileme yok</td></tr>
-            <tr><td class="ad">en yakın menzil</td><td class="s">0.70 m</td><td class="s">0.64 m — gerileme yok</td></tr>
+            <tr class="birincil"><td class="ad">KURTARMA yaşayan koşu (birincil)</td><td class="s">1/8 (19 kare)</td><td class="s kaybeden">1/8 (37 kare)</td><td class="s kaybeden">FARK YOK</td></tr>
+            <tr><td class="ad">yaw komut doyma medyanı (mekanizma)</td><td class="s">%23</td><td class="s kazanan">%3</td><td class="s kazanan">mekanizma ÇALIŞTI</td></tr>
+            <tr class="birincil"><td class="ad">İSABET</td><td class="s kazanan">7/8</td><td class="s kaybeden">5/8</td><td class="s kaybeden">gerileme</td></tr>
+            <tr><td class="ad">en yakın menzil (medyan)</td><td class="s kazanan">0.39 m</td><td class="s kaybeden">0.67 m</td><td class="s kaybeden">gerileme</td></tr>
+            <tr><td class="ad">görsel temas (medyan)</td><td class="s">%59</td><td class="s">%56</td><td class="s">~</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ HİPOTEZ ÇÜRÜDÜ — bu kartın asıl değeri burada</span>
+        <p>Ö12'nin dayandığı iddia şuydu: <em>"kendi ekseninde dönmenin sebebi, yakın menzilde
+        yaw komutunun tavana dayanmasıdır."</em> Ö12 tam da bunu düzeltti — doyma
+        <strong>%23 → %3</strong> — <strong>ve olay yine oldu.</strong> Yani doyma sebep değil,
+        <em>eşlik eden bir belirti</em>ymiş.</p>
+        <p><strong>Olay kayıtlarından gerçek kök neden.</strong> İki KURTARMA olayının
+        (W02 Ö12 kolu, U05 kontrol kolu) tetikten önceki kareleri aynı diziyi gösteriyor:</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>W02 (Ö12 kolu) — KURTARMA öncesi</th><th class="s">boyut</th><th class="s">cx (kadraj 640)</th><th class="s">yaw komut hızı</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">t−0.35 s</td><td class="s">97 px</td><td class="s">354</td><td class="s">—</td></tr>
+            <tr><td class="ad">t−0.20 s</td><td class="s">112 px</td><td class="s">470</td><td class="s">~37 °/s</td></tr>
+            <tr><td class="ad">t−0.05 s</td><td class="s">59 px</td><td class="s kaybeden">608 ← kadraj kenarı</td><td class="s">~37 °/s</td></tr>
+            <tr class="birincil"><td class="ad">t</td><td class="s kaybeden">kutu KAYIP</td><td class="s">TERM_KOR (kör hücum)</td><td class="s kaybeden">gerçek yaw 550 °/s → bekçi kesti</td></tr>
           </tbody>
         </table>
       </div>
       <div class="karar">
-        <span class="b-a">karar — n yetersiz</span>
-        <p><strong>Mekanizma çalışıyor</strong> (doyma %17 → %5). Ama KURTARMA olayı seyrek
-        (taban ~%33); 1/4 → 0/4 farkı <strong>n=4'te gürültüden ayrılamaz</strong> (§5.4).
-        Karar için <strong>n=8+/kol</strong> gerekiyor. Varsayılan KAPALI.</p>
-        <p>⚠ Yan gözlem, doğrulanmalı: <code>yatay</code> SAĞA AŞIM 41.3 → 69.4 m (n=2v2) —
-        gerileme olabilir.</p>
+        <span class="b-a">karar — ELENDİ</span>
+        <p>Önceden ilan edilen kural iki koldan da tetiklendi: birincil ölçüt
+        <strong>değişmedi</strong> (1/8 ↔ 1/8, üstelik Ö12'nin olayı 37 kare ile daha
+        <em>uzun</em>) ve <strong>gerileme var</strong> (isabet 7/8 → 5/8, en yakın menzil
+        0.39 → 0.67 m). Varsayılan KAPALI, panel düğmesi silindi.</p>
+        <p><strong>Ama eleme boşa gitmedi:</strong> mekanizma kusursuz çalıştığı hâlde sonuç
+        değişmediği için hipotez <em>kesin olarak</em> çürütüldü. Kendi ekseninde dönme,
+        yaw komutunun doymasından DEĞİL, <strong>çok yakında görsel temasın kopmasından</strong>
+        doğuyor: hedef 2-3 m'de kadrajın kenarından çıkıyor → kör hücum → araç bayat komutu
+        kovalarken gerçek yaw hızı 550°/s'ye fırlıyor → bekçi güdümü kesiyor.
+        ⇒ Çare yaw tavanı değil, <strong>hedefi kadrajda tutmak</strong> (sıradaki iş: FOV kısıtı).</p>
       </div>
-      <div class="kaynak">kaynak: commit 5b44a24 · logs/kacamak/U01-U08 · testler B67-B70</div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Mekanizma kapısının (§5.1) <strong>ters yönü</strong>: özellik çalıştığı hâlde ölçüt
+        değişmiyorsa, bu "n yetersiz" değil <em>nedensellik yanlış</em> demektir — ve bu,
+        bir özelliği elemekten daha değerli bir bilgidir. Doyma ile KURTARMA arasında
+        korelasyon vardı, nedensellik yoktu.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 5b44a24 · logs/kacamak/U01-U08, W01-W08 · logs/O12_OLCUTLER.md · testler B67-B70</div>
     </article>
-  </section>
-
-  <!-- ═══════════════════════════════════════════════════════════
-       BÖLÜM 3 — ELENENLER
-       ═══════════════════════════════════════════════════════════ -->
-  <section class="bolum">
-    <div class="bolum-bas">
-      <h2><span class="no">BÖLÜM 3</span> ❌ Elenenler</h2>
-      <p>Ölçüldü; iyileştirmedi ya da kötüleştirdi. Kodu ve kill-switch'i çoğunda duruyor —
-         elenmek "yanlış" demek değil, "bu rejimde işe yaramıyor" demektir.</p>
-    </div>
 
     <!-- ── M3 ── -->
     <article class="kart k-elendi">
@@ -2152,7 +2196,7 @@ KART ŞABLONU — yeni özellik eklerken bunu kopyala ve doldur.
 Bölüm sınıfı:  k-girdi (✅ girdi) | k-bekle (⏸ beklemede) | k-elendi (❌ elendi)
 Rozet sınıfı:  r-girdi            | r-bekle              | r-elendi
 Kartı doğru <section class="bolum"> içine, son </section>'dan önce koy.
-Özet şeridindeki sayıları (25 / 13 / 5 / 7) güncellemeyi UNUTMA.
+Özet şeridindeki sayıları (25 / 13 / 4 / 8) güncellemeyi UNUTMA.
 Opsiyonel bloklar: <div class="duzeltme"> (sonradan çürütülen hüküm),
 <div class="ders"> (CLAUDE.md §5.x dersi).
 Tablo hücre sınıfları: td.ad (satır adı), td.s (sayı, tabular),

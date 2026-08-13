@@ -716,20 +716,23 @@ def _arac_param_yaz(ad, deger, sysid=_IRIS_SYSID):
 # Ayrıca ölçüm de zayıftı: arşivli 4 koşunun Ö6 kolunda araç 38-40°'de kaldı,
 # yani 45° tavanına bile dayanmadı — o koşular fiilen kontrol koşusuydu.
 # Sıradaki iş yatış yetkisi değil NİŞAN NOKTASI (lead / PN).
+#   Ö11 iska sonrası yavaşlama AVCI_IBVS_DONUS_YAVAS=9.0  DURDURULDU: daire
+#       regresyonunda en yakın menzil %65 kötüleşti (5.15→8.49 m, §5.10).
+#       Ayrıca mekanizma uçuş başına yalnız 0.4-0.6 s ateşliyordu — ölçülen
+#       "%61 aşım azalması" bu kadar kısa bir etkiden gelmiş olamaz.
+#   Ö12 yakın menzilde yaw tavanı AVCI_IBVS_YAW_MENZIL=15  ELENDİ (n=8v8):
+#       MEKANİZMA MÜKEMMEL ÇALIŞTI (yaw doyma %23→%3) ama BİRİNCİL ÖLÇÜT
+#       DEĞİŞMEDİ: KURTARMA 1/8 → 1/8 (19 → 37 kare, daha da uzun).
+#       ⇒ HİPOTEZİM ÇÜRÜDÜ: kendi ekseninde dönmenin sebebi yaw komutunun
+#       doyması DEĞİL. Olay kayıtları (W02, U05) kök nedeni gösteriyor:
+#       hedef ÇOK YAKINDA (kutu 86-120 px ≈ 2-3 m) kadrajın kenarından
+#       ÇIKIYOR (cx 354→608, kadraj 640) → kutu kayıp → TERM_KOR (kör
+#       hücum) → araç bayat komutu kovalarken gerçek yaw hızı 550°/s'ye
+#       fırlıyor ve bekçi güdümü kesiyor. Ö12'de yaw KOMUTU sakindi
+#       (37°/s) ve olay yine oldu — komut değil, GÖRSEL TEMAS KAYBI sebep.
+#       Gerileme de var: isabet 7/8 → 5/8, en yakın menzil 0.39 → 0.67 m.
+#       ⇒ Sıradaki iş: hedefi kadrajda TUTMAK (Ö-D, FOV kısıtı).
 _OZELLIKLER = {
-    "o12_yaw_menzil": (
-        "YAW_MENZIL_REF", "deger", "Ö12 · Yakın menzilde yaw tavanı",
-        "Pas geçerken hedefin açısal hızı 1/R ile patlıyor; araç takip "
-        "edemiyor, yaw doyup savruluyor ve kurtarma bekçisi güdümü kesiyor "
-        "(30 koşunun 10'unda). Yakında yaw tavanı kısılır. ⚠ YALNIZ BURNU "
-        "etkiler — hız vektörü ve uçuş yolu DEĞİŞMEZ (test B67).",
-        "AVCI_IBVS_YAW_MENZIL", (0.0, 15.0)),
-    "o11_donus_yavas": (
-        "DONUS_YAVAS", "deger", "Ö11 · Iska sonrası dönüş için yavaşlama",
-        "66 m'lik aşım bir salınım DEĞİL — aracın minimum dönüş çemberi "
-        "(2R, 18 m/s'de 66 m). Hedefi geçtikten sonra (kutu hızla küçülüyor) "
-        "ve dönmemiz gerekirken hız 9 m/s'ye kısılır → 2R = 17 m, dört kat "
-        "dar. Düz takipte etkisiz.", "AVCI_IBVS_DONUS_YAVAS", (0.0, 9.0)),
 }
 
 
