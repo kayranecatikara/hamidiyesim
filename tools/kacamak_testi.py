@@ -12,7 +12,7 @@ Böylece her koşu aynı başlangıç geometrisinden başlar ve ölçülen tek �
 "bu kaçamağa güdüm nasıl tepki verdi" olur.
 
 Kullanım:
-    python3 tools/kacamak_testi.py <cikti_dizini> <kacamak> [tetik_m] [kayit_s]
+    python3 tools/kacamak_testi.py <cikti_dizini> <kacamak> [tetik_m] [kayit_s] [senaryo]
 
 Kaçamaklar:  yok | yatay | dikey_yukari | dikey_asagi | capraz | hizlan
     yok = TABAN koşusu (kaçamak yapılmaz) — kıyas çizgisi, her kampanyada koş.
@@ -117,13 +117,18 @@ def main():
     # Gerçek yeniden temas 50-100 s sürüyor (R01/R02 ölçümü) — pencere
     # bunu görecek kadar uzun olmalı.
     kayit_s = float(sys.argv[4]) if len(sys.argv) > 4 else 240.0
+    # 5. argüman: hedef senaryosu. Varsayılan 'duz' (kaçamak testi).
+    # 'circle' → REGRESYON testi: sürekli manevrada özellik takibi bozuyor mu
+    # (CLAUDE.md §5.10 — bir durumu düzeltirken başkasını bozma).
+    senaryo = sys.argv[5] if len(sys.argv) > 5 else "duz"
     if kacamak not in KACAMAKLAR:
         print(f"bilinmeyen kaçamak: {kacamak}  ({'|'.join(KACAMAKLAR)})")
         raise SystemExit(1)
     os.makedirs(dizin, exist_ok=True)
 
     t_bas = time.time()          # arşivleme için koşu başlangıcı
-    print(f"[KAÇAMAK TESTİ] {kacamak}  tetik={tetik_m:.0f} m  kayıt={kayit_s:.0f} s")
+    print(f"[KAÇAMAK TESTİ] senaryo={senaryo}  kacamak={kacamak}  "
+          f"tetik={tetik_m:.0f} m  kayıt={kayit_s:.0f} s")
 
     # ── temiz başlangıç: düz uçuş ──
     istek("/api/command/iris/stop_chase")
@@ -131,8 +136,8 @@ def main():
     istek("/api/command/plane/stop_scenario")
     time.sleep(3.0)
     istek("/api/hasar/sifirla")
-    istek("/api/command/plane/scenario/duz")
-    print("  hedef kalkıyor (duz)...")
+    istek("/api/command/plane/scenario/" + senaryo)
+    print(f"  hedef kalkıyor ({senaryo})...")
     if not bekle_hedef_hazir():
         raise SystemExit(2)
     time.sleep(8.0)                      # düz uçuş otursun

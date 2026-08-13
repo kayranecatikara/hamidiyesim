@@ -166,7 +166,31 @@ DOĞRULANMALI.
 
 ⇒ Karar için n=8+/kol gerekiyor (seyrek olay). Varsayılan KAPALI.
 
-### ⚠ AÇIK KALAN: Ö11 SÜREKLİ MANEVRADA (daire) SINANMADI
+### ⚑ Ö11 DAİRE REGRESYONU KOŞULDU (§5.10) — KARAR KURALI TETİKLENDİ
+
+Kullanıcının öngördüğü risk sınandı: `circle` senaryosu, 4 uçuş (2v2),
+kaçamak `yok` (sürekli manevranın kendisi zaten zorlayıcı).
+
+| ölçüt | KONTROL n=2 | Ö11 n=2 | karar kuralı |
+|---|---|---|---|
+| **en yakın menzil** (birincil 1) | 5.15 m | **8.49 m (+65%)** | ⚠ **%30 eşiği AŞILDI** |
+| Ö11 tetik oranı (birincil 2) | — | 3% | eşik %30 — aşılmadı |
+| isabet | 0/2 | 0/2 | — |
+| görsel temas | 41% | 46% | — |
+
+**KARAR: Ö11 VARSAYILAN YAPILAMAZ.** Önceden ilan edilen kural tetiklendi.
+
+⚠ İki nüans, dürüstlük için:
+1. **Korktuğum mekanizma DEĞİL.** "Sürekli 9 m/s'de kilitlenir" diye
+   düşünmüştüm; tetik oranı yalnız %3. Yani araç sürekli yavaş kalmıyor —
+   ama yine de dairede daha uzakta kalıyor. Sebep başka; anlaşılmadı.
+2. **n=2 ve ham değerler ÖRTÜŞÜYOR:** kontrol [2.45, 7.85], Ö11 [13.42,
+   3.57]. Medyan farkı %65 ama dağılımlar iç içe. §5.4 gereği bu bir
+   "hüküm" değil, **kuralın tetiklediği bir DURDURMA**.
+
+⇒ Ö11 kapalı kalır. Girmesi için: daire kolu n=4+ ile doğrulanmalı VE
+gerileme sürerse tetik daraltılmalı (ör. yalnız kaçamak sonrası ilk N
+saniye, ya da `boyut` yakın geçişi doğrulayan ek şart).
 
 Kullanıcı haklı olarak sordu: "hedef sürekli sert manevra yaparsa, daire
 çizerse Ö11 takibi kötüleştirmez mi?" Ö11 yalnız `kapanma < −5 m/s` VE
