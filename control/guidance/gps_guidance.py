@@ -372,6 +372,7 @@ _CSV_ALANLAR = [
     "tgt_x", "tgt_y", "tgt_z", "tgt_vx", "tgt_vy", "tgt_vz",
     "iris_x", "iris_y", "iris_z", "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "st_x", "st_y", "st_z", "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg",
+    "fov_kis",
     "kadraj_yaw_deg", "kadraj_elev_deg", "kadraj_pitch_hata_deg", "u_px", "v_px",
     "ist_elev_deg",   # istasyonun o anki LOS yükselişi (dinamik modda değişken)
     "ff_donus_mps",   # dönüş ileri beslemesi |ω×r| (düzde 0)
