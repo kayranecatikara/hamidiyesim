@@ -1,0 +1,535 @@
+<title>IBVS Okuma Yol Haritası</title>
+
+<style>
+  :root {
+    --zemin:#eef1f4; --yuzey:#ffffff; --yuzey-2:#f6f8fa;
+    --murekkep:#12171c; --murekkep-2:#3d4852; --sonuk:#67737f;
+    --cizgi:#d3dae1; --cizgi-kuvvet:#b6c0cb;
+    --vurgu:#1c5a87; --vurgu-yumusak:#e4eef6;
+    --sart:#9c2b2b; --sart-zemin:#f7e4e3;
+    --iyi:#14683c; --iyi-zemin:#e2f1e8;
+    --orta:#8a5c00; --orta-zemin:#f8eed6;
+    --golge:0 1px 2px rgba(18,23,28,.06), 0 0 0 1px rgba(18,23,28,.05);
+    --mono: ui-monospace,"SFMono-Regular","SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --zemin:#0d1116; --yuzey:#151b21; --yuzey-2:#1b232b;
+      --murekkep:#e6ebef; --murekkep-2:#bcc7d1; --sonuk:#8b98a5;
+      --cizgi:#263039; --cizgi-kuvvet:#36434f;
+      --vurgu:#79b6e2; --vurgu-yumusak:#152532;
+      --sart:#ef8078; --sart-zemin:#2e1817;
+      --iyi:#5fc48c; --iyi-zemin:#10281c;
+      --orta:#e2ab48; --orta-zemin:#2b2213;
+      --golge:0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+    }
+  }
+  :root[data-theme="dark"] {
+    --zemin:#0d1116; --yuzey:#151b21; --yuzey-2:#1b232b;
+    --murekkep:#e6ebef; --murekkep-2:#bcc7d1; --sonuk:#8b98a5;
+    --cizgi:#263039; --cizgi-kuvvet:#36434f;
+    --vurgu:#79b6e2; --vurgu-yumusak:#152532;
+    --sart:#ef8078; --sart-zemin:#2e1817;
+    --iyi:#5fc48c; --iyi-zemin:#10281c;
+    --orta:#e2ab48; --orta-zemin:#2b2213;
+    --golge:0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+  }
+
+  body { margin:0; background:var(--zemin); color:var(--murekkep);
+         font-family:var(--sans); font-size:16px; line-height:1.62;
+         -webkit-text-size-adjust:100%; }
+  * { box-sizing:border-box; }
+  .sayfa { max-width:900px; margin:0 auto; padding:40px 20px 96px;
+           display:flex; flex-direction:column; gap:44px; }
+  a { color:var(--vurgu); overflow-wrap:anywhere; }
+  code { font-family:var(--mono); font-size:.9em; background:var(--yuzey-2);
+         border:1px solid var(--cizgi); border-radius:2px; padding:0 4px; }
+
+  .goz { font-family:var(--mono); font-size:11.5px; letter-spacing:.16em;
+         text-transform:uppercase; color:var(--sonuk); }
+  h1 { margin:0; font-size:clamp(30px,6vw,44px); line-height:1.1;
+       letter-spacing:-.02em; font-weight:640; text-wrap:balance; }
+  .tepe { display:flex; flex-direction:column; gap:14px; }
+  .giris { max-width:66ch; color:var(--murekkep-2); margin:0; }
+
+  .bolum { display:flex; flex-direction:column; gap:18px; }
+  .bolum-bas { display:flex; flex-direction:column; gap:6px;
+               padding-bottom:12px; border-bottom:2px solid var(--cizgi-kuvvet); }
+  .bolum-bas h2 { margin:0; font-size:22px; font-weight:620;
+                  letter-spacing:-.01em; display:flex; align-items:baseline;
+                  gap:10px; flex-wrap:wrap; }
+  .bolum-bas h2 .no { font-family:var(--mono); font-size:12px;
+                      letter-spacing:.12em; color:var(--sonuk); font-weight:500; }
+  .bolum-bas p { margin:0; color:var(--sonuk); font-size:14.5px; max-width:68ch; }
+
+  .kagit { background:var(--yuzey); border:1px solid var(--cizgi);
+           border-left:3px solid var(--cizgi-kuvvet); border-radius:3px;
+           box-shadow:var(--golge); padding:18px 20px;
+           display:flex; flex-direction:column; gap:10px; }
+  .kagit.k1 { border-left-color:var(--iyi); }
+  .kagit.k2 { border-left-color:var(--vurgu); }
+  .kagit.k3 { border-left-color:var(--orta); }
+  .kagit h3 { margin:0; font-size:17px; font-weight:620; line-height:1.35; }
+  .kunye { font-size:13px; color:var(--sonuk); font-family:var(--mono);
+           overflow-wrap:anywhere; }
+  .kagit p { margin:0; color:var(--murekkep-2); font-size:15px; max-width:72ch; }
+  .etiketler { display:flex; gap:6px; flex-wrap:wrap; }
+  .et { font-family:var(--mono); font-size:10.5px; letter-spacing:.08em;
+        text-transform:uppercase; padding:3px 8px; border-radius:2px;
+        font-weight:600; background:var(--yuzey-2); color:var(--sonuk);
+        border:1px solid var(--cizgi); }
+  .et.z1 { background:var(--iyi-zemin); color:var(--iyi); border-color:transparent; }
+  .et.z2 { background:var(--orta-zemin); color:var(--orta); border-color:transparent; }
+  .et.z3 { background:var(--sart-zemin); color:var(--sart); border-color:transparent; }
+  .nicin { border-left:3px solid var(--vurgu); background:var(--vurgu-yumusak);
+           padding:10px 14px; border-radius:0 2px 2px 0; }
+  .nicin .b-a { font-family:var(--mono); font-size:10.5px; letter-spacing:.12em;
+                text-transform:uppercase; color:var(--sonuk); display:block;
+                margin-bottom:3px; }
+
+  .uyari { font-size:14.5px; color:var(--murekkep-2); background:var(--sart-zemin);
+           border:1px solid var(--cizgi); border-radius:2px; padding:14px 16px;
+           max-width:76ch; }
+  .uyari strong { color:var(--sart); }
+  .not { font-size:14.5px; color:var(--murekkep-2); background:var(--yuzey-2);
+         border:1px solid var(--cizgi); border-radius:2px; padding:14px 16px;
+         max-width:76ch; }
+
+  .tablo-kutu { overflow-x:auto; border:1px solid var(--cizgi);
+                border-radius:2px; background:var(--yuzey-2); }
+  table { border-collapse:collapse; width:100%; font-size:14px; min-width:460px; }
+  thead th { text-align:left; font-family:var(--mono); font-size:10.5px;
+             letter-spacing:.1em; text-transform:uppercase; color:var(--sonuk);
+             font-weight:600; padding:9px 12px;
+             border-bottom:1px solid var(--cizgi-kuvvet); white-space:nowrap; }
+  tbody td { padding:8px 12px; border-bottom:1px solid var(--cizgi);
+             color:var(--murekkep-2); vertical-align:top; }
+  tbody tr:last-child td { border-bottom:none; }
+  td.ad { color:var(--murekkep); font-weight:600; }
+
+  ol.yol { margin:0; padding-left:22px; color:var(--murekkep-2);
+           display:flex; flex-direction:column; gap:10px; max-width:74ch;
+           font-size:15px; }
+  ul.duz { margin:0; padding-left:22px; color:var(--murekkep-2);
+           display:flex; flex-direction:column; gap:7px; max-width:74ch;
+           font-size:15px; }
+
+  .altbilgi { border-top:1px solid var(--cizgi); padding-top:20px;
+              font-size:13.5px; color:var(--sonuk); max-width:74ch; }
+
+  @media (max-width:620px) {
+    .sayfa { padding:28px 14px 72px; gap:34px; }
+    .kagit { padding:16px; }
+    body { font-size:15.5px; }
+  }
+</style>
+
+<div class="sayfa">
+
+<header class="tepe">
+  <div class="goz">avci_sim · görsel güdüm · okuma yol haritası</div>
+  <h1>IBVS Okuma Yol Haritası</h1>
+  <p class="giris">
+    Sıfırdan başlayıp <strong>bizim özel problemimize</strong> — bbox ile
+    görsel güdüm, kaçamak yapan hedef, ıska sonrası yeniden saldırı —
+    ulaşan bir okuma sırası. Her kaynağın yanında <em>ne öğretiyor</em>,
+    <em>bizim hangi kararımıza dokunuyor</em> ve <em>ne kadar zor</em> yazıyor.
+  </p>
+  <p class="giris">
+    Sıra önemli: 1. bölüm olmadan 4. bölüm okunmaz. Toplam ciddi okuma
+    yükü <strong>~25-30 saat</strong>; ama <em>"sadece üç tane okusam"</em>
+    kısayolu da aşağıda var.
+  </p>
+</header>
+
+<div class="uyari">
+  <strong>Kaynakların güvenilirliği hakkında dürüst not.</strong>
+  Aşağıdaki bağlantıların çoğu bu proje için yapılan literatür taramasında
+  <em>fiilen açılıp okunan</em> sayfalardır. Ama <strong>Bölüm 1'deki klasik
+  ders kaynaklarını URL'siz verdim</strong> — onları taramadan değil kendi
+  bilgimden ekliyorum ve <em>yanlış bir bağlantı vermektense hiç
+  vermemeyi</em> tercih ediyorum. Başlığı Google Scholar'a yapıştır, ilk
+  sonuç odur. Bir bağlantı açılmazsa bana söyle, doğrusunu bulayım.
+</div>
+
+<!-- ══════════════════ KISAYOL ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">KISAYOL</span> Sadece üç tane okuyacaksan</h2>
+    <p>Bu üçü, bu projede aldığımız kararların <strong>%80'ini</strong> anlamana yeter.</p>
+  </div>
+
+  <div class="kagit k1">
+    <h3>1 · Chaumette &amp; Hutchinson — <em>Visual Servo Control, Part I: Basic Approaches</em></h3>
+    <div class="kunye">IEEE Robotics &amp; Automation Magazine, 13(4):82-90, 2006 · klasik referans, URL'siz</div>
+    <div class="etiketler"><span class="et z1">TEMEL</span><span class="et">~3 saat</span><span class="et">matematik: orta</span></div>
+    <p>Görsel servolamanın ne olduğunu anlatan <strong>standart giriş metni</strong>.
+    "Etkileşim matrisi" (interaction matrix / image Jacobian) kavramı burada
+    kuruluyor: <em>kamera şöyle hareket ederse, görüntüdeki nokta böyle
+    kayar</em> ilişkisinin matrisi. IBVS ile PBVS farkı da burada.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bizim <code>bbox_ibvs.py</code>'de yaptığımız her şey bu çerçevenin
+    basitleştirilmiş hâli. Bu makaleyi okuduktan sonra kodda
+    <code>eps_yaw</code>, <code>eps_elev</code>, <code>boyut</code>
+    üçlüsünün aslında bir <em>görüntü özellik vektörü</em> olduğunu
+    göreceksin.</div>
+  </div>
+
+  <div class="kagit k1">
+    <h3>2 · <em>Towards Safe Mid-Air Drone Interception: Strategies for Tracking &amp; Capture</em> (EPN)</h3>
+    <div class="kunye"><a href="https://arxiv.org/html/2405.13542v1">arxiv.org/html/2405.13542v1</a></div>
+    <div class="etiketler"><span class="et z1">BİZİM PROBLEMİMİZ</span><span class="et">~2 saat</span><span class="et">matematik: kolay</span></div>
+    <p>Bizimkiyle en çok örtüşen çalışma. İki şeyi öğretiyor:
+    <strong>(a)</strong> klasik orantısal seyir yasası ıskadan sonra neden
+    <em>ıraksar</em> ve buna eklenen "yakınlık terimi" bunu nasıl kapatır;
+    <strong>(b)</strong> daha önemlisi — <strong>tek geçişte vurmayı
+    hedeflememişler.</strong> %100 başarıya <em>yörünge başına ortalama 24
+    deneme</em> ile ulaşıyorlar; birincil ölçütleri "ilk temasa kadar geçen
+    süre".</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bizim "yeniden saldırıya geçme süresi" ölçütümüz buradan geliyor.
+    Senin <em>"daha kısa sürede vurabilecek"</em> cümlenle birebir aynı şey.</div>
+  </div>
+
+  <div class="kagit k1">
+    <h3>3 · Isaacs / Merz — <em>The Homicidal Chauffeur</em> diferansiyel oyunu</h3>
+    <div class="kunye">Merz, A.W., Stanford doktora tezi, 1971 · <a href="https://web.ece.ucsb.edu/~hespanha/published/2007e_MultiChauffeurs.pdf">Bopardikar &amp; Bullo, çok-takipçili hâli (PDF)</a></div>
+    <div class="etiketler"><span class="et z1">TEORİ</span><span class="et">~2 saat</span><span class="et">matematik: zor ama sonucu kolay</span></div>
+    <p>"Hızlı ama dönüş yarıçapı kısıtlı takipçi" ile "yavaş ama keskin
+    dönebilen kaçan" arasındaki oyunun klasik adı. <strong>Bizim
+    sistemimizin tam adı bu.</strong> Sonuç iki sayıya bağlı:
+    hız oranı ve <em>yakalama yarıçapı / minimum dönüş yarıçapı</em> oranı.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bizim sayılarımız (β≈0.045, γ≈0.83) teorinin <strong>"kaçan
+    kurtulabilir"</strong> bölgesinde. Yani mükemmel bir yasayla bile tek
+    geçişte isabet <em>garanti edilemez</em>. Bu, hedefi "her seferinde
+    vur"dan "en kısa sürede tekrar saldır"a çevirmemizin sebebi.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 1 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 1</span> Temel — görsel servolama nedir</h2>
+    <p>Hiç bilmiyorsan burası zorunlu. Diğer her şey bunun üstüne kuruluyor.</p>
+  </div>
+
+  <div class="kagit k1">
+    <h3>Chaumette &amp; Hutchinson — <em>Visual Servo Control, Part I &amp; Part II</em></h3>
+    <div class="kunye">IEEE RAM 13(4) 2006 ve 14(1) 2007 · klasik referans, URL'siz — başlıkla ara</div>
+    <div class="etiketler"><span class="et z1">ZORUNLU</span><span class="et">~5 saat (ikisi)</span></div>
+    <p>Part I: temel yaklaşımlar, etkileşim matrisi, IBVS vs PBVS, kararlılık.
+    Part II: derinlik kestirimi, hibrit yöntemler, kısıtlar.
+    <strong>Bu ikisini okumadan aşağıdakilerin yarısı anlaşılmaz.</strong></p>
+  </div>
+
+  <div class="kagit k1">
+    <h3>Corke — <em>Robotics, Vision and Control</em>, görsel servolama bölümü</h3>
+    <div class="kunye">Peter Corke, Springer · klasik ders kitabı, URL'siz</div>
+    <div class="etiketler"><span class="et z1">EN KOLAY GİRİŞ</span><span class="et">~4 saat</span></div>
+    <p>Makaleden daha yavaş, bol şekilli ve MATLAB/Python kodlu. Matematikle
+    aran çok iyi değilse <strong>Chaumette'ten ÖNCE bunu oku</strong>.
+    Kamera modeli, piksel→ışın dönüşümü, odak uzaklığı gibi bizim kodda
+    sürekli geçen şeyler burada oturur.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    <code>geo.FX</code>, <code>CX_NISAN</code>, <code>los_seviye()</code> —
+    kodda gördüğün bu üçlü tam olarak bu bölümün konusu.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 2 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 2</span> Bizim özel durumumuz — gövdeye sabit kamera, kutudan menzil</h2>
+    <p>Klasik IBVS "robot kolu + sabit hedef" varsayar. Bizde kamera uçan bir
+       araca vidalı ve hedef kaçıyor. Farkın adı var.</p>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Strapdown seeker — gövde açısından eylemsiz LOS hızına geçiş</h3>
+    <div class="kunye">
+      <a href="https://engrxiv.org/preprint/view/7642">engrxiv.org/preprint/view/7642</a> — piksel düzlemi Kalman + jiroskop füzyonu<br>
+      <a href="https://www.atlantis-press.com/article/15113.pdf">atlantis-press.com/article/15113.pdf</a> — LOS açısal hızı yeniden kurma
+    </div>
+    <div class="etiketler"><span class="et z2">ÖNEMLİ</span><span class="et">~3 saat</span><span class="et">matematik: orta-zor</span></div>
+    <p>Gimbalsiz, gövdeye sabit kamerayla güdüm yapmanın zorluğu: kameradan
+    ölçtüğün <strong>gövde-göreli açı</strong>dır, güdüm yasalarının istediği
+    ise <strong>eylemsiz LOS açısal hızı</strong>. İkisi kendi dönüşünle
+    karışmıştır ve ayrıştırılması gerekir.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bu, planladığımız <strong>Ö-C</strong> özelliğinin temeli. Ayrıca T1a
+    (roll telafisi) bunun basit hâli: araç yattığında piksel açısı seviye
+    açısı değildir — biz bunu ölçtük, 30-39° yatışta okuma hatası 13.9°'ydi.</div>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Bearing–Angle / Bearing-Box — kutudan menzil kestirimi</h3>
+    <div class="kunye">
+      <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12300593/">Sensors 25(14):4396 — Dynamic Bearing–Angle</a><br>
+      <a href="https://arxiv.org/abs/2601.06887">arXiv:2601.06887 — Bearing-Box (IEEE T-RO)</a><br>
+      <a href="https://arxiv.org/html/2606.07756v1">arXiv:2606.07756 — DroneDAR, bbox ile uzun menzil kestirimi</a>
+    </div>
+    <div class="etiketler"><span class="et z2">DOĞRUDAN UYGULANIR</span><span class="et">~3 saat</span></div>
+    <p>Salt kerteriz (bearing-only) ile menzil <em>gözlenemez</em>. Ama bbox
+    genişliği bir <strong>açısal genişlik</strong> ölçümüdür ve hedefin
+    fiziksel boyutu biliniyorsa menzili doğrudan gözlenebilir kılar:
+    θ ≈ ℓ/r. Bu literatür, ham bölme yerine Kalman filtresi kullanıp
+    hatayı ~1/6'ya indiriyor.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bizim <code>R = MENZIL_PX_M / boyut</code> satırımız tam olarak bu —
+    ama <strong>ham bölme</strong>. Planlanan <strong>Ö-E</strong> bunu
+    filtreye çevirmek. Bugün ölçtüğümüz kapanma hızı bu ham bölmenin
+    türevi olduğu için oldukça gürültülü.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 3 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 3</span> Güdüm yasaları — nereye nişan alınır</h2>
+    <p>Şu an yaptığımız şeyin adı <strong>saf takip (pure pursuit)</strong>:
+       hedefin bulunduğu yere nişan al. Literatür bunun manevralı hedefte
+       neden yetersiz kaldığını anlatıyor.</p>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Orantısal seyir (PN) ve artırılmış hâli (APN)</h3>
+    <div class="kunye">
+      <a href="https://arc.aiaa.org/doi/10.2514/6.2021-1813">AIAA 2021-1813 — Multirotor takibinde PN değerlendirmesi</a><br>
+      <a href="https://ev.fe.uni-lj.si/1-2-2026/Hodzic.pdf">EKF tabanlı hedef kestirimiyle APN (PDF)</a><br>
+      <a href="https://arc.aiaa.org/doi/10.2514/1.G003179">AIAA JGCD — sapmalı saf takip (deviated pure pursuit)</a>
+    </div>
+    <div class="etiketler"><span class="et z2">ÇEKİRDEK</span><span class="et">~4 saat</span><span class="et">matematik: orta</span></div>
+    <p>Temel fikir: hedefin <em>bulunduğu</em> yere değil, LOS'un <em>dönmesini
+    durduracak</em> yere nişan al. <code>a = N · V_kapanma · λ̇</code>.
+    Saf takip manevralı hedefte gecikir ve aşım yapar — literatürün standart
+    çaresi PN'e geçmek. APN ise hedefin ivmesini ileri besler (ama onu
+    bilmek gerekir).</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Kodda <code>hiz_yonu = iris_yaw + K_YAW·eps_hiz</code> satırı saf takiptir.
+    Planlanan <strong>Ö-C</strong> bunu PN'e çevirmek. Sicildeki
+    <code>M3 (erken lead)</code> bunun küçük bir denemesiydi ve nötr çıktı.</div>
+  </div>
+
+  <div class="kagit k3">
+    <h3>Hava muharebesi manevraları — high/low yo-yo, lag pursuit</h3>
+    <div class="kunye">
+      <a href="https://en.wikipedia.org/wiki/Basic_fighter_maneuvers">Wikipedia — Basic fighter maneuvers</a><br>
+      <a href="https://navyflightmanuals.tpub.com/P-1210/High-Yo-Yo-P-12100034-34.htm">US Navy Flight Manual P-1210 — High Yo-Yo</a><br>
+      <a href="https://apps.dtic.mil/sti/trecms/pdf/AD1130933.pdf">DTIC AD1130933 — Air Combat Maneuvering (PDF)</a>
+    </div>
+    <div class="etiketler"><span class="et z3">İLHAM — FORMÜL YOK</span><span class="et">~1 saat</span><span class="et">matematik: yok</span></div>
+    <p>Pilotlar tam olarak bizim problemimizi (aşırı kapanma hızıyla hedefi
+    geçme) yüzyıldır çözüyor: hızı irtifaya çevirip dönüşü sıkıştırmak.
+    <strong>Ama bunların otonom, matematiksel bir kontrol yasası hâli
+    literatürde YOK</strong> — ya betimsel ya da formülsüz pekiştirmeli
+    öğrenme.</p>
+    <div class="nicin"><span class="b-a">dürüst uyarı</span>
+    Multirotorda "corner speed" diye bir şey yok (o kavram kanattan gelir),
+    yani yo-yo doğrudan taşınmaz. Ama <em>dönüşten çıkarken alçalıp
+    hızlanmak</em> fikri fiziksel olarak geçerli ve <strong>Ö-B'nin</strong>
+    isteğe bağlı ikinci parçası olarak duruyor.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 4 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 4</span> Asıl derdimiz — ıska sonrası ve dönüş kısıtı</h2>
+    <p>"Kaçamaktan sonra 110-322 m açılıyor ve kapanması 80-104 saniye
+       sürüyor" probleminin literatürdeki karşılığı.</p>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Çok-hızlı Dubins modeli — <em>yavaş dön, düzde hızlan</em></h3>
+    <div class="kunye">
+      <a href="https://arxiv.org/abs/2402.01122">arXiv:2402.01122 — Generalized Multi-Speed Dubins (IEEE T-RO 2025)</a><br>
+      <a href="https://www.researchgate.net/publication/305684196">Değişken hızlı araç için zaman-optimal yol planlama</a>
+    </div>
+    <div class="etiketler"><span class="et z1">Ö-B'NİN TEMELİ</span><span class="et">~3 saat</span></div>
+    <p>Sabit hız kısıtı gevşetilince optimal yollar %10-30 daha hızlı oluyor.
+    Kritik detay: optimal yol bir <strong>"köşe dönüşü"</strong>dür — araç
+    <em>yalnız viraj yayında</em> yavaşlar, düz kesimde tam hıza döner.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    <strong>Ö11'in neden çuvalladığının tam tanısı bu.</strong> Bizim
+    tetiğimiz virajdan sonra da sağlanmaya devam ediyordu:
+    <em>"yavaş dön" doğru, "yavaş kal" yanlış.</em> Sıradaki
+    <strong>Ö-B</strong> tam olarak bunu düzeltecek.</div>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Dönüş kısıtlı takipçinin yakalama bölgesi</h3>
+    <div class="kunye">
+      <a href="https://arxiv.org/abs/2502.00364">arXiv:2502.00364 — Engagement Zones for a Turn Constrained Pursuer</a><br>
+      <a href="https://arxiv.org/abs/2107.04709">arXiv:2107.04709 — Çok oyunculu Homicidal Chauffeur, reach-avoid</a><br>
+      <a href="https://doi.org/10.2514/1.g005748">JGCD — Dubins aracıyla hareketli hedefi kesme</a>
+    </div>
+    <div class="etiketler"><span class="et z2">TEORİ</span><span class="et">~4 saat</span><span class="et">matematik: zor</span></div>
+    <p>"Bu geometriden vurabilir miyim?" sorusunun analitik cevabına yakın
+    çalışmalar. Dönüş kısıtlı bir aracın yakalama bölgesi kapalı forma yakın
+    tarif edilebiliyor.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    İleride: vurulamayacak geometride ısrar etmeyi bırakıp <strong>erken
+    dönüş başlatma</strong> kararı için kullanılabilir. Şu an yapmıyoruz.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 5 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 5</span> Hedefi kadrajda tutmak (FOV kısıtı)</h2>
+    <p>Ö-D'nin ait olduğu aile. Bizim ölçtüğümüz en büyük kayıp burada:
+       temasın kopması.</p>
+  </div>
+
+  <div class="kagit k2">
+    <h3>Planar-Sector LOS — asimetrik görüş alanı kısıtı</h3>
+    <div class="kunye"><a href="https://arxiv.org/html/2606.10639v2">arXiv:2606.10639v2 — kaldırma kanatlı quadcopter ile önleme</a></div>
+    <div class="etiketler"><span class="et z1">EN YAKIN SENARYO</span><span class="et">~2 saat</span></div>
+    <p>FOV kısıtını simetrik koni yerine <strong>asimetrik sektör</strong>
+    yapıyorlar: yatayda sıkı, dikeyde gevşek — FPV pilotlarının davranışını
+    taklit ediyor. Sonuç: 138 m menzile kadar önleme, kaçamaklı hedefte
+    <strong>%71 başarı</strong>, avcı 10.8 m/s.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    <strong>Ö-D'nin ilham kaynağı.</strong> Biz mekanizmayı farklı kurduk
+    (kadraj kenarı yerine "burun borcu"), çünkü ölçüm gösterdi ki tehlikeli
+    an kutunun <em>kaybolduğu</em> andır ve orada <code>cx</code> yoktur.</div>
+  </div>
+
+  <div class="kagit k3">
+    <h3>Kontrol Bariyer Fonksiyonu (CBF) ile görünürlük kısıtı</h3>
+    <div class="kunye">
+      <a href="https://arxiv.org/abs/2410.01277">arXiv:2410.01277 — CBF-QP ile FOV güvenliği</a><br>
+      <a href="https://arxiv.org/pdf/2605.17533">arXiv:2605.17533 — dağıtık 3B FoV güvenliği (PDF)</a>
+    </div>
+    <div class="etiketler"><span class="et z2">İLERİ</span><span class="et">~4 saat</span><span class="et">matematik: zor</span></div>
+    <p>Nominal güdüm komutunu, hedefi kamera görüş konisinde tutan
+    <em>en küçük düzeltmeyle</em> süzen bir katman. Güdüm yasasını
+    değiştirmez, üstüne bir emniyet filtresi koyar.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Uzun vade. Ö-D'nin "doğru dürüst" hâli budur; ama optimizasyon çözücüsü
+    gerektirir ve 20 Hz'de koşturmak ayrı bir iş.</div>
+  </div>
+
+  <div class="kagit k3">
+    <h3>Temas kopunca yeniden yakalama</h3>
+    <div class="kunye">
+      <a href="https://arxiv.org/pdf/2411.08144">arXiv:2411.08144 — aralıklı görünürlükte görsel takip (PDF)</a><br>
+      <a href="https://arxiv.org/pdf/2011.03968">arXiv:2011.03968 — Fast-Tracker (PDF)</a><br>
+      <a href="https://arxiv.org/pdf/2107.01507">arXiv:2107.01507 — CMU Team Tartan, MBZIRC 2020 (PDF)</a>
+    </div>
+    <div class="etiketler"><span class="et z2">DOĞRUDAN İLGİLİ</span><span class="et">~3 saat</span></div>
+    <p>Hedef kaybolunca ne yapılır: erişilebilir kümeyi hesaplayıp o kümeyi
+    gören bir poza gitmek; son gözlem noktasına gidip öngörülen yörüngeyi
+    izlemek; "tespit et → dene → kurtar → yeniden tespit et" durum makinesi.</p>
+    <div class="nicin"><span class="b-a">bizde nereye dokunuyor</span>
+    Bizim 80-104 saniyelik yeniden yakalama süremizin doğrudan hedefi.
+    Şu an kutu kaybolunca GPS fazına düşüyoruz — literatürdeki gibi
+    <em>hedefin olabileceği koniye</em> nişan almıyoruz.</div>
+  </div>
+</section>
+
+<!-- ══════════════════ BÖLÜM 6 ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">BÖLÜM 6</span> Bizimkiyle birebir aynı işi yapan sistemler</h2>
+    <p>Referans performans çizgisi: başkaları ne başarmış?</p>
+  </div>
+
+  <div class="tablo-kutu">
+    <table>
+      <thead><tr><th>çalışma</th><th>sensör</th><th>hız</th><th>sonuç</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="ad"><a href="https://arxiv.org/html/2409.17497v2">Precise Interception by IBVS of Multicopter</a><br><span style="font-size:13px;color:var(--sonuk)">IEEE TIE 2025</span></td>
+          <td>gövdeye sabit mono kamera — <strong>yalnız 2D merkez</strong>, bbox boyutu kullanmıyor</td>
+          <td>hedef 1-3 m/s<br>avcı 5-6 m/s</td>
+          <td>CEP <strong>0.089 m</strong>, rüzgâr &lt;4 m/s'de &gt;%80</td>
+        </tr>
+        <tr>
+          <td class="ad"><a href="https://arxiv.org/html/2606.10639v2">Planar-Sector LOS</a></td>
+          <td>mono + gecikme telafili EKF</td>
+          <td>avcı 10.8 m/s<br>hedef 6-8 m/s</td>
+          <td>138 m menzil, kaçamaklı hedefte <strong>%71</strong></td>
+        </tr>
+        <tr>
+          <td class="ad"><a href="https://arxiv.org/html/2405.13542v1">EPN — Safe Mid-Air Interception</a></td>
+          <td>3B LiDAR + IMM</td>
+          <td>avcı 8 m/s<br>hedef ≤10 m/s, ≤8 m/s²</td>
+          <td>%100 — ama <strong>24 denemede</strong></td>
+        </tr>
+        <tr>
+          <td class="ad"><a href="https://www.mdpi.com/2504-446X/10/6/420">Drone-on-Drone Interception</a><br><span style="font-size:13px;color:var(--sonuk)">Drones 10(6):420</span></td>
+          <td>LiDAR + görüntü</td>
+          <td>—</td>
+          <td>40 m'de &lt;0.4 m tespit, 60 m'ye kadar önleme</td>
+        </tr>
+        <tr>
+          <td class="ad"><a href="https://www.researchgate.net/publication/362464763">Monoküler görüntüyle manevralı hedef önleme</a></td>
+          <td>mono</td>
+          <td>hedef avcıdan <strong>%30 hızlı</strong></td>
+          <td>takip ve önleme başarılı</td>
+        </tr>
+        <tr>
+          <td class="ad"><a href="https://www.sciencedirect.com/science/article/abs/pii/S1270963826005821">Telemetri destekli Kalman, FPV-FPV önleme</a></td>
+          <td>mono + uçuş kontrolcü telemetrisi</td>
+          <td>—</td>
+          <td>bbox ölçeğine göre gürültüyü <em>uyarlıyor</em></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="not">
+    <strong>Bu tabloyu okurken dikkat:</strong> hepsinin hızları bizden
+    <em>çok</em> düşük (5-11 m/s; biz 18 m/s, hedef 15 m/s). Dönüş yarıçapı
+    hızın <strong>karesiyle</strong> büyüdüğü için bizim problemimiz onlarınkinden
+    yapısal olarak daha zor. 8 m/s'de minimum dönüş çemberi ~13 m, bizde
+    <strong>66 m</strong>. Sonuçlarını doğrudan "biz de bunu yapmalıyız" diye
+    okuma.
+  </div>
+</section>
+
+<!-- ══════════════════ NASIL OKUNUR ══════════════════ -->
+<section class="bolum">
+  <div class="bolum-bas">
+    <h2><span class="no">YÖNTEM</span> Nasıl okumalısın</h2>
+  </div>
+
+  <ol class="yol">
+    <li><strong>Önce Corke'un görsel servolama bölümü</strong> (matematik
+        yumuşak, şekilli). Kamera modeli oturmadan hiçbir şey oturmaz.</li>
+    <li><strong>Sonra Chaumette Part I.</strong> Etkileşim matrisini anla —
+        bir kere anladığında bütün alan açılır.</li>
+    <li><strong>Sonra EPN makalesi.</strong> Kısa, okunaklı, bizim
+        problemimiz. Burada durup <em>ölçüt seçimi</em> tartışmasına dikkat et.</li>
+    <li><strong>Sonra Homicidal Chauffeur.</strong> Tezin tamamını okuma —
+        giriş bölümü ve "kaçış bölgesi" sonucu yeter. Neden tek geçişte
+        vuramadığımızı anlarsın.</li>
+    <li><strong>Sonra multi-speed Dubins.</strong> Ö-B'yi tartışırken bunu
+        bilmen benimle aynı dili konuşmanı sağlar.</li>
+    <li>Geri kalanı ihtiyaç duydukça: strapdown seeker (Ö-C'den önce),
+        Bearing-Angle (Ö-E'den önce), PS-LOS ve CBF (FOV işlerinden önce).</li>
+  </ol>
+
+  <div class="not" style="margin-top:18px">
+    <strong>Makale okumaya alışkın değilsen:</strong> baştan sona okuma.
+    Şu sırayı izle — <em>özet → şekiller → sonuçlar tablosu → giriş →
+    sonuç</em>. Matematik bölümünü <strong>ilk turda atla</strong>. Ne
+    yaptıklarını ve ne kadar işe yaradığını anladıktan sonra ikinci turda
+    denklemlere dön. Bir makalede takılırsan bana sor — o makalenin bizim
+    hangi satırımıza denk düştüğünü göstereyim.
+  </div>
+</section>
+
+<footer class="altbilgi">
+  <p>Bu liste, <code>avci_sim</code> projesi için yapılan literatür
+  taramasından çıkarıldı. Bölüm 1'deki klasik ders kaynakları taramadan
+  değil, genel bilgiden eklendi ve bilerek URL'siz verildi. Kalan
+  bağlantılar taramada fiilen açılan sayfalardır.</p>
+  <p>İlgili sayfa: <strong>IBVS Güdüm Sicili</strong> — bu projede denenmiş
+  25 özelliğin ölçümleri ve kararları.</p>
+</footer>
+
+</div>

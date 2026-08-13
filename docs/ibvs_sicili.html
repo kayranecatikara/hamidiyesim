@@ -453,7 +453,7 @@
   <!-- ═══════════════ ÖZET ŞERİDİ ═══════════════ -->
   <section class="serit" aria-label="Özet">
     <div class="kutucuk">
-      <span class="sayi">25</span>
+      <span class="sayi">26</span>
       <span class="etiket">denenen özellik</span>
     </div>
     <div class="kutucuk t-girdi">
@@ -461,7 +461,7 @@
       <span class="etiket">✅ sisteme girdi</span>
     </div>
     <div class="kutucuk t-bekle">
-      <span class="sayi">4</span>
+      <span class="sayi">5</span>
       <span class="etiket">⏸ beklemede / kararsız</span>
     </div>
     <div class="kutucuk t-elendi">
@@ -1156,6 +1156,102 @@
       <p>Ölçüldü ama karar verilemedi: ya n yetersiz, ya sonuç bölünmüş, ya da önceden ilan
          edilmiş bir karar kuralı durdurdu. Varsayılanları KAPALI — ama elenmediler.</p>
     </div>
+
+    <!-- ── K-V2 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">K-V2</span> — Kurtarma bekçisi kilitlenme düzeltmesi</h3>
+        <span class="rozet r-bekle">kullanıcı onayında</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_KURT_V2</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0 = KAPALI (önerilen: AÇIK)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4) + 35 tarihsel kontrol olayı</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">c56b9a8 · dde63ff · Y01-Y08</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Kurtarma bekçisi (<code>kurtarma.py</code>) takla/kaçak dönmede güdüm
+        komutlarını keser. Ama <strong>bıraktığı an</strong> hatalıydı. Üç düzeltme:
+        <strong>(1)</strong> yaw hedefi tetik anında <em>kilitlenir</em>;
+        <strong>(2)</strong> bırakma şartında pitch'e bakılmaz, yalnız
+        <code>|roll|</code> ve yaw hızı; <strong>(3)</strong> GPS fazı kurtarma
+        sırasında da CSV satırı yazar.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi — kullanıcının uçuş kaydı</span>
+        <p>Kullanıcı <em>"araç mal mal hareketler yapıyor, olduğu yerde kalıp bi
+        15 saniyede düzeliyor"</em> dedi ve kaydı verdi. Kayıtta bekçi
+        <strong>70 saniyede DÖRT kez</strong> tetiklendi ve her seferinde
+        <strong>8.6-14.9 s</strong> bırakmadı; araç havada asılı kaldı (hız
+        0.0 m/s), hedef 60 → 125 m açıldı.</p>
+        <p><strong>Kusur 1:</strong> çağıran her turda
+        <code>send_velocity(0,0,0, iyaw)</code> yolluyordu ve <code>iyaw</code>
+        her turda <em>yeniden okunuyordu</em> — "olduğun yerde dur" hedefi araç
+        döndükçe onunla kayıyor, dönmeyi durduracak geri çağırma hiç oluşmuyordu.
+        <strong>Kusur 2:</strong> bırakma şartı <code>max(|roll|,|pitch|) &lt; 20°</code>
+        idi; ama hız sıfıra çekilince multirotor 18 m/s'den frenlemek için burnunu
+        <em>kaldırmak zorunda</em> (ölçüldü: −46°) → bekçi kendi eylemiyle kendini
+        kilitliyordu.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">ESKİ bekçi</th><th class="s">K-V2</th><th class="s">değişim</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">kurtarma süresi (birincil 1)</td><td class="s">10.7 s <span style="font-size:12px">(n=35 olay)</span></td><td class="s kazanan">4.9 s <span style="font-size:12px">(n=3)</span></td><td class="s kazanan">−54%</td></tr>
+            <tr class="birincil"><td class="ad">açılan menzil (birincil 2)</td><td class="s">+54.3 m <span style="font-size:12px">(n=1)</span></td><td class="s kazanan">+27.5 m <span style="font-size:12px">(n=3)</span></td><td class="s kazanan">−49%</td></tr>
+            <tr><td class="ad">en uzun olay</td><td class="s kaybeden">19.3 s</td><td class="s kazanan">5.6 s</td><td class="s">—</td></tr>
+            <tr><td class="ad">"8 s'dir toparlanamıyor" uyarısı</td><td class="s kaybeden">33/35 olay</td><td class="s kazanan">0/3</td><td class="s kazanan">sıfırlandı</td></tr>
+            <tr><td class="ad">İSABET</td><td class="s">3/4</td><td class="s">3/4</td><td class="s">gerileme yok</td></tr>
+            <tr><td class="ad">en yakın menzil (medyan)</td><td class="s">0.22 m</td><td class="s">0.21 m</td><td class="s">gerileme yok</td></tr>
+            <tr><td class="ad">düşen araç (EMNİYET)</td><td class="s">0</td><td class="s kazanan">0</td><td class="s">ihlal yok</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ham değerler</span>
+        <p>ESKİ bekçi, 35 tamamlanan olay: 4.9 · 5.9 · 6.8 · 7.2 · 8.2 · 8.5 · 8.6 ·
+        8.6 · 8.8 · 9.0 · 9.4 · 9.5 · 9.7 · 10.0 · 10.2 · 10.2 · 10.7 · 10.7 · 11.1 ·
+        11.2 · 11.3 · 11.7 · 12.0 · 12.1 · 12.4 · 13.0 · 13.1 · 13.7 · 14.9 · 15.3 ·
+        15.4 · 15.6 · 16.0 · 18.6 · 19.3 s.
+        <strong>K-V2, 3 olay: 4.7 · 4.9 · 5.6 s.</strong> Üçü de eski dağılımın
+        <em>en alt %6</em>'sında; 35 değerden yalnız biri (4.9) bu bandın içinde.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ MEKANİZMA KAPISI UÇUŞ SIRASINDA YAKALADI (§5.1)</span>
+        <p>Kampanyanın ilk iki deney koşusu (Y02, Y04) <strong>fiilen KONTROL
+        koşusuydu</strong>: panel <code>_OZELLIKLER</code> ayarlarını her zaman
+        <code>bbox_ibvs.Cfg</code>'ye yazıyordu, ama <code>KURT_V2</code> alanı
+        <code>kurtarma.KurtCfg</code>'de. Panel "AÇIK" gösteriyordu, özellik hiç
+        devreye girmiyordu. Ö6'nın sahte tablosuyla <em>aynı sınıf hata</em> —
+        bu kez rapor yazılmadan önce yakalandı. Panel artık
+        <code>"modul:ALAN"</code> biçimini destekliyor.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — kullanıcı onayında</span>
+        <p>Önceden ilan edilen kural <strong>girmesi yönünde</strong>: süre belirgin
+        düştü, iki birincil ölçüt de kazandı, isabet/menzilde gerileme yok, emniyet
+        ihlali yok. Ama varsayılanı değiştirmek güdüm davranışını değiştirmektir
+        (§1) → <strong>karar kullanıcıya</strong>. Varsayılan şimdilik KAPALI.</p>
+        <p>⚠ <strong>Dürüst sınır:</strong> K-V2 kolunda 3 tamamlanmış olay var.
+        Kıyasın ağırlığı 35 olaylık tarihsel havuzdan geliyor ve o havuz senaryo
+        bakımından eşlenmiş DEĞİL (§5.9). Ayrım büyük olduğu için yön güvenilir,
+        ama etkinin BÜYÜKLÜĞÜ ±birkaç saniye oynayabilir.
+        Ayrıca tetik sayısı kollar arasında kıyaslanamaz: faz geçişi bekçiyi
+        yeniden kurduğu için bazı olaylar "toparlandı" basmadan kesiliyor.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Ö12 ve Ö-D <strong>yanlış katmandaydı.</strong> İkisi de "yaw komutu neden
+        savruluyor" sorusunu çözmeye çalışıyordu; oysa asıl zarar savrulmadan
+        <em>sonra</em> bekçinin aracı 15 saniye havada tutmasından geliyordu.
+        Üstelik eski <code>KURTARMA</code> ölçütüm <strong>eksikti</strong>: olayları
+        yalnız bbox logundan sayıyordum, çoğu GPS fazındaydı ve kusur 3 yüzünden
+        hiç loglanmıyordu. <em>Bir kullanıcı uçuş kaydı, on altı otomatik uçuştan
+        daha çok şey öğretti.</em></p>
+      </div>
+      <div class="kaynak">kaynak: commit c56b9a8, dde63ff · logs/kayit/ucus_20260813_154505 · logs/kacamak/Y01-Y08 · testler K8-K13</div>
+    </article>
 
     <!-- ── M2 ── -->
     <article class="kart k-bekle">
