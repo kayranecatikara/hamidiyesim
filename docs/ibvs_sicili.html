@@ -1,0 +1,2187 @@
+<title>IBVS Güdüm Sicili</title>
+
+<style>
+  /* ══════════════════════════════════════════════════════════════
+     IBVS GÜDÜM SİCİLİ — jetonlar (tokens)
+     Açık palet bare :root'ta TAM tanımlıdır. Koyu palet YALNIZ jetonları
+     yeniden tanımlar (media + [data-theme]). Hiçbir renk yalnızca bir
+     media/[data-theme] bloğunda tanımlı DEĞİLDİR.
+     ══════════════════════════════════════════════════════════════ */
+  :root {
+    --zemin:        #eef1f4;
+    --yuzey:        #ffffff;
+    --yuzey-2:      #f6f8fa;
+    --murekkep:     #12171c;
+    --murekkep-2:   #3d4852;
+    --sonuk:        #67737f;
+    --cizgi:        #d3dae1;
+    --cizgi-kuvvet: #b6c0cb;
+    --vurgu:        #1c5a87;
+    --vurgu-yumusak:#e4eef6;
+
+    --girdi:        #14683c;
+    --girdi-zemin:  #e2f1e8;
+    --bekle:        #8a5c00;
+    --bekle-zemin:  #f8eed6;
+    --elendi:       #9c2b2b;
+    --elendi-zemin: #f7e4e3;
+
+    --olcu:   1.0;
+    --golge:  0 1px 2px rgba(18,23,28,.06), 0 0 0 1px rgba(18,23,28,.05);
+
+    --mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+            "Liberation Mono", "DejaVu Sans Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --zemin:        #0d1116;
+      --yuzey:        #151b21;
+      --yuzey-2:      #1b232b;
+      --murekkep:     #e6ebef;
+      --murekkep-2:   #bcc7d1;
+      --sonuk:        #8b98a5;
+      --cizgi:        #263039;
+      --cizgi-kuvvet: #36434f;
+      --vurgu:        #79b6e2;
+      --vurgu-yumusak:#152532;
+
+      --girdi:        #5fc48c;
+      --girdi-zemin:  #10281c;
+      --bekle:        #e2ab48;
+      --bekle-zemin:  #2b2213;
+      --elendi:       #ef8078;
+      --elendi-zemin: #2e1817;
+
+      --golge: 0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --zemin:        #0d1116;
+    --yuzey:        #151b21;
+    --yuzey-2:      #1b232b;
+    --murekkep:     #e6ebef;
+    --murekkep-2:   #bcc7d1;
+    --sonuk:        #8b98a5;
+    --cizgi:        #263039;
+    --cizgi-kuvvet: #36434f;
+    --vurgu:        #79b6e2;
+    --vurgu-yumusak:#152532;
+
+    --girdi:        #5fc48c;
+    --girdi-zemin:  #10281c;
+    --bekle:        #e2ab48;
+    --bekle-zemin:  #2b2213;
+    --elendi:       #ef8078;
+    --elendi-zemin: #2e1817;
+
+    --golge: 0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+  }
+
+  /* ── temel ── */
+  body {
+    margin: 0;
+    background: var(--zemin);
+    color: var(--murekkep);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-text-size-adjust: 100%;
+  }
+  * { box-sizing: border-box; }
+
+  .sayfa {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 20px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+
+  a { color: var(--vurgu); }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--vurgu);
+    outline-offset: 3px;
+  }
+
+  code, .mono { font-family: var(--mono); }
+
+  /* ── başlık ── */
+  .tepe { display: flex; flex-direction: column; gap: 14px; }
+  .goz {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--sonuk);
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 6vw, 44px);
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    font-weight: 640;
+    text-wrap: balance;
+  }
+  .giris { max-width: 66ch; color: var(--murekkep-2); margin: 0; }
+  .giris + .giris { margin-top: -6px; }
+
+  /* ── özet şeridi ── */
+  .serit {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--cizgi);
+    border: 1px solid var(--cizgi);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .kutucuk {
+    background: var(--yuzey);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .kutucuk .sayi {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .kutucuk .etiket {
+    font-size: 12.5px;
+    color: var(--sonuk);
+    letter-spacing: .01em;
+  }
+  .kutucuk.t-girdi  .sayi { color: var(--girdi); }
+  .kutucuk.t-bekle  .sayi { color: var(--bekle); }
+  .kutucuk.t-elendi .sayi { color: var(--elendi); }
+
+  /* ── bölüm ── */
+  .bolum { display: flex; flex-direction: column; gap: 20px; }
+  .bolum-bas {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--cizgi-kuvvet);
+  }
+  .bolum-bas h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 620;
+    letter-spacing: -.01em;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .bolum-bas h2 .no {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .12em;
+    color: var(--sonuk);
+    font-weight: 500;
+  }
+  .bolum-bas p { margin: 0; color: var(--sonuk); font-size: 14.5px; max-width: 68ch; }
+
+  /* ── kart ── */
+  .kart {
+    background: var(--yuzey);
+    border: 1px solid var(--cizgi);
+    border-top: 3px solid var(--cizgi-kuvvet);
+    border-radius: 3px;
+    box-shadow: var(--golge);
+    padding: 22px 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .kart.k-girdi  { border-top-color: var(--girdi); }
+  .kart.k-bekle  { border-top-color: var(--bekle); }
+  .kart.k-elendi { border-top-color: var(--elendi); }
+
+  .kart-bas {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .kart-bas h3 {
+    margin: 0;
+    font-size: 18.5px;
+    font-weight: 620;
+    letter-spacing: -.005em;
+    line-height: 1.3;
+  }
+  .kart-bas h3 .kod {
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--vurgu);
+    margin-right: 2px;
+  }
+  .rozet {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 2px;
+    white-space: nowrap;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .rozet.r-girdi  { color: var(--girdi);  background: var(--girdi-zemin);  }
+  .rozet.r-bekle  { color: var(--bekle);  background: var(--bekle-zemin);  }
+  .rozet.r-elendi { color: var(--elendi); background: var(--elendi-zemin); }
+
+  /* meta ızgarası */
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+    gap: 1px;
+    background: var(--cizgi);
+    border: 1px solid var(--cizgi);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .meta div {
+    background: var(--yuzey-2);
+    padding: 9px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .meta dt, .meta .m-a {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--sonuk);
+  }
+  .meta .m-d {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--murekkep);
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* prose blokları */
+  .blok { display: flex; flex-direction: column; gap: 5px; }
+  .blok > .b-a {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--sonuk);
+  }
+  .blok p { margin: 0; max-width: 74ch; color: var(--murekkep-2); font-size: 15px; }
+  .blok p + p { margin-top: 8px; }
+  .kart strong { color: var(--murekkep); font-weight: 620; }
+
+  /* ölçüm tablosu */
+  .tablo-kutu {
+    overflow-x: auto;
+    border: 1px solid var(--cizgi);
+    border-radius: 2px;
+    background: var(--yuzey-2);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 420px; }
+  thead th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--sonuk);
+    font-weight: 600;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--cizgi-kuvvet);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--cizgi);
+    color: var(--murekkep-2);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.s, th.s {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+  }
+  td.ad { color: var(--murekkep); }
+  tr.birincil td { background: var(--vurgu-yumusak); }
+  tr.birincil td.ad { font-weight: 620; color: var(--murekkep); }
+  .kazanan { color: var(--girdi); font-weight: 620; }
+  .kaybeden { color: var(--elendi); font-weight: 620; }
+
+  /* karar / ders / düzeltme */
+  .karar, .ders, .duzeltme {
+    border-left: 3px solid var(--cizgi-kuvvet);
+    padding: 10px 0 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .karar { border-left-color: var(--vurgu); }
+  .ders  { border-left-color: var(--sonuk); }
+  .duzeltme { border-left-color: var(--elendi); background: var(--elendi-zemin); padding: 12px 14px; border-radius: 0 2px 2px 0; }
+  .karar .b-a, .ders .b-a, .duzeltme .b-a {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--sonuk);
+  }
+  .duzeltme .b-a { color: var(--elendi); }
+  .karar p, .ders p, .duzeltme p { margin: 0; max-width: 74ch; font-size: 15px; color: var(--murekkep-2); }
+  .ders p { font-size: 14.5px; }
+
+  .kaynak {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--sonuk);
+    border-top: 1px dashed var(--cizgi);
+    padding-top: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  /* uyarı satırı */
+  .uyari {
+    font-size: 14px;
+    color: var(--murekkep-2);
+    background: var(--bekle-zemin);
+    border: 1px solid var(--cizgi);
+    border-radius: 2px;
+    padding: 12px 14px;
+    max-width: 76ch;
+  }
+  .uyari strong { color: var(--bekle); }
+
+  /* liste */
+  ol.adimlar, ul.duz {
+    margin: 0;
+    padding-left: 22px;
+    color: var(--murekkep-2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 74ch;
+    font-size: 15px;
+  }
+  ol.adimlar code, ul.duz code, .blok code, .karar code, .ders code, td code {
+    background: var(--yuzey-2);
+    border: 1px solid var(--cizgi);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-size: .9em;
+  }
+  .kart .meta code { background: none; border: none; padding: 0; }
+
+  pre {
+    margin: 0;
+    background: var(--yuzey-2);
+    border: 1px solid var(--cizgi);
+    border-radius: 2px;
+    padding: 14px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--murekkep-2);
+  }
+
+  .altbilgi {
+    border-top: 1px solid var(--cizgi);
+    padding-top: 20px;
+    font-size: 13.5px;
+    color: var(--sonuk);
+    max-width: 74ch;
+  }
+
+  @media (max-width: 620px) {
+    .sayfa { padding: 28px 14px 72px; gap: 34px; }
+    .kart { padding: 18px 16px 20px; }
+    body { font-size: 15.5px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="sayfa">
+
+  <!-- ═══════════════ BAŞLIK ═══════════════ -->
+  <header class="tepe">
+    <div class="goz">avci_sim · control/guidance/bbox_ibvs.py · yaşayan kayıt</div>
+    <h1>IBVS Güdüm Sicili</h1>
+    <p class="giris">
+      Bu sayfa, avcı İHA'nın <strong>saf görüntü tabanlı görsel güdüm denklemine</strong>
+      (bbox-IBVS) eklenmek üzere bugüne kadar denenmiş her özelliğin kalıcı kaydıdır.
+      Hangi özelliğin sisteme girdiği, hangisinin elendiği, hangisinin hâlâ karar
+      beklediği — ve her birinin <em>hangi sayıyla</em> öyle olduğu burada durur.
+    </p>
+    <p class="giris">
+      Depo kuralı (<code>CLAUDE.md</code> §1-2): hiçbir özellik ölçülmeden giremez.
+      Her özellik <strong>en az 4 taze uçuş + video + 20 Hz log</strong> ile sınanır;
+      çevrimdışı replay ve yalnız-CSV istatistiği kanıt sayılmaz. Aşağıdaki her sayının
+      kaynağı <code>UYGULANACAK.md</code>, bir commit mesajı ya da
+      <code>logs/kacamak/&lt;koşu&gt;/olay.json</code>'dur. Kaynağı olmayan sayı yazılmaz —
+      onun yerine <em>"ölçülmedi"</em> yazar.
+    </p>
+    <p class="giris">
+      <strong>Kodlar hakkında:</strong> <code>Ö1</code>-<code>Ö12</code>, <code>M2</code>-<code>M3</code>,
+      <code>T1a</code>/<code>T1b</code> depodaki gerçek kodlardır (<code>UYGULANACAK.md</code> ile
+      birebir). <code>G1</code>-<code>G13</code> ve <code>E1</code> ise bu sicile özgü
+      numaralandırmadır — o özellikler kayda geçtiğinde henüz kodlanmış bir adları yoktu.
+    </p>
+  </header>
+
+  <!-- ═══════════════ ÖZET ŞERİDİ ═══════════════ -->
+  <section class="serit" aria-label="Özet">
+    <div class="kutucuk">
+      <span class="sayi">25</span>
+      <span class="etiket">denenen özellik</span>
+    </div>
+    <div class="kutucuk t-girdi">
+      <span class="sayi">13</span>
+      <span class="etiket">✅ sisteme girdi</span>
+    </div>
+    <div class="kutucuk t-bekle">
+      <span class="sayi">5</span>
+      <span class="etiket">⏸ beklemede / kararsız</span>
+    </div>
+    <div class="kutucuk t-elendi">
+      <span class="sayi">7</span>
+      <span class="etiket">❌ elendi</span>
+    </div>
+  </section>
+
+  <div class="uyari">
+    <strong>Nasıl okunur.</strong> "Varsayılan" sütunu koddaki gerçek durumdur:
+    <code>bbox_ibvs.Cfg</code> içinde env anahtarının varsayılan değeri sıfır/False ise
+    özellik <em>kapalıdır</em>. Panelde canlı aç/kapa düğmesi yalnız o an denenen özellik
+    için durur (<code>CLAUDE.md</code> §6); kararı verilen özelliğin düğmesi silinir ama
+    kill-switch env anahtarı kodda kalır — yani buradaki her özellik hâlâ elle açılabilir.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 1 — SİSTEME GİRENLER
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 1</span> ✅ Sisteme girenler</h2>
+      <p>Varsayılanı AÇIK olan özellikler. Her biri ölçümle kazandı ve kapatma anahtarı
+         (kill-switch) hâlâ kodda duruyor.</p>
+    </div>
+
+    <!-- ── G1 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G1</span> — Dondurulmuş taşıyıcı (<code>ff_hiz</code>)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">— (yapısal, anahtarsız)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">AÇIK</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">1 uzun koşu (160 s faz)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">419f4b0 · 702e479</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Görsel faza devir <em>anında</em>, henüz temas kurulmadan önceki son GPS hız
+        kestirimi <strong>bir sayı üçlüsü olarak</strong> görsel döngüye geçilir ve faz
+        boyunca bir daha güncellenmez. PI hız yasasının integraline sıcak başlangıç verir.
+        Döngüye canlı bir callback verilmediği için görsel faz sırasında GPS'e erişim
+        <strong>fiziksel olarak yoktur</strong> — yarışma kuralı D0 yapısal olarak sağlanır
+        (birim testi B5 bekçiler).</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kutu boyutu bir <em>menzil</em> vekilidir, <em>hız</em> vekili değil. Taşıyıcısız
+        yasa 12 m'de yalnız 8 m/s üretiyordu; hedef 15 m/s gidiyordu, drone geride kalıp
+        kutuyu kaybediyordu (faz 3.5 s'de kopuyordu).</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">nasıl sınandı</span>
+        <p>Düz uçuş senaryosu, tek devir, kare + telemetri kaydı.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">taşıyıcısız</th><th class="s">taşıyıcılı</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">kesintisiz görsel faz</td><td class="s">3.5 s'de kopuyor</td><td class="s kazanan">160 s</td></tr>
+            <tr><td class="ad">kutu kaybı</td><td class="s">ölçülmedi</td><td class="s kazanan">%0.4</td></tr>
+            <tr><td class="ad">truth mesafe (medyan)</td><td class="s">ölçülmedi</td><td class="s">7.2 m (min 4.8)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ düzeltme — ilk sürüm çürütüldü</span>
+        <p>Taşıyıcı ilk sürümde <strong>NED yön vektörü</strong> olarak kullanılıyordu ve
+        hedef döndükçe drone'u yana savuruyordu: aspect 7° (kuyruk) → 55° → 70° (yan),
+        mesafe 8.7 → 5.3 → 66.6 m. Mesafe <em>medyanı</em> (7.2 m) bunu gizlemişti; "çalıştı"
+        raporu yanlıştı, kullanıcı videodan yakaladı. Düzeltme: hız <strong>daima LOS
+        yönünde</strong> (G3), taşıyıcı yalnız integralin sıcak başlangıcı. Düzeltmeden sonra
+        aspect medyanı 5°.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Görsel fazın çalışabilmesinin ön şartı; yerine bir alternatif
+        yok (kutudan hız okunamıyor).</p>
+      </div>
+      <div class="kaynak">kaynak: commit 419f4b0, 702e479 · UYGULANACAK.md "E — bbox-IBVS görsel faz İNŞA"</div>
+    </article>
+
+    <!-- ── G2 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G2</span> — Dikey nişan geometrisi (kamera 25° tilt)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_CY</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">≈300 px (geometriden hesaplanır)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">kademeli test 1 (düz uçuş)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">eda5882 · 419f4b0</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Dikey hata <code>eps_elev = atan((cy − CY_NISAN)/FY)</code> ile kurulur; nişan
+        noktası kadraj merkezi değil, <strong>kameranın 25° yukarı tilt'ine göre hesaplanan
+        seviye konumun hafif üstüdür</strong>:
+        <code>CY_NISAN = CY + FY·tan(20°) ≈ 300 px</code>. Ayrıca <code>K_VZ</code> 1.2 → 0.5,
+        <code>VZ_MAX</code> 4 → 3 m/s.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>İlk sürümde nişan 210 px (kadrajın üstü) alınmıştı. Bu geometrik olarak
+        <em>"hedefin ~8 m altına dal"</em> demekti: <code>vz</code> tavana (+4 m/s) yapışıyor,
+        drone sürekli alçalıyor, hedef kadrajın altından kaçıyordu.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">nasıl sınandı</span>
+        <p>Düz uçuşta devir; kare + CSV çaprazlaması.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">nişan 210 px</th><th class="s">nişan ≈300 px</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">kutu tutunma süresi</td><td class="s">3.1 s'de kopuyor</td><td class="s kazanan">3.5 s → sonra 160 s</td></tr>
+            <tr><td class="ad">vz komutu</td><td class="s">tavanda (+4 m/s)</td><td class="s kazanan">±2 m/s</td></tr>
+            <tr><td class="ad">cy oturması</td><td class="s">kadrajın altına kaçıyor</td><td class="s kazanan">cy 300 ≈ nişan 301</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Geometrik bir düzeltme; doğrulaması
+        <code>piksel_elev()</code> birim testi B17'de (cy=240 → +25° boresight,
+        cy≈318 → 0° seviye).</p>
+      </div>
+      <div class="kaynak">kaynak: commit eda5882, 419f4b0 · bbox_ibvs.py Cfg "KADRAJ NİŞAN NOKTASI"</div>
+    </article>
+
+    <!-- ── G3 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G3</span> — Saf takip + PI hız yasası (fren kaldırıldı)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_VMAX · KFWD · KI · REF</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">VMAX 24 m/s · K_FWD 0.35 · K_I 0.04 · REF 25 px · V_MIN 0</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">1 tanı koşusu + sonraki tüm kampanyalar</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">702e479</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Hız <strong>daima LOS (burun) yönünde</strong> uygulanır — hedef dönünce hız
+        vektörü de döner. Büyüklük, kutu boyutu hatası üzerinden PI ile üretilir:
+        <code>hata = BOYUT_REF − boyut</code>, <code>I += K_I·hata·dt</code>,
+        <code>v_los = I + K_FWD·hata</code>. İntegral, hedefin LOS üzerindeki hız bileşenini
+        <strong>görüntüden öğrenir</strong> — GPS'siz. <code>V_MIN = 0</code>: geri çekilme
+        (fren) yok.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>İki ayrı sorun: (a) NED taşıyıcı yönü yana savuruyordu (bkz. G1 düzeltmesi);
+        (b) 18 m/s tavanında komut karelerin %83'ünde doygundu, hedefe (15-16 m/s) pay
+        kalmıyor, mesafe 30 m'de donuyordu. Fren ise kutu REF'i aşınca drone'u geri
+        itiyordu — kullanıcı düz uçuşta görüp <em>"o freni koymasan vurabiliyoruz"</em> dedi.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">önce</th><th class="s">sonra</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">aspect açısı (medyan)</td><td class="s">64-70° (yandan)</td><td class="s kazanan">5° (kuyrukta)</td></tr>
+            <tr><td class="ad">hız komutu doygunluğu</td><td class="s">%83 (18 m/s tavanı)</td><td class="s kazanan">tavan 24 m/s'ye açıldı</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s">—</td><td class="s">1.5 m (vuruş yok)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Denklemin çekirdeği. GPS fazının V_MAX'ı 18'de KALIR
+        (orada "hızlanınca çember büyür" riski gerçek; görsel faz kuyruk takibi yaptığı için
+        o tuzak burada yok).</p>
+      </div>
+      <div class="kaynak">kaynak: commit 702e479 · bbox_ibvs.py Cfg "HIZ: PI kontrol"</div>
+    </article>
+
+    <!-- ── G4 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G4</span> — Terminal hücum mandalı, eşik 45 → 25 px</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_TERM</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">25 px (≈6.4 m)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">A/B, aynı senaryo (duz, 240 s)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">d623c1d</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Kutu boyutu eşiği aşınca kontrol "tutuş" modundan çıkar ve LOS boyunca tam hızla
+        taahhüt eder; mandal bir kez girilince kilitli kalır. Eşik 45 px (≈3.6 m) yerine
+        25 px (≈6.4 m) — yani <code>BOYUT_REF</code> ile aynı nokta: <em>"tutuş mesafesine
+        varınca hücuma geç."</em></p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>45 px ≈ 3.6 m'den taahhüt, 24 m/s ile 0.15 s demekti; kamera 30 Hz'de yalnız 4-5
+        kare görüyordu — hedefin son anki kaçışını düzeltecek zaman yok. 25 px'ten taahhütte
+        düzeltmeye ~20 kare kalıyor.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">45 px</th><th class="s">25 px</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">en yakın mesafe</td><td class="s">1.0 m</td><td class="s kazanan">0.8 m</td></tr>
+            <tr><td class="ad">&lt;10 m denemesi</td><td class="s">5</td><td class="s">3</td></tr>
+            <tr><td class="ad">denemelerin en yakını</td><td class="s">2.3 / 6.3 / 1.3 / 1.0 / 5.4</td><td class="s kazanan">0.9 / 0.8 / 1.9</td></tr>
+            <tr><td class="ad">kalkış sonrası min irtifa</td><td class="s">20.7 m</td><td class="s">23.2 m</td></tr>
+            <tr><td class="ad">VURULDU</td><td class="s">0</td><td class="s">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Vuruş gelmedi ama yaklaşma kalitesi belirgin iyileşti:
+        üç denemenin üçü de 2 m altına indi (öncekinde 5 denemeden 2'si). Kalan engel ayrı
+        bir maddeye taşındı (terminal nişan noktası → G5).</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>"Vuruş yok" bir özelliği tek başına elemez — ölçüt <em>mekanizmayı</em> gösteren
+        yaklaşma kalitesiydi ve o iyileşti (CLAUDE.md §5.2: isabet, dengesiz bir araçta da
+        şans eseri gelebilir; tek başına ölçüt olamaz).</p>
+      </div>
+      <div class="kaynak">kaynak: commit d623c1d</div>
+    </article>
+
+    <!-- ── G5 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G5</span> — Terminal kesişim + lead nişanı (İLK VURUŞ)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_LEAD (lead süresi)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.4 s · LEAD_MAX 25° · kesişim AÇIK</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">term25 uçuşu + doğrulama koşusu</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">ae26b96</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>İki değişiklik, <em>yalnız terminalde</em> (tutuş davranışı aynen korundu):
+        <strong>(1) KESİŞİM</strong> — <code>vz = −v_los·tan(elev_hedef)</code>; yükseliş
+        pikselden ve gövde pitch'inden çıkar. <strong>(2) LEAD</strong> — nişan, ATALET
+        çerçevesindeki LOS dönüş hızıyla öne alınır:
+        <code>nişan = los_az + LEAD_SURE·λ̇</code>.</p>
+        <p>⚠ Piksel hızı <em>değil</em> atalet LOS hızı kullanılır: yaw kontrolcüsü kutuyu
+        merkeze çektiği için piksel hızı kendi düzeltmemizi de içerir; ona lead vermek
+        kendi düzeltmemizle kavga etmek olurdu.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Iska hedef çerçevesinde bileşenlerine ayrıldı ve <strong>baskın bileşenin DİKEY</strong>
+        olduğu görüldü: 0.9 m'de yanal +0.5 / dikey +0.5 · 0.8 m'de yanal 0.0 / dikey −0.2.
+        Talon'un çarpışma gövdesi kanatlar dahil olduğu için 0.8 m'de değmeliydi. Kök neden:
+        terminalde bile dikey kanal "tutuş" yasasıydı (hedefi ≈5° yukarıda tut) → hedefin
+        <em>altından</em> geçiliyordu.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">tutuş yasası</th><th class="s">kesişim + lead</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">gerçek fiziksel temas</td><td class="s">yok</td><td class="s kazanan">VAR (Gazebo temas sensörü)</td></tr>
+            <tr><td class="ad">terminal vz medyanı</td><td class="s">≈0</td><td class="s">−2.99 m/s</td></tr>
+            <tr><td class="ad">lead açısı</td><td class="s">—</td><td class="s">medyan 4.0° · max 14.7° (tavan 25°)</td></tr>
+            <tr><td class="ad">en yakın (10 Hz ölçüm)</td><td class="s">—</td><td class="s kazanan">0.00 m · &lt;3 m'de 48 örnek</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Aynı commit'te ölçüm altyapısı da düzeldi: 1 Hz kare örneklemesi 24 m/s'lik
+        terminal hücumu <strong>ölçemiyordu</strong> (örnekler arası 24 m). 10 Hz
+        <code>telem.csv</code> eklendi. Bu, CLAUDE.md §5.3 (örnekleme hızı ≥ 5×) kuralının
+        doğduğu yerdir.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Projedeki ilk gerçek imha bu özellikle geldi.</p>
+      </div>
+      <div class="kaynak">kaynak: commit ae26b96 · birim testler B17-B20</div>
+    </article>
+
+    <!-- ── G6 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G6</span> — Lead menzille söner (t<sub>go</sub> ölçeklemesi)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_LEAD_SON</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">1.0 = AÇIK (0 = eski sabit yol)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">3 koşu (127 / 64 / 102 s)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">c2f04d6</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Lead açısı artık sabit süreyle değil, kalan süreyle (≈menzille) ölçeklenir:
+        <code>ölçek = clamp(BOYUT_REF/boyut, 0, 1)</code>. Etkisi: 6.4 m'de 0.40 s,
+        1.6 m'de 0.10 s, 1.0 m'de 0.06 s.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"çarpacakken birden yukarı itki verip kaçırıyoruz."</em>
+        LOS dönüş hızı menzil→0 iken patlıyor (1 m'de küçük bir göreli hareket bile devasa
+        açısal hız üretir); sabit süreyle çarpılınca nişan yukarı savruluyordu. Ölçüldü:
+        son terminal karelerinde dikey hata <strong>+13° → +45°</strong> büyüyor, yatay hız
+        10 m/s tabanına yapışıyor, hedef 45° altta kalıyor. Güdüm literatüründe lead daima
+        t<sub>go</sub> ile çarpılır.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">sabit lead</th><th class="s">sönümlü lead</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">terminal dikey hata eğilimi</td><td class="s">+13° → +45°</td><td class="s kazanan">savrulma yok</td></tr>
+            <tr><td class="ad">vuruş</td><td class="s">—</td><td class="s kazanan">3/3</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> ⚠ n=3, yani CLAUDE.md §5.4'e göre bu bir "hüküm" değil
+        ara veridir; kabulün dayanağı vuruş sayısı değil, ölçülen <em>mekanizma</em>
+        (dikey hatanın büyüme deseninin kaybolması).</p>
+      </div>
+      <div class="kaynak">kaynak: commit c2f04d6</div>
+    </article>
+
+    <!-- ── G7 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G7</span> — Terminal dikey sönümleme (D terimi)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_KVZD</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.6 = AÇIK</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">3 koşu</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">6ab9178</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>vz = vz_nişan + K_VZ_D·(vz_nişan − vz_gerçek)</code>. Araç gerekenden hızlı
+        tırmanıyorsa komut azalır ya da ters döner. Girdi drone'un <strong>kendi</strong>
+        dikey hız sensörü — yarışma kuralı serbest.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcının manuel uçuş kaydından (log 081132): hedef TAM nişandayken
+        (dikey hata −2.2°) <code>vz</code> komutu <strong>−4.2 m/s</strong> (tırman);
+        ardından kutu kadrajda 294 → 456 px kaydı = hedefin üstünden geçildi.
+        ⚠ Önce lead şüphelenildi ve <em>elendi</em>: aynı karelerde lead 0.09-0.15 s'ye sönmüş
+        ve işareti aşağı yönlüydü (−3° … −13°). Kök neden: terminal dikey kanalı saf
+        nişanlamaydı, türev terimi yoktu → dikey momentum geç sönüyordu.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">sönümlemesiz</th><th class="s">sönümlemeli</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">"üstten geçme" deseni (son 8 karede kutu kayması)</td><td class="s">+162 px</td><td class="s kazanan">+98 / +136 / −1 / +6 px</td></tr>
+            <tr><td class="ad">vuruş</td><td class="s">—</td><td class="s">2/3</td></tr>
+            <tr><td class="ad">birim test B24 (araç 4 m/s tırmanırken)</td><td class="s">−4.05 m/s</td><td class="s kazanan">−1.65 m/s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Commit'in kendi ifadesiyle: <em>"3 koşu bir oranı
+        kanıtlamaz; buradaki kanıt vuruş sayısı değil, desenin ölçüsü."</em></p>
+      </div>
+      <div class="kaynak">kaynak: commit 6ab9178 · birim test B24</div>
+    </article>
+
+    <!-- ── G8 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G8</span> — Dikey bütçe kısıtı (yatayı kıs ki vektör hedefe baksın)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_VTERM_MIN · VZT</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">V_TERM_MIN 10 m/s · VZ_MAX_TERM 5 m/s</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">3 koşu (her biri için sim baştan)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">042138e</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Dikey bütçe yetmiyorsa <strong>yatay hız kısılır</strong>:
+        <code>v = VZ_MAX/tan(elev)</code>, taban <code>V_TERM_MIN = 10 m/s</code>. Böylece hız
+        vektörü hedefe gerçekten <em>bakabilir</em>.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Sert geometrik sınır: terminal hücumda yatay 18 m/s, dikey tavan 5 m/s → vektör en
+        fazla <code>atan(5/18) = 15.5°</code> yukarı bakabiliyordu. Hedef bundan dikse
+        <strong>kesişim matematiksel olarak imkânsız</strong> — 6 m menzilde bu yalnız 1.7 m'lik
+        bir pencere. Ölçüldü: terminal karelerinin %22-49'unda <code>vz</code> tavana dayanmıştı.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">kısıtsız</th><th class="s">bütçe kısıtlı</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">dikey doyum (mekanizma)</td><td class="s">%22-49</td><td class="s kazanan">%0-16</td></tr>
+            <tr><td class="ad">vuruş</td><td class="s">—</td><td class="s">3/3 (takla 0)</td></tr>
+            <tr><td class="ad">B22: hedef 20° yukarıda</td><td class="s">vektör 15.5°</td><td class="s kazanan">yatay 18→13.7 m/s, vektör 20°</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ aynı commit'te bir önceki iddia çürütüldü</span>
+        <p>Bir önceki commit "yaw slew ile 5/5" demişti; <strong>aynı kodla</strong> tekrar
+        ölçünce 2/5 çıktı (takla 0 → 8). %70'lik bir sistemde 5/5 gelme olasılığı ~%17 —
+        5 koşu bu mertebedeki bir oranı ayırt etmeye yetmiyor. Yaw slew'in birleşik sonucu
+        7/10, öncesi 10/15: istatistiksel fark yok. Bu 3/3 de tek başına kanıt değildir;
+        farkı asıl <em>dikey doyum</em> ölçüsü gösteriyor çünkü o şansa değil mekanizmaya bakar.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Mekanizma ölçüsü (dikey doyum %22-49 → %0-16) net;
+        birim testler B22-B23 bekçiliyor.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 042138e</div>
+    </article>
+
+    <!-- ── G9 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G9</span> — Yaw slew sınırı 120°/s (taklanın kök nedeni)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_YAWRATE</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">120 °/s</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">5 koşu (A/B zinciri toplam 20)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">3c7b26f</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Yaw komutu her kare <code>iris_yaw + eps_yaw</code> olarak yeniden kuruluyordu ve
+        <strong>hız sınırı yoktu</strong>. <code>gps_guidance</code>'ta zaten var olan slew
+        sınırı bbox-IBVS'e de kondu. ⚠ Yalnız <em>burnu</em> yavaşlatır; hız hedefin gerçek
+        LOS'u boyunca gider (multirotor yan uçabilir), nişan bozulmaz.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>5 görsel fazda ölçüldü: yaw komut hızı medyan 12-38 °/s, <strong>p95 238-412 °/s,
+        max 876 °/s</strong>. Aracın yapabildiği ~120 °/s. 876 istenince yaw doyuyor, motorlar
+        yaw torkuna gidiyor, roll/pitch yetkisi kalmıyor → <strong>TAKLA</strong>
+        (roll −157°'ye kadar). Taklanın maliyeti de ölçüldü: takla yaşamayan koşular 2/2
+        vurdu, yaşayanlar 1/3; her kurtarma 13+ s sürüyor ve hedef kaçıyor.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>A/B zinciri (her aşama 5 bağımsız koşu)</th><th class="s">vuruş</th><th class="s">takla</th><th class="s">ilk denemede vuruş</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">taban (VTERM 18)</td><td class="s">3/5</td><td class="s">9</td><td class="s">2/5</td></tr>
+            <tr><td class="ad">+ yaw sıçrama düzeltmesi</td><td class="s">4/5</td><td class="s">6</td><td class="s">4/5</td></tr>
+            <tr><td class="ad">+ hız sürekliliği</td><td class="s">3/5</td><td class="s">10</td><td class="s">2/5</td></tr>
+            <tr class="birincil"><td class="ad">+ YAW SLEW SINIRI</td><td class="s kazanan">5/5</td><td class="s kazanan">0</td><td class="s kazanan">5/5</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ bu 5/5 sonradan çürütüldü — özellik yine de kaldı</span>
+        <p>Bir sonraki commit (042138e) aynı kodla 2/5 ölçtü; yani <strong>5/5 şanstı</strong>.
+        Yaw slew'in birleşik vuruş sonucu 7/10, öncesi 10/15 — vuruş oranında istatistiksel
+        fark <em>yok</em>. Özelliğin kalma gerekçesi vuruş değil, <strong>takla mekanizması</strong>:
+        876 °/s'lik komut ölçüldü, aracın tavanı 120 °/s ve doymuş yaw takla üretiyor.
+        Bu CLAUDE.md §5.4'ün (n&lt;4 / düşük n yanıltır) doğduğu ilk olaydır.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Mekanizma kanıtlı, riski yok (normal takip medyanı
+        12-38 °/s). ⚠ Sonradan Ö7 bu tavanı 200°/s'ye çıkarmayı denedi ve elendi; Ö12 ise
+        tam tersini (yakında <em>kısmak</em>) öneriyor — bkz. Bölüm 2.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 3c7b26f · birim test B21</div>
+    </article>
+
+    <!-- ── G10 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G10</span> — Terminal hücum hızı 24 → 18 m/s</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_VTERM</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">18 m/s</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">3 bağımsız koşu</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">97dce5c</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Yaklaşma tavanı 24 m/s'de <em>kalır</em> (hedefe yetişmek için gerekli); yalnız
+        terminal hücum hızı ayrı bir alana (<code>V_TERMINAL</code>) alınıp 18 m/s'ye indirildi.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>24 m/s'de hedefin yanından <strong>0.06 s</strong>'de geçiliyordu — kamera 30 Hz'de
+        son metrede 2 kare görüyor. 18 m/s'de kapanma 3.5 m/s (hedef 14.5 m/s) → hem düzeltmeye
+        daha çok kare, hem temas penceresinde daha uzun süre.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>koşu</th><th class="s">sonuç</th><th class="s">temas / en yakın</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">koşu 1</td><td class="s kazanan">VURULDU (132 s)</td><td class="s">temas 1.56 m · geçişler 0.40 / 5.60 / 2.00</td></tr>
+            <tr><td class="ad">koşu 2</td><td class="s kaybeden">ıska (200 s)</td><td class="s">tek yakın geçiş 1.90 m</td></tr>
+            <tr><td class="ad">koşu 3</td><td class="s kazanan">VURULDU (123 s)</td><td class="s">temas 1.55 m · tek geçiş 1.60 m</td></tr>
+            <tr class="birincil"><td class="ad">toplam</td><td class="s">2/3 (önceki yapılandırma 1/2)</td><td class="s">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> ⚠ n=3, §5.4 gereği hüküm değil ara veri; gerekçenin ağırlığı
+        geometri hesabında (0.06 s temas penceresi).</p>
+      </div>
+      <div class="kaynak">kaynak: commit 97dce5c</div>
+    </article>
+
+    <!-- ── G11 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G11</span> — Dikey komut KAPANMA hızıyla ölçeklenir</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_KAPANMA</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">1.0 = AÇIK (taban 1.5 m/s · EMA 0.20)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">kullanıcının 4 hücumu (yasa aynı girdilerle yeniden koşturuldu)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">b42c30e</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Terminal dikey yasası <code>vz = −v_los·tan(yükseliş)</code> yerine
+        <code>vz = −ṙ·tan(yükseliş)</code> olur. ṙ (kapanma hızı) <strong>görüntüden</strong>
+        ölçülür — GPS yok:
+        <code>R = MENZIL_PX_M/boyut ⇒ ṙ = R·(dboyut/dt)/boyut</code>, EMA'lı ve tabanlı.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"tam vuracağı sırada yukarı manevra yapıp aracın üstünden
+        geçiyoruz."</em> Kök neden <strong>tek bir çarpan</strong>: dikey farkı "varana kadar"
+        kapatmak gerekir ve o süreyi kapanma hızı belirler, drone'un yer hızı değil. Hedef
+        15 m/s ile kaçtığı için mesafe saniyede 18 m değil ~2 m kapanıyor.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt (menzil 3.67 m, dikey fark 0.89 m altta)</th><th class="s">v_los ile</th><th class="s">ṙ ile</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">dikey komut</td><td class="s kaybeden">−5.00 m/s (gerekenin 13.7 katı)</td><td class="s kazanan">gereken −0.37 m/s</td></tr>
+            <tr><td class="ad">2-3 m'de tırmanma komutu (yasa yeniden koşturuldu)</td><td class="s">−5.00 m/s</td><td class="s kazanan">−0.54 … −0.95 m/s</td></tr>
+            <tr><td class="ad">en büyük dikey komut</td><td class="s">5.00 m/s</td><td class="s kazanan">1.18 … 2.24 m/s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Dikey bütçe kısıtı (G8) da aynı ölçeğe bağlandı — yoksa yatayı, artık var olmayan
+        bir dikey talep yüzünden kısar, boşuna frene basardı. Bir çarpan değişince ona bağlı
+        her kısıt gözden geçirilir.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Kill-switch <code>AVCI_IBVS_KAPANMA=0</code> ile eski
+        davranış aynen geri gelir. Birim testler B25-B27.</p>
+      </div>
+      <div class="kaynak">kaynak: commit b42c30e</div>
+    </article>
+
+    <!-- ── G12 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">T1a</span> — Yatay açı roll/pitch telafisi</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_ROLL</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">1.0 = AÇIK</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">4 (2 telafisiz + 2 telafili, daire 210 s)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">ae2c600 (kod) · 26337cf (taze uçuş kanıtı)</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Yatay hata artık ham piksel azimutundan değil, piksel ışınının aracın <strong>kendi
+        duruşuyla</strong> seviye çerçevesine döndürülmesinden okunur
+        (<code>los_seviye()</code>: piksel → kamera ışını → gövde FRD (25° tilt) → seviye
+        <code>Ry(pitch)·Rx(roll)</code>). Girdi yalnız kutu + kendi IMU'su — canlı hedef GPS'i
+        yok, D0 temiz.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"düz uçuşta ıskalamıyor, hedef manevra yapınca görsel güdüm
+        sapıtıyor, yatayda çok salınım oluyor."</em> Kök neden bir çerçeve karışıklığı:
+        <code>los_az = iris_yaw + atan((cx−CX)/FX)</code> yalnız roll=0'da doğrudur.
+        <strong>5869 kare gerçek uçuş verisinde</strong> okunan açı gerçek seviye azimutuyla
+        kıyaslandı:</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>yatış bandı</th><th class="s">kare</th><th class="s">yatay okuma hatası</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">0-9°</td><td class="s">4450</td><td class="s">0.6°  <span class="kazanan">← düz uçuş: bu yüzden ıskalamıyor</span></td></tr>
+            <tr><td class="ad">10-19°</td><td class="s">821</td><td class="s">2.4°</td></tr>
+            <tr><td class="ad">20-29°</td><td class="s">313</td><td class="s">11.0°</td></tr>
+            <tr><td class="ad">30-39°</td><td class="s">210</td><td class="s kaybeden">13.9° ← manevra: bu yüzden sapıtıyor</td></tr>
+            <tr><td class="ad">40-49°</td><td class="s">75</td><td class="s">10.8°</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">nasıl sınandı</span>
+        <p>Daire senaryosu, 210 s, koşu başına tek değişken; A1/A2 telafisiz ↔ B1/B2 telafili.
+        Hepsi geçerli (hedef 20-250 m bandında, hız 14.8-15.1 m/s).</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">A1 telafisiz</th><th class="s">A2 telafisiz</th><th class="s">B1 telafili</th><th class="s">B2 telafili</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">yatay hata medyanı</td><td class="s">66.5 px</td><td class="s">53.0 px</td><td class="s kazanan">50.2</td><td class="s kazanan">44.5</td></tr>
+            <tr><td class="ad">salınım (işaret değişimi/s)</td><td class="s">0.104</td><td class="s">0.143</td><td class="s kazanan">0.000</td><td class="s kazanan">0.057</td></tr>
+            <tr><td class="ad">görsel temas oranı</td><td class="s">%53.6</td><td class="s">%36.7</td><td class="s kazanan">%64.4</td><td class="s kazanan">%56.2</td></tr>
+            <tr><td class="ad">İMHA</td><td class="s">✗</td><td class="s">✗</td><td class="s kazanan">✓</td><td class="s">✗</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Üç ölçüt de her iki çiftte telafi lehine (6/6). Geriye dönük
+        doğrulama: aynı 5869 karede ağırlıklı hata <strong>2.0° → 0.0°</strong>.
+        ⚠ Ama manevrayı <em>çözmüyor</em>: 210 s'de hâlâ ~12 temas kopuşu.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ kanıt türü düzeltildi</span>
+        <p>ae2c600 bu özelliği yalnız <strong>eski log replay'iyle</strong> doğrulamıştı — bu,
+        kullanıcının açıkça yasakladığı kanıt türüdür (CLAUDE.md §2: replay yalnız hipotez
+        üretir). 26337cf onun yerine taze uçuş kanıtını koydu.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>T1a bilerek <strong>yalnız yatay kanala</strong> uygulandı; dikey kanal tek-değişken
+        kuralı gereği dokunulmadan bırakıldı (birim test B31 <code>vz</code>'nin bit bit aynı
+        kaldığını sınar). Dikeyi de telafi etme denemesi ayrı bir madde oldu → T1b (Bölüm 3).</p>
+      </div>
+      <div class="kaynak">kaynak: commit ae2c600, 26337cf · UYGULANACAK.md "M1" · testler B28-B32</div>
+    </article>
+
+    <!-- ── G13 ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">G13</span> — Kör hücum süre sınırı</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_TERM_SURE</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">2.0 s</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">1 arıza koşusu (kök neden)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">702e479</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Terminal mandalı kilitlendikten sonra kutu kaybolursa son komut sürer (kör hücum) —
+        ama en fazla 2 s. Süre dolunca ıska sayılır ve GPS fazına dönülür.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>İlk sürümde kör hücumun süresi <strong>yoktu</strong>. Drone hedefi ıskalayıp geçti,
+        kutu kayboldu ve son komut <strong>260 s boyunca</strong> basıldı — araç
+        <strong>1032 m</strong> uzağa düz uçtu, faz hiç "kayıp" dönmedi.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar</span>
+        <p><strong>GİRDİ.</strong> Emniyet kısıtı; kör hücum çarpışmayı <em>tamamlamak</em>
+        içindir, süresiz bir mod değildir.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 702e479 · bbox_ibvs.py Cfg "KÖR HÜCUM SÜRE SINIRI"</div>
+    </article>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 2 — BEKLEMEDE / KARARSIZ
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 2</span> ⏸ Beklemede / kararsız</h2>
+      <p>Ölçüldü ama karar verilemedi: ya n yetersiz, ya sonuç bölünmüş, ya da önceden ilan
+         edilmiş bir karar kuralı durdurdu. Varsayılanları KAPALI — ama elenmediler.</p>
+    </div>
+
+    <!-- ── M2 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">M2</span> — Tespit güven eşiği 0.35 → 0.15</h3>
+        <span class="rozet r-bekle">beklemede</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_CONF · AVCI_POSE_CONF</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.35 (denenen: 0.15)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">2 vs 2 — ⚠ n&lt;4, hüküm kurulmaz</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">26337cf · UYGULANACAK.md "M2"</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>CONF_MIN</code>'in altındaki kutular güdüm tarafından <em>yok sayılır</em>.
+        Eşiği 0.15'e indirmek, dedektörün gördüğü ama güdümün attığı kutuları denkleme sokar.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Temas kopuşlarının <strong>%100'ünde hedef hâlâ kadrajın İÇİNDE</strong>; kopuştan
+        önceki 5 karede güven medyanı 0.39, min 0.35 = tam <code>CONF_MIN</code>. Yani dedektör
+        görüyor, güdüm eşikte atıyor.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">B1/B2 (0.35)</th><th class="s">C1/C2 (0.15)</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">yatay hata medyanı</td><td class="s">50.2 / 44.5 px</td><td class="s kazanan">17.0 / 15.5</td></tr>
+            <tr><td class="ad">yatay hata p90</td><td class="s">197 / 154 px</td><td class="s kazanan">102.5 / 54.5</td></tr>
+            <tr><td class="ad">toplam temas süresi</td><td class="s">37 / 53 s</td><td class="s kazanan">88 / 111 s</td></tr>
+            <tr class="birincil"><td class="ad">İMHA</td><td class="s">1/2</td><td class="s kaybeden">0/2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — beklemede</span>
+        <p>Takip 3× iyi, temas 2× uzun — <strong>ama vuruş yok.</strong> Varsayılan yapılmadı,
+        üç sebeple: (a) düz uçuş gerilemesi ölçülmedi (§5.10 regresyon şartı),
+        (b) düz eşik yerine <strong>histerezis</strong> olmalı (yakala 0.35, tut 0.20),
+        (c) vuruşu engelleyen darboğazın başka yerde olduğu düşünülüyordu.</p>
+      </div>
+      <div class="kaynak">kaynak: UYGULANACAK.md "M2" · commit 26337cf</div>
+    </article>
+
+    <!-- ── Ö1 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö1</span> — Kaçış telafisi (kapanma hızı geri beslemesi)</h3>
+        <span class="rozet r-bekle">kullanıcı kararında</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_KD</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (tavan KACIS_MAX 10 m/s)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4'e 4 dönüşümlü, yatay+capraz, tetik 25 m)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">93ea734</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>v_los = hiz_I + K_FWD·hata + KACIS_KD·max(0, −ṙ)</code>. Hedef uzaklaşmaya
+        başladığı <em>anda</em> hız artar; integralin 5 saniyesini beklemez.
+        ⚠ Yalnız <strong>hızlandırma yönü</strong> (yaklaşırken terim sıfır — fren yok) ve
+        yalnız <strong>seyir fazı</strong> (terminal hücum yasası ve dikey kanal dokunulmadı).</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>10 kaçamak koşusunun <strong>istisnasız hepsinde</strong>, kaçamaktan sonraki 15 s'de
+        drone hızı 7.7-13.9 m/s'ye düşüyor (hedef 15.4-16.3 m/s) ve 48-147 m açılıyor. Hedeften
+        yavaşken mesafe matematiksel olarak kapanmaz. Kök neden: hız yasası saf bir <em>menzil</em>
+        düzenleyicisi — "hedef uzaklaşıyor mu" girdisi yok. Yakın geçişte kutu 88-102 px olunca
+        hata −63…−77 → integral saniyede 3.1 m/s düşüyor, toparlanma saniyede 0.6 m/s:
+        <strong>5:1 asimetri</strong>.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=4</th><th class="s">Ö1 n=4</th><th class="s">kazanan</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">maks açılan mesafe (birincil)</td><td class="s">107.7 m</td><td class="s">116.9 m</td><td class="s">kontrol</td></tr>
+            <tr class="birincil"><td class="ad">drone min hız (birincil)</td><td class="s">12.8 m/s</td><td class="s">11.2 m/s</td><td class="s">kontrol</td></tr>
+            <tr><td class="ad">en yakın menzil medyanı</td><td class="s">0.68 m</td><td class="s kazanan">0.51 m</td><td class="s">Ö1</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">2/4</td><td class="s kazanan">3/4</td><td class="s">Ö1</td></tr>
+            <tr><td class="ad">≤1 m'ye gelen koşu</td><td class="s">3/4</td><td class="s kazanan">4/4</td><td class="s">Ö1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">video kanıtı</span>
+        <p>En yakın geçiş karesinde: <strong>KONTROL</strong> koşusunda hedef kadrajda YOK —
+        altta <code>ID:7 tahmin(3)</code>, yani izleyici görmüyor, tahmin ediyor; drone hedefe
+        <em>kör</em> gidiyor. <strong>Ö1</strong> koşusunda hedef kadrajın ortasında, kutu kilitli
+        (conf 0.93).</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ itiraf — birincil ölçüt yanlış seçilmişti</span>
+        <p>"Maks açılan mesafe" dönüş manevrasındaki savrulmayı ölçüyor, kesişimin kalitesini
+        değil. Ö1 daha sert atak yapıp daha çok savruluyor ama daha iyi kesişim üretiyor.
+        Sonuca bakıp ölçüt değiştirmek CLAUDE.md §4'e aykırı olduğu için karar
+        <strong>tek taraflı değiştirilmedi</strong> — kullanıcıya götürüldü (§5.6).</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ mekanizma kapısı — kullanıcı uçuşunda hiç çalışmadı</span>
+        <p>Kullanıcının kendi uçuşunda <code>kacis_ek = 0.00</code>: durum TERMINAL olduğu için
+        Ö1 o uçuşta <strong>hiç devreye girmemişti</strong>. Kullanıcının "fark göremedim"
+        demesinin sebebi buydu (CLAUDE.md §5.1).</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — kullanıcıda</span>
+        <p>Önceden ilan edilen kural Ö1'i <em>eliyor</em> (iki birinciliyi de kaybetti), ama
+        tüm ikincil ölçütler ve video Ö1 lehine. <strong>Varsayılan KAPALI</strong>, karar
+        kullanıcıya bırakıldı.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 93ea734 · UYGULANACAK.md "Ö1" · testler B38-B42</div>
+    </article>
+
+    <!-- ── Ö9 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö9</span> — Yatay kanala sönümleme (D terimi)</h3>
+        <span class="rozet r-bekle">kullanıcı kararında</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_SONUM</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen 0.30 s)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">12 (6v6) + 10 taze A/B (S01-S10); eşlenmiş analiz 22 uçuş birleşik</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">946f0ee · 37e48e7 · 00f1e69</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>eps_sonumlu = eps_yaw − SONUM_T·yaw_hizi</code>, yani
+        <code>yaw_cmd = iris_yaw + K_YAW·eps_yaw − SONUM_T·ω</code>. Klasik PD; girdi aracın
+        <strong>kendi</strong> IMU'su (yaw türevi), D0 temiz. Tavan
+        <code>SONUM_MAX_DEG = 30°</code> — terim komutu ters yöne itmesin.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"hedefin yaptığı ilk manevrada bizim araç o kadar sağa
+        yönelmese, hafif bir sağa yönelip hedefin direkt arkasında kalsa."</em> Kök neden
+        <strong>yapısal</strong>: yatay kanal saf oransal (<code>K_YAW=1.0</code>, tam düzeltme),
+        türev terimi yok. Sistemin gecikmesi ölçüldü:</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>gecikme kaynağı</th><th class="s">süre</th><th class="s">ölçüm</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">kamera → komut</td><td class="s">73 ms</td><td class="s"><code>gecikme_s</code> sütunu, 96 örnek</td></tr>
+            <tr><td class="ad">komut → gerçekleşen yaw</td><td class="s">300 ms</td><td class="s">çapraz korelasyon, 490 kare</td></tr>
+            <tr><td class="ad">hız vektörünü 30° döndürmek</td><td class="s">780 ms</td><td class="s">Δv 9.3 m/s ÷ MAX_ACCEL 12</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm — ilk kampanya (12 uçuş, 6v6)</span>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=6</th><th class="s">Ö9 n=6</th><th class="s">kazanan</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">yatış p90</td><td class="s">21°</td><td class="s kazanan">14°</td><td class="s">Ö9</td></tr>
+            <tr><td class="ad">yaw komut hızı p90</td><td class="s">120 °/s</td><td class="s kazanan">115 °/s</td><td class="s">Ö9</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s kazanan">1.82 m</td><td class="s">2.33 m</td><td class="s">KONTROL</td></tr>
+            <tr><td class="ad">görsel temas</td><td class="s kazanan">%56</td><td class="s">%54</td><td class="s">KONTROL</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">0/6</td><td class="s">0/6</td><td class="s">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ hüküm İKİ KEZ değişti — sicilin asıl değeri burada</span>
+        <p><strong>1) "Fayda yok" hükmü YANLIŞTI (işaret hatası).</strong>
+        <code>tools/salinim.py</code>'de gidiş yönünün sağı <code>(hy, −hx)</code> yazılmıştı;
+        NED'de doğrusu <code>ẑ×ĥ = (−hy, hx)</code>. Yazılan ifade SOLU veriyordu → "SAĞA AŞIM"
+        sütunu ters tarafı ölçüyordu. Hatayı GPT Codex buldu, matematiği bağımsız doğrulandı,
+        <code>tests/test_salinim.py</code> bekçisi eklendi (5/5). Aynı 22 uçuş yeniden
+        hesaplanınca: SAĞA AŞIM kontrol 39.00 m → Ö9 <strong>25.35 m</strong> (%35 azalma).</p>
+        <p><strong>2) Ama "%35" de şişikmiş (§5.9 kol dengesizliği).</strong> Kollara eşit
+        sayıda kaçamak türü denk gelmemişti; <code>yatay</code> aşımı ~66 m,
+        <code>capraz</code> ~31 m olduğu için kaba medyan kıyası kolları değil
+        <em>karışım oranını</em> ölçüyordu. Tür-içi eşlenmiş gerçek etki:</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>SAĞA AŞIM — tür-içi eşlenmiş (22 uçuş birleşik)</th><th class="s">KONTROL</th><th class="s">Ö9</th><th class="s">fark</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">yatay kaçamak (n=6v5)</td><td class="s">66.8 m</td><td class="s">56.0 m</td><td class="s kazanan">−16%</td></tr>
+            <tr class="birincil"><td class="ad">capraz kaçamak (n=5v6)</td><td class="s">31.5 m</td><td class="s">29.9 m</td><td class="s kazanan">−5%</td></tr>
+            <tr><td class="ad">isabet / en yakın menzil</td><td class="s">—</td><td class="s">—</td><td class="s">tür-içi fark YOK</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p><strong>Birincil ölçüt hiç değerlendirilemedi (§5.2 kapısı).</strong> Salınım yalnız
+        görsel temas ≥%60 olan koşularda geçerli sayılıyor; KONTROL'de 3 koşu geçerliydi
+        (medyan 0.092), Ö9'da <strong>yalnız 1</strong> — kıyas yapılamadı. Bu bir Ö9 bulgusu
+        değil <em>test kurulumu</em> bulgusudur: 8 m tetikte temas oranı %42-81 arasında
+        sallanıyor. Salınım sorusu bu senaryoda ölçülemiyor; 15 m tetikte temas daha iyiydi.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — kullanıcıda</span>
+        <p>Ö9 aracı ölçülebilir biçimde <strong>sakinleştiriyor</strong> (yatış p90 %33 düşüş,
+        6'ya 6 tutarlı) ve kaçamak yönündeki aşımı gerçekten azaltıyor — ama etki
+        <strong>mütevazı (%5-16)</strong>, yaklaştırmıyor ve koşu-içi değişkenlik çok yüksek
+        (Ö9 yatay ham: 5.0 / 23.1 / 56.0 / 60.7 / 66.8 m). Varsayılan KAPALI.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 946f0ee, 37e48e7, 00f1e69 · logs/kacamak/P*, S* · testler B48-B52</div>
+    </article>
+
+    <!-- ── Ö11 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö11</span> — Iska sonrası dönüş yavaşlaması</h3>
+        <span class="rozet r-bekle">durduruldu (karar kuralı)</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_DONUS_YAVAS · DY_RDOT · DY_ACI</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen 9.0 m/s · ṙ −5 m/s · 45°)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">12 (duz+kaçamak) + 4 (circle regresyonu)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">e3a2a57 · f88ec1b</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Hedefi geçtikten sonra, dönüşü tamamlayana kadar hız 9 m/s'ye kısılır. Tetik
+        <strong>yalnız kutudan</strong> (canlı GPS yok, D0 temiz):
+        <code>kapanma &lt; −5 m/s</code> (kutu hızla küçülüyor = hedefi geçtik)
+        <strong>ve</strong> <code>|eps_yaw| &gt; 45°</code> (dönmemiz gerekiyor). Koşul durum
+        tutmaz — dönüş ilerledikçe <code>eps_yaw</code> küçülür ve kendiliğinden serbest bırakır.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Bu, sicildeki <strong>en önemli teşhis düzeltmesinden</strong> doğdu: 66 m'lik "sağa
+        aşım" bir kontrol salınımı DEĞİL. Aşımın <em>ne zaman</em> olduğu ölçüldü — beş koşuda
+        da tetikten tam <strong>+7 s</strong> sonra ve 66-69 m:
+        <code>R = V²/(g·tan45°) = 18²/9.81 = 33 m → U-dönüşü 2R = 66 m</code>.
+        Yani drone hedefi geçiyor ve geri dönmek için <strong>minimum çemberini</strong> çiziyor.
+        Ö5/Ö8/Ö9'un üçü de bu yüzden yanlış katmandaydı (kazanç/nişan). Çare geometri:
+        R ∝ V², 9 m/s'de 2R = 17 m — dört kat dar.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">mekanizma kapısı (§5.1)</span>
+        <p>Deney kolunun 3 koşusunda yavaşlama 8-18 karede aktif oldu, hız 9.0 m/s'ye indi.
+        <strong>T12 koşusunda HİÇ tetiklenmedi → koşu GEÇERSİZ sayıldı</strong> ve analizden
+        çıkarıldı.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>YATAY kaçamak (n=4 vs 3)</th><th class="s">KONTROL</th><th class="s">Ö11</th><th class="s">değişim</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">SAĞA AŞIM (birincil)</td><td class="s">61.8 m</td><td class="s kazanan">24.2 m</td><td class="s kazanan">−61%</td></tr>
+            <tr class="birincil"><td class="ad">İSABET (birincil)</td><td class="s">2/4</td><td class="s">2/3</td><td class="s">~</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s">0.44 m</td><td class="s kazanan">0.36 m</td><td class="s">−19%</td></tr>
+            <tr><td class="ad">yanal medyan</td><td class="s">3.05 m</td><td class="s kazanan">1.80 m</td><td class="s">−41%</td></tr>
+            <tr><td class="ad">yandan yana geçiş</td><td class="s">3.5</td><td class="s">4.0</td><td class="s">+14%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ham değerler ve çapraz kolu</span>
+        <p>Ham aşım: kontrol [22.8, 56.8, 66.8, 69.6] → Ö11 [22.1, 24.2, 28.9]. Kontrolün
+        4'ünden 3'ü Ö11'in <em>tamamının</em> üstünde; bir kontrol koşusu (22.8) Ö11 bandına
+        giriyor — tam ayrışma yok ama yön net. Ölçülen etki, fizikten <strong>önceden</strong>
+        hesaplanan değerle uyuşuyor (tahmin 66→17 m, ölçüm 62→24 m).</p>
+        <p><strong>ÇAPRAZ kaçamak (n=2v2, az veri):</strong> aşım 36.1 → 42.1 m (kötüleşti),
+        en yakın 1.3 → 0.6 m (iyileşti). Ham [36.3, 36.0] → [48.9, 35.4] — bir koşu kötü,
+        örtüşüyor. <strong>Hüküm için yetersiz (§5.4).</strong></p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ DAİRE REGRESYONU (§5.10) — karar kuralı tetiklendi</span>
+        <p>Kullanıcı sordu: <em>"hedef sürekli sert manevra yaparsa, daire çizerse Ö11 takibi
+        kötüleştirmez mi?"</em> Tetik koşulu sürekli dönen hedefte sık sağlanabilir. Regresyon
+        koşuldu: <code>circle</code> senaryosu, 4 uçuş (2v2), kaçamak <code>yok</code>.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>circle regresyonu</th><th class="s">KONTROL n=2</th><th class="s">Ö11 n=2</th><th class="s">karar kuralı</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">en yakın menzil (birincil 1)</td><td class="s">5.15 m</td><td class="s kaybeden">8.49 m (+65%)</td><td class="s kaybeden">⚠ %30 eşiği AŞILDI</td></tr>
+            <tr><td class="ad">Ö11 tetik oranı (birincil 2)</td><td class="s">—</td><td class="s">%3</td><td class="s">eşik %30 — aşılmadı</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">0/2</td><td class="s">0/2</td><td class="s">—</td></tr>
+            <tr><td class="ad">görsel temas</td><td class="s">%41</td><td class="s">%46</td><td class="s">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — DURDURULDU</span>
+        <p><strong>Ö11 varsayılan YAPILAMAZ.</strong> Önceden ilan edilen kural tetiklendi.
+        İki nüans, dürüstlük için: (1) <em>korkulan mekanizma bu değil</em> — "sürekli 9 m/s'de
+        kilitlenir" beklenmişti, tetik oranı yalnız %3; araç sürekli yavaş kalmıyor ama yine
+        de dairede daha uzakta kalıyor, sebep <strong>anlaşılmadı</strong>. (2) n=2 ve ham
+        değerler örtüşüyor: kontrol [2.45, 7.85], Ö11 [13.42, 3.57]. §5.4 gereği bu bir "hüküm"
+        değil, kuralın tetiklediği bir <strong>durdurma</strong>.</p>
+        <p><strong>Girmesi için gereken:</strong> daire kolu n=4+ ile doğrulanmalı; gerileme
+        sürerse tetik daraltılmalı (ör. yalnız kaçamak sonrası ilk N saniye, ya da
+        <code>boyut</code> yakın geçişi doğrulayan ek şart).</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Bu özellik CLAUDE.md §5.10'un ("bir durumu düzeltirken başkasını bozma") doğduğu
+        olaydır — ve kuralın ilk kurbanı da kendisi oldu.</p>
+      </div>
+      <div class="kaynak">kaynak: commit e3a2a57, f88ec1b · logs/kacamak/T01-T12, V01-V04 · testler B62-B66</div>
+    </article>
+
+    <!-- ── Ö12 ── -->
+    <article class="kart k-bekle">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö12</span> — Yakın menzilde yaw tavanı</h3>
+        <span class="rozet r-bekle">n yetersiz</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_YAW_MENZIL · YAW_MINKAT</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen 15 m · alt kat 0.35)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4, kollar dengeli: 2 yatay + 2 capraz)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">5b44a24</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>tavan = YAW_RATE_MAX · clamp(R/YAW_MENZIL_REF, 0.35, 1)</code> —
+        20 m'de 120°/s (değişmez), 8 m'de 64°/s, 3 m'de 42°/s. Yani G9'un koyduğu sabit tavan
+        yakın menzilde <em>daha da</em> kısılır.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"araç hedefi pas geçtiğinde kendi etrafında dönmeye başlıyor,
+        olduğu yerde kalıp 15 saniyede düzeliyor."</em> Ölçüldü: <strong>30 koşunun 10'unda</strong>
+        kurtarma bekçisi tetiklenmiş. T09'da tetikten hemen önce cx 208→222→262→280 (hedef kadrajı
+        tarıyor), yaw komut hızı 122/118/122 °/s — <strong>tavanda sürekli kaçıyor</strong>.
+        Aracın gerçek yaw hızı 300°/s'yi aşınca bekçi güdümü kesiyor. Kök neden: menzil küçüldükçe
+        hedefin açısal hızı 1/R ile patlıyor (8 m'de ~100°/s, 2 m'de ~400°/s) — araç zaten takip
+        edemez.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">⚑ yapısal garanti (kullanıcının şartı)</span>
+        <p>Yaw slew sınırı <strong>yalnız burnu</strong> etkiler. Hız vektörü
+        <code>hiz_yonu</code>'ndan hesaplanır ve bu sınırdan <em>geçmez</em>. Birim testi
+        <strong>B67</strong>: 32 girdi kombinasyonunda <code>komut()</code> çıktısı
+        (vx, vy, vz, yaw) <strong>bit bit aynı</strong>. Uçuş yolu / kesişim geometrisi
+        değişemez. Bu, regresyon testinden daha güçlü olan kanıt türüdür (§5.10).</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=4</th><th class="s">Ö12 n=4</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">KURTARMA yaşayan koşu (birincil)</td><td class="s">1/4 (19 kare)</td><td class="s kazanan">0/4 (0 kare)</td></tr>
+            <tr><td class="ad">yaw komut doyma medyanı (mekanizma)</td><td class="s">%17</td><td class="s kazanan">%5</td></tr>
+            <tr><td class="ad">İSABET</td><td class="s">3/4</td><td class="s">3/4 — gerileme yok</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s">0.70 m</td><td class="s">0.64 m — gerileme yok</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — n yetersiz</span>
+        <p><strong>Mekanizma çalışıyor</strong> (doyma %17 → %5). Ama KURTARMA olayı seyrek
+        (taban ~%33); 1/4 → 0/4 farkı <strong>n=4'te gürültüden ayrılamaz</strong> (§5.4).
+        Karar için <strong>n=8+/kol</strong> gerekiyor. Varsayılan KAPALI.</p>
+        <p>⚠ Yan gözlem, doğrulanmalı: <code>yatay</code> SAĞA AŞIM 41.3 → 69.4 m (n=2v2) —
+        gerileme olabilir.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 5b44a24 · logs/kacamak/U01-U08 · testler B67-B70</div>
+    </article>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 3 — ELENENLER
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 3</span> ❌ Elenenler</h2>
+      <p>Ölçüldü; iyileştirmedi ya da kötüleştirdi. Kodu ve kill-switch'i çoğunda duruyor —
+         elenmek "yanlış" demek değil, "bu rejimde işe yaramıyor" demektir.</p>
+    </div>
+
+    <!-- ── M3 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">M3</span> — Erken lead (terminal kapısının kaldırılması)</h3>
+        <span class="rozet r-elendi">3 kez ölçüldü, 3 kez nötr</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_LEAD_ERKEN</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">2 + 6 (3v3 dönüşümlü) + 10 + 4 = üç ayrı kampanya</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">26337cf · 946f0ee · UYGULANACAK.md "M3/M4"</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Yatay lead <code>if terminal:</code> kapısının arkasındaydı; mandal 6.4 m'de
+        kapandığı için lead ancak son 6 metrede çalışıyordu. Kapı kaldırıldı — lead artık
+        kutu olan <em>her</em> karede uygulanır. Ölçek, tavan ve LOS hızı kaynağı aynen aynı.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>4473 kutulu karede ölçüldü: yakın menzilde lead <strong>tam sıfır</strong> ve
+        gereken yanal ivme aracın tavanının çok üstünde. <code>lead_olcek</code> zaten 6.4 m'ye
+        kadar 1.0'dı — yani sönüm kusurlu değildi, <strong>KAPI kusurluydu</strong>.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>menzil</th><th class="s">|λ̇| med</th><th class="s">V med</th><th class="s">gereken yanal ivme</th><th class="s">tavanı aşan kare</th><th class="s">lead</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">20-35 m</td><td class="s">0.46</td><td class="s">19.4</td><td class="s">9.0 m/s²</td><td class="s">%43</td><td class="s">0.0°</td></tr>
+            <tr><td class="ad">13-20 m</td><td class="s">0.59</td><td class="s">19.6</td><td class="s">12.0</td><td class="s">%62</td><td class="s">0.0°</td></tr>
+            <tr><td class="ad">8-13 m</td><td class="s">1.21</td><td class="s">18.3</td><td class="s">21.9</td><td class="s kaybeden">%88</td><td class="s">0.0°</td></tr>
+            <tr><td class="ad">5-8 m</td><td class="s">1.56</td><td class="s">15.9</td><td class="s">22.4</td><td class="s">%75</td><td class="s">0.0°</td></tr>
+            <tr><td class="ad">0-5 m</td><td class="s">0.79</td><td class="s">18.0</td><td class="s">14.1</td><td class="s">%54</td><td class="s">8.4°</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm 1 — daire, 2 koşu / 2038 kutulu kare</span>
+        <p>Kadrajda tutuş gerçekten düzeldi, <strong>ama asıl iş olan yaklaşma bozuldu</strong>.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">kapalı</th><th class="s">M3 açık</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">yatay hata p90</td><td class="s">173.5 px</td><td class="s kazanan">97.5 px</td></tr>
+            <tr><td class="ad">temas süresi</td><td class="s">90 s</td><td class="s kazanan">143 s</td></tr>
+            <tr class="birincil"><td class="ad">8 m içine giriş</td><td class="s">4 kez / 65 kare</td><td class="s kaybeden">2 kez / 15 kare</td></tr>
+            <tr class="birincil"><td class="ad">en yakın menzil</td><td class="s">2.1 m (isabet)</td><td class="s kaybeden">13.2 / 10.0 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm 2 — 3'e 3 dönüşümlü (K,M,K,M,K,M), 20 Hz örtüşmesiz</span>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">kontrol n=3</th><th class="s">M3 n=3</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">İMHA</td><td class="s">0/3</td><td class="s">0/3</td></tr>
+            <tr><td class="ad">tepe kutu boyutu (medyan)</td><td class="s">27.9 px</td><td class="s">26.9 px</td></tr>
+            <tr><td class="ad">≥20 px (≈≤8 m) kare</td><td class="s">13</td><td class="s">12</td></tr>
+            <tr><td class="ad">yatay hata p90</td><td class="s">110 px</td><td class="s kazanan">99</td></tr>
+            <tr><td class="ad">toplam temas süresi</td><td class="s">56.4 s</td><td class="s kazanan">59.9 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm 3 — kaçamak testi, 15 m tetik, 4 uçuş</span>
+        <p>İsabet 0/4; birincil 1 (kontrollü vuruş) 0-0; birincil 2 (salınım) her iki kolda da
+        0.000. Ayrıca M4 tekrar testinde (10 uçuş): M3 kapalı 4/6 isabet / 1.24 m medyan,
+        M3 açık 2/4 / 0.93 m — ilk 4 uçuşta "açık 2/2, kapalı 0/2" çıkmıştı,
+        <strong>n arttıkça eridi</strong>.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Üç şey birden: (a) <strong>koşular arası değişkenlik kol farkını yutuyor</strong> —
+        aynı kolda tepe kutu boyutu 76.5 px ve 22.7 px ölçüldü (3 kat); (b) ilk hüküm (n=2)
+        yanlıştı, kontrol koluna şanslı bir isabet denk gelmişti, kullanıcı itiraz etti;
+        (c) mekanizma çalışıyor ama fizik değişmiyor — lead tasarlandığı gibi 8.7°/19.3°/25°
+        üretiyor <strong>ama λ̇ düşmüyor</strong> (13-20 m'de 0.72 → 0.84 rad/s).</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ (nötr)</span>
+        <p>Zarar verdiği için değil; <strong>ölçülebilir hiçbir şey değiştirmeden %82 doyan
+        bir terim eklediği için.</strong> Yan bulgu: erken lead karelerin %27'sinde
+        <code>LEAD_MAX_DEG=25°</code> tavanındaydı — terminal için ayarlanmış tavan sürekli
+        uygulanınca kalıcı nişan sapması oluyor, araç kesişmek yerine hedefi
+        <em>gölge ediyor</em>. Yön doğru, genlik yanlış.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 26337cf, 946f0ee · UYGULANACAK.md "M3", "M4" · testler B33-B37</div>
+    </article>
+
+    <!-- ── Ö5 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö5</span> — Dönüş-farkında hız tavanı</h3>
+        <span class="rozet r-elendi">elendi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_DONUS · DONUS_VMIN</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen 9.0 m/s² · taban 10 m/s)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">10 (5v5)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">946f0ee · 37e48e7</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>v ≤ DONUS_A / λ̇</code> — gereken yanal ivme (V·λ̇) tavanı aşıyorsa hız kısılır.
+        <strong>Yalnız kısar</strong>, asla artırmaz. Düz uçuşta λ̇≈0 → tavan sonsuz → etkisiz.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Fizik: <code>R = V²/a</code>. Aracın tavanı <code>g·tan(45°) = 9.81 m/s²</code>;
+        18 m/s'de R = 33 m, hedef (Talon, 15 m/s, 60° yatış) R = 13 m çiziyor. Drone 2.5 kat
+        geniş yay çizip dışarı taşıyor. Yatışı artırmak (Ö6) denenmiş ve çalışmamıştı; geriye
+        tek kaldıraç <strong>hızı kısmak</strong>: 18 → 33.0 m, 12 → 14.7 m, 9 → 8.3 m.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">mekanizma kapısı (§5.1)</span>
+        <p>Doğrulandı: tavan karelerin <strong>%6-36'sında bağladı</strong>, bağlıyken hız
+        10 m/s tabanına indi — yarıçap 33 m → 10 m (birim testi B53).</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">KONTROL n=5</th><th class="s">Ö5 n=5</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">SAĞA AŞIM (birincil 1)</td><td class="s">14.6 m</td><td class="s">14.2 m — berabere</td></tr>
+            <tr class="birincil"><td class="ad">yandan yana geçiş (birincil 2)</td><td class="s">2</td><td class="s kazanan">1</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s kazanan">1.89 m</td><td class="s kaybeden">3.23 m — kötüleşti</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">0/5</td><td class="s">0/5</td></tr>
+            <tr><td class="ad">SAĞA AŞIM (işaret hatası düzeltilmiş)</td><td class="s kazanan">37.40 m</td><td class="s kaybeden">43.20 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ</span>
+        <p>Dönüş sıkışıyor ama <strong>kapanma bitiyor</strong> (1.7 kat uzakta kalıyor). Üstelik
+        <code>salinim.py</code>'deki işaret hatası düzeltildikten sonra <em>birincil ölçüt de</em>
+        Ö5 aleyhine döndü: SAĞA AŞIM 37.40 → 43.20 m. Varsayılan KAPALI.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Ö5 doğru fiziği gördü ama <strong>yanlış tetikle</strong> uyguladı: λ̇'ya bakıyordu ve
+        geçiş anında bağlamıyordu. Aynı fizik, doğru tetikle (Ö11: "geçtik, şimdi dön") yatayda
+        %61 kazanç verdi. Aynı kaldıraç, farklı kapı — sonuç bambaşka.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 946f0ee, 37e48e7 · logs/kacamak/D01-D10 · testler B53-B57</div>
+    </article>
+
+    <!-- ── Ö6 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö6</span> — Yüksek yatış (ANGLE_MAX 45° → 55°)</h3>
+        <span class="rozet r-elendi">elendi — mekanizma kapısı</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">anahtar</span><span class="m-d">ARAÇ parametresi: ANGLE_MAX 5500 (MAVLink PARAM_SET)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">4500 (45°) — kod değişikliği yok</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4, tetik 8 m)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">gcs_server.py _OZELLIKLER yorum bloğu · UYGULANACAK.md "Ö6"</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Aracın maksimum yatış açısı tavanını 45°'den 55°'ye açar — dönüş yarıçapını 33.0 m'den
+        25.0 m'ye, dönüş hızını 31°/s'den 44°/s'ye çıkarır. IBVS denklemine dokunmaz; panelden
+        canlı <code>PARAM_SET</code> ile yazılır, geri okuma <code>_param_cache</code>'ten teyit
+        edilir.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Dönüş yeteneği kıyası: AVCI drone 18 m/s @45° → R 33.0 m, 31°/s;
+        HEDEF Talon 15 m/s @60° → R 13.2 m, 65°/s. Hedef 2.1× hızlı, <strong>2.5× dar</strong>
+        dönüyor — drone fiziksel olarak takip edemiyor. İtki maliyeti 1.74×; araçta 2.56× pay
+        var (<code>MOT_THST_HOVER=0.39</code>).</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt (ilk rapor)</th><th class="s">KONTROL n=4</th><th class="s">Ö6 n=4</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">İSABET</td><td class="s">0/4</td><td class="s">2/4</td></tr>
+            <tr><td class="ad">en yakın menzil medyanı</td><td class="s">3.47 m</td><td class="s">1.41 m</td></tr>
+            <tr><td class="ad">≤2 m'ye gelen koşu</td><td class="s">2/4</td><td class="s">3/4</td></tr>
+            <tr><td class="ad">görsel temas oranı (medyan)</td><td class="s">%67</td><td class="s">%78</td></tr>
+            <tr><td class="ad">maks açılan mesafe (birincil)</td><td class="s">52.2 m</td><td class="s">52.6 m — berabere</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ BU TABLO SAHTEYDİ — mekanizma kapısı (§5.1) sonradan yakaladı</span>
+        <p>Loglara bakılınca deney kolunun <strong>2 koşusunda araç 38-40°'de kalmış</strong>,
+        yani 45° tavanına <em>bile</em> dayanmamıştı. O koşular fiilen KONTROL koşusuydu ve
+        tablo geçersizdi. (Yalnızca bir koşuda yatış gerçekten 51°'ye çıktı; itki payı yetti,
+        irtifa kaybı olmadı.)</p>
+        <p>Bu olay CLAUDE.md §5.1'in — "kolları kıyaslamadan ÖNCE özelliğin devreye girdiği
+        KANITLANIR" — doğduğu yerdir.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ</span>
+        <p>Ölçüm geçersiz olmasının yanında gerekçe de çürüdü: saf takip kutunun
+        <em>bulunduğu</em> yere nişan alıyor; hedef yanal kırılınca 8 m'de LOS 107°/s süpürüyor
+        ve 0.2 s'lik döngü gecikmesi ~21° nişan hatası demek. Yatış tavanını açmak bu
+        <strong>gecikmeyi düzeltmez</strong> — yalnız yanlış yöne daha hızlı gitmeyi sağlar;
+        sonuç aşırı düzeltme ve salınım. Sıradaki iş yatış yetkisi değil <strong>nişan
+        noktası</strong> (lead / PN).</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Ayrıca "maks açılan mesafe" ölçütü burada <strong>ikinci kez</strong> kolları ayırt
+        edemedi (Ö1'de de öyle olmuştu) — savrulma kaçamağın geometrisinden geliyor,
+        iyileşmeyle ilgisi zayıf (§5.5).</p>
+      </div>
+      <div class="kaynak">kaynak: UYGULANACAK.md "Ö6" · gcs_server.py _OZELLIKLER üstündeki yorum bloğu</div>
+    </article>
+
+    <!-- ── Ö7 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö7</span> — Yaw hız tavanı 120 → 200 °/s</h3>
+        <span class="rozet r-elendi">elendi — sinyal yok</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_YAWRATE</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">120 °/s (denenen 200)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">4 (2v2) — ⚠ n&lt;4/kol</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">UYGULANACAK.md "Ö7" · 2b8d68c</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor / neden önerildi</span>
+        <p>G9'un koyduğu 120°/s slew tavanını gevşetir. Gerekçe: kaçamak sonrası karelerin
+        %23-47'sinde yaw komutu tavana yapışıyordu; <strong>doymuş bir sınırlayıcı kontrol
+        döngüsüne faz gecikmesi katar</strong> — salınımın klasik sebebi. Kullanıcı gözlemi:
+        <em>"karşı tarafa daha çok gidiyor ve salınıyor."</em></p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>koşu</th><th class="s">kol</th><th class="s">en yakın</th><th class="s">cx dğş/s</th><th class="s">yatış p90</th><th class="s">yaw doyma</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">O7A yatay</td><td class="s">KONTROL</td><td class="s">2.19 m</td><td class="s">0.000</td><td class="s">6°</td><td class="s">%8</td></tr>
+            <tr><td class="ad">O7B yatay</td><td class="s">Ö7</td><td class="s">2.94 m</td><td class="s">0.103</td><td class="s">20°</td><td class="s">%31</td></tr>
+            <tr><td class="ad">O7C capraz</td><td class="s">KONTROL</td><td class="s">3.29 m</td><td class="s">0.161</td><td class="s">26°</td><td class="s">%40</td></tr>
+            <tr><td class="ad">O7D capraz</td><td class="s">Ö7</td><td class="s">3.99 m</td><td class="s">0.086</td><td class="s">31°</td><td class="s">%6</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ</span>
+        <p>Birincil 1 (kontrollü vuruş): <strong>0-0</strong>, hiçbir koşuda vuruş yok.
+        Birincil 2 (cx salınımı): kontrol 0.081, Ö7 0.095 — kontrol hafif önde. Kural gereği
+        Ö7 girmez.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ mekanizma da tutmadı</span>
+        <p>Tavanı 200'e çıkarınca doyma <em>azalmadı</em>: O7B %31 doydu (güdüm 200°/s'den de
+        fazlasını istiyor), O7D %6; kontrol kolunda %8 ve %40. Aynı kolda <strong>5 kat
+        fark</strong> — doyma kararlı bir mekanizma değil, koşudan koşuya değişen bir
+        <em>sonuç</em>.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Ö7'nin neden boşa gittiği sonradan Ö8'in kök neden analizinde anlaşıldı:
+        <strong>yaw sınırı yalnız burnu yavaşlatıyor</strong>, hız vektörü zaten anında
+        savruluyordu. Salınım burun kanalında değil <strong>HIZ kanalındaydı</strong>.</p>
+      </div>
+      <div class="kaynak">kaynak: UYGULANACAK.md "Ö7" · commit 2b8d68c</div>
+    </article>
+
+    <!-- ── Ö8 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö8</span> — Yanal komut: açı değil, kaçırma mesafesi</h3>
+        <span class="rozet r-elendi">elendi — ölçüt artefaktı</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_YANAL · YANAL_M</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI (denenen K=3.0 · menzil kapısı 12 m)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">18 (ilk tur 3v3 + taze kampanya 6v6; havuz 9v9)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">2b8d68c · UYGULANACAK.md "Ö8"</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Hız vektörünün yönü açıya değil, kalan sürede yanal kaçırmayı kapatacak hıza göre
+        belirlenir: <code>y = R·sin(eps_yaw)</code>, <code>t_go = R/ṙ</code>,
+        <code>v_y = YANAL_K·y/t_go</code>, <code>eps_eff = asin(v_y/v_los)</code> — ve
+        <strong>yalnız kısar</strong>: <code>eps_hiz = min(|eps_yaw|, |eps_eff|)</code>.
+        BURUN tam <code>eps_yaw</code>'da kalır → kamera hedefi kaybetmez.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"bbox ekranın en sağına geldiği için bizim araç sağa öyle bir
+        manevra yapıyor ki sonra salınım oluyor. En azından hedefin sağa gittiği kadar gitsek."</em>
+        Ölçüldü (O7A, temas öncesi son 0.4 s): 1.5 m'de <code>eps_yaw</code> 58°'ye fırlıyor ve
+        yaw komutu 120°/s'de doyuyor. Ama 1.5 m'de 58° yalnızca <strong>1.3 m</strong> yanal
+        kaçırma demek. Aynı 58° hata 30 m'de 25 metrelik kaçırmadır — güdüm ikisine
+        <strong>aynı komutu</strong> veriyor. Yani açıya tepki veriyor, oysa önemli olan mesafe.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>en yakın menzil medyanı</th><th class="s">n=3 (ilk tur)</th><th class="s">n=6 (taze kampanya)</th><th class="s">havuz n=9</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">KONTROL</td><td class="s">2.40 m</td><td class="s kazanan">1.96 m</td><td class="s">2.23 m</td></tr>
+            <tr><td class="ad">Ö8</td><td class="s">1.88 m</td><td class="s">2.76 m</td><td class="s">2.31 m</td></tr>
+            <tr class="birincil"><td class="ad">kim önde</td><td class="s">Ö8</td><td class="s">KONTROL</td><td class="s">berabere</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>n=6 kampanyasının ölçütleri</th><th class="s">KONTROL n=6</th><th class="s">Ö8 n=6</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">cx salınımı /s (birincil 2)</td><td class="s">0.073</td><td class="s">0.000</td></tr>
+            <tr><td class="ad">yatış p90 medyanı</td><td class="s">22°</td><td class="s">17°</td></tr>
+            <tr class="birincil"><td class="ad">en yakın menzil medyanı</td><td class="s kazanan">1.96 m</td><td class="s kaybeden">2.76 m</td></tr>
+            <tr><td class="ad">≤2.5 m'ye giren</td><td class="s kazanan">4/6</td><td class="s">3/6</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">1/6</td><td class="s">0/6</td></tr>
+            <tr><td class="ad">komut kısma (mekanizma)</td><td class="s">%0</td><td class="s">%17</td></tr>
+            <tr><td class="ad">25 m'de gerileme</td><td class="s">—</td><td class="s kazanan">yok (13.21 → 12.14 m)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ tek olumlu bulgu bir ÖLÇÜT ARTEFAKTIYDI (§5.2)</span>
+        <p>"Ö8 salınımı 0.073 → 0.000 yaptı" diye rapor edildi. Ama salınım <strong>yalnız kutu
+        olan karelerde</strong> sayılıyordu; hedefi daha çok kaybeden koşu daha <em>sakin</em>
+        görünüyordu. Ölçüt, hedefi kaybetmeyi <strong>ödüllendiriyordu</strong>. Kullanıcı
+        "ben fark görmedim" deyince yakalandı. Bu olay, CLAUDE.md §5.2'nin (her ölçütün bir
+        "geçerlilik eşi" olmalı) doğduğu yerdir.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ n=3 sonucu n=6'da TERSİNE döndü</span>
+        <p>Düşük n'in neden yanılttığının kesin kanıtı: ilk turda Ö8 önde görünüyordu
+        (1.88 vs 2.40 m), taze kampanyada tam tersi çıktı (2.76 vs 1.96 m).</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ (ama sonuç bölünmüş)</span>
+        <p>Ö8 aracı <strong>gerçekten sakinleştiriyor</strong> (yatış p90 22° → 17°) ama menzili
+        kapatmıyor (1.96 → 2.76 m) — saldırganlığı sakinliğe çeviriyor.
+        ⚠ <strong>Kullanıcının kendi kabul ölçütü tam da bunu istiyordu:</strong> <em>"direkt
+        mesafeyi yaklaştıramasak manevra kısmında biraz mesafe açılsa ama SALINIM OLMASA, çok
+        açılmasa ve sonra hemen kapatılabilse okeydir."</em> Önceden ilan edilen birincil ölçüt
+        (en yakın menzil) bunu cezalandırıyor. Karar kullanıcıya bırakıldı; varsayılan KAPALI
+        ve panelden düğmesi silindi.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders — sınıflandırıcı özeleştirisi (§5.6)</span>
+        <p>Kontrol kolundaki tek isabet <code>vurus_kalitesi</code> tarafından ŞANS sayıldı, ama
+        altı ölçütten <strong>beşini</strong> geçmişti (hedef medyan 11 px merkezde, kutu 3.55×
+        düzgün büyümüş, yatış sakin); tek takıldığı 1 kopuk kareydi. "Sıfır kopuk kare" eşiği
+        fazla katıydı — o vuruş fiilen kontrollüydü ve <strong>Ö8 lehine sayıya çevrilmedi</strong>,
+        eşik hatası olarak raporlandı.</p>
+      </div>
+      <div class="kaynak">kaynak: UYGULANACAK.md "Ö8" · commit 2b8d68c · testler B43-B47</div>
+    </article>
+
+    <!-- ── T1b ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">T1b</span> — Dikey kanalda roll telafisi</h3>
+        <span class="rozet r-elendi">uçulmadan elendi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_DIKEY_ROLL</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">0 — HİÇ UÇULMADI (mekanizma kapısı uçmadan eledi)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">2b90498</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>T1a'nın dikey karşılığı: <code>eps_elev</code>, ham piksel farkı yerine
+        <code>los_seviye()</code>'nin seviye çerçevesindeki yükseliş çıktısından kurulur.
+        Telafi <strong>fark olarak</strong> uygulanır, pitch iki terimde de aynı bırakılır
+        (nişan noktası <code>CY_NISAN</code> seyir pitch'iyle birlikte ayarlanmıştı; onu
+        kaydırmak ayrı bir değişken).</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kesişim artık 10-40 cm'ye kadar çözülüyordu ve isabet zarfı dikeyde 5 kat dardı:</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>uzun kayıtlı koşu</th><th class="s">yatay</th><th class="s">dikey</th><th class="s">sonuç</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">R01</td><td class="s">0.33 m</td><td class="s kazanan">+0.05 m</td><td class="s kazanan">İSABET</td></tr>
+            <tr><td class="ad">R02</td><td class="s">0.12 m</td><td class="s kaybeden">−0.11 m</td><td class="s">ıska (zarf sınırında)</td></tr>
+            <tr class="birincil"><td class="ad">isabet zarfı</td><td class="s">±0.65 m</td><td class="s">+0.29 / −0.13 m</td><td class="s">dikey <strong>5 kat dar</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ İKİ HATA YAKALANDI — ikisi de UÇMADAN</span>
+        <p><strong>1) "Dikeyde 33° okuma hatası" iddiası GEÇERSİZDİ.</strong> İki farklı büyüklük
+        kıyaslanıyordu (seviye yükselişi ↔ piksel farkı hatası). Birim testi <strong>B58</strong>
+        yakaladı: ilk sürüm roll=pitch=0'da <em>bile</em> komutu 0.51 m/s değiştiriyordu — yani
+        "telafi" değil, hatanın <em>tanımını</em> değiştirmek oluyordu. Düzeltildikten sonra düz
+        uçuşta etki tam 0.0000 m/s.</p>
+        <p><strong>2) İlk düzeltme pitch'i de içeriyordu</strong> ve terminalde +5.9° kayma
+        üretiyordu. Roll izole edildi.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">mekanizma kapısı (§5.1) — asıl eleme</span>
+        <p>Gerçek roll kaynaklı dikey sapma, hedefin kadraj merkezinden uzaklığıyla büyür
+        (cy=240 için):</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>yatış</th><th class="s">cx=320</th><th class="s">cx=360</th><th class="s">cx=420</th><th class="s">cx=500</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">30°</td><td class="s">3.5°</td><td class="s">10.4°</td><td class="s">18.0°</td><td class="s">23.5°</td></tr>
+            <tr><td class="ad">45°</td><td class="s">7.6°</td><td class="s">17.1°</td><td class="s">27.4°</td><td class="s">35.1°</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ, UÇULMADAN</span>
+        <p>Ama TERMİNAL yaklaşmada hedef merkeze yakın (<code>|cx−320|</code> medyan 14-18 px)
+        ve araç neredeyse düz (yatış medyan 4°). Gerçek uçuş kayıtlarında (R01/R02) terminal
+        fazdaki düzeltme <strong>MEDYAN −0.06°</strong> — pratikte sıfır.
+        ⇒ T1b, santimetrelik dikey ıskanın çaresi <strong>değil</strong>.
+        <strong>10 uçuşluk bir kampanya koşulmadan elendi.</strong> Kod, kill-switch ve testler
+        (B58-B61) duruyor: hedefin kadraj kenarında olduğu + sert yatış rejiminde işe yarayabilir.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders</span>
+        <p>Sicildeki en ucuz eleme. §5.1 mekanizma kapısı normalde <em>uçuştan sonra</em>
+        kullanılıyor; burada <em>uçuştan önce</em> uygulandı ve 10 uçuşluk kampanyayı kurtardı.
+        Yeni özellik önerilirken sorulacak soru: <strong>"bu terim, hedeflediğim rejimde kaç
+        derece/metre iş yapıyor?"</strong> Cevap sıfırsa uçmaya gerek yok.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 2b90498 · testler B58-B61</div>
+    </article>
+
+    <!-- ── E7 ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">E1</span> — Faz geçişinde hız sürekliliği</h3>
+        <span class="rozet r-elendi">geri alındı</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">— (geri alındı, kodda kalmadı)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">yok</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">5 (A/B zincirinin bir halkası)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">3c7b26f</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor / neden önerildi</span>
+        <p>Görsel faza geçerken hız komutunun sürekliliğini korumaya dönük bir ara adım;
+        G9'un (yaw slew) A/B zincirinde bir halka olarak denendi.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>zincir halkası</th><th class="s">vuruş</th><th class="s">takla</th><th class="s">ilk denemede vuruş</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">+ yaw sıçrama düzeltmesi (önceki hal)</td><td class="s">4/5</td><td class="s">6</td><td class="s">4/5</td></tr>
+            <tr class="birincil"><td class="ad">+ hız sürekliliği</td><td class="s kaybeden">3/5</td><td class="s kaybeden">10</td><td class="s kaybeden">2/5</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — GERİ ALINDI</span>
+        <p>Her üç ölçütte de geriletti. Zincirden çıkarıldı; yerine yaw slew sınırı (G9) kondu.
+        ⚠ n=5 ve o dönemin ölçüm disiplini bugünküne göre gevşekti — aynı zincirdeki "5/5"
+        sonucunun şans olduğu sonradan kanıtlandı, dolayısıyla bu "3/5" de kesin bir hüküm
+        değildir. Yine de özellik geri alındığı için kayda ELENDİ olarak geçer.</p>
+      </div>
+      <div class="kaynak">kaynak: commit 3c7b26f (A/B zinciri tablosu)</div>
+    </article>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 4 — ÖLÇÜM YÖNTEMİ
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 4</span> 📏 Ölçüm yöntemi</h2>
+      <p>Hangi ölçütü hangi araçla ölçüyoruz — ve her ölçütün zorunlu "geçerlilik eşi".</p>
+    </div>
+
+    <article class="kart">
+      <div class="blok">
+        <span class="b-a">araçlar</span>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>araç</th><th>ne ölçer</th><th class="s">örnekleme</th></tr></thead>
+          <tbody>
+            <tr><td class="ad"><code>tools/kacamak_testi.py</code></td><td>Varsayılan senaryo: düz uçuş + buluşma anında tetiklenmiş kaçamak. İki aracın anlık GPS'ini izler, eşiğe inince hedefi manuel RC'ye devreder. 5. argüman senaryo (<code>duz</code>/<code>circle</code>).</td><td class="s">olay tabanlı</td></tr>
+            <tr><td class="ad"><code>tools/ucus_kaydi.py</code></td><td>Saniyede 1 kare + eşli panel telemetrisi (<code>meta.csv</code>); ayrıca 10 Hz <code>telem.csv</code>. Video buradan üretilir.</td><td class="s">1 Hz kare / 10 Hz telem</td></tr>
+            <tr><td class="ad"><code>tools/salinim.py</code></td><td>Salınımın DOĞRU ölçütü: hedefin çerçevesinde yanal/boyuna konum. <code>yanal = (drone−hedef)·n̂</code>. Kutuya <strong>hiç bakmaz</strong> → temas kopsa da ölçer. Geometri doğrulandı (0.0000 m).</td><td class="s">GPS logu</td></tr>
+            <tr><td class="ad"><code>tools/vurus_kalitesi.py</code></td><td>Vuruş KONTROLLÜ mü ŞANS mı — altı ölçüt (temas kesintisiz / hedef merkezde / kenarda değil / kutu düzgün büyüyor / boyut sıçraması yok / yatış sakin). Salınım ölçütleri de burada.</td><td class="s">20 Hz bbox logu</td></tr>
+            <tr><td class="ad"><code>tools/ucus_bekci.py</code></td><td>Geçerlilik bekçisi: hedef 20-250 m irtifa / 6-25 m/s bandı dışına çıkarsa koşu SAYILMAZ.</td><td class="s">uçuş boyunca</td></tr>
+            <tr><td class="ad"><code>logs/bbox_ibvs_*.csv</code></td><td>Güdümün kendi kaydı. Mekanizma sütunları: <code>kacis_ek</code>, <code>eps_hiz_deg</code>, <code>sonum_deg</code>, <code>donus_tavan</code>, <code>donus_yavas</code>, <code>gecikme_s</code>.</td><td class="s">20 Hz</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="blok">
+        <span class="b-a">geçerlilik eşi — "bu sayı KÖTÜ bir sebeple de düşer mi?" (CLAUDE.md §5.2)</span>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">kötü sebeple iyileşir mi</th><th>zorunlu eşi</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">salınım (cx işaret değişimi)</td><td class="s kaybeden">EVET — hedef kadrajdan çıkarsa ölçülemez, 0 görünür</td><td>görsel temas oranı (%60 altı → GÜVENİLMEZ)</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s">evet — savrulup şans eseri yaklaşma</td><td>vuruş sınıfı (KONTROLLÜ / ŞANS)</td></tr>
+            <tr><td class="ad">isabet</td><td class="s">evet — dengesiz araç şans eseri çarpar</td><td>salınım + vuruş sınıfı</td></tr>
+            <tr><td class="ad">temas süresi</td><td class="s">evet — uzakta durup hiç yaklaşmamak</td><td>kutu boyutu / yaklaşma</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="blok">
+        <span class="b-a">kanıt SAYILMAYAN şeyler</span>
+        <p>⛔ Eski uçuş loglarını yeniden oynatmak (replay yalnız hipotez üretir) ·
+        ⛔ Yalnız CSV istatistiği, video bacağı olmadan ·
+        ⛔ Elle okunmuş panel değeri (medyanla kıyasla) ·
+        ⛔ Tek koşu, hatta iki koşu — aynı kolda tepe kutu boyutu 76.5 px ve 22.7 px ölçüldü.</p>
+      </div>
+
+      <div class="blok">
+        <span class="b-a">örnekleme hızı kuralı (§5.3)</span>
+        <p>Bir ölçütün örnekleme hızı, ölçtüğü şeyin değişim hızının <strong>en az 5 katı</strong>
+        olmalıdır. Panel <code>mesafe</code> 1 Hz'tir ve buluşmadaki kapanma 13-22 m/s'dir —
+        panelin "4.8 m" dediği karede hedef kadrajda 20 px'ti (4.8 m'de 45 px olmalıydı).
+        Yakınlık ölçütü bu yüzden <strong>20 Hz bbox logundan, kutu boyutundan</strong> alınır.</p>
+      </div>
+    </article>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 5 — YENİ ÖZELLİK NASIL EKLENİR
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 5</span> ➕ Bu sicile yeni kayıt eklemek</h2>
+      <p>Sayfa yaşayan bir kayıttır. Yeni bir özellik denendiğinde şu sıra izlenir.</p>
+    </div>
+
+    <article class="kart">
+      <div class="blok">
+        <span class="b-a">önce — özellik döngüsü (CLAUDE.md §1)</span>
+      </div>
+      <ol class="adimlar">
+        <li><strong>Öner.</strong> Ne, neden, hangi ölçüm gösterecek, riskler ve kill-switch.
+            Kullanıcı onaylamadan güdüm davranışı değiştirilmez.</li>
+        <li><strong>Kodla.</strong> <code>Cfg</code>'ye alan + <code>AVCI_*</code> env varsayılanı
+            (kapalı); birim testleri (mekanizma bağlar mı, kapatılabilir mi, düz uçuşta etkisiz mi,
+            diğer kanala dokunuyor mu). En iyisi <strong>yapısal garanti</strong>: değişikliğin
+            diğer kanalı matematiksel olarak etkileyememesi — Ö12/B67 gibi.</li>
+        <li><strong>Panele koy.</strong> <code>gcs_server._OZELLIKLER</code>'e bir satır; arayüz
+            kendiliğinden büyür. ⚠ Panelde yalnız o anki adımın özelliği durur.</li>
+        <li><strong>Ölçütleri KOŞMADAN ÖNCE yaz.</strong> Birincil/ikincil ayrımı ve
+            "hangi kol kaç ölçüt kazanırsa ne olur" önceden ilan edilir.</li>
+        <li><strong>Uç.</strong> En az 4 uçuş/kol, dönüşümlü (K,M,K,M…), kaçamak türleri
+            <em>eşit</em> dağıtılmış (§5.9). Regresyon zorunlu: <code>duz</code>+kaçamak,
+            <code>circle</code>, <code>duz</code>+<code>yok</code> (§5.10).</li>
+        <li><strong>Mekanizma kapısını geç.</strong> Deney kolunda mekanizma sütunu sıfırsa o koşu
+            veri noktası değil, GEÇERSİZ koşudur (§5.1).</li>
+        <li><strong>Raporla</strong> ve <code>UYGULANACAK.md</code>'ye işle.</li>
+        <li><strong>Bu sayfaya kart ekle</strong> — aşağıdaki şablonla, doğru bölümün altına.</li>
+        <li>Karar verilince <code>_OZELLIKLER</code>'den düğmeyi <strong>SİL</strong>
+            (env anahtarı kodda kalır).</li>
+      </ol>
+
+      <div class="blok">
+        <span class="b-a">kart şablonu — kopyala, doldur</span>
+        <p>Şablon aşağıdaki kod bloğunda; aynısı bu dosyanın HTML kaynağında da yorum olarak
+        durur (<code>KART ŞABLONU</code> diye ara). Bölüm sınıfı: <code>k-girdi</code> /
+        <code>k-bekle</code> / <code>k-elendi</code>; rozet sınıfı sırasıyla
+        <code>r-girdi</code> / <code>r-bekle</code> / <code>r-elendi</code>. Özet şeridindeki
+        sayıları da güncellemeyi unutma.</p>
+      </div>
+
+<pre>&lt;article class="kart k-bekle"&gt;
+  &lt;div class="kart-bas"&gt;
+    &lt;h3&gt;&lt;span class="kod"&gt;ÖNN&lt;/span&gt; — Kısa ad&lt;/h3&gt;
+    &lt;span class="rozet r-bekle"&gt;durum&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class="meta"&gt;
+    &lt;div&gt;&lt;span class="m-a"&gt;env anahtarı&lt;/span&gt;&lt;span class="m-d"&gt;AVCI_IBVS_XXX&lt;/span&gt;&lt;/div&gt;
+    &lt;div&gt;&lt;span class="m-a"&gt;varsayılan&lt;/span&gt;&lt;span class="m-d"&gt;0.0 = KAPALI&lt;/span&gt;&lt;/div&gt;
+    &lt;div&gt;&lt;span class="m-a"&gt;uçuş (n)&lt;/span&gt;&lt;span class="m-d"&gt;8 (4v4)&lt;/span&gt;&lt;/div&gt;
+    &lt;div&gt;&lt;span class="m-a"&gt;kaynak&lt;/span&gt;&lt;span class="m-d"&gt;commit hash&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="blok"&gt;&lt;span class="b-a"&gt;ne yapıyor&lt;/span&gt;&lt;p&gt;…denkleme nasıl giriyor…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="blok"&gt;&lt;span class="b-a"&gt;neden önerildi&lt;/span&gt;&lt;p&gt;…gözlenen sorun + ölçüm…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="blok"&gt;&lt;span class="b-a"&gt;nasıl sınandı&lt;/span&gt;&lt;p&gt;…senaryo, kaçamak türü, n…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="tablo-kutu"&gt;&lt;table&gt;
+    &lt;thead&gt;&lt;tr&gt;&lt;th&gt;ölçüt&lt;/th&gt;&lt;th class="s"&gt;KONTROL n=4&lt;/th&gt;&lt;th class="s"&gt;ÖNN n=4&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+    &lt;tbody&gt;
+      &lt;tr class="birincil"&gt;&lt;td class="ad"&gt;birincil ölçüt&lt;/td&gt;&lt;td class="s"&gt;…&lt;/td&gt;&lt;td class="s kazanan"&gt;…&lt;/td&gt;&lt;/tr&gt;
+      &lt;tr&gt;&lt;td class="ad"&gt;mekanizma sütunu&lt;/td&gt;&lt;td class="s"&gt;%0&lt;/td&gt;&lt;td class="s"&gt;%17&lt;/td&gt;&lt;/tr&gt;
+    &lt;/tbody&gt;
+  &lt;/table&gt;&lt;/div&gt;
+  &lt;div class="karar"&gt;&lt;span class="b-a"&gt;karar&lt;/span&gt;&lt;p&gt;…ve NEDEN…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="ders"&gt;&lt;span class="b-a"&gt;ders&lt;/span&gt;&lt;p&gt;…CLAUDE.md §5.x'e bağlanan…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="kaynak"&gt;kaynak: …&lt;/div&gt;
+&lt;/article&gt;</pre>
+
+      <div class="blok">
+        <span class="b-a">dürüstlük kuralı</span>
+        <p>Her sayının kaynağı <code>UYGULANACAK.md</code>, bir commit mesajı ya da bir
+        <code>olay.json</code> olmalı. Emin olmadığın sayıyı <strong>yazma</strong> —
+        "ölçülmedi" ya da "n yetersiz" yaz. n&lt;4 ile ölçülmüş her sonuç kartında
+        <strong>açıkça belirtilir</strong> (§5.4: n&lt;4'te hüküm kurulmaz).
+        Sonradan çürütülen hükümler <strong>silinmez</strong>, düzeltme kutusu olarak eklenir —
+        sicilin değeri yanlışları da kaydetmesinden gelir.</p>
+      </div>
+    </article>
+  </section>
+
+  <footer class="altbilgi">
+    <p>Kapsam: <code>control/guidance/bbox_ibvs.py</code> — saf görüntü tabanlı görsel güdüm
+    denklemi. GPS fazı / <code>supervisor</code> tarafındaki değişiklikler (D0 devir ölçütü,
+    faz girişi yaw sıçraması, istasyon geometrisi) bu sicilin dışındadır; onların kaydı
+    <code>UYGULANACAK.md</code>'nin ilgili bölümlerindedir.</p>
+    <p>Üstün kısıt (D0): görsel temas varken GPS güdümü <strong>yasak</strong> — yalnız bbox.
+    Yukarıdaki her özellik bu kısıt altında tasarlandı; girdileri kutu ve drone'un kendi
+    IMU'sudur. <code>tests/test_bbox_ibvs.py</code> B5 bunu yapısal olarak bekçiler.</p>
+  </footer>
+
+</div>
+
+<!--
+════════════════════════════════════════════════════════════════════════
+KART ŞABLONU — yeni özellik eklerken bunu kopyala ve doldur.
+Bölüm sınıfı:  k-girdi (✅ girdi) | k-bekle (⏸ beklemede) | k-elendi (❌ elendi)
+Rozet sınıfı:  r-girdi            | r-bekle              | r-elendi
+Kartı doğru <section class="bolum"> içine, son </section>'dan önce koy.
+Özet şeridindeki sayıları (25 / 13 / 5 / 7) güncellemeyi UNUTMA.
+Opsiyonel bloklar: <div class="duzeltme"> (sonradan çürütülen hüküm),
+<div class="ders"> (CLAUDE.md §5.x dersi).
+Tablo hücre sınıfları: td.ad (satır adı), td.s (sayı, tabular),
+span/td .kazanan (yeşil), .kaybeden (kırmızı), tr.birincil (vurgulu satır).
+
+<article class="kart k-bekle">
+  <div class="kart-bas">
+    <h3><span class="kod">ÖNN</span> — Kısa ad</h3>
+    <span class="rozet r-bekle">durum</span>
+  </div>
+  <div class="meta">
+    <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_XXX</span></div>
+    <div><span class="m-a">varsayılan</span><span class="m-d">0.0 = KAPALI</span></div>
+    <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4)</span></div>
+    <div><span class="m-a">kaynak</span><span class="m-d">commit hash</span></div>
+  </div>
+  <div class="blok"><span class="b-a">ne yapıyor</span><p>…denkleme nasıl giriyor…</p></div>
+  <div class="blok"><span class="b-a">neden önerildi</span><p>…gözlenen sorun + ölçüm…</p></div>
+  <div class="blok"><span class="b-a">nasıl sınandı</span><p>…senaryo, kaçamak türü, n…</p></div>
+  <div class="tablo-kutu"><table>
+    <thead><tr><th>ölçüt</th><th class="s">KONTROL n=4</th><th class="s">ÖNN n=4</th></tr></thead>
+    <tbody>
+      <tr class="birincil"><td class="ad">birincil ölçüt</td><td class="s">…</td><td class="s kazanan">…</td></tr>
+      <tr><td class="ad">mekanizma sütunu</td><td class="s">%0</td><td class="s">%17</td></tr>
+    </tbody>
+  </table></div>
+  <div class="karar"><span class="b-a">karar</span><p>…ve NEDEN…</p></div>
+  <div class="ders"><span class="b-a">ders</span><p>…CLAUDE.md §5.x'e bağlanan…</p></div>
+  <div class="kaynak">kaynak: …</div>
+</article>
+════════════════════════════════════════════════════════════════════════
+-->
