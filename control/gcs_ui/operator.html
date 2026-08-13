@@ -189,8 +189,14 @@ button{background:none;border:0;cursor:pointer}
 .ana-rozet[data-d="vurus"]{color:var(--vurus);background:var(--avci-zar);border-color:var(--avci)}
 .ana-rozet[data-d="hazir"]{color:var(--avci)}
 
-/* ══ PANEL GENEL ════════════════════════════════════════════════════════ */
-.sol,.sag{display:flex;flex-direction:column;overflow:hidden}
+/* ══ PANEL GENEL ════════════════════════════════════════════════════════
+   Sol panel ARTIK KAYDIRILABİLİR. Gerekçe: "SİSTEM DURUMU" bloğu eklenince
+   dikey bütçe doldu ve flex:1 olan alt sistem listesi sıfır yüksekliğe
+   çöküyordu — altı satır ekranda hiç görünmüyordu (ekran görüntüsüyle
+   yakalandı). Sağ panelde zaten aynı çözüm vardı. */
+.sol,.sag{display:flex;flex-direction:column}
+.sol{overflow-y:auto}
+.sistemler{min-height:132px}
 .blok{border-bottom:1px solid var(--hat-yumusak);padding:var(--a3)}
 .blok-bas{display:flex;align-items:center;justify-content:space-between;gap:var(--a3);margin-bottom:var(--a2)}
 .blok-bas>*{min-width:0}
@@ -377,6 +383,131 @@ button{background:none;border:0;cursor:pointer}
 .btn[disabled]{color:var(--murekkep-sonuk);border-color:var(--hat-yumusak);background:var(--panel);cursor:not-allowed}
 .btn-not{font-size:var(--y1);color:var(--uyari);margin-top:var(--a1);min-height:16px;text-align:center}
 
+/* ══ KAYNAK ETİKETİ — GERÇEK / SİMÜLE ayrımı ════════════════════════════
+   Kural: sunucudan GELMEYEN hiçbir sayı gerçekmiş gibi gösterilmez. Simüle
+   edilen her alan bu rozeti taşır; rozet CSS'te tek yerde tanımlıdır ki
+   "etiketlemeyi unutmak" görsel olarak da fark edilsin. */
+.kaynak{
+  font-family:var(--f-etiket);font-size:9px;letter-spacing:.12em;
+  padding:1px 5px;border:1px solid currentColor;border-radius:var(--r1);
+  color:var(--uyari);white-space:nowrap;flex:none;
+}
+.kaynak[data-k="gercek"]{color:var(--avci)}
+.kaynak[data-k="yok"]{color:var(--murekkep-sonuk)}
+.blok-bas .kaynak{margin-left:auto}
+
+/* ══ ALARM ŞERİDİ ═══════════════════════════════════════════════════════
+   Operatörün gözü panelde değilken de görünmesi gereken tek katman. */
+.alarm-kap{
+  position:absolute;left:50%;top:6px;transform:translateX(-50%);
+  z-index:40;display:flex;flex-direction:column;gap:var(--a1);
+  width:min(560px,72vw);pointer-events:none;
+}
+.alarm{
+  display:flex;align-items:center;gap:var(--a2);
+  padding:7px var(--a3);border:1px solid var(--uyari);border-left-width:3px;
+  background:var(--cam);border-radius:var(--r1);
+  font-family:var(--f-etiket);font-size:var(--y1);letter-spacing:.1em;
+  color:var(--uyari);box-shadow:0 6px 20px var(--golge);pointer-events:auto;
+}
+.alarm[data-s="kritik"]{color:var(--kilit);border-color:var(--kilit);background:var(--kilit-zar)}
+.alarm .yas{margin-left:auto;font-family:var(--f-veri);font-size:var(--y0);opacity:.75}
+.alarm .kapat{color:inherit;font-size:var(--y2);line-height:1;padding:0 2px;opacity:.6}
+.alarm .kapat:hover{opacity:1}
+
+/* ══ SİSTEM SAĞLIĞI IZGARASI ════════════════════════════════════════════ */
+.saglik{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--a1)}
+.saglik-h{
+  display:flex;flex-direction:column;gap:2px;min-width:0;
+  padding:5px 6px;background:var(--oyuk);border:1px solid var(--hat-yumusak);border-radius:var(--r1);
+  border-left:2px solid var(--murekkep-sonuk);
+}
+.saglik-h .d{
+  font-family:var(--f-veri);font-size:var(--y1);letter-spacing:.04em;
+  color:var(--murekkep-sonuk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.saglik-h[data-d="ok"]{border-left-color:var(--avci)}      .saglik-h[data-d="ok"] .d{color:var(--avci)}
+.saglik-h[data-d="uyari"]{border-left-color:var(--uyari)}  .saglik-h[data-d="uyari"] .d{color:var(--uyari)}
+.saglik-h[data-d="kritik"]{border-left-color:var(--kilit)} .saglik-h[data-d="kritik"] .d{color:var(--kilit)}
+
+/* ══ VİDEO DURUM KATMANI ════════════════════════════════════════════════ */
+.vid-durum{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;gap:var(--a2);
+  padding:var(--a4) var(--a5);background:var(--cam);
+  border:1px solid var(--hat);border-radius:var(--r2);text-align:center;
+  min-width:260px;
+}
+.vid-durum .bas{font-family:var(--f-etiket);font-size:var(--y4);letter-spacing:.18em;color:var(--uyari)}
+.vid-durum[data-d="baglaniyor"] .bas,.vid-durum[data-d="yeniden"] .bas{color:var(--telemetri)}
+.vid-durum[data-d="hata"] .bas,.vid-durum[data-d="yok"] .bas{color:var(--kilit)}
+.vid-durum .alt{font-family:var(--f-veri);font-size:var(--y1);color:var(--murekkep-orta);max-width:320px}
+.vid-durum .btn{min-height:38px;font-size:var(--y1);width:auto;padding:0 var(--a4)}
+/* belirsiz ilerleme — yalnız yeniden bağlanırken döner */
+.tik-halka{width:22px;height:22px;border:2px solid var(--hat);border-top-color:var(--telemetri);border-radius:50%;animation:donus 900ms linear infinite}
+@keyframes donus{to{transform:rotate(360deg)}}
+
+/* ══ VİDEO ÜSTÜ TELEMETRİ (yalnız gerçek alanlar) ═══════════════════════
+   Konum SOL ALT: HUD kendi künyesini sol ÜSTE, hedef okumasını ORTAYA,
+   çerçeve köşesini sağ alta çiziyor. Sol alt, HUD'un hiçbir katmanıyla
+   çakışmayan tek bölge. (İlk denemede sol üste konmuştu ve HUD yazısının
+   üstüne biniyordu — ekran görüntüsüyle görüldü.) */
+.vid-tlm{
+  position:absolute;left:var(--a3);bottom:34px;display:flex;flex-direction:column;gap:2px;
+  pointer-events:none;background:var(--cam);padding:6px 9px;border-left:2px solid var(--cizgi-vurgu);
+  border-radius:0 var(--r1) var(--r1) 0;
+}
+.vid-tlm div{display:flex;gap:var(--a2);align-items:baseline;font-family:var(--f-veri);font-size:var(--y1)}
+.vid-tlm .e{font-family:var(--f-etiket);font-size:9px;letter-spacing:.1em;color:var(--murekkep-orta);width:44px;flex:none}
+.vid-tlm .v{color:var(--murekkep);font-variant-numeric:tabular-nums}
+/* Araç çubuğu sağ ÜSTTE; IR polarite düğmesi bunun ALTINA kaydırıldı
+   (ikisi de right+top:34px'teydi, IR kanalında üst üste biniyorlardı). */
+.vid-arac{position:absolute;right:var(--a3);top:34px;display:flex;gap:var(--a1);z-index:2}
+.vid-arac svg{width:15px;height:15px;display:block;margin:auto}
+.vid-arac button{
+  min-width:34px;min-height:34px;padding:0 var(--a2);
+  font-family:var(--f-etiket);font-size:var(--y0);letter-spacing:.08em;
+  border:1px solid var(--hat);border-radius:var(--r1);color:var(--murekkep-orta);background:var(--cam);
+}
+.vid-arac button:hover{color:var(--murekkep);border-color:var(--murekkep-orta)}
+.vid-arac button[aria-pressed="true"]{color:var(--avci);border-color:var(--avci)}
+
+/* ══ ELRS / CRSF GÖREV KONSOLU ══════════════════════════════════════════ */
+.elrs-kart{background:linear-gradient(135deg,var(--kabartma),var(--panel));border-left:2px solid var(--telemetri)}
+.elrs-durum{font:var(--y0) var(--f-veri);letter-spacing:.08em;padding:3px 7px;border:1px solid var(--hat);color:var(--murekkep-sonuk)}
+.elrs-durum[data-d="canli"]{color:var(--avci);border-color:var(--avci);background:var(--avci-zar)}
+.elrs-durum[data-d="uyari"]{color:var(--uyari);border-color:var(--uyari);background:var(--uyari-zar)}
+.elrs-durum[data-d="kritik"]{color:var(--kilit);border-color:var(--kilit);background:var(--kilit-zar)}
+.elrs-telemetri{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--a2);margin:var(--a2) 0}
+.elrs-hucre{padding:6px;background:var(--oyuk);border:1px solid var(--hat-yumusak);min-width:0}
+.elrs-hucre .v{display:block;margin-top:2px;font:var(--y3) var(--f-veri);color:var(--telemetri);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.elrs-hucre[data-d="iyi"] .v{color:var(--avci)}.elrs-hucre[data-d="kritik"] .v{color:var(--kilit)}
+.rc-kanallar{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:var(--a2) 0}
+.rc-kanal{position:relative;height:34px;background:var(--oyuk);border:1px solid var(--hat-yumusak);overflow:hidden}
+.rc-kanal i{position:absolute;left:50%;bottom:0;width:1px;height:16px;background:var(--hat)}
+.rc-kanal b{position:absolute;bottom:0;height:3px;background:var(--telemetri);left:50%;width:0}
+.rc-kanal span{position:relative;display:block;padding:4px;font:9px var(--f-veri);color:var(--murekkep-orta);z-index:1}
+.kare-rota{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:var(--a2) 0}
+.kare-adim{padding:5px 2px;text-align:center;border:1px solid var(--hat-yumusak);font:9px var(--f-etiket);letter-spacing:.08em;color:var(--murekkep-sonuk)}
+.kare-adim[data-d="aktif"]{color:var(--uyari);border-color:var(--uyari);background:var(--uyari-zar)}
+.kare-adim[data-d="bitti"]{color:var(--avci);border-color:var(--avci)}
+.emniyet-listesi{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin:6px 0}
+.emniyet{font:var(--y0) var(--f-etiket);letter-spacing:.06em;color:var(--murekkep-sonuk)}
+.emniyet::before{content:"◇";margin-right:5px}.emniyet[data-ok="1"]{color:var(--avci)}.emniyet[data-ok="1"]::before{content:"◆"}
+.elrs-eylem{display:grid;grid-template-columns:1fr 1fr;gap:var(--a2)}
+.elrs-eylem .btn{min-height:44px;font-size:var(--y1)}
+
+/* BASILI TUT geri bildirimi — dolum çubuğu + kalan süre + iptal edilebilirlik.
+   Emniyet mantığına dokunmaz: yalnız görsel katman. */
+.btn[data-tutuluyor="1"]{border-color:var(--vurus);background:var(--kilit)}
+.btn .dolum{transition:width 60ms linear}
+.btn[data-tutuluyor="0"] .dolum{transition:width 180ms ease-out}
+.tut-etiket{
+  display:block;font-family:var(--f-veri);font-size:var(--y0);letter-spacing:.06em;
+  color:var(--murekkep-orta);margin-top:2px;min-height:14px;text-align:center;
+}
+.tut-etiket[data-d="aktif"]{color:var(--kilit)}
+
 /* ══ FİLO ═══════════════════════════════════════════════════════════════ */
 .filo-liste{display:flex;flex-direction:column;gap:var(--a1);max-height:196px;overflow-y:auto}
 .filo-sat{
@@ -550,16 +681,24 @@ button{background:none;border:0;cursor:pointer}
       <span class="rozet" id="rozetBaglanti" data-tip="mock">MOCK</span>
 
       <div class="mini" id="miniBatarya">
-        <span class="etiket">BATARYA</span>
+        <span class="etiket">BATARYA <span class="kaynak" data-k="simule">SİM</span></span>
         <span class="v" id="vBatarya">—</span>
       </div>
       <div class="mini istege" id="miniGecikme">
-        <span class="etiket">MAVLINK GECİKME</span>
+        <span class="etiket">TELEMETRİ</span>
         <span class="v" id="vGecikme">—</span>
+      </div>
+      <div class="mini istege" id="miniVideo">
+        <span class="etiket">VİDEO</span>
+        <span class="v" id="vVideoUst">—</span>
       </div>
       <div class="mini istege">
         <span class="etiket">LİNK</span>
         <span class="cubuklar" id="linkCubuk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div class="mini istege" id="miniElrs">
+        <span class="etiket">ELRS / CRSF</span>
+        <span class="v" id="vElrsUst">VERİ YOK</span>
       </div>
       <span class="sr" id="linkMetin">Link kalitesi</span>
 
@@ -610,13 +749,31 @@ button{background:none;border:0;cursor:pointer}
       </div>
     </section>
 
-    <section class="blok" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <section class="blok">
+      <div class="blok-bas">
+        <span class="etiket">SİSTEM DURUMU</span>
+        <span class="kaynak" data-k="gercek" id="saglikKaynak">CANLI</span>
+      </div>
+      <div class="saglik" id="saglik">
+        <div class="saglik-h" data-d="" data-h="drone"><span class="etiket">ARAÇ</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="telemetri"><span class="etiket">TELEMETRİ</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="video"><span class="etiket">VİDEO</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="gps"><span class="etiket">GPS</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="link"><span class="etiket">BAĞLANTI</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="elrs"><span class="etiket">ELRS</span><span class="d">—</span></div>
+      </div>
+    </section>
+
+    <section class="blok genis">
       <div class="blok-bas"><span class="etiket">ALT SİSTEM SAĞLIĞI</span></div>
       <div class="sistemler" id="sistemler"></div>
     </section>
 
     <section class="blok genis" style="border-bottom:0">
-      <div class="blok-bas"><span class="etiket">ENERJİ VE GÖREV BÜTÇESİ</span></div>
+      <div class="blok-bas">
+        <span class="etiket">ENERJİ VE GÖREV BÜTÇESİ</span>
+        <span class="kaynak" data-k="simule" title="gcs_server batarya telemetrisi yayınlamıyor">SİMÜLE</span>
+      </div>
       <div class="sat"><span class="etiket">KALAN UÇUŞ SÜRESİ</span><span class="v mono" id="vKalanUcus">--:--</span></div>
       <div class="sat"><span class="etiket">DÖNÜŞ İÇİN GEREKEN</span><span class="v mono" id="vDonusSure">--:--</span></div>
       <div class="pencere" id="pencereKutu">
@@ -650,7 +807,36 @@ button{background:none;border:0;cursor:pointer}
       <canvas id="hud" aria-label="Başüstü gösterge katmanı"></canvas>
 
       <div class="cerceve-ayrac" id="cerceveAyrac" aria-hidden="true"></div>
-      <div class="tarama gizli" id="tarama"><span id="taramaMetin">SİNYAL YOK</span></div>
+      <div class="tarama gizli" id="tarama">
+        <div class="vid-durum" id="vidDurum" data-d="yok" role="status" aria-live="polite">
+          <span class="bas" id="vidDurumBas">SİNYAL YOK</span>
+          <span class="tik-halka gizli" id="vidHalka" aria-hidden="true"></span>
+          <span class="alt" id="vidDurumAlt">Kamera akışı bekleniyor.</span>
+          <button class="btn" id="btnVidTekrar" type="button">ŞİMDİ YENİDEN DENE</button>
+        </div>
+      </div>
+
+      <!-- Video üstü telemetri — YALNIZCA sunucudan gerçekten gelen alanlar.
+           Batarya/uydu burada YOKTUR çünkü gcs_server bunları yayınlamıyor. -->
+      <div class="vid-tlm gizli" id="vidTlm" aria-hidden="true">
+        <div><span class="e">AGL</span><span class="v" id="ovAgl">—</span></div>
+        <div><span class="e">MSL</span><span class="v" id="ovMsl">—</span></div>
+        <div><span class="e">HIZ</span><span class="v" id="ovHiz">—</span></div>
+        <div><span class="e">YÖN</span><span class="v" id="ovYaw">—</span></div>
+        <div><span class="e">ENLEM</span><span class="v" id="ovLat">—</span></div>
+        <div><span class="e">BOYLAM</span><span class="v" id="ovLon">—</span></div>
+      </div>
+
+      <div class="vid-arac" id="vidArac">
+        <button id="btnOverlay" type="button" aria-pressed="true" title="Telemetri katmanını aç/kapat">TLM</button>
+        <button id="btnTamEkran" type="button" aria-pressed="false" title="Görüntüyü tam ekran yap (Shift+F)" aria-label="Görüntüyü tam ekran yap">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="alarm-kap" id="alarmKap" role="log" aria-live="assertive" aria-label="Etkin uyarılar"></div>
 
       <div class="isr-ust" id="isrUst"></div>
       <div class="isr-alt" id="isrAlt">
@@ -658,7 +844,7 @@ button{background:none;border:0;cursor:pointer}
         <span class="sag-damga" id="saatDamga">00:00:00</span>
       </div>
 
-      <div class="kam3b gizli" id="irKontrol" style="left:auto;right:var(--a3);bottom:auto;top:34px">
+      <div class="kam3b gizli" id="irKontrol" style="left:auto;right:var(--a3);bottom:auto;top:76px">
         <button id="btnPolarite" type="button">POLARİTE ÇEVİR</button>
       </div>
 
@@ -724,6 +910,46 @@ button{background:none;border:0;cursor:pointer}
       <div class="not" id="gecisNot">Faz geçişi için görsel kilit bekleniyor.</div>
     </section>
 
+    <section class="blok elrs-kart" aria-label="ELRS kare görev konsolu">
+      <div class="blok-bas">
+        <span class="etiket">ELRS / CRSF GÖREV KONSOLU</span>
+        <span class="elrs-durum" id="elrsDurum" data-d="kritik">BAĞLI DEĞİL</span>
+      </div>
+      <div class="elrs-telemetri">
+        <div class="elrs-hucre" id="elrsLqKutu"><span class="etiket">LQ</span><span class="v" id="elrsLq">— %</span></div>
+        <div class="elrs-hucre"><span class="etiket">RSSI</span><span class="v" id="elrsRssi">— dBm</span></div>
+        <div class="elrs-hucre"><span class="etiket">CRSF</span><span class="v" id="elrsHz">— Hz</span></div>
+      </div>
+      <div class="rc-kanallar" aria-label="RC kanal çıkışları">
+        <div class="rc-kanal"><span>ROLL <em id="rcRoll">—</em></span><i></i><b id="barRcRoll"></b></div>
+        <div class="rc-kanal"><span>PITCH <em id="rcPitch">—</em></span><i></i><b id="barRcPitch"></b></div>
+        <div class="rc-kanal"><span>THR <em id="rcThr">—</em></span><i></i><b id="barRcThr"></b></div>
+        <div class="rc-kanal"><span>YAW <em id="rcYaw">—</em></span><i></i><b id="barRcYaw"></b></div>
+      </div>
+      <div class="kare-rota" id="kareRota">
+        <span class="kare-adim" data-kare="FORWARD">1 · İLERİ ↑</span>
+        <span class="kare-adim" data-kare="RIGHT">2 · SAĞ →</span>
+        <span class="kare-adim" data-kare="BACKWARD">3 · GERİ ↓</span>
+        <span class="kare-adim" data-kare="LEFT">4 · SOL ←</span>
+      </div>
+      <div class="emniyet-listesi">
+        <span class="emniyet" id="emLink">RF LİNK</span><span class="emniyet" id="emArm">ARM İZNİ</span>
+        <span class="emniyet" id="emFc">FC TELEMETRİ</span><span class="emniyet" id="emMod">STABİL MOD</span>
+      </div>
+      <div class="elrs-eylem">
+        <button class="btn" id="btnElrsArm" disabled>ARM · ELRS</button>
+        <button class="btn" data-tip="baslat" id="btnKare" disabled>KARE GÖREVİ</button>
+        <button class="btn" id="btnKareDur" disabled style="grid-column:1/-1">HAVADA DURDUR</button>
+      </div>
+      <button class="btn" data-tip="iptal" id="btnElrsDisarm" data-tutuluyor="0"
+              style="min-height:48px;margin-top:var(--a2)" aria-describedby="elrsDisarmEtiket">
+        <span id="btnElrsDisarmMetin">ACİL DISARM</span>
+        <i class="dolum" id="elrsDisarmDolum"></i>
+      </button>
+      <span class="tut-etiket" id="elrsDisarmEtiket" aria-live="polite">1.2 sn basılı tut</span>
+      <div class="not" id="elrsNot" data-d="uyari">ESP32 görev verisi bekleniyor — gösterilen alanlar gerçek veri gelmeden doldurulmaz.</div>
+    </section>
+
     <section class="blok">
       <button class="btn" data-tip="baslat" id="btnBaslat">GÖREVİ BAŞLAT · KALKIŞ</button>
       <div style="height:var(--a2)"></div>
@@ -739,6 +965,9 @@ button{background:none;border:0;cursor:pointer}
     <section class="blok" style="border-bottom:0">
       <div class="blok-bas">
         <span class="etiket">SAHA FİLOSU</span>
+        <span class="kaynak" data-k="simule" title="Sunucuda lojistik ucu yok — filo tamamen yerel simülasyondur">SİMÜLE</span>
+      </div>
+      <div class="blok-bas" style="margin-top:2px">
         <span class="etiket" id="filoOzet">SAHADA 0 · İNTİKALDE 0 · BEKLEMEDE 4</span>
       </div>
       <div class="filo-liste" id="filoListe"></div>
@@ -793,7 +1022,9 @@ button{background:none;border:0;cursor:pointer}
     <div class="kisayol"><span class="tus">R</span><span>3B kamerayı sıfırla</span></div>
     <div class="kisayol"><span class="tus">B</span><span>Görevi başlat (kalkış)</span></div>
     <div class="kisayol"><span class="tus">T</span><span>Tema: gece / gündüz</span></div>
-    <div class="kisayol"><span class="tus">F</span><span>Tam ekran</span></div>
+    <div class="kisayol"><span class="tus">F</span><span>Tam ekran — konsolun tamamı</span></div>
+    <div class="kisayol"><span class="tus">Shift+F</span><span>Tam ekran — yalnız görüntü penceresi</span></div>
+    <div class="kisayol"><span class="tus">V</span><span>Video üstü telemetri katmanını aç / kapat</span></div>
     <div class="kisayol"><span class="tus">?</span><span>Bu katmanı aç / kapat</span></div>
     <p style="margin-top:var(--a3);color:var(--murekkep-sonuk);font-size:var(--y1)">
       2B haritada: sürükle = kaydır · tekerlek = yakınlaş · çift tık = AVCI'ya kilitlen ·
@@ -878,6 +1109,9 @@ const D = {
 
   /* sistem */
   gps_sabit:true, gudumModu:"", telemetriDondu:false, vurusAn:0,
+  /* GERÇEK GPS — sunucu GLOBAL_POSITION_INT'ten dolduruyor (lat/lon/alt_amsl).
+     konum_gecerli, sunucunun 0.0 başlangıç değerini gerçek sabitlemeden ayırır. */
+  lat:null, lon:null, konum_gecerli:false, ucus_modu:null,
   etkiNoktasi:null, etkiSaati:"", toplanma:null,
   kameraKesik:false, hedefCamDonan:null
 };
@@ -1464,20 +1698,49 @@ btnBekle.addEventListener("click", () => {
 /* ══════════════════════════════════════════════════════════════════════════
    8 · ALT SİSTEM DEĞERLENDİRME
    ══════════════════════════════════════════════════════════════════════════ */
+/* DÜRÜSTLÜK DÜZELTMESİ: bu blok canlı bağlantıda bile sabitler basıyordu —
+   kamera "30 FPS", MAVLink "24 ms", GPS "SABİT · 3B". Üçü de ölçüm değildi:
+   30 FPS varsayımdı, 24 ms simülasyonun rastgele sayısıydı, fix tipini ise
+   gcs_server HİÇ yayınlamıyor (GPS_RAW_INT işlenmiyor). Artık canlıyken
+   ölçülen değerler, ölçüm yoksa kaynağın ne olduğu yazılır. */
 function altSistemleriDegerlendir(){
   const kareYas = (simdi() - D.sonKare) / 1000;
   const akisVar = kareYas < 1.0 && !D.telemetriDondu;
+  const canli = CANLI && CANLI_AKTIF;
 
-  sistemYaz("kamera", akisVar ? "ok" : "kritik", akisVar ? "30 FPS" : "KESİK");
+  /* Kamera: canlıda VID'in ÖLÇTÜĞÜ durum; FPS yalnız gerçekten ölçülebildiyse. */
+  if (CANLI){
+    const vidOk = VID.durum === "akis";
+    sistemYaz("kamera", vidOk ? "ok" : (VID.durum === "kapali" ? "uyari" : "kritik"),
+              vidOk ? (VID.fps ? VID.fps + " FPS" : (VID.gen ? VID.gen + "×" + VID.yuk : "AKIŞ"))
+                    : ((VID_DURUMLAR[VID.durum] || {}).bas || "KESİK"));
+  } else {
+    sistemYaz("kamera", akisVar ? "ok" : "kritik", akisVar ? "SENTETİK" : "KESİK");
+  }
+
   sistemYaz("yolo", !akisVar ? "kritik" : (kilitVar() ? "ok" : (D.gorunur ? "uyari" : "ok")),
             !akisVar ? "KESİK" : (kilitVar() ? "KİLİTLİ" : (D.gorunur ? "ARIYOR" : "BEKLEMEDE")));
   sistemYaz("ekf", D.gps_sabit ? "ok" : "uyari", D.gps_sabit ? "SAĞLAM" : "DEĞRADE");
-  sistemYaz("gps", D.gps_sabit ? "ok" : "kritik", D.gps_sabit ? "SABİT · 3B" : "ÇÖZÜM YOK");
+
+  /* GPS: fix tipi ve uydu sayısı sunucuda YOK. Canlıda söyleyebileceğimiz
+     tek gerçek şey, geçerli bir konumun gelip gelmediği ve dondurulup
+     dondurulmadığıdır. "3B" iddiası kaldırıldı. */
+  if (canli)
+    sistemYaz("gps", !D.gps_sabit ? "kritik" : (D.konum_gecerli ? "ok" : "uyari"),
+              !D.gps_sabit ? "DONDURULDU" : (D.konum_gecerli ? "KONUM VAR" : "KONUM YOK"));
+  else
+    sistemYaz("gps", D.gps_sabit ? "ok" : "kritik", D.gps_sabit ? "SİMÜLE" : "ÇÖZÜM YOK");
+
+  /* İtki, batarya voltajından türetiliyor — batarya sunucudan gelmiyor. */
   sistemYaz("itki", D.batarya_v < 20.5 ? "kritik" : (D.batarya_v < 21.8 ? "uyari" : "ok"),
-            D.batarya_v < 20.5 ? "KRİTİK" : (D.batarya_v < 21.8 ? "DÜŞÜK" : "NOMİNAL"));
+            canli ? "VERİ YOK"
+                  : (D.batarya_v < 20.5 ? "KRİTİK" : (D.batarya_v < 21.8 ? "DÜŞÜK" : "NOMİNAL")));
+
   const mavYas = (simdi() - (TAZE["hiz"] || 0)) / 1000;
   sistemYaz("mavlink", mavYas > 3 ? "kritik" : (mavYas > 1 ? "uyari" : "ok"),
-            mavYas > 3 ? "SESSİZ" : (mavYas > 1 ? "GECİKMELİ" : Math.round(D.gecikme_ms) + " ms"));
+            mavYas > 3 ? "SESSİZ" : (mavYas > 1 ? "GECİKMELİ"
+              : (canli ? (WSM.hz ? WSM.hz.toFixed(0) + " Hz" : "AKTİF")
+                       : "SİM " + Math.round(D.gecikme_ms) + " ms")));
   if (mavYas > 3 && !D.mavUyariVerildi){
     D.mavUyariVerildi = true;
     kayit("MAVLINK", "KRİTİK", "MAVLink akışı " + mavYas.toFixed(1) + " sn sessiz — bağlantıyı kontrol et");
@@ -1536,13 +1799,39 @@ function anaRozetYaz(){
 function ustSeritYaz(){
   $("#vBatarya").textContent = nf(D.batarya_v, 1) + " V · " + ss(D.batarya_sn);
   $("#miniBatarya").dataset.durum = D.batarya_v < 20.5 ? "kritik" : (D.batarya_v < 21.8 ? "uyari" : "");
-  $("#vGecikme").textContent = Math.round(D.gecikme_ms) + " ms";
-  $("#miniGecikme").dataset.durum = D.gecikme_ms > 120 ? "kritik" : (D.gecikme_ms > 60 ? "uyari" : "");
-  const kalite = kis(Math.round(5 - (D.gecikme_ms > 90 ? 2 : 0) - (D.gps_sabit ? 0 : 1)), 0, 5);
+
+  /* TELEMETRİ alanı: canlıyken ÖLÇÜLEN paket hızı + veri yaşı yazılır.
+     Eskiden buraya simülasyonun ürettiği sahte "gecikme_ms" (22-36 ms
+     rastgele) yazılıyordu; canlı bağlantıda bile uydurma bir sayıydı. */
+  const tlmYas = (simdi() - D.sonKare) / 1000;
+  if (CANLI && CANLI_AKTIF){
+    $("#vGecikme").textContent = (WSM.hz ? WSM.hz.toFixed(1) + " Hz" : "—")
+                               + (tlmYas > 1.5 ? " · " + tlmYas.toFixed(1) + " sn" : "");
+    $("#miniGecikme").dataset.durum = tlmYas > 3 ? "kritik" : (tlmYas > 1.5 ? "uyari" : "");
+  } else if (CANLI){
+    $("#vGecikme").textContent = "KOPUK";
+    $("#miniGecikme").dataset.durum = "kritik";
+  } else {
+    $("#vGecikme").textContent = "SİM " + Math.round(D.gecikme_ms) + " ms";
+    $("#miniGecikme").dataset.durum = D.gecikme_ms > 120 ? "kritik" : (D.gecikme_ms > 60 ? "uyari" : "");
+  }
+
+  /* Link çubukları: canlıda ölçülen telemetri tazeliğinden, MOCK'ta simüle
+     gecikmeden türer. Gerçek bir RF link kalitesi göstergesi DEĞİLDİR —
+     gcs_server RSSI/LQ yayınlamıyor; gerçek LQ yalnız ELRS panelindedir. */
+  const kalite = (CANLI && CANLI_AKTIF)
+    ? kis(5 - (tlmYas > 3 ? 3 : tlmYas > 1.5 ? 2 : 0) - (D.gps_sabit ? 0 : 1), 0, 5)
+    : (CANLI ? 0 : kis(Math.round(5 - (D.gecikme_ms > 90 ? 2 : 0) - (D.gps_sabit ? 0 : 1)), 0, 5));
   const cub = $("#linkCubuk").children;
   for (let i = 0; i < cub.length; i++) cub[i].dataset.on = i < kalite ? "1" : "0";
   $("#linkMetin").textContent = "Link kalitesi " + kalite + "/5";
-  $("#ucusModu").textContent = D.armed ? (D.faz === "IPTAL" ? "LOITER" : "GUIDED") : "DISARM";
+
+  /* UÇUŞ MODU: canlıda HEARTBEAT.custom_mode'dan GERÇEK okunur.
+     Eski kod fazdan tahmin ediyordu ("armed ise GUIDED") — araç LOITER'da
+     olsa bile ekranda GUIDED yazıyordu. */
+  $("#ucusModu").textContent = (CANLI && CANLI_AKTIF && D.ucus_modu !== null)
+    ? ucusModuAdi()
+    : (D.armed ? (D.faz === "IPTAL" ? "LOITER" : "GUIDED") : "DISARM");
 }
 
 /* Enerji bütçesi: kalan uçuş süresi − üsse dönüş için gereken süre.
@@ -2410,12 +2699,49 @@ function cizHarita2B(){
   c.font = "10px ui-monospace, monospace"; c.textAlign = "center"; c.textBaseline = "top";
   c.fillStyle = J["--murekkep-orta"]; c.fillText("K", nx, ny + 16);
 
-  /* künye */
+  /* ÜS (HOME) — yerel çerçevenin orijini, yani AVCI'nın kalkış noktası.
+     Uydurma bir nokta değil: sunucunun NED orijini EKF'in kurulduğu yerdir. */
+  {
+    const u = dunyaEkran(0, 0);
+    if (u[0] > -40 && u[0] < W + 40 && u[1] > -40 && u[1] < H + 40){
+      c.strokeStyle = J["--avci-derin"]; c.fillStyle = J["--avci-derin"]; c.lineWidth = 1.6;
+      c.beginPath();                                   /* ev silüeti — daireden ayırt edilsin */
+      c.moveTo(u[0] - 7, u[1] + 5); c.lineTo(u[0] - 7, u[1] - 1);
+      c.lineTo(u[0], u[1] - 8); c.lineTo(u[0] + 7, u[1] - 1);
+      c.lineTo(u[0] + 7, u[1] + 5); c.closePath(); c.stroke();
+      c.font = "10px ui-monospace, monospace"; c.textAlign = "center"; c.textBaseline = "top";
+      c.fillText("ÜS", u[0], u[1] + 9);
+    }
+  }
+
+  /* SEYİR KÜNYESİ — SOL ÜSTE çizilir.
+     Eskiden sol altta (H-40) idi ve KUZEY YUKARI / ROTA YUKARI düğmelerinin
+     (bottom:34px, ~34px yükseklik → alttan 34-68 px bandı) TAM ARKASINA
+     düşüyordu; yazı düğmelerin altında kalıyordu. Harita görünümünde üst ISR
+     şeridi gizli olduğu için sol üst boştur.
+     Koordinat YALNIZ gerçek GPS varken yazılır — boş "0.000000" yanıltıcı
+     olurdu. */
+  const usMesafe = Math.hypot(D.avci.x, D.avci.y);
+  const usKerteriz = ((Math.atan2(-D.avci.x, -D.avci.y) * DEG) + 360) % 360;
+  const satirlar = [
+    "ÜS " + (usMesafe >= 1000 ? (usMesafe / 1000).toFixed(2) + " km" : usMesafe.toFixed(0) + " m")
+          + " · KRT " + usKerteriz.toFixed(0).padStart(3, "0") + "°"
+          + " · İRT " + D.avci.z.toFixed(0) + " m"
+  ];
+  if (D.konum_gecerli) satirlar.push(D.lat.toFixed(6) + "°  " + D.lon.toFixed(6) + "°");
+  satirlar.push((H2.kuzeyYukari ? "KUZEY YUKARI" : "ROTA YUKARI")
+              + (H2.takip ? " · AVCI KİLİTLİ" : " · SERBEST")
+              + " · " + (H2.mpp).toFixed(2) + " m/px");
+
+  c.font = "10px ui-monospace, monospace";
   c.textAlign = "left"; c.textBaseline = "top";
-  c.fillStyle = J["--murekkep-sonuk"];
-  c.fillText((H2.kuzeyYukari ? "KUZEY YUKARI" : "ROTA YUKARI") +
-             (H2.takip ? " · AVCI KİLİTLİ" : " · SERBEST") +
-             " · " + (H2.mpp).toFixed(2) + " m/px", 12, H - 40);
+  const kutuG = Math.max.apply(null, satirlar.map(s => c.measureText(s).width)) + 16;
+  c.fillStyle = J["--vinyet-dis"];
+  c.fillRect(8, 8, kutuG, satirlar.length * 13 + 10);
+  satirlar.forEach((s, i) => {
+    c.fillStyle = i === satirlar.length - 1 ? J["--murekkep-sonuk"] : J["--murekkep-orta"];
+    c.fillText(s, 16, 13 + i * 13);
+  });
 }
 
 function ikon2B(c, x, y, yaw, renk, tip){
@@ -2686,31 +3012,43 @@ function kam3BSifirla(){
    susarsa, (b) senaryo düğmesiyle bilerek tetiklenirse, (c) vuruş sonrası
    HEDEF CAM'de (beklenen sonuç) görülür.
    ══════════════════════════════════════════════════════════════════════════ */
+/* meta alanı KALDIRILDI: sabit "1280×720 · 30 FPS" künyeleri ölçüm değil
+   varsayımdı ve akışın gerçek çözünürlüğüyle çelişebiliyordu. Künyeyi artık
+   isrSeridiYaz() ölçülen değerlerden kurar. */
 const KAMERALAR = [
-  { kod:"AVCI-01 EO",  uc:"/api/video_feed/iris",  hud:"tam",    ciz:cizEO,
-    meta:"CAM: EO-1 · 1280×720 · 30 FPS · ZOOM x1.0" },
-  { kod:"AVCI-01 IR",  uc:"/api/video_feed/iris",  hud:"sade",   ciz:cizIR,
-    meta:"CAM: IR-1 · 640×512 · 30 FPS" },
-  { kod:"HEDEF CAM",   uc:"/api/video_feed/plane", hud:"kimlik", ciz:cizHedefCam,
-    meta:"CAM: TGT-1 · KAYNAK: HEDEF · 25 FPS" },
-  { kod:"SAHA İZLEME", uc:null,                    hud:"kimlik", ciz:cizSahaIzleme,
-    meta:"CAM: GIMBAL-1 · SAHA İZLEME · 30 FPS" }
+  { kod:"AVCI-01 EO",  uc:"/api/video_feed/iris",  hud:"tam",    ciz:cizEO },
+  { kod:"AVCI-01 IR",  uc:"/api/video_feed/iris",  hud:"sade",   ciz:cizIR },
+  { kod:"HEDEF CAM",   uc:"/api/video_feed/plane", hud:"kimlik", ciz:cizHedefCam },
+  { kod:"SAHA İZLEME", uc:null,                    hud:"kimlik", ciz:cizSahaIzleme }
 ];
 let aktifKamera = 0;
 const kamEl = [];
 function kameraEO(){ return KAMERALAR[aktifKamera].hud === "tam"; }
 
+/* DÜZELTME: eski sürüm kanal tazeliğini D.sonKare'den okuyordu — o alan
+   TELEMETRİ paketiyle damgalanır, videoyla değil. Yani telemetri akarken
+   video ölmüş olsa bile rozet "akış" diyordu. Artık ölçüm VID'den gelir.
+   Aynı anda tek akış çekildiği için seçili olmayan kanallar ölçülemez;
+   onlara "akış var" demek yerine dürüstçe BEKLEMEDE denir. */
 function kanalDurum(i){
   const k = KAMERALAR[i];
   if (D.kameraKesik) return { d:"yok", metin:"SİNYAL YOK" };
-  if (CANLI_VIDEO_AKTIF && k.uc){
-    const yas = (simdi() - D.sonKare) / 1000;
-    if (yas > 5) return { d:"yok",      metin:"SİNYAL YOK" };
-    if (yas > 2) return { d:"gecikme",  metin:"GECİKME " + yas.toFixed(1) + " sn" };
-    return { d:"akis", metin:Math.round(D.gecikme_ms) + " ms" };
+  if (k.kod === "HEDEF CAM" && D.faz === "VURULDU" && !CANLI_VIDEO_AKTIF)
+    return { d:"yok", metin:"SİNYAL KESİLDİ" };
+  if (!CANLI || !k.uc) return { d:"akis", metin:"SENTETİK" };
+  if (i !== aktifKamera) return { d:"bekleme", metin:"BEKLEMEDE" };
+  switch (VID.durum){
+    case "akis": {
+      const yas = vidYas();
+      if (yas > 2) return { d:"gecikme", metin:"GECİKME " + yas.toFixed(1) + " sn" };
+      return { d:"akis", metin: VID.fps ? VID.fps + " FPS" : (VID.gen ? VID.gen + "×" + VID.yuk : "AKIŞ") };
+    }
+    case "baglaniyor": return { d:"gecikme", metin:"BAĞLANIYOR" };
+    case "yeniden":    return { d:"gecikme", metin:"YENİDEN BAĞLANIYOR" };
+    case "hata":       return { d:"yok",     metin:"KAMERA HATASI" };
+    case "kapali":     return { d:"akis",    metin:"SENTETİK" };
+    default:           return { d:"yok",     metin:"SİNYAL YOK" };
   }
-  if (k.kod === "HEDEF CAM" && D.faz === "VURULDU") return { d:"yok", metin:"SİNYAL KESİLDİ" };
-  return { d:"akis", metin:"SENTETİK" };
 }
 
 (function kameraKur(){
@@ -2732,15 +3070,48 @@ function kanalDurum(i){
 function kameraSec(i){
   if (i < 0 || i >= KAMERALAR.length) return;
   if (aktifKamera !== i){
+    const oncekiUc = KAMERALAR[aktifKamera].uc;
     aktifKamera = i;
     /* sekme değişiminde artık kalmasın — sim durumu sıfırlanmaz, yalnız tuval */
     ctxGok.clearRect(0, 0, W, H);
     ctxHud.clearRect(0, 0, W, H);
     kayit("OPERATÖR", "BİLGİ", "Kamera kanalı: " + KAMERALAR[i].kod);
+    /* Akış yalnız UÇ DEĞİŞTİYSE yeniden kurulur. EO ile IR aynı ucu paylaşır;
+       aralarında geçerken MJPEG bağlantısını koparmanın anlamı yok. */
+    if (CANLI && KAMERALAR[i].uc !== oncekiUc){
+      clearTimeout(VID._saat);
+      VID.bekleyen = false; VID.deneme = 0; VID.sonDegisim = 0;
+      if (KAMERALAR[i].uc) vidBagla(true);
+      else { videoEl.removeAttribute("src"); vidDurumaGec("kapali"); }
+    }
   }
   kamEl.forEach((e, k) => e.btn.setAttribute("aria-selected", String(k === i)));
   katmanlariYaz();
 }
+
+/* ── video araç çubuğu ── */
+$("#btnOverlay").addEventListener("click", () => {
+  OVERLAY_ACIK = !OVERLAY_ACIK;
+  $("#btnOverlay").setAttribute("aria-pressed", String(OVERLAY_ACIK));
+  katmanlariYaz();
+});
+/* İKİ AYRI TAM EKRAN — karıştırılmasın:
+     tamEkran()      → F tuşu, KONSOLUN TAMAMI (paneller dahil)
+     videoTamEkran() → ⛶ düğmesi / Shift+F, YALNIZ görüntü penceresi
+   İkisi de aynı hata yolunu kullanır; sessizce yutulmaz, operatör loga görür. */
+function tamEkranIstek(hedef){
+  try {
+    const p = document.fullscreenElement ? document.exitFullscreen() : hedef.requestFullscreen();
+    if (p && p.catch) p.catch(() => kayit("OPERATÖR", "UYARI", "Tam ekran reddedildi — tarayıcı izni gerekiyor"));
+  } catch (h) { kayit("OPERATÖR", "UYARI", "Tam ekran reddedildi — tarayıcı izni gerekiyor"); }
+}
+function videoTamEkran(){ tamEkranIstek($("#sahneKutu")); }
+$("#btnTamEkran").addEventListener("click", videoTamEkran);
+/* Tuval yeniden ölçekleme gerekmez: #sahneKutu zaten ResizeObserver ile
+   olcekle()'ye bağlı (bkz. 10 · ÇİZİM ALTYAPISI). */
+document.addEventListener("fullscreenchange", () => {
+  $("#btnTamEkran").setAttribute("aria-pressed", String(!!document.fullscreenElement));
+});
 
 /* takip modu seçicisi filodan otomatik doldurulur — sabit liste yok */
 function izlemeSeridiKur(){
@@ -2809,12 +3180,36 @@ function katmanlariYaz(){
   $("#kam3b").classList.toggle("gizli", aktifGorunum !== 3);
   $("#kam2b").classList.toggle("gizli", aktifGorunum !== 2);
 
+  /* src'yi ARTIK VID sahipleniyor (18A). Buradan atamak, vidDurumaGec →
+     katmanlariYaz → vidBagla → vidDurumaGec özyinelemesini doğururdu;
+     kanal değişimi kameraSec()'te tek noktadan yapılır. */
   if (canliKare){
-    if (videoEl.dataset.uc !== k.uc){ videoEl.dataset.uc = k.uc; videoEl.src = k.uc; }
     videoEl.style.filter = (aktifKamera === 1)
       ? "grayscale(1) sepia(1) hue-rotate(78deg) saturate(2.6) contrast(1.3)" : "";
   }
+
+  /* IR kanalı EO görüntüsünden türetilir — ayrı bir termal sensör yok.
+     Bu, kullanıcıya sahte-renk olduğu söylenmeden gösterilmemeli. */
+  const tlmGoster = fpv && OVERLAY_ACIK;
+  $("#vidTlm").classList.toggle("gizli", !tlmGoster);
+  $("#vidArac").classList.toggle("gizli", !fpv);
+
   bosDurumYaz();
+}
+
+/* Video üstü telemetri — yalnız GERÇEK alanlar. Batarya, uydu sayısı ve
+   fix tipi burada YOKTUR: gcs_server bunları yayınlamıyor. */
+let OVERLAY_ACIK = true;
+function vidTelemetriYaz(){
+  if (!OVERLAY_ACIK || aktifGorunum !== 1) return;
+  const y = (id, m) => { const e = $(id); if (e && e.textContent !== m) e.textContent = m; };
+  const canli = CANLI && CANLI_AKTIF;
+  y("#ovAgl", canli ? nf(D.irtifa_agl, 1) + " m" : "SİM " + nf(D.irtifa_agl, 1) + " m");
+  y("#ovMsl", canli && D.irtifa_msl ? nf(D.irtifa_msl, 1) + " m" : "—");
+  y("#ovHiz", canli ? nf(D.hiz, 1) + " m/s" : "SİM " + nf(D.hiz, 1) + " m/s");
+  y("#ovYaw", nf(canli ? D.yaw : D.avci.yaw * DEG, 0) + "°");
+  y("#ovLat", D.konum_gecerli ? D.lat.toFixed(6) + "°" : "VERİ YOK");
+  y("#ovLon", D.konum_gecerli ? D.lon.toFixed(6) + "°" : "VERİ YOK");
 }
 
 function gorunumSec(n){
@@ -2824,20 +3219,41 @@ function gorunumSec(n){
 }
 $$(".sekme").forEach(b => b.addEventListener("click", () => gorunumSec(+b.dataset.gorunum)));
 
+/* ISR üst şeridi — DÜRÜST META VERİ.
+   Eski sürüm her kanal için sabit bir künye basıyordu ("IR-1 · 640×512 ·
+   30 FPS"). Bu üç sayının üçü de uydurmaydı: IR kanalının ayrı bir termal
+   sensörü YOK, EO akışına CSS filtresi uygulanıyor; çözünürlük ve FPS ise
+   akışın kendisinden gelmeli. Artık ölçülen değer varsa o yazılır, yoksa
+   kaynağın ne olduğu açıkça söylenir. */
 function isrSeridiYaz(){
   const k = KAMERALAR[aktifKamera];
-  const m = k.meta
-          + (aktifKamera === 1 ? " · POLARİTE: " + (IR.polarite > 0 ? "SICAK-BEYAZ" : "SICAK-SİYAH") : "")
-          + " · GEC " + Math.round(D.gecikme_ms) + " ms";
+  const dur = kanalDurum(aktifKamera);
+  const ad = k.kod.replace("AVCI-01 ", "");
+  let m;
+  if (dur.metin === "SENTETİK" || !CANLI){
+    m = "CAM: " + ad + " · SENTETİK SAHNE (SİMÜLE)";
+  } else if (VID.durum === "akis"){
+    m = "CAM: " + ad
+      + (VID.gen ? " · " + VID.gen + "×" + VID.yuk : "")
+      + (VID.fps ? " · " + VID.fps + " FPS" : "")
+      + " · " + (VID.uc || "");
+  } else {
+    m = "CAM: " + ad + " · " + ((VID_DURUMLAR[VID.durum] || {}).bas || "—");
+  }
+  if (aktifKamera === 1)
+    m += " · SAHTE-RENK (EO'DAN TÜRETİLDİ) · POLARİTE: "
+       + (IR.polarite > 0 ? "SICAK-BEYAZ" : "SICAK-SİYAH");
+  if (CANLI && CANLI_AKTIF){
+    const yas = (simdi() - D.sonKare) / 1000;
+    m += " · TLM " + (yas < 1.5 ? (WSM.hz ? WSM.hz.toFixed(0) + " Hz" : "AKTİF") : yas.toFixed(1) + " sn");
+  }
   const u = $("#isrUst");
   if (u.textContent !== m) u.textContent = m;
   $("#saatDamga").textContent = saatMetni();
   const kd = $("#kayitDamga");
   kd.style.opacity = azHareket ? "1" : (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(D.t * 2.4))).toFixed(2);
-  if (kanalDurum(aktifKamera).d === "yok"){
-    const yas = (simdi() - D.sonKare) / 1000;
-    $("#taramaMetin").textContent = "SİNYAL YOK · SON KARE " + ss(yas) + " ÖNCE";
-  }
+  /* "SİNYAL YOK" metnini artık vidPaneliYaz() yazıyor (18A) — eski #taramaMetin
+     düğümü kaldırıldı, burada yeniden yazmak null erişimi olurdu. */
 }
 
 function cerceve(){
@@ -2859,6 +3275,9 @@ function domTik(){
   tazelikCiz();
   olcumleriYaz(); sagPaneliYaz(); anaRozetYaz(); omurgaYaz(); ustSeritYaz();
   kameraDurumlariYaz(); isrSeridiYaz();
+  /* 18A/18D/18E — video canlılığı ÖLÇÜLÜR, sağlık ve alarmlar ondan türer */
+  vidNabiz(); vidFpsTik(); vidPaneliYaz(); vidTelemetriYaz();
+  saglikDegerlendir(); alarmlariDegerlendir(); alarmYaslariYaz();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3035,19 +3454,15 @@ document.addEventListener("keydown", e => {
   if (k === "b" || k === "B"){ e.preventDefault(); gorevBaslat(); return; }
   if (k === "t" || k === "T"){ e.preventDefault(); temaDegistir(); return; }
   if (k === "r" || k === "R"){ e.preventDefault(); kam3BSifirla(); return; }
-  if (k === "f" || k === "F"){ e.preventDefault(); tamEkran(); return; }
+  if (k === "f" || k === "F"){ e.preventDefault(); e.shiftKey ? videoTamEkran() : tamEkran(); return; }
+  if (k === "v" || k === "V"){ e.preventDefault(); $("#btnOverlay").click(); return; }
   if (k === "1" || k === "2" || k === "3"){ e.preventDefault(); gorunumSec(+k); return; }
 });
 document.addEventListener("keyup", e => {
   if (e.key === "e" || e.key === "E"){ eBasili = false; tutBirak(); }
 });
 yardim.addEventListener("click", () => yardim.classList.add("gizli"));
-function tamEkran(){
-  try {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  } catch (h) { kayit("OPERATÖR", "UYARI", "Tam ekran reddedildi — tarayıcı izni gerekiyor"); }
-}
+function tamEkran(){ tamEkranIstek(document.documentElement); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    18 · CANLI ADAPTÖR  →  control/gcs_server.py (FastAPI, port 8000)
@@ -3094,11 +3509,18 @@ function sunucuFazi(aktif, supFaz, gudumDurum, menzil){
 let CANLI_VIDEO_AKTIF = false, CANLI_AKTIF = false;
 let ws = null;
 
+/* WebSocket yeniden bağlanma durumu ve ÖLÇÜLEN paket hızı.
+   Eski kodda ws bir kez açılıyordu; "close" gelince rozet MOCK'a düşüyor ve
+   sayfa yenilenene kadar bir daha DENENMİYORDU. Bir yer istasyonu için bu
+   kabul edilemez — sunucu yeniden başladığında arayüz kendiliğinden dönmeli. */
+const WS = { deneme:0, kapali:false, saat:0 };
+const WSM = { sayac:0, pencere:0, hz:0 };
+
 function canliRozet(canli){
   const r = $("#rozetBaglanti");
   CANLI_AKTIF = canli;
   r.dataset.tip = canli ? "canli" : "mock";
-  r.textContent = canli ? "CANLI" : "MOCK";
+  r.textContent = canli ? "CANLI" : (CANLI ? (WS.deneme ? "YENİDEN BAĞLANIYOR" : "BAĞLANIYOR") : "MOCK");
 }
 function gonder(yol, govde){
   if (!CANLI || !yol) return;
@@ -3116,6 +3538,11 @@ function canliKomut(tip){ gonder(tip === "angaje" ? UC.angaje : UC.iptal); }
    roll/pitch/yaw sunucuda zaten DERECEYE çevrilmiştir. */
 function telemetriUygula(p){
   const I = p.iris, P = p.plane;
+  /* ölçülen paket hızı — "MAVLINK GECİKME"nin uydurma 24 ms'i yerine geçer */
+  WSM.sayac++;
+  const gecen = (simdi() - WSM.pencere) / 1000;
+  if (gecen >= 1){ WSM.hz = WSM.sayac / gecen; WSM.sayac = 0; WSM.pencere = simdi(); }
+
   if (I){
     yaz("irtifa_agl", -(+I.z || 0));
     if (I.alt_amsl) yaz("irtifa_msl", +I.alt_amsl);
@@ -3125,6 +3552,13 @@ function telemetriUygula(p){
     yaz("roll", +I.roll || 0);
     yaz("yaw", ((+I.yaw || 0) + 360) % 360);
     D.armed = !!I.armed;
+    if (I.mode !== undefined && I.mode !== null) D.ucus_modu = +I.mode;
+    /* GERÇEK GPS. Sunucu sabitleme öncesi 0.0 tutar; 0,0 Gine Körfezi'dir,
+       geçerli konum sayılmaz — uydurmamak için ayrıca bayraklanır. */
+    const la = +I.lat, lo = +I.lon;
+    if (isFinite(la) && isFinite(lo) && (Math.abs(la) > 1e-6 || Math.abs(lo) > 1e-6)){
+      D.lat = la; D.lon = lo; D.konum_gecerli = true;
+    } else D.konum_gecerli = false;
   }
   if (I && P){                                   /* menzil yedeği — chase kapalıyken de dolu */
     const dx = (+P.x) - (+I.x), dy = (+P.y) - (+I.y), dz = (+P.z) - (+I.z);
@@ -3144,9 +3578,14 @@ function telemetriUygula(p){
 
 /* /api/chase_status — faz, menzil ve kilit sayaçları buradan gelir (5 Hz). */
 let _menzilSunucudan = false;
+let _durumUcusta = false;                 /* çakışan istek koruması */
 function durumCek(){
-  if (!CANLI) return;
-  fetch(UC.durum).then(y => y.json()).then(s => {
+  if (!CANLI || _durumUcusta) return;
+  /* Sunucu yavaşladığında 5 Hz'lik yoklama üst üste binip kuyruk yapıyordu.
+     Uçuştaki istek bitmeden yenisi açılmaz; ayrıca 2 sn'de kesilir. */
+  _durumUcusta = true;
+  fetch(UC.durum, { signal: AbortSignal.timeout(2000) })
+    .then(y => y.json()).then(s => {
     const g = s.guidance || {}, sup = s.supervisor || {};
     _menzilSunucudan = (s.distance !== null && s.distance !== undefined);
     if (_menzilSunucudan) yaz("menzil_m", +s.distance);
@@ -3168,39 +3607,553 @@ function durumCek(){
     if (yeni !== D.faz) fazDegistir(yeni, "GÜDÜM", "BİLGİ", "Sunucu fazı: " + fazAdi() +
       (sup.son_sebep ? " (" + sup.son_sebep + ")" : ""));
     if (s.mode) D.gudumModu = String(s.mode).toUpperCase();
-  }).catch(() => { /* sessiz — WS kopuşu zaten rozete düşüyor */ });
+  })
+    .catch(() => { /* sessiz — WS kopuşu zaten rozete ve alarma düşüyor */ })
+    .finally(() => { _durumUcusta = false; });
+}
+
+/* WS yeniden bağlanma: 1s'ten 15s'e üstel geri çekilme. Sekme gizliyken
+   yeniden denenmez (görünür olunca hemen denenir) — arka planda soket
+   yağdırmanın anlamı yok. */
+function wsGecikme(){ return Math.min(15000, 1000 * Math.pow(2, Math.min(WS.deneme, 4))); }
+
+function wsBagla(){
+  if (!CANLI || WS.kapali) return;
+  try { if (ws) { ws.onclose = null; ws.close(); } } catch (h) { /* zaten kapalı */ }
+  try {
+    ws = new WebSocket(UC.telemetri);
+  } catch (h) {
+    kayit("MAVLINK", "UYARI", "Telemetri soketi açılamadı — yeniden denenecek");
+    wsPlanla(); return;
+  }
+  ws.addEventListener("open", () => {
+    const yeniden = WS.deneme > 0;
+    WS.deneme = 0;
+    WSM.pencere = simdi(); WSM.sayac = 0;
+    canliRozet(true);
+    kayit("MAVLINK", "BİLGİ", yeniden ? "Telemetri bağlantısı GERİ GELDİ — gcs_server /ws"
+                                      : "Telemetri bağlantısı kuruldu — gcs_server /ws");
+  });
+  ws.addEventListener("close", () => {
+    canliRozet(false);
+    if (!WS.kapali) kayit("MAVLINK", "UYARI", "Telemetri bağlantısı kapandı — simülasyona düşüldü, yeniden denenecek");
+    WSM.hz = 0;
+    wsPlanla();
+  });
+  ws.addEventListener("error", () => { canliRozet(false); });
+  ws.addEventListener("message", ev => {
+    try { telemetriUygula(JSON.parse(ev.data)); }
+    catch (h) { /* bozuk paket yutulur; tazelik nabzı bayatlığı zaten gösterir */ }
+  });
+}
+function wsPlanla(){
+  if (!CANLI || WS.kapali) return;
+  clearTimeout(WS.saat);
+  WS.deneme++;
+  canliRozet(false);
+  WS.saat = setTimeout(() => { if (!document.hidden) wsBagla(); else WS.deneme--; }, wsGecikme());
 }
 
 function canliBagla(){
-  if (!CANLI){ canliRozet(false); kayit("MAVLINK", "BİLGİ", "Çevrimdışı mod — simülasyon motoru sürüyor, ağ isteği yok"); return; }
-  canliRozet(false);
-  try {
-    videoEl.addEventListener("load", () => {
-      if (CANLI_VIDEO_AKTIF) return;
-      CANLI_VIDEO_AKTIF = true; katmanlariYaz();
-      kayit("GÖRÜ", "BİLGİ", "Kamera akışı bağlandı — MJPEG");
-    });
-    videoEl.addEventListener("error", () => {
-      CANLI_VIDEO_AKTIF = false; katmanlariYaz();
-      kayit("GÖRÜ", "UYARI", "Video akışı alınamadı — sentetik sahneye düşüldü");
-    });
-    videoEl.dataset.uc = KAMERALAR[aktifKamera].uc || KAMERALAR[0].uc;
-    videoEl.src = videoEl.dataset.uc;
-
-    ws = new WebSocket(UC.telemetri);
-    ws.addEventListener("open", () => { canliRozet(true); kayit("MAVLINK", "BİLGİ", "Telemetri bağlantısı kuruldu — gcs_server /ws"); });
-    ws.addEventListener("close", () => { canliRozet(false); kayit("MAVLINK", "UYARI", "Telemetri bağlantısı kapandı — simülasyona düşüldü"); });
-    ws.addEventListener("error", () => { canliRozet(false); });
-    ws.addEventListener("message", ev => {
-      try { telemetriUygula(JSON.parse(ev.data)); }
-      catch (h) { /* bozuk paket yutulur; tazelik nabzı bayatlığı zaten gösterir */ }
-    });
-    setInterval(durumCek, 200);
-  } catch (h) {
+  if (!CANLI){
     canliRozet(false);
-    kayit("MAVLINK", "UYARI", "Canlı bağlantı kurulamadı — simülasyon modunda çalışılıyor");
+    vidDurumaGec("kapali");
+    kayit("MAVLINK", "BİLGİ", "Çevrimdışı mod — simülasyon motoru sürüyor, ağ isteği yok");
+    return;
+  }
+  canliRozet(false);
+
+  /* Dinleyiciler BİR KEZ bağlanır; yeniden bağlanma src değiştirerek yapılır.
+     (Eski kod her çağrıda yeniden bağlasaydı dinleyiciler birikirdi.) */
+  videoEl.addEventListener("load", () => {
+    VID.yukSayac++; VID.fpsSayac++;
+    VID.sonDegisim = simdi();
+    if (VID.durum !== "akis"){ VID.deneme = 0; vidDurumaGec("akis"); }
+  });
+  videoEl.addEventListener("error", () => {
+    if (VID.durum === "kapali") return;
+    vidYenidenDene("hata");
+  });
+  $("#btnVidTekrar").addEventListener("click", () => {
+    clearTimeout(VID._saat);
+    VID.bekleyen = false; VID.deneme = 0;
+    kayit("OPERATÖR", "BİLGİ", "Kamera akışı elle yeniden başlatıldı");
+    vidBagla(true);
+  });
+
+  vidBagla(true);
+  wsBagla();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18A · VİDEO AKIŞ DENETÇİSİ
+
+   NEDEN VAR: eski kodda <img>'ye tek bir "error" dinleyicisi bağlıydı ve
+   akış bir kez düştüğünde BİR DAHA HİÇ denenmiyordu — operatör sayfayı
+   yenilemeden video geri gelmiyordu. Ayrıca kanal tazeliği D.sonKare'den
+   okunuyordu; o alan TELEMETRİ paketiyle güncelleniyor, videoyla değil.
+   Yani "SİNYAL YOK" rozeti videoyu değil telemetriyi ölçüyordu.
+
+   NASIL ÖLÇÜLÜYOR: MJPEG bir <img>'de akarken tarayıcılar kare başına "load"
+   olayı vermeyi garanti etmez (Firefox verir, Chrome tek sefer verir). Bu
+   yüzden canlılık, görüntünün 16×16 küçültülmüş bir tuvale çizilip
+   sağlamasının değişip değişmediğine bakılarak ÖLÇÜLÜR — tahmin edilmez.
+   FPS yalnız tarayıcı kare başına "load" veriyorsa yazılır; vermiyorsa
+   uydurulmaz, "—" kalır.
+   ══════════════════════════════════════════════════════════════════════════ */
+const VID_DURUMLAR = {
+  kapali     : { bas:"KAPALI",              d:"yok" },
+  baglaniyor : { bas:"BAĞLANIYOR",          d:"baglaniyor" },
+  akis       : { bas:"BAĞLI",               d:"akis" },
+  yeniden    : { bas:"YENİDEN BAĞLANIYOR",  d:"yeniden" },
+  yok        : { bas:"SİNYAL YOK",          d:"yok" },
+  hata       : { bas:"KAMERA HATASI",       d:"hata" }
+};
+const VID = {
+  durum:"kapali", uc:null,
+  sonDegisim:0, sonSaglama:-1, baglantiAn:0,
+  yukSayac:0, fpsPencere:0, fpsSayac:0, fps:null, fpsGuvenilir:false,
+  deneme:0, tekrarZaman:0, bekleyen:false,
+  gen:0, yuk:0
+};
+const _vidTuval = document.createElement("canvas");
+_vidTuval.width = _vidTuval.height = 16;
+const _vidCtx = _vidTuval.getContext("2d", { willReadFrequently:true });
+
+function vidDurumaGec(yeni, sebep){
+  if (VID.durum === yeni) return;
+  const eski = VID.durum;
+  VID.durum = yeni;
+  if (yeni === "akis" && eski !== "akis")
+    kayit("GÖRÜ", "BİLGİ", "Kamera akışı bağlandı" + (VID.gen ? " · " + VID.gen + "×" + VID.yuk : ""));
+  else if (yeni === "yok" || yeni === "hata")
+    kayit("GÖRÜ", "UYARI", "Kamera akışı kesildi" + (sebep ? " — " + sebep : ""));
+  else if (yeni === "yeniden")
+    kayit("GÖRÜ", "BİLGİ", "Kamera akışı yeniden deneniyor (" + VID.deneme + ". deneme)");
+  CANLI_VIDEO_AKTIF = (yeni === "akis");
+  katmanlariYaz();
+  vidPaneliYaz();
+}
+
+/* Üstel geri çekilme: 1s, 2s, 4s, 8s → tavan 10 s. Sunucu kapalıyken
+   saniyede bir istek yağdırmamak için; tavan var ki geri gelince geç kalmasın. */
+function vidGecikme(){ return Math.min(10000, 1000 * Math.pow(2, Math.min(VID.deneme, 4))); }
+
+function vidBagla(zorla){
+  if (!CANLI || !videoEl) return;
+  const k = KAMERALAR[aktifKamera];
+  if (!k || !k.uc){ vidDurumaGec("kapali"); return; }
+  if (VID.bekleyen && !zorla) return;
+  VID.uc = k.uc;
+  VID.bekleyen = false;
+  VID.baglantiAn = simdi();
+  VID.sonSaglama = -1;
+  /* Önbellek kırıcı: aynı src'yi yeniden atamak bazı tarayıcılarda yeni
+     istek doğurmaz; MJPEG yeniden bağlanması bu yüzden sessizce ölürdü. */
+  videoEl.src = k.uc + (k.uc.indexOf("?") < 0 ? "?" : "&") + "_t=" + Math.round(simdi());
+  vidDurumaGec(VID.deneme > 0 ? "yeniden" : "baglaniyor");
+}
+
+function vidYenidenDene(sebep){
+  if (!CANLI) return;
+  if (VID.bekleyen) return;
+  VID.bekleyen = true;
+  VID.deneme++;
+  const bekle = vidGecikme();
+  VID.tekrarZaman = simdi() + bekle;
+  vidDurumaGec(VID.deneme > 1 ? "yeniden" : (sebep === "hata" ? "hata" : "yok"), sebep);
+  clearTimeout(VID._saat);
+  VID._saat = setTimeout(() => { VID.bekleyen = false; vidBagla(true); }, bekle);
+}
+
+/* 10 Hz canlılık yoklaması — gerçek ölçüm, tahmin değil. */
+function vidNabiz(){
+  if (!CANLI || VID.durum === "kapali") return;
+  const g = videoEl.naturalWidth, y = videoEl.naturalHeight;
+  if (!g || !y) return;
+  if (VID.gen !== g || VID.yuk !== y){ VID.gen = g; VID.yuk = y; }
+  let saglama = -1;
+  try {
+    _vidCtx.drawImage(videoEl, 0, 0, 16, 16);
+    const p = _vidCtx.getImageData(0, 0, 16, 16).data;
+    let h = 2166136261;
+    for (let i = 0; i < p.length; i += 4){ h ^= p[i]; h = (h * 16777619) >>> 0; }
+    saglama = h;
+  } catch (h) { return; }          /* tuval kirlenmesi → ölçüm yapılamaz, sessiz geç */
+  if (saglama !== VID.sonSaglama){
+    VID.sonSaglama = saglama;
+    VID.sonDegisim = simdi();
+    if (VID.durum !== "akis"){ VID.deneme = 0; vidDurumaGec("akis"); }
+  } else if (VID.durum === "akis" && simdi() - VID.sonDegisim > 3000){
+    vidYenidenDene("kare akışı durdu");
   }
 }
+
+function vidFpsTik(){
+  /* Yalnız tarayıcı kare başına load veriyorsa FPS gerçektir. */
+  const gecen = (simdi() - VID.fpsPencere) / 1000;
+  if (gecen >= 1){
+    VID.fpsGuvenilir = VID.fpsSayac > 1;
+    VID.fps = VID.fpsGuvenilir ? Math.round(VID.fpsSayac / gecen) : null;
+    VID.fpsSayac = 0; VID.fpsPencere = simdi();
+  }
+}
+
+function vidYas(){ return VID.sonDegisim ? (simdi() - VID.sonDegisim) / 1000 : Infinity; }
+
+function vidPaneliYaz(){
+  const bilgi = VID_DURUMLAR[VID.durum] || VID_DURUMLAR.kapali;
+  const kutu = $("#vidDurum"), bas = $("#vidDurumBas"), alt = $("#vidDurumAlt"), halka = $("#vidHalka");
+  if (!kutu) return;
+  if (kutu.dataset.d !== bilgi.d) kutu.dataset.d = bilgi.d;
+  if (bas.textContent !== bilgi.bas) bas.textContent = bilgi.bas;
+  halka.classList.toggle("gizli", VID.durum !== "yeniden" && VID.durum !== "baglaniyor");
+
+  let metin;
+  if (!CANLI) metin = "Çevrimdışı mod — sentetik sahne çiziliyor, ağ isteği yapılmıyor.";
+  else if (VID.durum === "kapali") metin = "Bu kanalın sunucu ucu yok — sentetik görüntü.";
+  else if (VID.durum === "baglaniyor") metin = "MJPEG akışı isteniyor: " + (VID.uc || "—");
+  else if (VID.durum === "yeniden"){
+    const kalan = Math.max(0, (VID.tekrarZaman - simdi()) / 1000);
+    metin = VID.bekleyen ? VID.deneme + ". deneme · " + kalan.toFixed(1) + " sn sonra"
+                         : "Bağlantı kuruluyor…";
+  }
+  else if (VID.durum === "hata") metin = "Akış ucu hata döndürdü: " + (VID.uc || "—");
+  else metin = "Son kare " + (isFinite(vidYas()) ? vidYas().toFixed(1) + " sn önce" : "hiç alınmadı");
+  if (alt.textContent !== metin) alt.textContent = metin;
+
+  const ust = $("#vVideoUst");
+  if (ust){
+    const m = !CANLI ? "SENTETİK"
+            : VID.durum === "akis"
+              ? (VID.gen ? VID.gen + "×" + VID.yuk : "AKIŞ") + (VID.fps ? " · " + VID.fps + " FPS" : "")
+              : bilgi.bas;
+    if (ust.textContent !== m) ust.textContent = m;
+    const mini = $("#miniVideo");
+    if (mini) mini.dataset.durum = VID.durum === "akis" ? "" : (CANLI ? "kritik" : "uyari");
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18D · ALARM MOTORU
+
+   Her alarmın kaynağı GERÇEK bir ölçümdür; koşul kalkınca alarm kendiliğinden
+   kapanır (yapışkan uyarı yok). Aynı alarm tekrar tekrar log'a düşmez.
+   ══════════════════════════════════════════════════════════════════════════ */
+const ALARM = new Map();
+const alarmKap = $("#alarmKap");
+
+function alarmAc(id, seviye, metin){
+  const v = ALARM.get(id);
+  if (v){
+    if (v.metin !== metin){ v.metin = metin; v.metinEl.textContent = metin; }
+    if (v.seviye !== seviye){ v.seviye = seviye; v.el.dataset.s = seviye; }
+    return;
+  }
+  const el = document.createElement("div");
+  el.className = "alarm"; el.dataset.s = seviye;
+  const m = document.createElement("span"); m.textContent = metin;
+  const y = document.createElement("span"); y.className = "yas"; y.textContent = "0 sn";
+  const k = document.createElement("button");
+  k.className = "kapat"; k.type = "button"; k.textContent = "✕";
+  k.setAttribute("aria-label", "Uyarıyı gizle");
+  k.addEventListener("click", () => { const g = ALARM.get(id); if (g) g.susturuldu = true; el.classList.add("gizli"); });
+  el.append(m, y, k);
+  alarmKap.appendChild(el);
+  ALARM.set(id, { el:el, metinEl:m, yasEl:y, metin:metin, seviye:seviye, t0:simdi(), susturuldu:false });
+  kayit("ALARM", seviye === "kritik" ? "KRİTİK" : "UYARI", metin);
+}
+function alarmKapatId(id){
+  const v = ALARM.get(id);
+  if (!v) return;
+  v.el.remove(); ALARM.delete(id);
+  kayit("ALARM", "BİLGİ", "Uyarı kalktı: " + v.metin);
+}
+function alarmYaslariYaz(){
+  ALARM.forEach(v => {
+    const s = Math.round((simdi() - v.t0) / 1000);
+    const m = s < 60 ? s + " sn" : Math.floor(s / 60) + " dk " + (s % 60) + " sn";
+    if (v.yasEl.textContent !== m) v.yasEl.textContent = m;
+  });
+}
+
+/* Alarm kuralları — hepsi gerçek duruma bakar. Simüle alanlar (batarya)
+   yalnızca MOCK modda alarm üretir ve metninde SİMÜLE geçer. */
+function alarmlariDegerlendir(){
+  const tlmYas = (simdi() - D.sonKare) / 1000;
+
+  if (CANLI && !CANLI_AKTIF) alarmAc("baglanti", "kritik", "TELEMETRİ BAĞLANTISI YOK — sunucuya ulaşılamıyor");
+  else alarmKapatId("baglanti");
+
+  if (CANLI && CANLI_AKTIF && tlmYas > 3) alarmAc("tlm", "kritik", "TELEMETRİ ZAMAN AŞIMI — " + tlmYas.toFixed(0) + " sn veri yok");
+  else alarmKapatId("tlm");
+
+  if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali")
+    alarmAc("video", VID.durum === "hata" ? "kritik" : "uyari", "VİDEO AKIŞI YOK — " + (VID_DURUMLAR[VID.durum] || {}).bas);
+  else alarmKapatId("video");
+
+  if (!D.gps_sabit) alarmAc("gps", "kritik", "GPS SABİTLEMESİ KAYIP — güdüm görsel faza bağımlı");
+  else alarmKapatId("gps");
+
+  if (ELRS.bagli && ELRS.veri){
+    const lq = Number(ELRS.veri.lq);
+    if (isFinite(lq) && lq >= 0 && lq < 50) alarmAc("elrslq", lq < 30 ? "kritik" : "uyari", "ELRS LİNK KALİTESİ DÜŞÜK — LQ %" + lq);
+    else alarmKapatId("elrslq");
+  } else alarmKapatId("elrslq");
+
+  /* Batarya sunucudan GELMİYOR — yalnız simülasyon uyarısı, açıkça etiketli. */
+  if (!CANLI && D.batarya_sn < 180) alarmAc("bat", "uyari", "SİMÜLE BATARYA KRİTİK — " + ss(D.batarya_sn) + " kaldı");
+  else alarmKapatId("bat");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18E · SİSTEM SAĞLIĞI — tek bakışta durum
+
+   Her hücrenin kaynağı gerçek bir ölçümdür. Kaynak yoksa "VERİ YOK" yazar;
+   yeşil gösterip geçmez.
+   ══════════════════════════════════════════════════════════════════════════ */
+const saglikEl = {};
+$$("[data-h]").forEach(e => { saglikEl[e.dataset.h] = { kutu:e, d:$(".d", e) }; });
+function saglikYaz(ad, d, metin){
+  const e = saglikEl[ad]; if (!e) return;
+  if (e.kutu.dataset.d !== d) e.kutu.dataset.d = d;
+  if (e.d.textContent !== metin) e.d.textContent = metin;
+}
+function saglikDegerlendir(){
+  const tlmYas = (simdi() - D.sonKare) / 1000;
+
+  if (!CANLI) saglikYaz("drone", "uyari", "SİMÜLE");
+  else if (!CANLI_AKTIF) saglikYaz("drone", "kritik", "BAĞLI DEĞİL");
+  else saglikYaz("drone", D.armed ? "ok" : "uyari", D.armed ? "ARM · " + ucusModuAdi() : "DISARM");
+
+  if (!CANLI) saglikYaz("telemetri", "uyari", "SİMÜLE");
+  else if (!CANLI_AKTIF) saglikYaz("telemetri", "kritik", "KOPUK");
+  else if (tlmYas > 3) saglikYaz("telemetri", "kritik", "ZAMAN AŞIMI");
+  else saglikYaz("telemetri", "ok", WSM.hz ? WSM.hz.toFixed(0) + " Hz" : "AKTİF");
+
+  if (!CANLI) saglikYaz("video", "uyari", "SENTETİK");
+  else if (VID.durum === "akis") saglikYaz("video", "ok", VID.gen ? VID.gen + "×" + VID.yuk : "AKTİF");
+  else if (VID.durum === "kapali") saglikYaz("video", "uyari", "UÇ YOK");
+  else saglikYaz("video", "kritik", (VID_DURUMLAR[VID.durum] || {}).bas || "YOK");
+
+  /* Uydu sayısı / fix tipi sunucuda YOK. Yayınlanan tek gerçek gösterge
+     gps_frozen bayrağıdır — uydurma "12 uydu" yazmıyoruz. */
+  if (!CANLI) saglikYaz("gps", "uyari", "SİMÜLE");
+  else if (!CANLI_AKTIF) saglikYaz("gps", "kritik", "VERİ YOK");
+  else if (!D.gps_sabit) saglikYaz("gps", "kritik", "DONDURULDU");
+  else saglikYaz("gps", "ok", D.konum_gecerli ? "KONUM VAR" : "BEKLİYOR");
+
+  if (!CANLI) saglikYaz("link", "uyari", "YEREL");
+  else if (!CANLI_AKTIF) saglikYaz("link", "kritik", WS.deneme ? "DENEME " + WS.deneme : "KOPUK");
+  else saglikYaz("link", "ok", "SUNUCU BAĞLI");
+
+  if (!ELRS.bagli) saglikYaz("elrs", "uyari", "BAĞLI DEĞİL");
+  else {
+    const lq = Number((ELRS.veri || {}).lq);
+    saglikYaz("elrs", isFinite(lq) && lq >= 70 ? "ok" : "uyari", isFinite(lq) && lq >= 0 ? "LQ %" + lq : "TELEMETRİ YOK");
+  }
+
+  const kaynak = $("#saglikKaynak");
+  if (kaynak){
+    const m = CANLI ? (CANLI_AKTIF ? "CANLI" : "KOPUK") : "SİMÜLE";
+    if (kaynak.textContent !== m){ kaynak.textContent = m; kaynak.dataset.k = CANLI && CANLI_AKTIF ? "gercek" : "simule"; }
+  }
+}
+
+/* ArduCopter custom_mode → ad. Sunucudan GERÇEK gelen bir alandır. */
+const KOPTER_MOD = {0:"STABILIZE",1:"ACRO",2:"ALT_HOLD",3:"AUTO",4:"GUIDED",5:"LOITER",
+                    6:"RTL",7:"CIRCLE",9:"LAND",11:"DRIFT",13:"SPORT",14:"FLIP",
+                    15:"AUTOTUNE",16:"POSHOLD",17:"BRAKE",18:"THROW",20:"GUIDED_NOGPS",21:"SMART_RTL"};
+function ucusModuAdi(){
+  if (D.ucus_modu === null || D.ucus_modu === undefined) return D.armed ? "ARM" : "DISARM";
+  return KOPTER_MOD[D.ucus_modu] || ("MOD " + D.ucus_modu);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18B · ELRS / CRSF DONANIM ADAPTÖRÜ
+
+   ESP32, aynı ağdaki /api/status ve güvenli komut uçlarını sunar. Arayüz
+   hiçbir RF değerini tahmin etmez: cevap yoksa alanlar çizgi ve VERİ YOK'tur.
+   Adres URL'den değiştirilebilir: ?elrs=http://192.168.4.1
+   ══════════════════════════════════════════════════════════════════════════ */
+const ELRS_BASE = (new URLSearchParams(location.search).get("elrs") || "http://192.168.4.1").replace(/\/$/, "");
+const ELRS = { bagli:false, son:0, veri:null, hataLog:0, komutBekliyor:false };
+const KARE_SIRA = ["FORWARD","RIGHT","BACKWARD","LEFT"];
+
+function elrsMetin(id, metin){ const e = $(id); if (e && e.textContent !== metin) e.textContent = metin; }
+function elrsEmniyet(id, ok){ const e = $(id); if (e) e.dataset.ok = ok ? "1" : "0"; }
+function rcKanalYaz(ad, deger){
+  const yazi = $("#rc" + ad), bar = $("#barRc" + ad);
+  if (!yazi || !bar) return;
+  if (!Number.isFinite(deger)){ yazi.textContent = "—"; bar.style.width = "0"; return; }
+  const o = kis((deger - 1500) / 500, -1, 1);
+  yazi.textContent = Math.round(deger);
+  bar.style.left = o < 0 ? (50 + o * 50) + "%" : "50%";
+  bar.style.width = Math.abs(o * 50) + "%";
+}
+function kareSafhaYaz(state){
+  const idx = KARE_SIRA.indexOf(state);
+  $$(".kare-adim").forEach((e, i) => {
+    e.dataset.d = idx < 0 ? (state === "TAMAMLANDI" || state === "COMPLETE" ? "bitti" : "")
+                             : i < idx ? "bitti" : i === idx ? "aktif" : "";
+  });
+}
+function elrsCiz(){
+  const s = ELRS.veri, taze = ELRS.bagli && (simdi() - ELRS.son < 1600);
+  const rozet = $("#elrsDurum");
+  if (!taze || !s){
+    rozet.dataset.d = "kritik"; rozet.textContent = "BAĞLI DEĞİL";
+    elrsMetin("#vElrsUst", "VERİ YOK"); elrsMetin("#elrsLq", "— %"); elrsMetin("#elrsRssi", "— dBm"); elrsMetin("#elrsHz", "— Hz");
+    ["Roll","Pitch","Thr","Yaw"].forEach(n => rcKanalYaz(n, NaN));
+    ["#emLink","#emArm","#emFc","#emMod"].forEach(id => elrsEmniyet(id, false));
+    $("#btnElrsArm").disabled = true; $("#btnKare").disabled = true; $("#btnKareDur").disabled = true;
+    $("#elrsNot").dataset.d = "kritik";
+    $("#elrsNot").textContent = "ESP32 görev bilgisayarı erişilemiyor — RF değerleri gösterilmiyor.";
+    kareSafhaYaz(""); return;
+  }
+  const lq = Number(s.lq), telemTaze = Number(s.telemetry_age_ms) < 2000;
+  const linkOk = Number.isFinite(lq) && lq > 0;
+  rozet.dataset.d = linkOk ? "canli" : "uyari"; rozet.textContent = linkOk ? "CRSF CANLI" : "CRSF · TELEMETRİ YOK";
+  elrsMetin("#vElrsUst", linkOk ? "LQ " + lq + "%" : "VERİ YOK");
+  elrsMetin("#elrsLq", linkOk ? lq + " %" : "— %");
+  elrsMetin("#elrsRssi", linkOk && Number.isFinite(+s.rssi_dbm) ? s.rssi_dbm + " dBm" : "— dBm");
+  /* frame_hz artık firmware'de ÖLÇÜLÜYOR (eskiden sabit 50 dönüyordu).
+     0 = ilk ölçüm penceresi henüz dolmadı — "50" uydurmak yerine bunu söyle.
+     50'nin belirgin altına düşen değer, ESP32'nin loop()'unun geciktiğini
+     gösterir; artık gizlenmiyor. */
+  const hz = +s.frame_hz;
+  elrsMetin("#elrsHz", !Number.isFinite(hz) ? "— Hz" : hz === 0 ? "ÖLÇÜLÜYOR" : hz + " Hz");
+  const hzKutu = $("#elrsHz").parentElement;
+  if (hzKutu) hzKutu.dataset.d = !Number.isFinite(hz) || hz === 0 ? "" : (hz >= 45 ? "iyi" : "kritik");
+  $("#elrsLqKutu").dataset.d = lq >= 70 ? "iyi" : lq > 0 ? "kritik" : "";
+  const ch = Array.isArray(s.channels_us) ? s.channels_us : [];
+  rcKanalYaz("Roll", +ch[0]); rcKanalYaz("Pitch", +ch[1]); rcKanalYaz("Thr", +ch[2]); rcKanalYaz("Yaw", +ch[3]);
+  const stabil = Number.isFinite(+ch[5]) && +ch[5] > 1700;
+  elrsEmniyet("#emLink", linkOk); elrsEmniyet("#emArm", !!s.arm_permit);
+  elrsEmniyet("#emFc", telemTaze); elrsEmniyet("#emMod", stabil);
+  const hazir = linkOk && s.arm_permit && telemTaze && stabil;
+  $("#btnElrsArm").disabled = !!s.armed || !hazir || ELRS.komutBekliyor;
+  $("#btnKare").disabled = !s.armed || !hazir || !!s.mission_active || ELRS.komutBekliyor;
+  $("#btnKareDur").disabled = !s.mission_active || ELRS.komutBekliyor;
+  kareSafhaYaz(String(s.state_code || ""));
+  /* Fiziksel E-STOP artık firmware'den bildiriliyor — en yüksek öncelikli mesaj. */
+  const estop = !!s.estop;
+  $("#elrsNot").dataset.d = estop ? "kritik" : (hazir ? "" : "uyari");
+  $("#elrsNot").textContent =
+      estop ? "FİZİKSEL E-STOP BASILI — tüm komutlar reddediliyor."
+    : s.mission_active ? "Otonom kare yürütülüyor · " + s.state
+    : !linkOk ? "ELRS alıcı telemetrisi bekleniyor."
+    : !s.arm_permit ? "Fiziksel ARM izin anahtarı kapalı."
+    : !telemTaze ? "Alıcı link telemetrisi bayat — görev kilitli."
+    : !stabil ? "AUX2 stabilize/irtifa tutma modu doğrulanmadı."
+    : s.armed ? "Sistem ARM · kare görevi komuta hazır." : "Ön uçuş kilitleri sağlandı · ARM komuta hazır.";
+  if (estop){ $("#btnElrsArm").disabled = true; $("#btnKare").disabled = true; }
+
+  /* Ağ topolojisi rozeti: ESP32 AP+STA modundaysa operatör hangi yoldan
+     bağlı olduğunu görür (saha yedeği mi, altyapı ağı mı). */
+  const rozetUst = $("#vElrsUst");
+  if (rozetUst && s.sta_enabled)
+    rozetUst.title = "AP " + (s.ap_ip || "?") + " · " + (s.ap_clients || 0) + " istemci"
+                   + (s.sta_connected ? " · STA " + s.sta_ip + " (" + s.sta_rssi + " dBm)" : " · STA bağlı değil");
+}
+async function elrsKomut(komut){
+  if (ELRS.komutBekliyor) return;
+  ELRS.komutBekliyor = true; elrsCiz();
+  try {
+    const r = await fetch(ELRS_BASE + "/api/" + komut, {method:"POST", cache:"no-store",
+                                                        signal:AbortSignal.timeout(2500)});
+    const j = await r.json().catch(() => ({}));
+    kayit("ELRS", r.ok ? "BİLGİ" : "UYARI", (j.message || komut) + " · " + ELRS_BASE);
+  } catch (h) { kayit("ELRS", "KRİTİK", "Komut ulaştırılamadı: " + komut + " · " + ELRS_BASE); }
+  ELRS.komutBekliyor = false; elrsDurumCek();
+}
+
+/* ÇAKIŞMA KORUMASI: ESP32'nin WebServer'ı tek bağlantılıdır ve aynı loop()
+   içinde 50 Hz CRSF karesi üretir. 2 Hz yoklama + 900 ms zaman aşımı üst üste
+   binince istekler kuyruklanıp kare üretimini geciktiriyordu. Uçuştaki istek
+   bitmeden yenisi açılmaz. */
+let _elrsUcusta = false;
+async function elrsDurumCek(){
+  if (_elrsUcusta) return;
+  _elrsUcusta = true;
+  try {
+    const r = await fetch(ELRS_BASE + "/api/status", {cache:"no-store", signal:AbortSignal.timeout(900)});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    ELRS.veri = await r.json(); ELRS.son = simdi();
+    if (!ELRS.bagli) kayit("ELRS", "BİLGİ", "ESP32 görev bilgisayarı bağlandı · gerçek CRSF telemetrisi aktif");
+    ELRS.bagli = true;
+  } catch (h) {
+    if (ELRS.bagli || simdi() - ELRS.hataLog > 15000){
+      kayit("ELRS", "UYARI", "ESP32 görev bilgisayarı erişilemiyor · değerler VERİ YOK"); ELRS.hataLog = simdi();
+    }
+    ELRS.bagli = false;
+  } finally {
+    _elrsUcusta = false;
+  }
+  elrsCiz();
+}
+$("#btnElrsArm").addEventListener("click", () => elrsKomut("arm"));
+$("#btnKare").addEventListener("click", () => elrsKomut("start"));
+$("#btnKareDur").addEventListener("click", () => elrsKomut("abort"));
+
+/* ══ ACİL DISARM — BASILI TUT, GÖRÜNÜR GERİ BİLDİRİMLİ ═══════════════════
+   Emniyet mantığı DEĞİŞMEDİ: hâlâ 1.2 sn kesintisiz basış gerekir ve komut
+   yalnız süre dolunca gider. Eklenen tek şey görünürlük — operatör basışın
+   ilerlediğini, ne kadar kaldığını ve bıraktığında İPTAL olduğunu görüyor.
+   Eski sürümde ekranda hiçbir işaret yoktu; basılı tutup tutmadığını
+   anlamanın tek yolu komutun gitmesiydi. */
+const btnDisarm = $("#btnElrsDisarm"), disarmDolum = $("#elrsDisarmDolum"), disarmEtiket = $("#elrsDisarmEtiket");
+const DISARM_SURE = 1200;
+let disarmBas = 0, disarmSaat = 0, disarmRaf = 0;
+
+function disarmCiz(){
+  if (!disarmBas){ disarmRaf = 0; return; }
+  const gecen = simdi() - disarmBas;
+  const oran = kis(gecen / DISARM_SURE, 0, 1);
+  disarmDolum.style.width = (oran * 100) + "%";
+  disarmEtiket.textContent = "BIRAKMA · " + ((DISARM_SURE - gecen) / 1000).toFixed(1) + " sn";
+  if (oran < 1) disarmRaf = requestAnimationFrame(disarmCiz);
+}
+function disarmBasla(e){
+  if (e) e.preventDefault();
+  if (disarmBas) return;
+  disarmBas = simdi();
+  btnDisarm.dataset.tutuluyor = "1";
+  disarmEtiket.dataset.d = "aktif";
+  disarmSaat = setTimeout(() => {
+    disarmBitir(true);
+    elrsKomut("disarm");
+  }, DISARM_SURE);
+  disarmRaf = requestAnimationFrame(disarmCiz);
+}
+function disarmBitir(tamamlandi){
+  if (!disarmBas) return;
+  const gecen = simdi() - disarmBas;
+  disarmBas = 0;
+  clearTimeout(disarmSaat);
+  cancelAnimationFrame(disarmRaf);
+  btnDisarm.dataset.tutuluyor = "0";
+  disarmDolum.style.width = "0";
+  disarmEtiket.dataset.d = "";
+  if (tamamlandi){
+    disarmEtiket.textContent = "DISARM KOMUTU GÖNDERİLDİ";
+  } else {
+    disarmEtiket.textContent = "İPTAL — erken bırakıldı";
+    kayit("ELRS", "BİLGİ", "Acil DISARM iptal: düğme " + (gecen / 1000).toFixed(1) +
+                           " sn'de bırakıldı (gereken " + (DISARM_SURE / 1000).toFixed(1) + " sn)");
+    setTimeout(() => { if (!disarmBas) disarmEtiket.textContent = "1.2 sn basılı tut"; }, 2200);
+  }
+}
+btnDisarm.addEventListener("pointerdown", disarmBasla);
+["pointerup","pointerleave","pointercancel"].forEach(a =>
+  btnDisarm.addEventListener(a, () => disarmBitir(false)));
+/* Klavye erişimi: Space/Enter basılı tutmak da aynı kilidi işletir. */
+btnDisarm.addEventListener("keydown", e => {
+  if ((e.key === " " || e.key === "Enter") && !e.repeat) disarmBasla(e);
+});
+btnDisarm.addEventListener("keyup", e => {
+  if (e.key === " " || e.key === "Enter") disarmBitir(false);
+});
 
 /* ══════════════════════════════════════════════════════════════════════════
    19 · AÇILIŞ
@@ -3217,6 +4170,8 @@ function ac(){
   gorunumSec(1);
   kam3BSec("avci");
   canliBagla();
+  elrsCiz();
+  elrsDurumCek();
 
   kayit("OPERATÖR", "BİLGİ", "Operasyon merkezi açıldı — AVCI-01 bağlantısı bekleniyor");
   kayit("MAVLINK", "BİLGİ", "Heartbeat alındı · EKF sağlam · GPS sabit");
@@ -3227,8 +4182,37 @@ function ac(){
   setInterval(tik, 50);        /* 20 Hz — sim motoru */
   setInterval(domTik, 100);    /* 10 Hz — DOM (rAF'tan bağımsız) */
   setInterval(yavasTik, 1000); /* 1 Hz — batarya, gecikme, filo, bütçe */
+  setInterval(elrsYokla, 500); /* 2 Hz — ESP32 gerçek RF/görev durumu */
+  setInterval(durumYokla, 200);/* 5 Hz — chase_status (faz, menzil, sayaçlar) */
   requestAnimationFrame(cerceve);
 }
+
+/* ══ SEKME GÖRÜNÜRLÜĞÜ — arka planda ağ ve CPU yakma ═════════════════════
+   rAF'ı tarayıcı zaten durduruyor, ama yoklamalar durmuyordu: gizli sekme
+   saniyede 5 kez chase_status, 2 kez ESP32 çağırmayı sürdürüyordu. Bir
+   operasyon dizüstünde bu hem pil hem de ESP32'nin tek bağlantılı web
+   sunucusu için gereksiz yük. Sekme geri geldiğinde HEMEN tazelenir. */
+function elrsYokla(){ if (!document.hidden) elrsDurumCek(); }
+function durumYokla(){ if (!document.hidden) durumCek(); }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  /* Geri dönüşte bekleme yok: hem veriyi hem bağlantıyı hemen tazele. */
+  durumCek();
+  elrsDurumCek();
+  if (CANLI && (!ws || ws.readyState > 1)){ WS.deneme = 0; clearTimeout(WS.saat); wsBagla(); }
+  if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali"){
+    clearTimeout(VID._saat); VID.bekleyen = false; VID.deneme = 0; vidBagla(true);
+  }
+});
+
+/* Sayfa kapanırken soketi düzgün kapat — sunucuda yarım kalan bağlantı
+   bırakmamak ve kapanış sırasında yeniden bağlanma denemesi tetiklememek için. */
+window.addEventListener("pagehide", () => {
+  WS.kapali = true;
+  clearTimeout(WS.saat); clearTimeout(VID._saat);
+  try { if (ws){ ws.onclose = null; ws.close(); } } catch (h) { /* zaten kapalı */ }
+});
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ac);
 else ac();
 
