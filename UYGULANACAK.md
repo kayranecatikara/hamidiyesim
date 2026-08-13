@@ -297,6 +297,62 @@ odaklanmış, kol başına ≥15 koşuluk bir tekrar gerekiyor.
 **Kanıt:** `logs/kampanya_m4_20260812/`, video `logs/m4_kosu_021_F_yatay_45.mp4`
 ve `logs/m4_kosu_022_H_yatay_45.mp4`.
 
+### Ö8 — YANAL KOMUT: AÇI DEĞİL KAÇIRMA MESAFESİ · SONUÇSUZ (2026-08-13)
+
+Kayra'nın dalından taşındı. Teşhis bizim "Katman 2" tespitimizle aynıydı:
+avcı kutuyu 2.20° hatayla merkezleyip yine 12-14 m ıskalıyor — merkezleme ≠
+kesişme. Ö8 hız vektörünü nişan AÇISI yerine "kalan sürede kapatılacak yanal
+MESAFE"den kuruyor; burun hedefte kalıyor, ayrışan şey hız vektörü.
+
+**A/B: 42 koşu, 42'si de geçerli ve tetiklenmiş.** F(YANAL_K=0) vs J(1.0),
+tek değişken; diğer üç yeni özellik iki kolda da kapalı.
+
+| kaçamak | F | J | p | imha |
+|---|---|---|---|---|
+| yok | 0.42 | 0.53 | 1.000 | 4/7 → 4/7 |
+| yatay | 12.08 | 12.97 | 0.650 | 0/7 → **2/7** |
+| capraz | 12.57 | 13.84 | 1.000 | 1/7 → 1/7 |
+
+**HÜKÜM: SONUÇSUZ — varsayılan KAPALI kalıyor.** Birincil ölçütte (ilk15_m)
+üç koşulda da J biraz DAHA KÖTÜ, hiçbiri anlamlı değil.
+
+**Ö8 GERÇEKTEN İŞ GÖRDÜ — test geçerli.** Kare oranı J'de %9.8-22.4
+(F'de %0.0, temiz kontrol), medyan sapma 1.0-1.2°, p90 13-21°, maks 67-74°.
+Yani Ö5'teki "%2.4 tetiklenme" sorunu YOK; özellik çalıştı ve iyileştirmedi.
+
+**Kendi hedefinde de iyileştirme yok (post-hoc tanı):** Ö8 SALINIM için
+tasarlanmıştı. Yakın menzilde eps_yaw işaret değişimi / 100 kare:
+capraz F 14.8 → J 25.9, yatay F 22.8 → J 26.3, yok F 18.1 → J 20.8.
+Azaltmadı, biraz artırdı.
+
+⚠ **ÖLÇÜM TUZAĞI (iki kez düşüldü, not edildi):** Ö8'in tetiklenip
+tetiklenmediğini ölçerken (1) `eps_yaw_deg` 1 ondalık, `eps_hiz_deg` 2
+ondalık yuvarlandığı için 0.01°'lik eşik YUVARLAMA GÜRÜLTÜSÜNÜ yakaladı;
+(2) bbox loglarını koşulara eşlerken ±320 s'lik pencere kullanıldı, oysa
+koşular 260 s aralıklı ve kollar DÖNÜŞÜMLÜ — komşu koşunun logları sızıp
+F kolunu "%85 etkin" gösterdi. Doğrusu: pencere `meta.csv`'nin ilk/son
+`wall_t`'sinden alınır, bbox dosyası ADINDAKİ zaman damgasıyla eşlenir.
+
+### ⚠ ÖLÇÜT KARARLILIĞI — `capraz` GÜVENİLMEZ, `yatay` KARARLI
+
+Aynı F kolunun (birebir aynı ayar) üç kampanyadaki `ilk15_m` medyanı:
+
+| | M3b (08-11) | M4 (08-12) | Ö8 (08-13) |
+|---|---|---|---|
+| yatay | 13.68 | 13.47 | 12.08 |
+| capraz | **3.45** | 12.92 | 12.57 |
+
+`yatay` ±0.8 m ile kararlı. `capraz` DEĞİL: M3b'deki 3.45 m iki kampanyada da
+tekrarlanmadı.
+
+**Bu, M3b bölümündeki "capraz: lead 13.0 → 3.45, lead ÇALIŞIYOR" cümlesini
+ÇÜRÜTÜR.** O tek kampanyanın şansıydı. M3b'nin imha oranı bulgusu (kaçamaklı
+9/33 → 17/33, p=0.044) ayrı bir ölçüt ve havuzlanmış olduğu için ayakta;
+ama `capraz` üzerinden kurulan her ilk15 kıyası şüpheli sayılmalı.
+
+**Bundan sonra:** birincil ölçüt kıyasları `yatay` üzerinden kurulur;
+`capraz` yalnız destekleyici olarak raporlanır.
+
 ### M5 — KAÇAMAK TESTİYLE ÖLÇÜLEN ASIL DARBOĞAZ: manevra sonrası HIZ ÇÖKÜŞÜ
 
 Kaçamak testi mimarisiyle (bkz. CLAUDE.md §3.3) 16 uçuş. Kullanıcının kendi
