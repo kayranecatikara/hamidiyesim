@@ -45,19 +45,21 @@ BASE = "http://127.0.0.1:8000"
 # GECİKTİREBİLİR — kayan pencere tam bu yüzden konmuştu (07-31). G, E ile
 # YALNIZ bu anahtarda ayrılır, yani E↔G tek değişkenli kıyastır.
 KOLLAR = [
-    # M4 A/B (2026-08-11): TEK DEĞİŞKEN = seyir fazı dikey sönümlemesi.
-    # İki kol da lead 15° kullanıyor (F kolu ölçülmüş kazanç: kaçamaklı
-    # koşularda imha 9/33 → 17/33, p=0.044) — o sabit tutuluyor.
+    # ── Ö8 A/B (2026-08-13): TEK DEĞİŞKEN = YANAL_K ──
+    # Taban kol, ölçülmüş kazancı (M3b lead 15°, p=0.044) taşır; Ö8 onun
+    # ÜSTÜNE ekleniyor. Diğer üç yeni özellik (Ö9, Ö5-kapısız, T1b) İKİ KOLDA
+    # DA KAPALI — tek değişken kuralı.
     ("F", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15",
-           "AVCI_IBVS_KVZD_SEYIR": "0"},                                45),
-    ("H", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15",
-           "AVCI_IBVS_KVZD_SEYIR": "0.6"},                              45),
+           "AVCI_IBVS_YANAL": "0"},                                     45),
+    ("J", {"AVCI_IBVS_LEAD_ERKEN": "1", "AVCI_IBVS_LEAD_MAX_SEYIR": "15",
+           "AVCI_IBVS_YANAL": "1.0"},                                   45),
 ]
 # Kaçamaklar — `yok` TABAN koşusudur, CLAUDE.md §3.3 gereği her turda koşulur.
 # 08-11: altı kaçamağın TAMAMI (§3.3 "hepsi denenmeli"). Dikey üçlü ilk kez
 # uçuyor; kamera sabit +25° yukarı baktığı için asıl kör nokta orada olabilir.
-# M4: şişmenin en büyük olduğu ikisi (capraz +16.2 m, yatay +11.9 m)
-# + `yok` tabanı. Dar matris, kol başına çok tekrar (CLAUDE.md §3.1).
+# Ö8: yanal savrulmanın en belirgin olduğu ikisi + `yok` tabanı.
+# `yatay` Ö8'in ASIL hedefi — 165 koşuda dört kolda da 12-14 m ıska verdi
+# ve hiçbir şey kımıldatmadı; Ö8 tam o kusurun teşhisine dayanıyor.
 KACAMAKLAR = ["yok", "yatay", "capraz"]
 
 # ── HEDEFİN SEYİR İRTİFASI ──
@@ -71,6 +73,8 @@ SCN_ALT = os.environ.get("KAMPANYA_ALT", "30")
 # Matristeki TÜM anahtarlar — kol değişince öncekiler sızmasın diye temizlenir.
 _MATRIS_ANAHTARLARI = ("AVCI_IBVS_LEAD_ERKEN", "AVCI_IBVS_LEAD_MAX_SEYIR",
                        "AVCI_HYBRID_ARDISIK", "AVCI_HYBRID_CONF", "AVCI_IBVS_KVZD_SEYIR",
+                       "AVCI_IBVS_YANAL", "AVCI_IBVS_SONUM",
+                       "AVCI_IBVS_DONUS", "AVCI_IBVS_DIKEY_ROLL",
                        "AVCI_IBVS_MANEVRA", "AVCI_IBVS_MANEVRA_ACI")
 
 
@@ -139,6 +143,7 @@ def kol_dogrula(env_ek):
     bek_tavan = env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR")
     bek_ardisik = env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"
     bek_sonum = env_ek.get("AVCI_IBVS_KVZD_SEYIR")
+    bek_yanal = env_ek.get("AVCI_IBVS_YANAL")
     try:
         d = json.loads(urllib.request.urlopen(
             BASE + "/api/gudum_ozellikleri", timeout=5).read())
@@ -147,8 +152,9 @@ def kol_dogrula(env_ek):
         tavan = float(oz["m3b_lead_seyir_tavan"]["deger"])
         ardisik = bool(oz["d0_ardisik"]["acik"])
         sonum = float(oz["m4_seyir_dikey_sonum"]["deger"])
+        yanal = float(oz["o8_yanal_kacirma"]["deger"])
         gercek = (f"lead={int(lead)} tavan={tavan:.0f} "
-                  f"ardisik={int(ardisik)} sonum={sonum:.2f}")
+                  f"ardisik={int(ardisik)} sonum={sonum:.2f} yanal={yanal:.2f}")
         if lead != bek_lead:
             return False, gercek
         if bek_tavan is not None and abs(tavan - float(bek_tavan)) > 1e-6:
@@ -157,6 +163,9 @@ def kol_dogrula(env_ek):
             return False, gercek
         # M4 A/B'nin TEK değişkeni bu — yanlışsa iki kol aynı şeyi uçurur.
         if bek_sonum is not None and abs(sonum - float(bek_sonum)) > 1e-6:
+            return False, gercek
+        # Ö8 A/B'nin TEK değişkeni bu.
+        if bek_yanal is not None and abs(yanal - float(bek_yanal)) > 1e-6:
             return False, gercek
         return True, gercek
     except Exception as e:
@@ -183,7 +192,7 @@ def main():
     gcs_log = os.path.join(dizin, "gcs.log")
 
     # ilk15_m = BİRİNCİL ÖLÇÜT (bkz. olcumle); en_yakin_m ikincil.
-    alanlar = ["kosu", "kol", "sonum", "lead", "tavan", "ardisik", "aci", "kacamak", "gecerli", "sebep",
+    alanlar = ["kosu", "kol", "yanal", "sonum", "lead", "tavan", "ardisik", "aci", "kacamak", "gecerli", "sebep",
                "tetik_m", "tetiklendi", "sisme_m", "hiz_kaybi", "ilk15_m", "gecikme_s",
                "en_yakin_m", "imha",
                "lead_kare", "lead_med_deg", "toplam_kare", "devir_m",
@@ -246,6 +255,7 @@ def main():
                            tavan=env_ek.get("AVCI_IBVS_LEAD_MAX_SEYIR", ""),
                            ardisik=int(env_ek.get("AVCI_HYBRID_ARDISIK", "1") == "1"),
                            sonum=env_ek.get("AVCI_IBVS_KVZD_SEYIR", ""),
+                           yanal=env_ek.get("AVCI_IBVS_YANAL", ""),
                            wall=time.strftime("%Y-%m-%d %H:%M:%S"))
 
                 if not sim_kur(dizin, aci, sim_log):
