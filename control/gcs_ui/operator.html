@@ -309,7 +309,10 @@ button{background:none;border:0;cursor:pointer}
 .isr-ust{top:0;border-bottom:1px solid var(--hat-yumusak)}
 .isr-alt{bottom:0;border-top:1px solid var(--hat-yumusak)}
 .isr-alt .sag-damga{margin-left:auto}
+/* Kayıt göstergesi: kırmızı YALNIZCA gerçekten kayıt sürerken. */
 .kayit-nokta{color:var(--kilit);letter-spacing:.1em}
+.kayit-nokta[data-d="yok"]{color:var(--murekkep-sonuk)}
+.kayit-nokta[data-d="aktif"]{color:var(--kilit)}
 .cerceve-ayrac{position:absolute;inset:0;pointer-events:none;border:1px solid var(--hat-yumusak)}
 .cerceve-ayrac::before,.cerceve-ayrac::after{
   content:"";position:absolute;width:18px;height:18px;border:1px solid var(--cizgi-vurgu);
@@ -786,9 +789,17 @@ button{background:none;border:0;cursor:pointer}
         <span class="etiket">VİDEO</span>
         <span class="v" id="vVideoUst">—</span>
       </div>
-      <div class="mini istege">
-        <span class="etiket">LİNK</span>
+      <!-- ⚠ Bu çubuklar RF LİNK KALİTESİ DEĞİLDİR. Ölçtükleri şey
+           tarayıcı→sunucu bağlantısının sağlığıdır (telemetri tazeliği +
+           ölçülen RTT). Gerçek RF link kalitesi yalnız ELRS panelindeki
+           LQ/RSSI'dir (CRSF LINK_STATISTICS). Etiket bu yüzden "SUNUCU". -->
+      <div class="mini istege" id="miniSunucu">
+        <span class="etiket">SUNUCU</span>
         <span class="cubuklar" id="linkCubuk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div class="mini istege" id="miniRf">
+        <span class="etiket">RF LİNK</span>
+        <span class="v" id="vRfLink">VERİ YOK</span>
       </div>
       <div class="mini istege" id="miniElrs">
         <span class="etiket">ELRS / CRSF</span>
@@ -903,10 +914,17 @@ button{background:none;border:0;cursor:pointer}
     <section class="blok genis" style="border-bottom:0">
       <div class="blok-bas">
         <span class="etiket">ENERJİ VE GÖREV BÜTÇESİ</span>
-        <span class="kaynak" data-k="simule" title="gcs_server batarya telemetrisi yayınlamıyor">SİMÜLE</span>
+        <span class="kaynak" data-k="yok" id="butceKaynak"
+              title="Kalan süre, ölçülen batarya deşarj hızından kestirilir">VERİ YOK</span>
       </div>
-      <div class="sat"><span class="etiket">KALAN UÇUŞ SÜRESİ</span><span class="v mono" id="vKalanUcus">--:--</span></div>
-      <div class="sat"><span class="etiket">DÖNÜŞ İÇİN GEREKEN</span><span class="v mono" id="vDonusSure">--:--</span></div>
+      <div class="sat">
+        <span class="etiket">KALAN UÇUŞ SÜRESİ</span>
+        <span class="v mono" id="vKalanUcus">--:--</span>
+      </div>
+      <div class="sat">
+        <span class="etiket">DÖNÜŞ İÇİN GEREKEN <span class="kaynak" data-k="simule">MODEL</span></span>
+        <span class="v mono" id="vDonusSure">--:--</span>
+      </div>
       <div class="pencere" id="pencereKutu">
         <span class="etiket">ANGAJMAN PENCERESİ</span>
         <span class="v mono" id="vPencere">--:--</span>
@@ -1398,9 +1416,60 @@ const D = {
 
 const GPS_ISTASYON = 15;      // m — hedefin gerisindeki geometrik istasyon
 const SAHA_IRTIFA = 812;      // MSL taban
+/* ══ SİMÜLASYON KAMERASI ═══════════════════════════════════════════════
+   Bu üç sabit YALNIZCA sentetik sahnenin kendi projeksiyonudur (ufuk
+   çizgisi, pitch merdiveni, sim hedef izdüşümü). Sim kendi içinde
+   tutarlıdır; DEĞİŞTİRİLMEDİ ki çevrimdışı davranış birebir korunsun. */
 const KAMERA_EGIM = 25;       // ° — gövdeye sabit, yukarı bakış
-const VFOV = 60;              // ° dikey görüş alanı
-const HFOV = 78;              // ° yatay görüş alanı
+const VFOV = 60;              // ° sim dikey görüş alanı
+const HFOV = 78;              // ° sim yatay görüş alanı
+
+/* ══ GERÇEK KAMERA YAPILANDIRMASI ══════════════════════════════════════
+   KAYNAK: sim/gazebo_harmonic/models/iris_with_standoffs/model.sdf
+           <sensor name="camera"> · satır ~239-255
+             <pose>0.10 0 0.05 0 -0.4363 0</pose>   → 25.0° yukarı tilt
+             <horizontal_fov>2.18166</horizontal_fov> → 125.0°
+             <image>640×480</image>
+   Sunucu bu akışı /iris_cam/image konusundan alıp yalnız JPEG'e çeviriyor
+   (yeniden boyutlandırma YOK), yani SDF canlı görüntü için de geçerlidir.
+
+   ⚠ NEDEN ÖNEMLİ — bu bir etiket sorunu DEĞİL:
+   durumCek(), sunucudan gelen kadraj_yaw_deg açısını HUD kutusunun kare
+   içindeki konumuna çevirirken FOV'a bölüyor. Arayüz 78° varsayıyordu,
+   kamera 125°. 30° sapmadaki hedef için kutu kadrajın %77'sine (neredeyse
+   kenara) çiziliyordu; doğrusu %48, yani kadrajın ortasına yakın. Canlı
+   videoyla HUD üst üste binmiyordu.
+
+   ⚠ BU BİR TELEMETRİ DEĞİL, YAPILANDIRMADIR. Sunucu kamera içsel
+   parametrelerini yayınlamıyor; değerler SDF'ten aynalanmıştır. Ekranda
+   "YAPILANDIRMA" olarak işaretlenir, ölçüm gibi sunulmaz. */
+const KAM_GERCEK = {
+  hfov: 125.0,          // ° — 2.18166 rad
+  vfov: 110.5,          // ° — 2*atan(tan(hfov/2) * 480/640)
+  egim: 25.0,           // ° yukarı tilt
+  gen: 640, yuk: 480,   // sensör çözünürlüğü (akıştaki gerçek boyut ayrıca ÖLÇÜLÜR)
+  kaynak: "iris_with_standoffs/model.sdf"
+};
+
+/* HEDEF CAM AYRI BİR KAMERADIR — iris'in değerlerini ona yazmak YANLIŞ olur.
+   KAYNAK: sim/gazebo_harmonic/models/mini_talon_vtail/model.sdf
+             <sensor name="talon_camera">
+             <pose>0.35 0 0.05 0 -0.15 0</pose>        → 8.6° yukarı tilt
+             <horizontal_fov>1.8</horizontal_fov>       → 103.1°
+             <image>640×480</image>                     → VFOV 86.8°
+   Topic: talon_cam/image (gcs_server /api/video_feed/plane olarak sunar). */
+const KAM_HEDEF = {
+  hfov: 103.1, vfov: 86.8, egim: 8.6, gen: 640, yuk: 480,
+  kaynak: "mini_talon_vtail/model.sdf"
+};
+
+/* Kanalın hangi FİZİKSEL kameradan geldiğine göre yapılandırma seçilir.
+   SAHA İZLEME'nin sunucu ucu yok (sentetik) → null döner, künye SİM yazar. */
+function kamYapilandirma(i){
+  const k = KAMERALAR[i];
+  if (!k || !k.uc) return null;
+  return k.uc.indexOf("/plane") >= 0 ? KAM_HEDEF : KAM_GERCEK;
+}
 const US = { x:-680, y:-540 };  // saha filosunun çıkış noktası (m)
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2114,15 +2183,41 @@ function ustSeritYaz(){
     $("#miniGecikme").dataset.durum = D.gecikme_ms > 120 ? "kritik" : (D.gecikme_ms > 60 ? "uyari" : "");
   }
 
-  /* Link çubukları: canlıda ölçülen telemetri tazeliğinden, MOCK'ta simüle
-     gecikmeden türer. Gerçek bir RF link kalitesi göstergesi DEĞİLDİR —
-     gcs_server RSSI/LQ yayınlamıyor; gerçek LQ yalnız ELRS panelindedir. */
-  const kalite = (CANLI && CANLI_AKTIF)
-    ? kis(5 - (tlmYas > 3 ? 3 : tlmYas > 1.5 ? 2 : 0) - (D.gps_sabit ? 0 : 1), 0, 5)
-    : (CANLI ? 0 : kis(Math.round(5 - (D.gecikme_ms > 90 ? 2 : 0) - (D.gps_sabit ? 0 : 1)), 0, 5));
+  /* ══ SUNUCU BAĞLANTI ÇUBUKLARI — RF DEĞİL ═══════════════════════════
+     Bunlar tarayıcı→gcs_server yolunun sağlığını gösterir: telemetri
+     paketinin yaşı ve ÖLÇÜLEN RTT. Eskiden "LİNK" diye etiketliydi ve
+     doğal olarak sinyal gücü gibi okunuyordu; RTT'yi RF kalitesi diye
+     sunmak yanlıştı. Gerçek RF ölçümü yalnız ELRS'tedir (aşağıda ayrı). */
+  let kalite, kaliteAd;
+  if (!CANLI){ kalite = 0; kaliteAd = "YEREL — ağ bağlantısı yok"; }
+  else if (!CANLI_AKTIF){ kalite = 0; kaliteAd = "KOPUK"; }
+  else {
+    let ceza = tlmYas > 3 ? 3 : tlmYas > 1.5 ? 2 : 0;
+    if (D.rtt_ms !== null){ if (D.rtt_ms > 400) ceza += 2; else if (D.rtt_ms > 150) ceza += 1; }
+    kalite = kis(5 - ceza, 0, 5);
+    kaliteAd = kalite + "/5 · veri " + tlmYas.toFixed(1) + " sn"
+             + (D.rtt_ms !== null ? " · RTT " + Math.round(D.rtt_ms) + " ms" : "");
+  }
   const cub = $("#linkCubuk").children;
   for (let i = 0; i < cub.length; i++) cub[i].dataset.on = i < kalite ? "1" : "0";
-  $("#linkMetin").textContent = "Link kalitesi " + kalite + "/5";
+  $("#linkMetin").textContent = "Sunucu bağlantısı " + kaliteAd;
+  const ms = $("#miniSunucu");
+  if (ms) ms.title = "Tarayıcı → gcs_server bağlantısı: " + kaliteAd + "  (RF link kalitesi DEĞİL)";
+
+  /* ══ GERÇEK RF LİNK — yalnız ELRS/CRSF'ten ═══════════════════════════
+     Kaynak: ESP32 → CRSF LINK_STATISTICS (0x14) → uplink LQ / RSSI.
+     ESP32 bağlı değilse burada sayı UYDURULMAZ. */
+  const rf = $("#vRfLink");
+  if (rf){
+    const lq = ELRS.bagli && ELRS.veri ? Number(ELRS.veri.lq) : NaN;
+    const m = !ELRS.bagli ? "VERİ YOK"
+            : (Number.isFinite(lq) && lq >= 0
+                ? "LQ %" + lq + (Number.isFinite(+ELRS.veri.rssi_dbm) ? " · " + ELRS.veri.rssi_dbm + " dBm" : "")
+                : "TELEMETRİ YOK");
+    if (rf.textContent !== m) rf.textContent = m;
+    const mr = $("#miniRf");
+    if (mr) mr.dataset.durum = !ELRS.bagli ? "" : (Number.isFinite(lq) && lq >= 70 ? "" : "uyari");
+  }
 
   /* UÇUŞ MODU: canlıda HEARTBEAT.custom_mode'dan GERÇEK okunur.
      Eski kod fazdan tahmin ediyordu ("armed ise GUIDED") — araç LOITER'da
@@ -2135,17 +2230,75 @@ function ustSeritYaz(){
 /* Enerji bütçesi: kalan uçuş süresi − üsse dönüş için gereken süre.
    Fark 2 dakikanın altına inince uyarı, sıfıra inince kritik + log. */
 let butceKritikVerildi = false, butceUyariVerildi = false;
+/* ══════════════════════════════════════════════════════════════════════════
+   ENERJİ BÜTÇESİ — GERÇEK deşarj ölçümünden kestirim
+
+   ÖNCEKİ DURUM: D.batarya_sn sabit 1125 sn ile başlıyordu ve YALNIZCA
+   çevrimdışı modda azaltılıyordu (yavasTik'teki !CANLI_AKTIF kapısı).
+   Canlı uçuşta "KALAN UÇUŞ SÜRESİ 18:45" DONMUŞ bir sabit olarak duruyordu
+   — simülasyon bile değil, hiç değişmeyen bir sayı.
+
+   ŞİMDİ: gerçek SYS_STATUS yüzdesi ve onun ÖLÇÜLEN düşüş hızı (BATT_GECMIS,
+   %/dakika) kullanılır:
+       kalan_sn = batt_pct / (düşüş_hızı) * 60
+   Ölçüm yetersizse (4 örnekten az, ya da hız ~0) TAHMİN ÜRETİLMEZ:
+   "TAHMİN YOK" yazılır. Uydurma yok.
+
+   Dönüş süresi AYRI bir şeydir ve bir MODEL'dir (mesafe/14 m/s + 30 s):
+   ölçüm değil, kabul. Etiketinde bu belirtilir; kalan süreyle karıştırılmaz.
+   ══════════════════════════════════════════════════════════════════════════ */
+function kalanUcusKestirimi(){
+  /* Canlı gerçek veri yolu */
+  if (D.batt_pct !== null && D.batt_pct !== undefined){
+    const hiz = battEgilim();                       /* %/dk, GERÇEK ölçüm */
+    if (hiz !== null && hiz < -0.05)                /* anlamlı bir düşüş var mı */
+      return { sn: Math.max(0, (D.batt_pct / -hiz) * 60), kaynak:"olcum" };
+    return { sn:null, kaynak:"yetersiz" };          /* veri var ama hız çıkmadı */
+  }
+  /* Çevrimdışı: simülasyonun kendi sayacı */
+  if (!CANLI) return { sn: D.batarya_sn, kaynak:"simule" };
+  return { sn:null, kaynak:"yok" };
+}
+
 function butceYaz(){
   const A = D.avci;
   const donusMesafe = Math.hypot(A.x, A.y);
   const donusSure = Math.round(donusMesafe / 14 + 30);      /* 14 m/s dönüş + 30 s iniş payı */
-  const pencere = D.batarya_sn - donusSure;
-  $("#vKalanUcus").textContent = ss(D.batarya_sn);
+  const kest = kalanUcusKestirimi();
+  const pencere = kest.sn !== null ? kest.sn - donusSure : null;
+
+  $("#vKalanUcus").textContent =
+      kest.kaynak === "olcum"  ? ss(kest.sn)
+    : kest.kaynak === "simule" ? "SİM " + ss(kest.sn)
+    : kest.kaynak === "yetersiz" ? "TAHMİN YOK"
+    : "VERİ YOK";
   $("#vDonusSure").textContent = ss(donusSure);
-  $("#vPencere").textContent = pencere <= 0 ? "00:00" : ss(pencere);
+  $("#vPencere").textContent = pencere === null ? "—" : (pencere <= 0 ? "00:00" : ss(pencere));
+
+  /* Kaynak rozeti: bu blok artık koşula göre GERÇEK ya da SİMÜLE olabilir. */
+  const kr = $("#butceKaynak");
+  if (kr){
+    const m = kest.kaynak === "olcum" ? "ÖLÇÜM"
+            : kest.kaynak === "simule" ? "SİMÜLE"
+            : kest.kaynak === "yetersiz" ? "VERİ TOPLANIYOR" : "VERİ YOK";
+    if (kr.textContent !== m){
+      kr.textContent = m;
+      kr.dataset.k = kest.kaynak === "olcum" ? "gercek"
+                   : kest.kaynak === "simule" ? "simule" : "yok";
+    }
+  }
 
   const kutu = $("#pencereKutu"), not = $("#butceNot");
   let d = "", m = "Üsse dönüş payı korunuyor.";
+  if (pencere === null){
+    d = "";
+    m = kest.kaynak === "yetersiz"
+      ? "Deşarj hızı ölçülüyor — güvenilir tahmin için birkaç dakika gerek."
+      : "Batarya telemetrisi yok — kalan süre kestirilemiyor.";
+    if (kutu.dataset.d !== d) kutu.dataset.d = d;
+    if (not.textContent !== m){ not.textContent = m; not.dataset.d = d; }
+    return;
+  }
   if (pencere <= 0){
     d = "kritik"; m = "Angajman penceresi kapandı — dönüş yakıtı tükendi.";
     if (!butceKritikVerildi){
@@ -2702,7 +2855,12 @@ function hudKimlik(c){
   c.save();
   c.font = "11px ui-monospace, monospace";
   c.textAlign = "left"; c.textBaseline = "top";
-  const m = KAMERALAR[aktifKamera].kod + " · " + saatMetni();
+  /* Bu katman IR ve HEDEF CAM'de çizilir. HEDEF CAM AYRI bir kameradır
+     (talon, 103.1°); ona iris'in 125°'sini yazmak yanlış olurdu. Kanalın
+     kendi yapılandırması yazılır; sentetik kanalda hiç FOV iddia edilmez. */
+  const yap = CANLI_VIDEO_AKTIF ? kamYapilandirma(aktifKamera) : null;
+  const m = KAMERALAR[aktifKamera].kod + " · " + saatMetni()
+          + (yap ? " · FOV " + yap.hfov + "×" + yap.vfov + " (YAP)" : "");
   metinZemin(c, 12, 34, c.measureText(m).width, 12);
   c.fillStyle = J["--murekkep-orta"]; c.fillText(m, 12, 34);
   c.restore();
@@ -2853,7 +3011,15 @@ function hudMetinleri(c){
   c.textAlign = "left"; c.textBaseline = "top";
   metinZemin(c, 12, 34, 210, 26);
   c.fillStyle = J["--murekkep-orta"];
-  c.fillText("KAM +25° SABİT · FOV " + HFOV + "×" + VFOV, 12, 34);
+  /* Künye, o an GÖSTERİLEN kaynağın optiğini yazar: canlı akışta gerçek
+     kameranınkini (SDF yapılandırması), sentetik sahnede sim'inkini.
+     "YAP" öneki bunun ölçüm değil YAPILANDIRMA olduğunu söyler. */
+  /* Kanal başına DOĞRU kamera: AVCI EO/IR iris'ten, HEDEF CAM talon'dan.
+     Hepsine iris'in 125°'sini yazmak YANLIŞ bir değer olurdu. */
+  const kamYap = CANLI_VIDEO_AKTIF ? kamYapilandirma(aktifKamera) : null;
+  c.fillText(kamYap
+    ? "KAM +" + kamYap.egim + "° SABİT · FOV " + kamYap.hfov + "×" + kamYap.vfov + " (YAP)"
+    : "KAM +" + KAMERA_EGIM + "° SABİT · FOV " + HFOV + "×" + VFOV + " (SİM)", 12, 34);
   c.fillText("FAZ " + fazAdi(), 12, 48);
   c.textAlign = "right";
   metinZemin(c, W - 122, 34, 110, 40);
@@ -3586,8 +3752,27 @@ function isrSeridiYaz(){
   const u = $("#isrUst");
   if (u.textContent !== m) u.textContent = m;
   $("#saatDamga").textContent = saatMetni();
+
+  /* KAYIT göstergesi — GERÇEK sunucu durumundan (18K).
+     Yanıp sönme YALNIZCA gerçekten kayıt sürerken olur; artık dekoratif
+     değil, bilgi taşıyor. */
   const kd = $("#kayitDamga");
-  kd.style.opacity = azHareket ? "1" : (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(D.t * 2.4))).toFixed(2);
+  const kv = KAYIT.veri;
+  if (!CANLI){
+    if (kd.textContent !== "KAYIT YOK · ÇEVRİMDIŞI") kd.textContent = "KAYIT YOK · ÇEVRİMDIŞI";
+    kd.dataset.d = "yok"; kd.style.opacity = "1";
+  } else if (!KAYIT.bagli){
+    if (kd.textContent !== "KAYIT DURUMU VERİ YOK") kd.textContent = "KAYIT DURUMU VERİ YOK";
+    kd.dataset.d = "yok"; kd.style.opacity = "1";
+  } else if (kv && kv.aktif){
+    const m = "KAYIT ● " + (kv.kare || 0) + " kare · " + ss(kv.gecen_s || 0);
+    if (kd.textContent !== m) kd.textContent = m;
+    kd.dataset.d = "aktif";
+    kd.style.opacity = azHareket ? "1" : (0.45 + 0.55 * (0.5 + 0.5 * Math.sin(D.t * 2.4))).toFixed(2);
+  } else {
+    if (kd.textContent !== "KAYIT YOK") kd.textContent = "KAYIT YOK";
+    kd.dataset.d = "yok"; kd.style.opacity = "1";
+  }
   /* "SİNYAL YOK" metnini artık vidPaneliYaz() yazıyor (18A) — eski #taramaMetin
      düğümü kaldırıldı, burada yeniden yazmak null erişimi olurdu. */
 }
@@ -3837,6 +4022,7 @@ const UC = {
   telemetri  : (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws",
   durum      : "/api/chase_status",            // GET  (faz + menzil)
   pnp        : "/api/telemetry/pnp",           // GET  (GERÇEK tespit güveni + faz kapıları)
+  kayit      : "/api/kayit/durum",             // GET  (GERÇEK uçuş kaydı durumu)
   angaje     : "/api/command/iris/start_chase",// POST
   iptal      : "/api/command/iris/stop_chase", // POST
   filo       : "/api/logistics/dispatch"       // POST {araclar:[], hedef:{x,y}} — sunucuda yoksa yutulur
@@ -4022,8 +4208,11 @@ function durumCek(){
        o uç cevap vermiyorsa tespit_conf null kalır ve UI "VERİ YOK" der. */
     /* kadraj açıları → HUD kutusunun kare içi konumu */
     if (g.kadraj_yaw_deg !== null && g.kadraj_yaw_deg !== undefined){
-      D.hata_x = kis(+g.kadraj_yaw_deg / (HFOV / 2), -1.2, 1.2);
-      D.hata_y = kis(-(+g.kadraj_elev_deg || 0) / (VFOV / 2), -1.2, 1.2);
+      /* GERÇEK kamera FOV'u kullanılır — sim sabiti değil. Eskiden sim'in
+         78°/60° değerleri kullanılıyordu ve HUD kutusu canlı videoyla
+         hizalanmıyordu (bkz. KAM_GERCEK açıklaması). */
+      D.hata_x = kis(+g.kadraj_yaw_deg / (KAM_GERCEK.hfov / 2), -1.2, 1.2);
+      D.hata_y = kis(-(+g.kadraj_elev_deg || 0) / (KAM_GERCEK.vfov / 2), -1.2, 1.2);
       D.gorunur = Math.abs(D.hata_x) < 0.96 && Math.abs(D.hata_y) < 0.94;
     } else D.gorunur = false;
     D.angaje = !!s.active;
@@ -4145,6 +4334,38 @@ function pnpCek(){
       PNP.bagli = false;
     })
     .finally(() => { _pnpUcusta = false; });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   18K · UÇUŞ KAYDI DURUMU  →  /api/kayit/durum  (1 Hz)
+
+   ÖNCEKİ DURUM: görüntünün altında kırmızı "KAYIT ●" yanıp sönüyordu ve
+   HİÇBİR ŞEY kaydedilmiyordu — gösterge yalnızca bir sinüsle opaklık
+   değiştiriyordu. Operatöre "görüntü kaydediliyor" diyen sahte bir DURUM
+   göstergesiydi; sahte sayıdan daha yanıltıcıdır.
+
+   Oysa sunucuda GERÇEK kayıt altyapısı zaten var:
+     POST /api/kayit/basla · POST /api/kayit/dur · GET /api/kayit/durum
+     → {aktif, dizin, kare, gecen_s}   (_kayit_dongusu kare + kayit.csv yazar)
+
+   Gösterge artık bu gerçek duruma bağlı. Kayıt yoksa yanıp sönmez;
+   "KAYIT YOK" yazar. Bu uç salt okunurdur — kaydı başlatma/durdurma
+   operatör akışına eklenmedi (mevcut akış değiştirilmiyor). */
+const KAYIT = { veri:null, bagli:false, son:0 };
+let _kayitUcusta = false;
+function kayitDurumCek(){
+  if (!CANLI || _kayitUcusta) return;
+  _kayitUcusta = true;
+  fetch(UC.kayit, { cache:"no-store", signal: AbortSignal.timeout(2000) })
+    .then(y => { if (!y.ok) throw new Error("HTTP " + y.status); return y.json(); })
+    .then(k => {
+      const oncekiAktif = KAYIT.veri && KAYIT.veri.aktif;
+      KAYIT.veri = k; KAYIT.son = simdi(); KAYIT.bagli = true;
+      if (k.aktif && !oncekiAktif) kayit("KAYIT", "BİLGİ", "Uçuş kaydı başladı → " + (k.dizin || ""));
+      else if (!k.aktif && oncekiAktif) kayit("KAYIT", "BİLGİ", "Uçuş kaydı durdu — " + (k.kare || 0) + " kare");
+    })
+    .catch(() => { KAYIT.bagli = false; KAYIT.veri = null; })
+    .finally(() => { _kayitUcusta = false; });
 }
 
 /* Faz kapısı eşikleri: GERÇEK değer varsa o, yoksa arayüzün sim sabiti.
@@ -5046,6 +5267,7 @@ function ac(){
   setInterval(elrsYokla, 500); /* 2 Hz — ESP32 gerçek RF/görev durumu */
   setInterval(durumYokla, 200);/* 5 Hz — chase_status (faz, menzil, sayaçlar) */
   setInterval(pnpYokla, 500);  /* 2 Hz — pnp (GERÇEK tespit güveni + faz kapıları) */
+  setInterval(kayitYokla, 1000);/* 1 Hz — GERÇEK uçuş kaydı durumu */
   requestAnimationFrame(cerceve);
 }
 
@@ -5057,12 +5279,14 @@ function ac(){
 function elrsYokla(){ if (!document.hidden) elrsDurumCek(); }
 function durumYokla(){ if (!document.hidden) durumCek(); }
 function pnpYokla(){ if (!document.hidden) pnpCek(); }
+function kayitYokla(){ if (!document.hidden) kayitDurumCek(); }
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   /* Geri dönüşte bekleme yok: hem veriyi hem bağlantıyı hemen tazele. */
   durumCek();
   pnpCek();
+  kayitDurumCek();
   elrsDurumCek();
   if (CANLI && (!ws || ws.readyState > 1)){ WS.deneme = 0; clearTimeout(WS.saat); wsBagla(); }
   if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali"){
