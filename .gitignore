@@ -26,6 +26,8 @@ mav.parm
 
 # ============ Editör / OS ============
 *.swp
+*.save
+*~
 .vscode/
 .idea/
 .DS_Store

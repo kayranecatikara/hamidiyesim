@@ -1,0 +1,1628 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hamidiye GCS — Teknik Dokümantasyon</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   Tek dosya, sıfır harici bağımlılık. İnternetsiz açılır.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --zemin:#0b1116; --panel:#111a21; --kabartma:#17232c; --oyuk:#080e12;
+  --hat:#22323d; --hat2:#2d4150;
+  --mrk:#dde6ea; --mrk2:#9fb2bd; --mrk3:#6b8090;
+  --gercek:#3ddc97; --tahmin:#f0b429; --simule:#8b9dc3; --yok:#6b8090;
+  --hesap:#5eb0e5; --config:#c58af9; --kritik:#f0554b;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --fm:ui-monospace,"SF Mono","DejaVu Sans Mono",Consolas,monospace;
+  --yan:270px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{background:var(--zemin);color:var(--mrk);font:15px/1.65 var(--f);-webkit-font-smoothing:antialiased}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* ── yerleşim ── */
+.kabuk{display:grid;grid-template-columns:var(--yan) minmax(0,1fr);min-height:100vh}
+.yan{
+  position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--panel);
+  border-right:1px solid var(--hat);padding:18px 0;
+}
+.govde{padding:34px 44px 120px;max-width:1080px;min-width:0}
+
+/* ── sidebar ── */
+.marka{padding:0 18px 14px;border-bottom:1px solid var(--hat);margin-bottom:12px}
+.marka b{display:block;font-size:15px;letter-spacing:.06em}
+.marka span{display:block;font-size:11px;color:var(--mrk3);margin-top:3px;font-family:var(--fm)}
+.ara{margin:0 14px 12px;position:relative}
+.ara input{
+  width:100%;padding:8px 10px;background:var(--oyuk);border:1px solid var(--hat);
+  border-radius:4px;color:var(--mrk);font:13px var(--f);
+}
+.ara input:focus{outline:2px solid var(--hesap);outline-offset:1px;border-color:var(--hesap)}
+.yan nav a{
+  display:block;padding:5px 18px 5px 16px;color:var(--mrk2);text-decoration:none;
+  font-size:13px;border-left:2px solid transparent;
+}
+.yan nav a:hover{color:var(--mrk);background:var(--kabartma)}
+.yan nav a.aktif{color:var(--gercek);border-left-color:var(--gercek);background:var(--kabartma)}
+.yan nav a .no{color:var(--mrk3);font-family:var(--fm);font-size:11px;margin-right:7px}
+.yan nav a.gizli{display:none}
+.grup{padding:12px 18px 4px;font-size:10px;letter-spacing:.14em;color:var(--mrk3);text-transform:uppercase}
+
+/* ── tipografi ── */
+h1{font-size:30px;line-height:1.25;letter-spacing:-.01em;margin-bottom:8px}
+h2{font-size:22px;margin:44px 0 12px;padding-top:14px;border-top:1px solid var(--hat);letter-spacing:-.01em}
+h2:first-of-type{border-top:0;margin-top:24px}
+h3{font-size:16px;margin:24px 0 8px;color:var(--mrk)}
+h4{font-size:14px;margin:16px 0 6px;color:var(--mrk2);font-weight:600}
+p{margin:9px 0;color:var(--mrk2)}
+p strong,li strong{color:var(--mrk);font-weight:600}
+ul,ol{margin:9px 0 9px 22px;color:var(--mrk2)}
+li{margin:4px 0}
+a{color:var(--hesap)}
+.ust{font-size:14px;color:var(--mrk3);font-family:var(--fm);margin-bottom:26px}
+.giris{font-size:16px;color:var(--mrk2);border-left:3px solid var(--hesap);padding-left:14px;margin:14px 0 22px}
+
+/* ── rozetler ── */
+.r{display:inline-block;font:600 10px/1.5 var(--fm);letter-spacing:.08em;padding:2px 6px;
+   border-radius:3px;border:1px solid currentColor;white-space:nowrap;vertical-align:middle}
+.r-gercek{color:var(--gercek)} .r-tahmin{color:var(--tahmin)} .r-simule{color:var(--simule)}
+.r-hesap{color:var(--hesap)}  .r-config{color:var(--config)} .r-yok{color:var(--yok)}
+.r-turetilmis{color:var(--hesap)} .r-dogrulanmadi{color:var(--kritik)}
+
+/* ── legend ── */
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;
+        margin:18px 0;padding:14px;background:var(--panel);border:1px solid var(--hat);border-radius:6px}
+.legend div{font-size:12.5px;color:var(--mrk2)}
+
+/* ── kutular ── */
+.kutu{padding:12px 15px;border-radius:5px;margin:16px 0;border-left:3px solid;font-size:14px}
+.kutu p{margin:5px 0}
+.k-uyari{background:rgba(240,180,41,.07);border-color:var(--tahmin)}
+.k-kritik{background:rgba(240,85,75,.07);border-color:var(--kritik)}
+.k-bilgi{background:rgba(94,176,229,.07);border-color:var(--hesap)}
+.k-ok{background:rgba(61,220,151,.07);border-color:var(--gercek)}
+.kutu b.bas{display:block;font-size:11px;letter-spacing:.1em;margin-bottom:5px;text-transform:uppercase}
+.k-uyari b.bas{color:var(--tahmin)} .k-kritik b.bas{color:var(--kritik)}
+.k-bilgi b.bas{color:var(--hesap)}  .k-ok b.bas{color:var(--gercek)}
+
+/* ── tablolar ── */
+.tw{overflow-x:auto;margin:16px 0;border:1px solid var(--hat);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+th{background:var(--kabartma);text-align:left;padding:9px 11px;font-size:11px;
+   letter-spacing:.08em;text-transform:uppercase;color:var(--mrk2);border-bottom:1px solid var(--hat2);white-space:nowrap}
+td{padding:8px 11px;border-bottom:1px solid var(--hat);color:var(--mrk2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+td code,th code{font-size:12.5px}
+
+/* ── kod ── */
+code{font-family:var(--fm);font-size:13px;background:var(--oyuk);padding:1.5px 5px;
+     border-radius:3px;color:var(--gercek);border:1px solid var(--hat)}
+pre{background:var(--oyuk);border:1px solid var(--hat);border-left:3px solid var(--hat2);
+    border-radius:5px;padding:13px 15px;overflow-x:auto;margin:14px 0}
+pre code{background:none;border:0;padding:0;color:var(--mrk2);font-size:12.5px;line-height:1.6}
+pre .c{color:var(--mrk3)} pre .g{color:var(--gercek)} pre .t{color:var(--tahmin)}
+
+/* ── zincir diyagramı ── */
+.zincir{margin:16px 0;border:1px solid var(--hat);border-radius:6px;overflow:hidden}
+.zincir-bas{background:var(--kabartma);padding:8px 13px;font:600 12px var(--fm);
+            letter-spacing:.05em;border-bottom:1px solid var(--hat)}
+.zincir-govde{padding:4px 0}
+.zadim{display:grid;grid-template-columns:132px 1fr;gap:12px;padding:6px 13px;font-size:13px;align-items:baseline}
+.zadim + .zadim{border-top:1px solid rgba(255,255,255,.04)}
+.zadim b{color:var(--mrk3);font:600 10px var(--fm);letter-spacing:.08em;text-transform:uppercase}
+.zadim span{color:var(--mrk2)}
+.zadim code{font-size:12px}
+
+/* ── mimari diyagram ── */
+.diyagram{background:var(--panel);border:1px solid var(--hat);border-radius:6px;padding:16px;margin:18px 0;overflow-x:auto}
+.diyagram svg{display:block;width:100%;height:auto;min-width:640px}
+.dkutu{cursor:pointer}
+.dkutu rect{transition:fill 120ms}
+.dkutu:hover rect{fill:var(--kabartma)}
+.dkutu:focus{outline:none}
+.dkutu:focus rect{stroke:var(--gercek);stroke-width:2}
+.dbilgi{margin-top:12px;padding:11px 14px;background:var(--oyuk);border:1px solid var(--hat);
+        border-radius:5px;font-size:13.5px;color:var(--mrk2);min-height:44px}
+.dbilgi b{color:var(--mrk);display:block;margin-bottom:3px;font-size:13px}
+
+/* ── başa dön ── */
+.basa{position:fixed;right:22px;bottom:22px;background:var(--kabartma);color:var(--mrk);
+      border:1px solid var(--hat2);border-radius:5px;padding:9px 13px;font-size:12.5px;
+      cursor:pointer;opacity:0;pointer-events:none;transition:opacity 160ms;z-index:20}
+.basa.gor{opacity:1;pointer-events:auto}
+.basa:hover{border-color:var(--gercek);color:var(--gercek)}
+
+/* ── responsive ── */
+@media (max-width:940px){
+  .kabuk{grid-template-columns:1fr}
+  .yan{position:static;height:auto;max-height:none;border-right:0;border-bottom:1px solid var(--hat)}
+  .yan nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+  .grup{grid-column:1/-1}
+  .govde{padding:22px 18px 90px}
+  h1{font-size:24px} h2{font-size:19px}
+  .zadim{grid-template-columns:1fr;gap:2px}
+}
+@media print{
+  .yan,.basa{display:none} .kabuk{grid-template-columns:1fr}
+  body{background:#fff;color:#000} .govde{max-width:none}
+}
+</style>
+</head>
+<body>
+<div class="kabuk">
+
+<!-- ══ SOL NAVİGASYON ══ -->
+<aside class="yan">
+  <div class="marka">
+    <b>HAMİDİYE GCS</b>
+    <span>Teknik Dokümantasyon</span>
+    <span id="metaDal">operasyon_arayuz</span>
+  </div>
+  <div class="ara"><input type="search" id="araKutu" placeholder="Bölümlerde ara…" aria-label="Bölümlerde ara"></div>
+  <nav id="nav">
+    <div class="grup">Giriş</div>
+    <a href="#b1"><span class="no">1</span>Sisteme Genel Bakış</a>
+    <a href="#b2"><span class="no">2</span>Sistem Mimarisi</a>
+    <a href="#b3"><span class="no">3</span>Veri Akışı</a>
+    <a href="#b18"><span class="no">18</span>Veri Doğruluk Sistemi</a>
+    <div class="grup">Arayüz</div>
+    <a href="#b4"><span class="no">4</span>Operatör Arayüz Haritası</a>
+    <a href="#b14"><span class="no">14</span>Sağlık / Teşhis</a>
+    <a href="#b15"><span class="no">15</span>Alarm Sistemi</a>
+    <a href="#b16"><span class="no">16</span>Kayıt Sistemi</a>
+    <div class="grup">Alt Sistemler</div>
+    <a href="#b5"><span class="no">5</span>Batarya</a>
+    <a href="#b6"><span class="no">6</span>GPS</a>
+    <a href="#b7"><span class="no">7</span>MAVLink ve Telemetri</a>
+    <a href="#b8"><span class="no">8</span>Kamera</a>
+    <a href="#b9"><span class="no">9</span>YOLO / Tespit / PNP</a>
+    <a href="#b10"><span class="no">10</span>Kilit ve Faz Mantığı</a>
+    <a href="#b11"><span class="no">11</span>Kapanma Hızı</a>
+    <a href="#b12"><span class="no">12</span>ELRS / ESP32 / CRSF</a>
+    <a href="#b13"><span class="no">13</span>Bağlantı ve Hata Yönetimi</a>
+    <div class="grup">Doğrulama</div>
+    <a href="#b17"><span class="no">17</span>Simülasyon vs Gerçek</a>
+    <a href="#b19"><span class="no">19</span>Testler</a>
+    <a href="#b20"><span class="no">20</span>Gerçek Donanım Sınırları</a>
+    <div class="grup">Referans</div>
+    <a href="#b21"><span class="no">21</span>Geliştirme Geçmişi</a>
+    <a href="#b22"><span class="no">22</span>Dosya Haritası</a>
+    <a href="#b23"><span class="no">23</span>Operatör Rehberi</a>
+    <a href="#b24"><span class="no">24</span>Sorun Giderme</a>
+    <a href="#b25"><span class="no">25</span>Geliştirici Referansı</a>
+  </nav>
+</aside>
+
+<!-- ══ GÖVDE ══ -->
+<main class="govde">
+
+<h1>Hamidiye GCS — Teknik Dokümantasyon</h1>
+<p class="ust">
+  Depo <code>kayranecatikara/hamidiyesim</code> · Dal <code>operasyon_arayuz</code> · HEAD <code>66f3e1d</code><br>
+  Belge tarihi: 2026-08-13 · Kaynak: deponun o andaki hâli
+</p>
+
+<div class="giris">
+  Bu belge, sistemin <b>kodundan çıkarılmıştır</b>. İçindeki her iddia bir dosya ve satıra
+  dayanır. Kodda bulunmayan hiçbir özellik burada anlatılmaz. Doğrulanamayan noktalar
+  <span class="r r-dogrulanmadi">DOĞRULANMADI</span> rozetiyle işaretlidir.
+</div>
+
+<div class="kutu k-uyari">
+  <b class="bas">Bu belgenin en önemli kuralı</b>
+  <p>Hamidiye GCS'in tasarım ilkesi şudur: <b>gerçek olmayan hiçbir sayı gerçekmiş gibi
+  gösterilmez.</b> Arayüzdeki her değer, kaynağına göre etiketlenir. Bu belge de aynı
+  kurala uyar. Aşağıdaki rozetleri tanımak, hem arayüzü hem bu belgeyi okumanın anahtarıdır.</p>
+</div>
+
+<div class="legend">
+  <div><span class="r r-gercek">GERÇEK TELEMETRİ</span> Uçuş kontrolcüsünden ölçülerek gelir.</div>
+  <div><span class="r r-hesap">HESAPLANMIŞ</span> Sunucu, gerçek verilerden hesaplar.</div>
+  <div><span class="r r-turetilmis">TÜRETİLMİŞ</span> Arayüz, gerçek ölçümlerden türetir.</div>
+  <div><span class="r r-tahmin">TAHMİN</span> Ölçülmemiş, çıkarım yapılmış. Yanılabilir.</div>
+  <div><span class="r r-simule">SİMÜLE</span> Yerel simülasyon üretir. Gerçek araç değil.</div>
+  <div><span class="r r-config">YAPILANDIRMA</span> Sabit ayardan gelir, ölçüm değildir.</div>
+  <div><span class="r r-yok">VERİ YOK</span> Kaynak yok; sayı uydurulmaz.</div>
+  <div><span class="r r-dogrulanmadi">DOĞRULANMADI</span> Gerçek donanımda sınanmamış.</div>
+</div>
+
+
+<!-- ═══════════════ 1 ═══════════════ -->
+<h2 id="b1">1 · Sisteme Genel Bakış</h2>
+
+<h3>Sistemi 30 saniyede anlayın</h3>
+<p>
+  <b>Hamidiye GCS</b>, bir insansız hava aracının (İHA) uçuşunu yerden izleyip yöneten bir
+  <b>yer kontrol istasyonudur</b>. Proje, Teknofest için geliştirilen bir <b>hava-hava
+  müdahale simülasyonudur</b>: bir avcı İHA, havadaki bir hedef İHA'yı bulup takip eder.
+</p>
+<p>Sistemde iki araç vardır:</p>
+<ul>
+  <li><b>AVCI-01</b> — dört pervaneli araç (ArduCopter <i>iris</i>). Avcı. Kamerası önde.</li>
+  <li><b>HEDEF</b> — sabit kanatlı uçak (ArduPlane <i>mini_talon</i>). Takip edilen araç.</li>
+</ul>
+<p>
+  Operatör, tarayıcıda açılan <code>operator.html</code> ekranından her ikisinin telemetrisini
+  görür, kamerayı izler, görevi başlatır ve gerektiğinde iptal eder.
+</p>
+
+<h3>Temel kavramlar (hiç bilmeyenler için)</h3>
+<div class="tw"><table>
+<thead><tr><th>Kavram</th><th>Ne demek?</th></tr></thead>
+<tbody>
+<tr><td><b>GCS</b></td><td><i>Ground Control Station</i> — yer kontrol istasyonu. İHA'yı yerden izleyip komut veren yazılım.</td></tr>
+<tr><td><b>Telemetri</b></td><td>Araçtan yere akan ölçüm verisi: konum, irtifa, hız, batarya…</td></tr>
+<tr><td><b>MAVLink</b></td><td>İHA'larla yer istasyonları arasında konuşulan standart mesaj dili. Her mesaj tipinin adı ve alanları bellidir (örn. <code>SYS_STATUS</code> batarya taşır).</td></tr>
+<tr><td><b>Uçuş kontrolcüsü</b></td><td>Aracın üstündeki, motorları ve yüzeyleri süren bilgisayar. Bu projede <b>ArduPilot</b> yazılımı.</td></tr>
+<tr><td><b>SITL</b></td><td><i>Software In The Loop</i> — gerçek uçuş kontrolcüsü donanımı yerine, aynı yazılımın bilgisayarda koşturulması. Uçmadan test yapmayı sağlar.</td></tr>
+<tr><td><b>Gazebo</b></td><td>Fizik simülatörü. Araçların uçuşunu, kameranın gördüğünü ve çarpışmaları hesaplar.</td></tr>
+<tr><td><b>WebSocket</b></td><td>Tarayıcı ile sunucu arasında sürekli açık kalan iki yönlü bağlantı. Telemetrinin akmasını sağlar.</td></tr>
+<tr><td><b>YOLO</b></td><td>Görüntüde nesne bulan bir yapay sinir ağı. Burada kamera karesinde hedef uçağı arar.</td></tr>
+<tr><td><b>GPS fix</b></td><td>GPS alıcısının konum çözümü kalitesi. "Fix yok" = konum bilinmiyor; "3B fix" = güvenilir konum var.</td></tr>
+<tr><td><b>ELRS</b></td><td><i>ExpressLRS</i> — uzun menzilli, açık kaynak radyo kontrol sistemi.</td></tr>
+<tr><td><b>CRSF</b></td><td><i>Crossfire</i> protokolü — ELRS'in kumanda ile alıcı arasında konuştuğu dijital protokol.</td></tr>
+</tbody></table></div>
+
+<h3>Operatör bu sistemle ne yapar?</h3>
+<ul>
+  <li>Aracın <b>sağlığını</b> tek bakışta doğrular (bağlantı, GPS, batarya, kamera, RF).</li>
+  <li>Kamera görüntüsünü ve üzerine bindirilmiş <b>HUD</b> (başüstü gösterge) bilgilerini izler.</li>
+  <li>Görevi <b>başlatır</b>, hedefe <b>angaje</b> olur, gerektiğinde <b>iptal eder</b>.</li>
+  <li>Haritada iki aracın konumunu ve aralarındaki geometriyi görür.</li>
+  <li>Uçuş <b>kaydını</b> ve <b>alarm geçmişini</b> takip eder.</li>
+</ul>
+
+<h3>Arayüz neden var, nerede çalışır?</h3>
+<p>
+  <code>control/gcs_ui/operator.html</code> <b>tek dosyalık, sıfır harici bağımlılığı olan</b>
+  bir HTML sayfasıdır — çerçeve, CDN, harita kütüphanesi kullanmaz. İki modda çalışır:
+</p>
+<div class="tw"><table>
+<thead><tr><th>Mod</th><th>Nasıl açılır</th><th>Davranış</th></tr></thead>
+<tbody>
+<tr><td><b>CANLI</b></td><td><code>http://localhost:8000/ui/operator.html</code></td>
+    <td>Sunucuya bağlanır, gerçek telemetriyi gösterir. Rozet: <code>CANLI</code></td></tr>
+<tr><td><b>MOCK</b></td><td><code>file://…/operator.html</code> (çift tık)</td>
+    <td>Hiç ağ isteği yapmaz. Yerel simülasyon motoru çalışır. Rozet: <code>MOCK</code>, tüm değerler <span class="r r-simule">SİMÜLE</span></td></tr>
+</tbody></table></div>
+<p>Mod seçimi elle yapılmaz; <code>location.protocol</code>'den okunur. Sunucu çalışırken
+düşerse arayüz kendiliğinden MOCK'a döner ve bunu rozetle bildirir.</p>
+
+
+<!-- ═══════════════ 2 ═══════════════ -->
+<h2 id="b2">2 · Sistem Mimarisi</h2>
+<p>Aşağıdaki şema <b>yalnızca kodda bulunan</b> bileşenleri gösterir. Kutulara tıklayın.</p>
+
+<div class="diyagram">
+<svg viewBox="0 0 900 470" role="img" aria-label="Hamidiye GCS mimari şeması">
+  <defs>
+    <marker id="ok" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#2d4150"/>
+    </marker>
+    <style>
+      .bx{fill:#111a21;stroke:#2d4150;stroke-width:1.4;rx:5}
+      .tt{fill:#dde6ea;font:600 12px var(--fm);text-anchor:middle}
+      .st{fill:#6b8090;font:10px var(--fm);text-anchor:middle}
+      .ln{stroke:#2d4150;stroke-width:1.4;fill:none;marker-end:url(#ok)}
+      .lb{fill:#6b8090;font:9.5px var(--fm)}
+      .kol{fill:#9fb2bd;font:600 10px var(--fm);letter-spacing:.1em}
+    </style>
+  </defs>
+
+  <text class="kol" x="20" y="22">TELEMETRİ VE KOMUT YOLU</text>
+  <g class="dkutu" tabindex="0" data-b="drone"><rect class="bx" x="20" y="34" width="150" height="46"/>
+    <text class="tt" x="95" y="53">ARAÇ</text><text class="st" x="95" y="68">iris · mini_talon</text></g>
+  <g class="dkutu" tabindex="0" data-b="fc"><rect class="bx" x="200" y="34" width="150" height="46"/>
+    <text class="tt" x="275" y="53">ArduPilot</text><text class="st" x="275" y="68">uçuş kontrolcüsü</text></g>
+  <g class="dkutu" tabindex="0" data-b="mav"><rect class="bx" x="380" y="34" width="150" height="46"/>
+    <text class="tt" x="455" y="53">MAVLink</text><text class="st" x="455" y="68">UDP 14541/14550</text></g>
+  <g class="dkutu" tabindex="0" data-b="srv"><rect class="bx" x="560" y="34" width="160" height="46"/>
+    <text class="tt" x="640" y="53">gcs_server.py</text><text class="st" x="640" y="68">FastAPI · :8000</text></g>
+  <g class="dkutu" tabindex="0" data-b="ui"><rect class="bx" x="750" y="34" width="130" height="46"/>
+    <text class="tt" x="815" y="53">operator.html</text><text class="st" x="815" y="68">operatör</text></g>
+  <path class="ln" d="M170,57 H196"/><path class="ln" d="M350,57 H376"/>
+  <path class="ln" d="M530,57 H556"/><path class="ln" d="M720,57 H746"/>
+  <text class="lb" x="726" y="50">/ws · REST</text>
+
+  <text class="kol" x="20" y="132">GÖRÜ YOLU</text>
+  <g class="dkutu" tabindex="0" data-b="cam"><rect class="bx" x="20" y="144" width="150" height="46"/>
+    <text class="tt" x="95" y="163">GAZEBO KAMERA</text><text class="st" x="95" y="178">iris_cam · talon_cam</text></g>
+  <g class="dkutu" tabindex="0" data-b="yolo"><rect class="bx" x="200" y="144" width="150" height="46"/>
+    <text class="tt" x="275" y="163">YOLO</text><text class="st" x="275" y="178">+ HybridSORT</text></g>
+  <g class="dkutu" tabindex="0" data-b="det"><rect class="bx" x="380" y="144" width="150" height="46"/>
+    <text class="tt" x="455" y="163">detection_state</text><text class="st" x="455" y="178">bbox + conf</text></g>
+  <g class="dkutu" tabindex="0" data-b="pnp"><rect class="bx" x="560" y="144" width="160" height="46"/>
+    <text class="tt" x="640" y="163">/telemetry/pnp</text><text class="st" x="640" y="178">+ /video_feed</text></g>
+  <path class="ln" d="M170,167 H196"/><path class="ln" d="M350,167 H376"/><path class="ln" d="M530,167 H556"/>
+  <path class="ln" d="M720,167 C740,167 815,150 815,86"/>
+
+  <text class="kol" x="20" y="242">GÜDÜM (sunucu içi)</text>
+  <g class="dkutu" tabindex="0" data-b="sup"><rect class="bx" x="20" y="254" width="150" height="46"/>
+    <text class="tt" x="95" y="273">supervisor</text><text class="st" x="95" y="288">faz yöneticisi</text></g>
+  <g class="dkutu" tabindex="0" data-b="gud"><rect class="bx" x="200" y="254" width="150" height="46"/>
+    <text class="tt" x="275" y="273">gps_guidance</text><text class="st" x="275" y="288">bbox_ibvs</text></g>
+  <g class="dkutu" tabindex="0" data-b="chase"><rect class="bx" x="380" y="254" width="150" height="46"/>
+    <text class="tt" x="455" y="273">/chase_status</text><text class="st" x="455" y="288">faz · menzil</text></g>
+  <path class="ln" d="M170,277 H196"/><path class="ln" d="M350,277 H376"/>
+  <path class="ln" d="M530,277 C560,277 640,220 640,86"/>
+
+  <text class="kol" x="20" y="352">RF YOLU — AYRI SİSTEM</text>
+  <g class="dkutu" tabindex="0" data-b="esp"><rect class="bx" x="20" y="364" width="150" height="46"/>
+    <text class="tt" x="95" y="383">ESP32</text><text class="st" x="95" y="398">elrs_square_gcs</text></g>
+  <g class="dkutu" tabindex="0" data-b="crsf"><rect class="bx" x="200" y="364" width="150" height="46"/>
+    <text class="tt" x="275" y="383">CRSF 400k</text><text class="st" x="275" y="398">RC_CHANNELS 0x16</text></g>
+  <g class="dkutu" tabindex="0" data-b="elrs"><rect class="bx" x="380" y="364" width="150" height="46"/>
+    <text class="tt" x="455" y="383">ELRS TX/RX</text><text class="st" x="455" y="398">LINK_STATISTICS</text></g>
+  <g class="dkutu" tabindex="0" data-b="ap"><rect class="bx" x="560" y="364" width="160" height="46"/>
+    <text class="tt" x="640" y="383">ESP32 Wi-Fi</text><text class="st" x="640" y="398">AP 192.168.4.1</text></g>
+  <path class="ln" d="M170,387 H196"/><path class="ln" d="M350,387 H376"/>
+  <path class="ln" d="M170,375 C540,340 720,300 780,86" stroke-dasharray="4 3"/>
+  <text class="lb" x="700" y="330">?elrs= · tarayıcıdan doğrudan</text>
+  <path class="ln" d="M530,387 H556"/>
+</svg>
+<div class="dbilgi" id="dbilgi"><b>Bir kutuya tıklayın</b>Şemadaki bileşenin ne yaptığını ve hangi dosyada olduğunu burada görürsünüz.</div>
+</div>
+
+<div class="kutu k-bilgi">
+  <b class="bas">Dikkat: RF yolu ayrı bir sistemdir</b>
+  <p>ESP32/ELRS hattı <b>gcs_server'dan geçmez</b>. Tarayıcı, ESP32'nin kendi web sunucusuna
+  <b>doğrudan</b> bağlanır (<code>?elrs=http://192.168.4.1</code>). Bu yüzden RF link
+  kalitesi ile sunucu bağlantısı arayüzde <b>ayrı ayrı</b> gösterilir — biri diğerinin
+  yerine geçmez.</p>
+</div>
+
+
+<!-- ═══════════════ 3 ═══════════════ -->
+<h2 id="b3">3 · Veri Akışı</h2>
+<p>Aşağıda arayüzdeki kritik değerlerin <b>uçtan uca</b> zincirleri var. Her adım koddan doğrulanmıştır.</p>
+
+<h3>3.1 · Batarya <span class="r r-gercek">GERÇEK TELEMETRİ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">BATARYA % · V · A</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Kaynak</b><span>ArduPilot → MAVLink <code>SYS_STATUS</code> (msg 1)</span></div>
+    <div class="zadim"><b>Okuyan</b><span><code>gcs_server.py</code> → <code>_process_mavlink_msg()</code>, <code>elif msg_type == 'SYS_STATUS'</code></span></div>
+    <div class="zadim"><b>Dönüştüren</b><span><code>voltage_battery</code> mV→V · <code>current_battery</code> cA→A · <code>battery_remaining</code> %. Anlamsız değerler (<code>0</code>, <code>65535</code>, <code>-1</code>) <code>None</code>'a çevrilir</span></div>
+    <div class="zadim"><b>State</b><span><code>telemetry_state["iris"]["batt_v"|"batt_a"|"batt_pct"]</code></span></div>
+    <div class="zadim"><b>Taşıma</b><span>WebSocket <code>/ws</code>, 10 Hz</span></div>
+    <div class="zadim"><b>Frontend</b><span><code>telemetriUygula()</code> → <code>gecerliSayi()</code> → <code>D.batt_v / D.batt_a / D.batt_pct</code></span></div>
+    <div class="zadim"><b>Değerlendiren</b><span><code>bataryaDurumu()</code> — tek doğruluk kaynağı</span></div>
+    <div class="zadim"><b>UI</b><span>Üst şerit · GÜÇ VE SEYİR paneli · sağlık hücresi · alarm motoru</span></div>
+  </div>
+</div>
+
+<h3>3.2 · GPS <span class="r r-gercek">GERÇEK TELEMETRİ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">GPS FIX · UYDU · HDOP</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Kaynak</b><span>ArduPilot → MAVLink <code>GPS_RAW_INT</code> (msg 24)</span></div>
+    <div class="zadim"><b>Okuyan</b><span><code>gcs_server.py</code> → <code>elif msg_type == 'GPS_RAW_INT'</code></span></div>
+    <div class="zadim"><b>Dönüştüren</b><span><code>fix_type</code> · <code>satellites_visible</code> (255 = bilinmiyor → <code>None</code>) · <code>eph</code>/100 → HDOP</span></div>
+    <div class="zadim"><b>State</b><span><code>telemetry_state["iris"]["gps_fix"|"gps_sat"|"gps_eph"]</code></span></div>
+    <div class="zadim"><b>Frontend</b><span><code>D.gps_fix / D.gps_sat / D.gps_eph</code> → <code>GPS_FIX_ADI[]</code> eşlemesi</span></div>
+    <div class="zadim"><b>UI</b><span><code>3B FIX · 14 UYDU</code> · <code>HDOP 1.21 · GPS_RAW_INT</code> · sağlık hücresi</span></div>
+  </div>
+</div>
+
+<h3>3.3 · Tespit güveni <span class="r r-gercek">GERÇEK TELEMETRİ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">TESPİT GÜVENİ (YOLO confidence)</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Kaynak</b><span>Gazebo kamera → YOLO dedektörü → <code>det["conf"]</code></span></div>
+    <div class="zadim"><b>Saklayan</b><span><code>vision/detection_state.py</code> → <code>set_detection()</code> / <code>get_detection()</code></span></div>
+    <div class="zadim"><b>Yayınlayan</b><span><code>gcs_server.py</code> → <code>@app.get("/api/telemetry/pnp")</code> → <code>pnp_telemetry()</code></span></div>
+    <div class="zadim"><b>Kural</b><span>Tespit yoksa <code>tespit_conf: null</code> döner — sıfır değil</span></div>
+    <div class="zadim"><b>Frontend</b><span><code>pnpCek()</code> 2 Hz → <code>D.tespit_conf</code></span></div>
+    <div class="zadim"><b>UI</b><span>TESPİT GÜVENİ satırı · güven çubuğu · HUD <code>conf 0.92</code> · HEDEF sağlık hücresi</span></div>
+    <div class="zadim"><b>Veri yoksa</b><span><code>TESPİT YOK</code> (uç bağlı, tespit yok) veya <code>VERİ YOK</code> (uç cevapsız)</span></div>
+  </div>
+</div>
+
+<h3>3.4 · Kapanma hızı <span class="r r-turetilmis">TÜRETİLMİŞ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">KAPANMA (m/s)</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Kaynak</b><span>Her iki aracın <code>LOCAL_POSITION_NED</code> mesajı → <code>vx, vy, vz</code></span></div>
+    <div class="zadim"><b>State</b><span><code>telemetry_state["iris"|"plane"]</code> → <code>/ws</code></span></div>
+    <div class="zadim"><b>Hesaplayan</b><span><code>operator.html</code> → <code>telemetriUygula()</code></span></div>
+    <div class="zadim"><b>Formül</b><span><code>d|r|/dt = (r · Δv) / |r|</code> · <code>kapanma = −d|r|/dt</code> — analitik türev, sayısal değil</span></div>
+    <div class="zadim"><b>Frontend</b><span><code>D.kapanma_gercek</code> → <code>D.kapanma_ms</code></span></div>
+    <div class="zadim"><b>UI</b><span>KAPANMA manşeti · HUD · 2B harita etiketi</span></div>
+    <div class="zadim"><b>Veri yoksa</b><span><code>R &lt; 0.5 m</code> ya da hız alanı yoksa <code>null</code> → <code>VERİ YOK</code></span></div>
+  </div>
+</div>
+
+<h3>3.5 · Kamera canlılığı <span class="r r-turetilmis">TÜRETİLMİŞ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">VİDEO DURUMU · ÇÖZÜNÜRLÜK</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Kaynak</b><span>Gazebo <code>/iris_cam/image</code> → <code>gz_iris_camera_thread()</code> → JPEG</span></div>
+    <div class="zadim"><b>Taşıma</b><span><code>/api/video_feed/{vehicle}</code> — MJPEG (<code>multipart/x-mixed-replace</code>)</span></div>
+    <div class="zadim"><b>Ölçen</b><span><code>vidNabiz()</code> 10 Hz — görüntü 16×16 tuvale çizilip FNV sağlaması alınır</span></div>
+    <div class="zadim"><b>Neden böyle</b><span>Tarayıcılar MJPEG'de kare başına <code>load</code> olayı vermeyi garanti etmez (Chrome vermez). Canlılık bu yüzden <b>ölçülür</b>, varsayılmaz</span></div>
+    <div class="zadim"><b>Çözünürlük</b><span><code>img.naturalWidth/Height</code> — akışın gerçek boyutu</span></div>
+    <div class="zadim"><b>UI</b><span><code>640×480</code> · kamera sekmesi noktası · VİDEO sağlık hücresi</span></div>
+  </div>
+</div>
+
+<h3>3.6 · Sunucu gecikmesi (RTT) <span class="r r-turetilmis">TÜRETİLMİŞ</span></h3>
+<div class="zincir">
+  <div class="zincir-bas">SUNUCU RTT (ms)</div>
+  <div class="zincir-govde">
+    <div class="zadim"><b>Ölçüm</b><span><code>durumCek()</code> içinde <code>/api/chase_status</code> isteğinin gidiş-dönüş süresi</span></div>
+    <div class="zadim"><b>Frontend</b><span><code>D.rtt_ms</code></span></div>
+    <div class="zadim"><b>UI etiketi</b><span><b>"SUNUCU RTT"</b> — yan satırda "tarayıcı→sunucu turu · MAVLink hattı değil"</span></div>
+  </div>
+</div>
+<div class="kutu k-uyari">
+  <b class="bas">Bu bir RF ölçümü değildir</b>
+  <p>RTT, tarayıcı ile <code>gcs_server</code> arasındaki ağ turudur. Aracın telsiz link
+  kalitesiyle <b>hiçbir ilgisi yoktur</b>. Gerçek RF kalitesi yalnız ELRS panelindedir (Bölüm 12).</p>
+</div>
+
+
+<!-- ═══════════════ 4 ═══════════════ -->
+<h2 id="b4">4 · Operatör Arayüzünün Tam Haritası</h2>
+<p>Ekran dört ana bölgeye ayrılır: <b>üst şerit</b>, <b>sol panel</b>, <b>merkez</b>,
+<b>sağ panel</b>; altta <b>olay kaydı</b>, sağ kenarda dikey <b>kill-chain omurgası</b>.</p>
+
+<h3>4.1 · Üst şerit</h3>
+<div class="tw"><table>
+<thead><tr><th>Alan</th><th>Ne gösterir</th><th>Kaynak</th><th>Veri yoksa</th></tr></thead>
+<tbody>
+<tr><td><code>CANLI / MOCK</code></td><td>Sunucuya bağlı mı</td><td>WebSocket durumu <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td><code>YENİDEN BAĞLANIYOR</code></td></tr>
+<tr><td><b>BATARYA</b></td><td>Yüzde · voltaj + kaynak rozeti</td><td><code>SYS_STATUS</code> <span class="r r-gercek">GERÇEK</span></td><td><code>VERİ YOK</code> · rozet <code>YOK</code></td></tr>
+<tr><td><b>TELEMETRİ</b></td><td>Ölçülen paket hızı (Hz)</td><td>WS paket sayımı <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td><code>KOPUK</code></td></tr>
+<tr><td><b>VİDEO</b></td><td>Çözünürlük / durum</td><td>MJPEG ölçümü <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>durum adı</td></tr>
+<tr><td><b>SUNUCU</b></td><td>5 çubuk — sunucu bağlantı sağlığı</td><td>paket yaşı + RTT <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>0 çubuk</td></tr>
+<tr><td><b>RF LİNK</b></td><td>ELRS LQ + RSSI</td><td>CRSF <code>LINK_STATISTICS</code> <span class="r r-gercek">GERÇEK</span></td><td><code>VERİ YOK</code></td></tr>
+<tr><td><b>ANA ROZET</b></td><td>Faz: HAZIR / ARIYOR / ÖNLEME / SON DALIŞ / VURULDU</td><td><code>supervisor.faz</code> <span class="r r-gercek">GERÇEK</span></td><td><code>SİSTEM HAZIR</code></td></tr>
+</tbody></table></div>
+
+<h3>4.2 · Sol panel</h3>
+<div class="tw"><table>
+<thead><tr><th>Blok</th><th>İçerik</th><th>Kaynak</th></tr></thead>
+<tbody>
+<tr><td><b>UÇUŞ ZARFI</b></td><td>İrtifa AGL/MSL, yer hızı, dikey hız, pitch, roll, yönelme</td>
+    <td><code>LOCAL_POSITION_NED</code> + <code>ATTITUDE</code> + <code>GLOBAL_POSITION_INT</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>SİSTEM DURUMU</b></td><td>10 hücrelik sağlık ızgarası (Bölüm 14)</td><td>karma — her hücre ayrı</td></tr>
+<tr><td><b>GÜÇ VE SEYİR</b></td><td>Batarya çubuğu, GPS fix/uydu, sunucu RTT</td><td><code>SYS_STATUS</code> · <code>GPS_RAW_INT</code> · ölçüm</td></tr>
+<tr><td><b>ALT SİSTEM SAĞLIĞI</b></td><td>YOLO, kamera, EKF, itki, MAVLink, GPS satırları</td><td>karma</td></tr>
+<tr><td><b>ENERJİ VE GÖREV BÜTÇESİ</b></td><td>Kalan uçuş süresi, dönüş süresi, angajman penceresi</td>
+    <td>ölçülen deşarj hızından <span class="r r-turetilmis">TÜRETİLMİŞ</span>; dönüş süresi <span class="r r-config">MODEL</span></td></tr>
+</tbody></table></div>
+
+<h3>4.3 · Merkez — kamera ve görünümler</h3>
+<p>Dört kamera kanalı ve üç görünüm vardır:</p>
+<div class="tw"><table>
+<thead><tr><th>Kanal</th><th>Uç</th><th>Not</th></tr></thead>
+<tbody>
+<tr><td>AVCI-01 EO</td><td><code>/api/video_feed/iris</code></td><td>Ana görüş, tam HUD</td></tr>
+<tr><td>AVCI-01 IR</td><td><code>/api/video_feed/iris</code></td><td><b>Aynı akış</b> + CSS filtresi. Ayrı termal sensör <b>yoktur</b>; künyede <code>SAHTE-RENK (EO'DAN TÜRETİLDİ)</code> yazar</td></tr>
+<tr><td>HEDEF CAM</td><td><code>/api/video_feed/plane</code></td><td>Hedefin burun kamerası (talon)</td></tr>
+<tr><td>SAHA İZLEME</td><td><span class="r r-simule">SİMÜLE</span> — uç yok</td><td>Sentetik çizim; filo simülasyonunu izler</td></tr>
+</tbody></table></div>
+<p>Görünümler: <b>FPV AKIŞ</b> (kamera + HUD), <b>2B HARİTA</b>, <b>3B HARİTA</b>. Harita ve
+3B projeksiyon <b>elle yazılmıştır</b> — harici kütüphane yoktur.</p>
+
+<h3>4.4 · Sağ panel</h3>
+<p>Bilgi hiyerarşisi bilinçlidir: <b>görev kontrolleri en üstte</b> durur, çünkü
+<code>GÖREVİ İPTAL ET</code> her zaman kaydırmadan erişilebilir olmalıdır.</p>
+<ol>
+  <li><b>ANGAJMAN DURUMU</b> — menzil, kapanma, yatay menzil, kerteriz, kilit yaşı, tespit güveni, sayaçlar</li>
+  <li><b>Görev kontrolleri</b> — <code>GÖREVİ BAŞLAT</code> · <code>ANGAJE ET</code> (1.2 sn basılı tut) · <code>GÖREVİ İPTAL ET</code></li>
+  <li><b>ELRS / CRSF konsolu</b> — katlanabilir; ESP32 bağlı değilken kapalı açılır</li>
+  <li><b>SAHA FİLOSU</b> — <span class="r r-simule">SİMÜLE</span>; sunucuda lojistik ucu yoktur</li>
+</ol>
+
+<h3>4.5 · Alt ve kenar</h3>
+<ul>
+  <li><b>OLAY KAYDI</b> — zaman damgalı, kategorili (BİLGİ/UYARI/KRİTİK), filtrelenebilir, 200 satır tampon</li>
+  <li><b>KILL-CHAIN OMURGASI</b> (sağ kenar, dikey) — HAZIR → GPS → GÖRSEL → DALIŞ → VURUŞ</li>
+  <li><b>Alarm şeridi</b> — görüntünün üstünde, her görünümde görünür</li>
+  <li><b>Komut geri bildirimi</b> — ekran altında toast: GÖNDERİLİYOR → KABUL EDİLDİ / REDDEDİLDİ (kod)</li>
+  <li><b>Teşhis katmanı</b> — <kbd>G</kbd> tuşu; ham telemetri, alarm geçmişi, bağlantı tanılaması</li>
+</ul>
+
+
+<!-- ═══════════════ 5 ═══════════════ -->
+<h2 id="b5">5 · Batarya Sistemi</h2>
+<p>Batarya, bu projede en çok üzerinde durulan alt sistemdir — çünkü gerçek SITL uçuşunda
+<b>ciddi bir hata</b> ortaya çıkarmıştır.</p>
+
+<h3>5.1 · Hangi değerler gelir?</h3>
+<div class="tw"><table>
+<thead><tr><th>Alan</th><th>MAVLink</th><th>Birim</th><th>Geçersiz değer</th></tr></thead>
+<tbody>
+<tr><td><code>batt_v</code></td><td><code>SYS_STATUS.voltage_battery</code></td><td>mV → V</td><td><code>0</code>, <code>65535</code> → <code>None</code></td></tr>
+<tr><td><code>batt_a</code></td><td><code>SYS_STATUS.current_battery</code></td><td>cA → A</td><td><code>&lt; 0</code> → <code>None</code></td></tr>
+<tr><td><code>batt_pct</code></td><td><code>SYS_STATUS.battery_remaining</code></td><td>%</td><td><code>-1</code> (kapasite tanımsız) → <code>None</code></td></tr>
+</tbody></table></div>
+
+<h3>5.2 · Kural sırası — <code>bataryaDurumu()</code></h3>
+<pre><code><span class="c">// 1) Yüzde varsa → şiddet YALNIZ yüzdeden</span>
+<span class="g">batt_pct != null</span>  →  kritik ≤ 15 %   ·  uyarı ≤ 30 %
+                     voltaj yalnız BİLGİ; hücre tahmini şiddeti override ETMEZ
+
+<span class="c">// 2) Yüzde yok, voltaj varsa → hücre TAHMİNİ</span>
+<span class="t">batt_pct == null</span> →  n = ceil(vmax / 4.2)   (1–14S sınırı)
+                     kritik = n × 3.42 V   ·   uyarı = n × 3.63 V
+                     her yerde "TAHMİN" etiketiyle
+
+<span class="c">// 3) İkisi de yoksa</span>
+                  →  VERİ YOK · alarm ÜRETİLMEZ</code></pre>
+
+<h3>5.3 · Neden yüzde öncelikli?</h3>
+<p>
+  Yüzdeyi <b>uçuş kontrolcüsü</b> kendi yapılandırılmış kapasitesi ve kimyasıyla hesaplar;
+  paket boyutundan bağımsızdır. Voltaj ise hücre sayısına bağlıdır — 12.6 V bir 3S pakette
+  <b>tam dolu</b>, bir 6S pakette <b>neredeyse boş</b> demektir. Voltajı paket boyutunu
+  bilmeden yorumlamak mümkün değildir.
+</p>
+
+<div class="kutu k-kritik">
+  <b class="bas">Gerçek SITL uçuşunda bulunan hata</b>
+  <p>Eşikler eskiden <code>20.5 V</code> / <code>21.8 V</code> olarak <b>sabit</b> yazılıydı ve
+  şiddet <code>(yüzde ≤ 15) <b>VEYA</b> (voltaj &lt; 20.5)</code> şeklinde hesaplanıyordu.</p>
+  <p>Gerçek araç <b>%100 dolu ve 12.6 V</b> (3S) bildirdi. Yüzde kuralı "sorun yok" derken
+  voltaj kuralı VEYA üzerinden onu <b>ezdi</b> ve ekranda kesintisiz
+  <code>BATARYA KRİTİK — %100</code> alarmı çıktı.</p>
+  <p>Eşikler simülasyonun 6S paketinden (25.2 V) miras kalmıştı; hücre başına 3.42/3.63 V
+  olarak makuldü ama <b>hangi hücre sayısına ait oldukları hiçbir yerde yazmıyordu</b>.
+  Evrensel voltaj eşiği tamamen kaldırıldı. Düzeltme: commit <code>f0a1a82</code>.</p>
+</div>
+
+<div class="kutu k-uyari">
+  <b class="bas">İkinci hata: <code>round</code> yerine <code>ceil</code></b>
+  <p>Hücre türetiminde <code>Math.round</code> kullanılıyordu ve hücre sayısını <b>olduğundan az</b>
+  tahmin ediyordu. <code>round(10.0 / 4.2) = 2</code> → "2S" → eşik 6.8 V → <b>alarm yok</b>.
+  Oysa 10.0 V bir 3S pakette hücre başına 3.33 V, yani gerçekten düşük — <b>yanlış negatif</b>.
+  Dahası <code>10.0 / 2 = 5.00 V/hücre</code> LiPo için fiziksel olarak imkânsızdır.</p>
+  <p><code>Math.ceil</code> = o voltajı üretebilecek <b>en az</b> hücre sayısı. Hücre sayısını
+  asla az tahmin etmez; hata yaparsa fazla tahmin eder ve eşik yükselir — <b>güvenli yön</b>.</p>
+</div>
+
+<h3>5.4 · Alarm koşulları</h3>
+<div class="tw"><table>
+<thead><tr><th>Durum</th><th>Koşul</th><th>Alarm</th></tr></thead>
+<tbody>
+<tr><td>Yüzde var</td><td><code>pct ≤ 15</code></td><td>KRİTİK — <code>BATARYA KRİTİK — %N</code></td></tr>
+<tr><td>Yüzde var</td><td><code>pct ≤ 30</code></td><td>UYARI — <code>BATARYA DÜŞÜK — %N</code></td></tr>
+<tr><td>Yalnız voltaj</td><td><code>v &lt; n × 3.42</code></td><td>KRİTİK — <code>… (TAHMİNİ nS eşiğine göre)</code></td></tr>
+<tr><td>Yalnız voltaj</td><td><code>v &lt; n × 3.63</code></td><td>UYARI — aynı biçim</td></tr>
+<tr><td>Veri yok</td><td>—</td><td><b>Alarm üretilmez</b></td></tr>
+<tr><td>Çevrimdışı</td><td><code>batarya_sn &lt; 180</code></td><td>UYARI — <code>SİMÜLE BATARYA KRİTİK</code></td></tr>
+</tbody></table></div>
+
+<h3>5.5 · Bilinen sınır ve gelecek çözüm</h3>
+<p>
+  Hücre tahmini <b>hâlâ bir tahmindir</b>. Araç hiçbir zaman dolu görülmediyse (ör. 3S paket
+  2.8 V/hücrede bağlanırsa) düşük çıkabilir. Arayüz bunu gizlemez —
+  <span class="r r-tahmin">TAHMİN</span> rozeti, <code>~3S</code> işareti ve alarm metnindeki
+  "(TAHMİNİ 3S eşiğine göre)" ifadesiyle her yerde belirtir.
+</p>
+<div class="kutu k-bilgi">
+  <b class="bas">BATTERY_STATUS (msg 147) — henüz uygulanmadı</b>
+  <p>Bu MAVLink mesajının <code>voltages[10]</code> dizisi <b>hücre başına voltajı</b> taşır;
+  hücre sayısı tahmin edilmez, <b>ölçülür</b>. Ayrıca tüketilen mAh'i de verir.</p>
+  <p><b>Neden uygulanmadı:</b> sunucuya yeni mesaj işleyicisi gerekir ve SITL'in bu diziyi
+  gerçekten hücre-başı doldurup doldurmadığı <b>önce ölçülmelidir</b> — basit SITL batarya
+  arka ucu tüm paketi <code>voltages[0]</code>'a koyuyor olabilir.
+  <span class="r r-dogrulanmadi">DOĞRULANMADI</span></p>
+</div>
+
+
+<!-- ═══════════════ 6 ═══════════════ -->
+<h2 id="b6">6 · GPS</h2>
+<p>GPS verisi iki ayrı MAVLink mesajından gelir:</p>
+<div class="tw"><table>
+<thead><tr><th>Mesaj</th><th>Taşıdığı</th><th>UI karşılığı</th></tr></thead>
+<tbody>
+<tr><td><code>GLOBAL_POSITION_INT</code></td><td><code>lat</code>, <code>lon</code>, <code>alt</code> (AMSL)</td><td>Koordinat overlay'i, harita künyesi, İRTİFA MSL</td></tr>
+<tr><td><code>GPS_RAW_INT</code></td><td><code>fix_type</code>, <code>satellites_visible</code>, <code>eph</code></td><td>GPS sağlık hücresi, GÜÇ VE SEYİR satırı</td></tr>
+</tbody></table></div>
+
+<h3>Fix tipi eşlemesi</h3>
+<p>Kodda <code>GPS_FIX_ADI</code> sözlüğü şu eşlemeyi yapar:</p>
+<div class="tw"><table>
+<thead><tr><th>fix_type</th><th>Gösterim</th><th>Anlamı</th><th>Şiddet</th></tr></thead>
+<tbody>
+<tr><td>0, 1</td><td><code>FIX YOK</code></td><td>Konum çözümü alınamıyor</td><td>KRİTİK</td></tr>
+<tr><td>2</td><td><code>2B FIX</code></td><td>Yatay konum var, irtifa güvenilmez</td><td>UYARI</td></tr>
+<tr><td>3</td><td><code>3B FIX</code></td><td>Tam konum çözümü — normal işletim</td><td>NORMAL</td></tr>
+<tr><td>4</td><td><code>DGPS</code></td><td>Diferansiyel düzeltmeli</td><td>NORMAL</td></tr>
+<tr><td>5</td><td><code>RTK FLOAT</code></td><td>RTK, tam sabitlenmemiş</td><td>NORMAL</td></tr>
+<tr><td>6</td><td><code>RTK FIX</code></td><td>Santimetre doğrulukta</td><td>NORMAL</td></tr>
+</tbody></table></div>
+
+<h3>Konum geçerliliği</h3>
+<p>
+  Sunucu, GPS sabitlenmeden önce <code>lat/lon</code> alanlarını <code>0.0</code> tutar.
+  Koordinat <code>(0, 0)</code> Gine Körfezi'dir — geçerli bir konum <b>değildir</b>. Arayüz
+  bu yüzden ayrı bir <code>D.konum_gecerli</code> bayrağı tutar ve sabitleme yoksa
+  <code>VERİ YOK</code> gösterir, <code>0.000000</code> yazmaz.
+</p>
+
+<div class="kutu k-uyari">
+  <b class="bas">SITL ile gerçek GPS farkı</b>
+  <p>SITL varsayılan olarak <code>fix_type=6</code> (RTK FIX) ve <code>10 uydu</code> bildirir.
+  Gerçek bir u-blox alıcı tipik olarak <code>3</code> (3B FIX) verir. Arayüzün 3/4/5/6
+  haritalaması sahada <b>doğrulanmamıştır</b>. <span class="r r-dogrulanmadi">DOĞRULANMADI</span></p>
+</div>
+<p>
+  Ayrıca sunucuda bir <b>GPS karıştırma</b> özelliği vardır (<code>/api/gps_noise</code>);
+  <code>gps_frozen</code> bayrağı arayüzde <code>DONDURULDU</code> olarak gösterilir ve
+  GPS kaybı alarmını tetikler.
+</p>
+
+
+<!-- ═══════════════ 7 ═══════════════ -->
+<h2 id="b7">7 · MAVLink ve Telemetri</h2>
+<h3>MAVLink nedir?</h3>
+<p>
+  MAVLink, insansız araçlarla yer istasyonları arasında konuşulan <b>standart bir mesaj
+  dilidir</b>. Her mesajın numarası, adı ve alanları önceden tanımlıdır. Örneğin
+  <code>SYS_STATUS</code> mesajı her zaman batarya voltajını <code>voltage_battery</code>
+  alanında ve <b>milivolt</b> biriminde taşır. Bu standartlık sayesinde farklı üreticilerin
+  yazılımları birbiriyle konuşabilir.
+</p>
+
+<h3>Bu projede gerçekten okunan mesajlar</h3>
+<p>
+  <code>gcs_server.py</code> içindeki <code>_process_mavlink_msg()</code> fonksiyonu
+  <b>tam altı mesaj tipi</b> işler. Aşağıdaki liste koddan çıkarılmıştır — başka mesaj
+  okunmaz.
+</p>
+<div class="tw"><table>
+<thead><tr><th>Mesaj</th><th>Ne taşır</th><th>Nerede okunur</th><th>Etkilediği UI</th></tr></thead>
+<tbody>
+<tr><td><code>LOCAL_POSITION_NED</code></td><td>x, y, z, vx, vy, vz, hız</td><td><code>_process_mavlink_msg()</code></td><td>İrtifa AGL, yer hızı, dikey hız, harita konumu, <b>kapanma hızı</b></td></tr>
+<tr><td><code>GLOBAL_POSITION_INT</code></td><td>lat, lon, alt (AMSL)</td><td>aynı</td><td>Koordinat overlay'i, İrtifa MSL, harita künyesi</td></tr>
+<tr><td><code>ATTITUDE</code></td><td>roll, pitch, yaw</td><td>aynı</td><td>Pitch/roll analog çubukları, yönelme, HUD ufku</td></tr>
+<tr><td><code>HEARTBEAT</code></td><td>base_mode, custom_mode</td><td>aynı</td><td>ARM durumu, <b>uçuş modu adı</b></td></tr>
+<tr><td><code>SYS_STATUS</code></td><td>voltaj, akım, kalan %</td><td>aynı</td><td>Batarya paneli, alarm, enerji bütçesi</td></tr>
+<tr><td><code>GPS_RAW_INT</code></td><td>fix_type, uydu, eph</td><td>aynı</td><td>GPS hücresi, HDOP satırı</td></tr>
+</tbody></table></div>
+
+<h3>Bağlantı topolojisi</h3>
+<div class="tw"><table>
+<thead><tr><th>Port</th><th>Kaynak</th><th>Okuyan</th></tr></thead>
+<tbody>
+<tr><td><code>14541</code></td><td>iris SITL (sysid 5)</td><td><code>_iris_telem_worker()</code> — ayrı thread</td></tr>
+<tr><td><code>14550</code></td><td>her iki araç (yayın)</td><td><code>mavlink_listener()</code> — asyncio</td></tr>
+<tr><td><code>14551</code></td><td>her iki araç</td><td>Mission Planner için ayrılmış</td></tr>
+</tbody></table></div>
+<div class="kutu k-bilgi">
+  <b class="bas">Kritik detay: güdüm fazında kim okur?</b>
+  <p>Güdüm fazı başlayınca iris telemetri thread'i <b>durdurulur</b> ve iris'i okuyan tek yer
+  güdüm döngüsündeki boşaltma halkası olur. <code>SYS_STATUS</code> ve <code>GPS_RAW_INT</code>
+  bu listeye de eklenmiştir — aksi hâlde batarya ve uydu sayısı <b>tam da en kritik anda
+  donardı</b>.</p>
+</div>
+
+<h3>Uçuş modu (custom_mode)</h3>
+<p>
+  ARM durumu ve uçuş modu <code>HEARTBEAT</code> mesajından <b>gerçek olarak</b> okunur.
+  Arayüz <code>KOPTER_MOD</code> sözlüğüyle sayıyı ada çevirir (0=STABILIZE, 4=GUIDED,
+  5=LOITER, 6=RTL…). Daha önce bu değer fazdan <b>tahmin ediliyordu</b> — araç LOITER'da
+  olsa bile ekranda GUIDED yazıyordu. Düzeltme commit <code>872b859</code>.
+</p>
+
+
+<!-- ═══════════════ 8 ═══════════════ -->
+<h2 id="b8">8 · Kamera Sistemi</h2>
+<h3>Görüntü nereden gelir?</h3>
+<p>
+  Gazebo'daki sanal kameralar <code>gz-transport</code> üzerinden görüntü yayınlar.
+  <code>gcs_server.py</code> içindeki <code>gz_iris_camera_thread()</code> ve
+  <code>gz_talon_camera_thread()</code> bu konulara abone olur, kareyi <b>JPEG'e çevirir</b>
+  (<code>cv2.imencode</code>) ve <code>/api/video_feed/{vehicle}</code> ucundan MJPEG olarak
+  sunar. <b>Yeniden boyutlandırma yapılmaz.</b>
+</p>
+
+<h3>Kamera durumu nasıl tespit edilir?</h3>
+<p>
+  Bir <code>&lt;img&gt;</code> etiketinde MJPEG akarken tarayıcılar kare başına
+  <code>load</code> olayı vermeyi garanti etmez. Bu yüzden arayüz canlılığı <b>ölçer</b>:
+  görüntü 10 Hz'de 16×16 bir tuvale çizilir ve FNV sağlaması alınır. Sağlama değişiyorsa
+  kare geliyor demektir. Maliyeti 256 pikseldir.
+</p>
+<div class="tw"><table>
+<thead><tr><th>Durum</th><th>Anlamı</th></tr></thead>
+<tbody>
+<tr><td><code>BAĞLI</code></td><td>Kareler geliyor, sağlama değişiyor</td></tr>
+<tr><td><code>BAĞLANIYOR</code></td><td>İlk istek yapıldı, kare bekleniyor</td></tr>
+<tr><td><code>YENİDEN BAĞLANIYOR</code></td><td>Kesildi; üstel geri çekilmeyle (1→10 sn) yeniden deneniyor</td></tr>
+<tr><td><code>SİNYAL YOK</code></td><td>3 sn'den uzun süredir kare değişmedi</td></tr>
+<tr><td><code>KAMERA HATASI</code></td><td>Akış ucu HTTP hatası döndürdü</td></tr>
+</tbody></table></div>
+
+<h3>Çözünürlük ve FOV</h3>
+<div class="tw"><table>
+<thead><tr><th>Değer</th><th>Kaynak</th><th>Etiket</th></tr></thead>
+<tbody>
+<tr><td>Çözünürlük</td><td><code>img.naturalWidth/Height</code> — akıştan ölçülür</td><td><span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td>FOV</td><td>SDF dosyasından <b>aynalanmış sabit</b></td><td><span class="r r-config">YAPILANDIRMA</span></td></tr>
+<tr><td>FPS</td><td><code>load</code> olayı sayımı — Chrome'da ölçülemez</td><td><span class="r r-turetilmis">TÜRETİLMİŞ</span> ya da <code>—</code></td></tr>
+</tbody></table></div>
+
+<h3>Gerçek kamera yapılandırmaları</h3>
+<div class="tw"><table>
+<thead><tr><th>Kamera</th><th>SDF kaynağı</th><th>HFOV</th><th>VFOV</th><th>Tilt</th><th>Boyut</th></tr></thead>
+<tbody>
+<tr><td>iris (AVCI)</td><td><code>iris_with_standoffs/model.sdf</code></td><td>125.0°</td><td>110.5°</td><td>25.0° yukarı</td><td>640×480</td></tr>
+<tr><td>talon (HEDEF)</td><td><code>mini_talon_vtail/model.sdf</code></td><td>103.1°</td><td>86.8°</td><td>8.6° yukarı</td><td>640×480</td></tr>
+</tbody></table></div>
+
+<div class="kutu k-kritik">
+  <b class="bas">FOV bir etiket sorunu değildi</b>
+  <p>Arayüz eskiden <code>FOV 78×60</code> varsayıyordu. Gerçek iris kamerası <b>125°</b>'dir.
+  <code>durumCek()</code>, sunucudan gelen <code>kadraj_yaw_deg</code> açısını HUD kutusunun
+  kare içindeki konumuna çevirirken FOV'a böler. 30° sapmadaki bir hedef için kutu kadrajın
+  <b>%77</b>'sine (neredeyse kenara) çiziliyordu; doğrusu <b>%48</b>'dir. Canlı videoyla HUD
+  <b>hizalanmıyordu</b>. Düzeltme commit <code>1a72458</code>.</p>
+</div>
+
+<div class="kutu k-uyari">
+  <b class="bas">FOV telemetri değildir</b>
+  <p>Sunucu kamera içsel parametrelerini <b>yayınlamaz</b>. Değerler SDF dosyasından elle
+  aynalanmıştır ve künyede <code>(YAP)</code> ekiyle <b>yapılandırma</b> olduğu belirtilir.
+  SDF değişirse arayüz habersiz kalır. Doğru kalıcı çözüm, sunucunun kamera parametrelerini
+  bir uçtan bildirmesidir. <span class="r r-dogrulanmadi">DOĞRULANMADI</span></p>
+</div>
+
+<h3>Sınırlamalar</h3>
+<ul>
+  <li><b>IR kanalı gerçek değildir</b> — EO akışına CSS filtresi uygulanır. Ayrı termal sensör yoktur.</li>
+  <li><b>SAHA İZLEME sentetiktir</b> — sunucu ucu yoktur.</li>
+  <li><b>Aynı anda tek akış çekilir</b> — seçili olmayan kanallar ölçülemez, dürüstçe <code>BEKLEMEDE</code> gösterilir.</li>
+  <li><b>Kamera gecikmesi ölçülmez</b> — kareye zaman damgası gömülmediği için hesaplanamaz; bu yüzden hiç gösterilmez.</li>
+</ul>
+
+
+<!-- ═══════════════ 9 ═══════════════ -->
+<h2 id="b9">9 · YOLO / Tespit / PNP</h2>
+<h3>Kavramlar</h3>
+<ul>
+  <li><b>Detection (tespit)</b> — YOLO'nun kamera karesinde hedefi bulup etrafına kutu çizmesi.</li>
+  <li><b>Confidence (güven)</b> — dedektörün "bu gerçekten hedef" konusundaki emniyeti, 0–1 arası.</li>
+  <li><b>Pose</b> — hedefin yalnız yerini değil, <b>duruşunu</b> (kanat noktaları vb.) çıkaran ikinci model.</li>
+  <li><b>PNP</b> — bu projede <code>/api/telemetry/pnp</code> ucunun adı; görüş hattının çıktısını ve faz kapılarını yayınlar.</li>
+</ul>
+
+<h3><code>/api/telemetry/pnp</code> ne döndürür?</h3>
+<p>Sunucudaki docstring'in dediği gibi: <i>"Buradaki hiçbir değer güdüme girmez; panel yalnız gözlem içindir."</i></p>
+<div class="tw"><table>
+<thead><tr><th>Alan</th><th>Anlamı</th><th>Etiket</th></tr></thead>
+<tbody>
+<tr><td><code>tespit_var</code></td><td>Şu an bir tespit var mı</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>tespit_conf</code></td><td>YOLO <code>det["conf"]</code> — tespit yoksa <code>null</code></td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>pose_conf</code></td><td>Pose modelinin güveni</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>gorus_menzil</code></td><td>Kameranın ölçek tabanlı menzil kestirimi</td><td><span class="r r-hesap">HESAPLANMIŞ</span></td></tr>
+<tr><td><code>gercek_menzil</code></td><td>Telemetriden geometrik mesafe</td><td><span class="r r-hesap">HESAPLANMIŞ</span></td></tr>
+<tr><td><code>kilit_sayac</code></td><td>Pencere içindeki güvenli kare sayısı</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>kilit_n</code>, <code>kilit_pencere</code></td><td><b>Sunucunun fiilen kullandığı</b> eşikler</td><td><span class="r r-config">YAPILANDIRMA</span></td></tr>
+<tr><td><code>gate_menzil</code></td><td>Menzil kapısı eşiği (m)</td><td><span class="r r-config">YAPILANDIRMA</span></td></tr>
+<tr><td><code>engel</code></td><td>Faz geçişini engelleyen sebep</td><td><span class="r r-hesap">HESAPLANMIŞ</span></td></tr>
+</tbody></table></div>
+
+<div class="kutu k-kritik">
+  <b class="bas">Burada da bir sahte değer vardı</b>
+  <p>Arayüz eskiden tespit güvenini <b>uyduruyordu</b>:
+  <code>yaz("tespit_conf", g.durum === "KILIT" ? 0.9 : 0.35)</code>. Bu bir ölçüm değil,
+  <b>durum adının sayıya çevrilmesiydi</b>; ekranda <code>TESPİT GÜVENİ 0.90</code> ve HUD'da
+  <code>conf 0.90</code> gerçek dedektör çıktısı gibi görünüyordu.</p>
+  <p>Gerçek değer <b>başka bir uçta zaten duruyordu</b> ve arayüz o ucu hiç çağırmıyordu.
+  Düzeltme commit <code>394ebed</code>.</p>
+</div>
+
+<h3>Gerçek uçuşta ölçülen performans</h3>
+<p>2026-08-13 SITL uçuşunda 480 karelik kayıt alındı:</p>
+<div class="tw"><table>
+<thead><tr><th>Ölçüt</th><th>Değer</th></tr></thead>
+<tbody>
+<tr><td>Tespit olan kare</td><td>101 / 480 (<b>%21</b>)</td></tr>
+<tr><td>Güven min / medyan / maks</td><td>0.251 / 0.848 / 0.913</td></tr>
+<tr><td>0.50 üstü</td><td>76 kare</td></tr>
+<tr><td>iris kamera akış hızı</td><td>~3.5 FPS (YOLO CPU'da koştuğu için)</td></tr>
+</tbody></table></div>
+<p>Tespit <b>kesintilidir</b>. Bu, deponun kendi belgelerinde yazan dedektör zayıflığıyla
+uyuşur: devir menzilinde hedefin kutusu yalnızca ~10 pikseldir.</p>
+
+
+<!-- ═══════════════ 10 ═══════════════ -->
+<h2 id="b10">10 · Kilit ve Faz Mantığı</h2>
+<div class="kutu k-bilgi">
+  <b class="bas">Bu bölüm yalnız mevcut sistemi anlatır</b>
+  <p>Güdüm algoritması bu belgede <b>yeniden tasarlanmaz</b>. Aşağıdakiler
+  <code>control/guidance/supervisor.py</code> dosyasından okunmuştur.</p>
+</div>
+
+<h3>Faz zinciri</h3>
+<p>Arayüzün sağ kenarındaki dikey omurga şu fazları gösterir:</p>
+<pre><code>HAZIR  →  GPS  →  GÖRSEL  →  DALIŞ  →  VURUŞ</code></pre>
+<p>
+  Sunucudaki <code>supervisor</code> aslında iki temel faz yürütür: <b>GPS</b> ve <b>VISUAL</b>.
+  Arayüz, kör dalış menzilinin (8 m) altını ayrıca <b>SON DALIŞ</b> olarak gösterir —
+  bu bir görselleştirme tercihidir, sunucuda ayrı bir faz yoktur.
+</p>
+
+<h3>Kilit nasıl oluşur? — gerçek eşikler</h3>
+<div class="tw"><table>
+<thead><tr><th>Sabit</th><th>Değer</th><th>Anlamı</th></tr></thead>
+<tbody>
+<tr><td><code>KILIT_N</code></td><td>10</td><td>Kilit için gereken güvenli kare sayısı (env ile değişebilir)</td></tr>
+<tr><td><code>KILIT_PENCERE</code></td><td>15</td><td>Kayan pencere boyu (~0.5 sn @30 Hz)</td></tr>
+<tr><td><code>POSE_CONF_MIN</code></td><td>0.5</td><td>Karenin "güvenli" sayılması için asgari güven</td></tr>
+<tr><td><code>KAYIP_M</code></td><td>20</td><td>Ardışık pose'suz kare → GPS'e dön (~0.66 sn)</td></tr>
+<tr><td><code>GATE_MENZIL</code></td><td>20.0 m</td><td>Menzil kapısı eşiği</td></tr>
+<tr><td><code>GATE_KILIT</code></td><td>kapalı</td><td>Menzil kapısı varsayılan olarak devre dışı</td></tr>
+</tbody></table></div>
+<p>
+  Yani kilit, <b>15 karelik kayan pencerede en az 10 karede</b> güveni 0.5'in üstünde tespit
+  olmasıyla kurulur. (Eskiden "10 ardışık kare" aranıyordu; tespit gürültülü olduğu için
+  pencere yaklaşımına geçilmiştir.)
+</p>
+
+<h3>Arayüz bunu nasıl gösterir?</h3>
+<p>
+  Sayaç <code>7/10 tespit (15 kare pencere)</code> biçiminde yazılır. <b>Payda sunucudan
+  gelir</b> — arayüz sabiti değil. Sunucu bu değerleri vermiyorsa arayüz kendi sabitine
+  düşer ve bunu <code>~</code> işaretiyle bildirir: <code>0/~10 tespit</code>.
+</p>
+<p>
+  Faz geçişi olmuyorsa <b>sebebi</b> gösterilir — bunu da sunucu hesaplar
+  (<code>pnp.engel</code>): <code>POSE KİLİDİ</code> / <code>MENZİL KAPISI</code> /
+  <code>POSE + MENZİL</code>. Arayüz kendi tahminini yürütmez.
+</p>
+
+
+<!-- ═══════════════ 11 ═══════════════ -->
+<h2 id="b11">11 · Kapanma Hızı</h2>
+<p>
+  <b>Kapanma hızı</b>, iki araç arasındaki mesafenin ne hızla azaldığıdır. Angajmanın en
+  kritik ölçütlerinden biridir ve arayüzde manşet olarak gösterilir.
+</p>
+
+<h3>Nasıl hesaplanır?</h3>
+<pre><code><span class="c">// operator.html → telemetriUygula()</span>
+r  = p_hedef − p_avci        <span class="c">// konum farkı (NED)</span>
+Δv = v_hedef − v_avci        <span class="c">// hız farkı  (NED)</span>
+
+d|r|/dt = (r · Δv) / |r|
+<span class="g">kapanma = −d|r|/dt</span></code></pre>
+<p>
+  Bu <b>analitik türevdir</b> — mesafenin sayısal olarak farkını almak değil. Sayısal türev
+  telemetri gürültüsünü büyütürdü; analitik hesap hız alanlarını doğrudan kullanır.
+</p>
+
+<h3>İşaretin anlamı</h3>
+<div class="tw"><table>
+<thead><tr><th>Değer</th><th>Anlamı</th></tr></thead>
+<tbody>
+<tr><td><b>Pozitif</b> (<code>+5.8 m/s</code>)</td><td>Mesafe azalıyor — <b>yaklaşılıyor</b></td></tr>
+<tr><td><b>Negatif</b> (<code>−2.2 m/s</code>)</td><td>Mesafe artıyor — <b>hedef uzaklaşıyor</b></td></tr>
+<tr><td><code>VERİ YOK</code></td><td><code>R &lt; 0.5 m</code> ya da hız alanları geçersiz</td></tr>
+</tbody></table></div>
+<div class="kutu k-uyari">
+  <b class="bas">Negatif değer artık gizlenmiyor</b>
+  <p>Eski kod <code>Math.max(0, kapanma)</code> uyguluyordu — hedef uzaklaşırken ekran
+  <code>0.0</code> diyordu. Bu bir <b>bilgi kaybıydı</b>: operatör hedefin kaçtığını
+  göremiyordu. Artık işaretiyle gösterilir.</p>
+</div>
+<div class="kutu k-kritik">
+  <b class="bas">Bu değer canlı modda hiç yazılmıyordu</b>
+  <p><code>kapanma_ms</code>'in tek yazıcısı simülasyon motorunun içindeydi ve sim canlıda
+  ilk satırda geri döner. Sonuç: <b>canlı uçuşta manşet ölçüm başlangıç değeri 0'da
+  donuyordu</b>. Düzeltme commit <code>394ebed</code>.</p>
+</div>
+
+
+<!-- ═══════════════ 12 ═══════════════ -->
+<h2 id="b12">12 · ELRS / ESP32 / CRSF</h2>
+<h3>Kavramlar</h3>
+<ul>
+  <li><b>ELRS (ExpressLRS)</b> — açık kaynak, uzun menzilli radyo kontrol sistemi. Yerdeki verici (TX) ile araçtaki alıcı (RX) arasında telsiz bağlantı kurar.</li>
+  <li><b>CRSF (Crossfire)</b> — ELRS'in kullandığı dijital protokol. Kanal değerlerini ve telemetriyi taşır.</li>
+  <li><b>LQ (Link Quality)</b> — bağlantı kalitesi, %0–100. Kaç paketin başarıyla ulaştığını gösterir.</li>
+  <li><b>RSSI</b> — alınan sinyal gücü, dBm. Negatif bir sayıdır; sıfıra yakın olması daha iyidir.</li>
+</ul>
+
+<h3>ESP32 ne yapar?</h3>
+<p>
+  <code>firmware/elrs_square_gcs/elrs_square_gcs.ino</code> (399 satır, harici kütüphane yok):
+  ESP32 kendi Wi-Fi erişim noktasını (<code>AVCI-ELRS-GCS</code>, <code>192.168.4.1</code>)
+  yayınlar ve RadioMaster Ranger modülünün CRSF girişine <b>sanal kumanda kolu</b> üretir.
+</p>
+<pre><code>0xEE · length=24 · type=0x16 (RC_CHANNELS_PACKED)
+16 × 11 bit kanal · CRC8 (0xD5 polinomu)
+1000–2000 µs  →  CRSF 172–1811
+400000 baud · 8N1 · hedef 50 Hz</code></pre>
+
+<h3>Emniyet katmanları</h3>
+<div class="tw"><table>
+<thead><tr><th>Katman</th><th>Nasıl</th></tr></thead>
+<tbody>
+<tr><td>Fiziksel E-STOP</td><td>GPIO27 → GND. Basılınca anında nötr + DISARM</td></tr>
+<tr><td>ARM izin anahtarı</td><td>GPIO26 → GND. Kapalı devre olmadan ARM <b>reddedilir</b></td></tr>
+<tr><td>Heartbeat watchdog</td><td>1.5 sn tarayıcı sessizliği → eksenler nötre; araç havadaysa ARM korunur</td></tr>
+<tr><td>Arayüz DISARM</td><td>1.2 sn <b>kesintisiz</b> basılı tutma gerekir; erken bırakılırsa komut gitmez</td></tr>
+</tbody></table></div>
+
+<h3>Ölçülen değerler</h3>
+<div class="tw"><table>
+<thead><tr><th>Alan</th><th>Kaynak</th><th>Etiket</th></tr></thead>
+<tbody>
+<tr><td><code>lq</code>, <code>rssi_dbm</code></td><td>CRSF <code>LINK_STATISTICS</code> (0x14) çözümlemesi</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>frame_hz</code></td><td>Gönderilen kareler 1 sn penceresinde <b>sayılır</b></td><td><span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><code>frame_skips</code></td><td>Zamanında gönderilemeyen kare sayısı</td><td><span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><code>estop</code>, <code>arm_permit</code></td><td><code>digitalRead()</code> — donanım pini</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>ap_ip</code>, <code>sta_*</code></td><td>ESP32 Wi-Fi API</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>channels_us</code></td><td>Firmware'in ürettiği 16 kanal değeri</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+</tbody></table></div>
+
+<div class="kutu k-uyari">
+  <b class="bas">frame_hz eskiden sabitti</b>
+  <p><code>/api/status</code> daha önce sabit <code>50</code> döndürüyordu — bir ölçüm değil,
+  <b>niyet beyanı</b>. <code>loop()</code> bir HTTP isteği yüzünden gecikirse gerçek hız düşer
+  ve arayüz bunu <b>asla göremezdi</b>. Şimdi sayılıyor; ilk pencere dolana kadar
+  <code>0</code> döner ve arayüz <code>ÖLÇÜLÜYOR</code> gösterir. Commit <code>d02919e</code>.</p>
+</div>
+
+<h3>Ağ topolojisi: AP + STA</h3>
+<p>
+  Yalnız-AP modunda operatör dizüstü <code>AVCI-ELRS-GCS</code> ağına bağlıyken <b>başka bir
+  ağda olamaz</b>; <code>gcs_server</code> ayrı bir makinedeyse video ve telemetri kesilir.
+  <code>STA_SSID</code> doldurulursa firmware <code>WIFI_AP_STA</code> moduna geçer: AP
+  <b>kapanmaz</b> (saha yedeği), ESP32 aynı anda mevcut ağa da katılır. Boş bırakılırsa
+  davranış eskisinin aynısıdır.
+</p>
+
+<div class="kutu k-kritik">
+  <b class="bas">RF LİNK ≠ SUNUCU LİNK</b>
+  <p>Bu ayrım arayüzde <b>yapısal olarak</b> korunur:</p>
+  <ul>
+    <li><b>RF LİNK</b> — yalnız ELRS/CRSF'ten gelir. ESP32 yoksa <code>VERİ YOK</code>.</li>
+    <li><b>SUNUCU</b> — tarayıcı↔<code>gcs_server</code> yolunun sağlığı (paket yaşı + RTT).</li>
+  </ul>
+  <p>Üst şeritteki 5 çubuk <b>SUNUCU</b> etiketlidir ve tooltip'inde açıkça
+  "(RF link kalitesi DEĞİL)" yazar. RTT hiçbir yerde RF kalitesi olarak sunulmaz.</p>
+</div>
+
+<div class="kutu k-uyari">
+  <b class="bas">Hiçbiri gerçek donanımda test edilmedi</b>
+  <p>Firmware yalnızca <b>derleme</b> düzeyinde doğrulanmıştır (g++ + Arduino API stub'ları).
+  ESP32 donanımı, ELRS modülü ve CRSF hattı <b>hiç çalıştırılmadı</b>; ölçülen
+  <code>frame_hz</code>, kare zamanlaması ve AP/STA davranışı pervanesiz masa testinden
+  geçmelidir. <span class="r r-dogrulanmadi">DOĞRULANMADI</span></p>
+</div>
+
+
+<!-- ═══════════════ 13 ═══════════════ -->
+<h2 id="b13">13 · Bağlantı ve Hata Yönetimi</h2>
+<h3>"Bağlantı yok" ile "veri gelmiyor" farkı</h3>
+<p>Bu ayrım sistemin en önemli teşhis yeteneğidir ve <b>üç ayrı katmanda</b> ölçülür:</p>
+<div class="tw"><table>
+<thead><tr><th>Katman</th><th>Ne ölçer</th><th>Nasıl</th></tr></thead>
+<tbody>
+<tr><td><b>WEBSOCKET</b></td><td>Paket akıyor mu</td><td><code>ws.readyState</code> + son paket yaşı</td></tr>
+<tr><td><b>MAVLINK</b></td><td>Araç <b>veri üretiyor mu</b></td><td><code>mavDegisimGuncelle()</code> — araç alanlarının imzası değişiyor mu</td></tr>
+<tr><td><b>SUNUCU</b></td><td>HTTP yolu ve gecikme</td><td><code>/api/chase_status</code> RTT'si</td></tr>
+</tbody></table></div>
+
+<div class="kutu k-kritik">
+  <b class="bas">Bulunan stale-data hatası</b>
+  <p><code>telemetriUygula()</code> <b>her WebSocket paketinde</b> tazelik damgalarını
+  yeniliyordu. Ama <code>gcs_server</code>, MAVLink hattı <b>ölse bile</b> elindeki son
+  <code>telemetry_state</code>'i 10 Hz yayınlamayı sürdürür.</p>
+  <p>Sonuç: MAVLink kesilirse arayüz <code>TELEMETRİ 10 Hz · CANLI</code> demeye devam ediyor,
+  <b>sayılar donmuş olduğu hâlde operatör bunu göremiyordu</b>. Düzeltme commit
+  <code>66f3e1d</code>.</p>
+</div>
+
+<h3>Değişim denetçisi</h3>
+<p>
+  <code>mavDegisimGuncelle()</code>, konum · irtifa · yönelme · hız · mod · ARM alanlarının
+  <b>imzasını</b> karşılaştırır. İmza değişmiyorsa araç veri üretmiyor demektir.
+</p>
+<div class="kutu k-uyari">
+  <b class="bas">Dürüstlük sınırı</b>
+  <p>Bu, "MAVLink öldü" <b>kanıtı değildir</b> — yerde duran, disarm bir araç da bir süre aynı
+  değerleri üretebilir. Gösterge bu yüzden "MAVLINK YOK" demez, <b>ölçtüğü şeyi söyler</b>:
+  <code>DEĞİŞMİYOR</code>. Eşikler belirsizliği hesaba katacak kadar geniştir
+  (5 sn uyarı / 12 sn kritik).</p>
+</div>
+
+<h3>Yeniden bağlanma</h3>
+<div class="tw"><table>
+<thead><tr><th>Kanal</th><th>Strateji</th></tr></thead>
+<tbody>
+<tr><td>WebSocket</td><td>Üstel geri çekilme 1 → 15 sn. Sekme gizliyken denenmez; görünür olunca <b>anında</b> denenir</td></tr>
+<tr><td>Video (MJPEG)</td><td>Üstel geri çekilme 1 → 10 sn + <b>önbellek kırıcı</b> (aynı <code>src</code>'yi yeniden atamak bazı tarayıcılarda istek doğurmaz)</td></tr>
+<tr><td>REST yoklamaları</td><td>Uçuşta-istek koruması + 2 sn zaman aşımı; çakışan istek açılmaz</td></tr>
+</tbody></table></div>
+<p>
+  Bağlantı geri geldiğinde ayrıca bildirim verilir (<code>BAĞLANTI GERİ GELDİ</code>) —
+  operatör "toparlandı mı?" diye bakmak zorunda kalmaz.
+</p>
+
+<h3>Bağlantı durum makinesi</h3>
+<p>İkili "bağlı/değil" yerine gerçek ölçümden türeyen yedi durum vardır:</p>
+<pre><code>NORMAL · YÜKSEK GECİKME · VERİ GECİKMELİ · VERİ AKMIYOR
+YENİDEN BAĞLANIYOR · BAĞLANTI KOPTU · YEREL SİMÜLASYON</code></pre>
+
+
+<!-- ═══════════════ 14 ═══════════════ -->
+<h2 id="b14">14 · Sağlık / Teşhis Sistemi</h2>
+<h3>Tek durum sözlüğü</h3>
+<p>Sağlık ızgarasında yalnızca <b>altı ifade</b> kullanılır. Ayrıntı durumun <b>yanında</b> verilir:</p>
+<div class="tw"><table>
+<thead><tr><th>Durum</th><th>Nokta</th><th>Anlamı</th></tr></thead>
+<tbody>
+<tr><td><code>CANLI</code></td><td>●</td><td>Kaynak sağlıklı ve güncel</td></tr>
+<tr><td><code>BAYAT</code></td><td>◐</td><td>Veri geldi ama güncel değil</td></tr>
+<tr><td><code>KOPUK</code></td><td>✕</td><td>Bağlantı yok</td></tr>
+<tr><td><code>VERİ YOK</code></td><td>○</td><td>Kaynak hiç mevcut değil</td></tr>
+<tr><td><code>SİMÜLE</code></td><td>◐</td><td>Yerel simülasyon üretiyor</td></tr>
+<tr><td><code>TAHMİN</code></td><td>◐</td><td>Ölçüm değil, çıkarım</td></tr>
+</tbody></table></div>
+<div class="kutu k-ok">
+  <b class="bas">Renk tek başına anlam taşımaz</b>
+  <p>Durum noktasının <b>biçimi</b> de değişir (●/◐/✕/○). Böylece renk körlüğü olan bir
+  operatör de durumu ayırt edebilir.</p>
+</div>
+
+<h3>On sağlık hücresi</h3>
+<div class="tw"><table>
+<thead><tr><th>Hücre</th><th>Ne kontrol eder</th><th>Kaynak</th></tr></thead>
+<tbody>
+<tr><td><b>ARAÇ</b></td><td>ARM durumu + uçuş modu</td><td><code>HEARTBEAT</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>UÇUŞ MODU</b></td><td><code>custom_mode</code> adı</td><td><code>HEARTBEAT</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>MAVLINK</b></td><td>Araç veri üretiyor mu</td><td>değer imzası değişimi <span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><b>WEBSOCKET</b></td><td>Paket akıyor mu</td><td><code>readyState</code> + paket yaşı <span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><b>SUNUCU</b></td><td>HTTP yolu + gecikme</td><td>ölçülen RTT <span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><b>VİDEO</b></td><td>Akış canlı mı, çözünürlük</td><td>sağlama denetçisi <span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
+<tr><td><b>GPS</b></td><td>Fix tipi + uydu sayısı</td><td><code>GPS_RAW_INT</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>BATARYA</b></td><td>Yüzde veya voltaj + tahmin işareti</td><td><code>SYS_STATUS</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>RF LİNK</b></td><td>ELRS LQ + RSSI</td><td>CRSF <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>HEDEF</b></td><td>Kilit / tespit güveni / menzil</td><td><code>pnp</code> + <code>chase_status</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+</tbody></table></div>
+
+<h3>Teşhis katmanı (<kbd>G</kbd> tuşu)</h3>
+<p>
+  Operatör ekranını ham veriyle kirletmemek için teknik bilgi ayrı bir katmandadır. Üç sekme:
+</p>
+<ul>
+  <li><b>SİSTEM</b> — WebSocket <code>readyState</code>, yeniden bağlanma sayacı, ölçülen paket hızı, RTT, veri yaşı, video tanılaması, ESP32 ağ durumu, arayüzün <b>kendi</b> çizim FPS'i, tuval boyutu</li>
+  <li><b>HAM TELEMETRİ</b> — son WebSocket paketi ve son <code>chase_status</code> yanıtı, hiç işlenmemiş</li>
+  <li><b>ALARM GEÇMİŞİ</b> — her alarmın açılışı <b>ve kalkışı</b>, zaman damgası ve kaç saniye sürdüğü</li>
+</ul>
+<p><b>Not:</b> Ham telemetri yalnız panel açıkken biçimlendirilir — kapalıyken 10 Hz
+<code>JSON.stringify</code> yapılmaz.</p>
+
+
+<!-- ═══════════════ 15 ═══════════════ -->
+<h2 id="b15">15 · Alarm Sistemi</h2>
+<p>
+  Alarmlar <b>gerçek ölçümlerden</b> türer ve koşul kalkınca <b>kendiliğinden kapanır</b>
+  (yapışkan uyarı yoktur). Her alarm bir kimliğe sahiptir; aynı alarm tekrar tekrar log'a
+  düşmez. Kodda tanımlı <b>on alarm</b> vardır:
+</p>
+<div class="tw"><table>
+<thead><tr><th>Kimlik</th><th>Tetikleme koşulu</th><th>Kaynak</th><th>Seviye</th></tr></thead>
+<tbody>
+<tr><td><code>baglanti</code></td><td>Canlı mod, WebSocket bağlı değil</td><td><code>CANLI_AKTIF</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>KRİTİK</td></tr>
+<tr><td><code>tlm</code></td><td>Paket yaşı &gt; 3 sn</td><td><code>D.sonKare</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>KRİTİK</td></tr>
+<tr><td><code>mavdon</code></td><td>Araç değer imzası &gt; 5 sn değişmedi</td><td><code>mavDegisimYasi()</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI → KRİTİK (12 sn)</td></tr>
+<tr><td><code>video</code></td><td>Akış durumu ≠ akış / kapalı</td><td><code>VID.durum</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI / KRİTİK</td></tr>
+<tr><td><code>gps</code></td><td><code>gps_frozen</code> bayrağı</td><td>sunucu durumu <span class="r r-gercek">GERÇEK</span></td><td>KRİTİK</td></tr>
+<tr><td><code>gpsfix</code></td><td><code>fix_type &lt; 2</code> veya uydu &lt; 6</td><td><code>GPS_RAW_INT</code> <span class="r r-gercek">GERÇEK</span></td><td>KRİTİK / UYARI</td></tr>
+<tr><td><code>bat</code></td><td><code>bataryaDurumu()</code> şiddeti</td><td><code>SYS_STATUS</code> <span class="r r-gercek">GERÇEK</span> (veya <span class="r r-tahmin">TAHMİN</span>)</td><td>KRİTİK / UYARI</td></tr>
+<tr><td><code>bayat</code></td><td>Batarya verisi &gt; 12 sn eskidi</td><td>tazelik damgası <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI</td></tr>
+<tr><td><code>rtt</code></td><td>Sunucu RTT &gt; 400 ms</td><td>ölçüm <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI</td></tr>
+<tr><td><code>elrslq</code></td><td>ELRS LQ &lt; 50 %</td><td>CRSF <span class="r r-gercek">GERÇEK</span></td><td>UYARI / KRİTİK (&lt;30)</td></tr>
+</tbody></table></div>
+
+<h3>Alarm gösterimi</h3>
+<p>
+  Alarmlar görüntü penceresinin üstünde, <b>her görünümde</b> görünür bir şeritte belirir.
+  Her alarm metnini, <b>kaç saniyedir açık olduğunu</b> ve bir susturma düğmesini taşır.
+  Kritik alarmlar kırmızı, uyarılar kehribar renktedir.
+</p>
+<div class="kutu k-ok">
+  <b class="bas">Sahte alarm üretilmez</b>
+  <p>Batarya verisi yoksa batarya alarmı <b>üretilmez</b>. ELRS bağlı değilse RF alarmı
+  üretilmez. Simüle batarya alarmı yalnız çevrimdışı modda ve metninde açıkça
+  <code>SİMÜLE</code> ifadesiyle çıkar.</p>
+</div>
+
+
+<!-- ═══════════════ 16 ═══════════════ -->
+<h2 id="b16">16 · Kayıt Sistemi</h2>
+<p>Sunucuda <b>gerçek bir uçuş kaydı altyapısı</b> vardır:</p>
+<div class="tw"><table>
+<thead><tr><th>Uç</th><th>Ne yapar</th></tr></thead>
+<tbody>
+<tr><td><code>POST /api/kayit/basla</code></td><td>Zaman damgalı dizin açar, kayıt thread'ini başlatır</td></tr>
+<tr><td><code>POST /api/kayit/dur</code></td><td>Kaydı durdurur, kare sayısını döndürür</td></tr>
+<tr><td><code>GET /api/kayit/durum</code></td><td><code>{aktif, dizin, kare, gecen_s}</code></td></tr>
+</tbody></table></div>
+<p>
+  <code>_kayit_dongusu()</code> her saniye bir kamera karesini JPEG olarak yazar ve
+  <code>kayit.csv</code>'ye o anki telemetriyi işler (faz, mesafe, tespit güveni, manuel
+  girdiler, senaryo…).
+</p>
+
+<h3>Arayüzdeki gösterim</h3>
+<div class="tw"><table>
+<thead><tr><th>Sunucu durumu</th><th>Ekranda</th><th>Görünüm</th></tr></thead>
+<tbody>
+<tr><td><code>aktif: true</code></td><td><code>KAYIT ● 350 kare · 05:50</code></td><td>Kırmızı, yanıp sönüyor</td></tr>
+<tr><td><code>aktif: false</code></td><td><code>KAYIT YOK</code></td><td>Gri, sabit</td></tr>
+<tr><td>Uç cevapsız</td><td><code>KAYIT DURUMU VERİ YOK</code></td><td>Gri</td></tr>
+<tr><td>Çevrimdışı</td><td><code>KAYIT YOK · ÇEVRİMDIŞI</code></td><td>Gri</td></tr>
+</tbody></table></div>
+
+<div class="kutu k-kritik">
+  <b class="bas">Bu gösterge eskiden sahteydi</b>
+  <p>Görüntünün altında kırmızı <code>KAYIT ●</code> yanıp sönüyordu ve <b>hiçbir şey
+  kaydedilmiyordu</b>; gösterge yalnızca bir sinüsle opaklık değiştiriyordu. Operatöre
+  "görüntü kaydediliyor" diyen <b>sahte bir durum göstergesiydi</b> — sahte sayıdan daha
+  yanıltıcıdır. Artık yanıp sönme <b>yalnızca</b> gerçekten kayıt sürerken olur.
+  Düzeltme commit <code>1a72458</code>.</p>
+</div>
+<p>
+  <b>Not:</b> Kaydı başlatma/durdurma düğmesi arayüze <b>eklenmemiştir</b>; gösterge salt
+  okunurdur. Mevcut operatör akışını değiştirmemek için bilinçli bırakılmıştır.
+</p>
+
+
+<!-- ═══════════════ 17 ═══════════════ -->
+<h2 id="b17">17 · Simülasyon ve Gerçek Sistem</h2>
+<p>Aşağıdaki tablo yalnızca <b>koddan ve testlerden doğrulanabilen</b> bilgileri içerir.</p>
+<div class="tw"><table>
+<thead><tr><th>Özellik</th><th>Simülasyon (MOCK)</th><th>Gerçek sistem (CANLI)</th><th>Durum</th></tr></thead>
+<tbody>
+<tr><td><b>Batarya</b></td><td>Yerel sayaç, 25.2 V 6S</td><td><code>SYS_STATUS</code></td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>GPS</b></td><td>Sabit "SİMÜLE"</td><td><code>GPS_RAW_INT</code> fix 6, 10 uydu</td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>MAVLink</b></td><td>Yok</td><td>6 mesaj tipi okunuyor</td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>Kamera</b></td><td>Sentetik gökyüzü çizimi</td><td>Gazebo 640×480 MJPEG</td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>YOLO</b></td><td>Sim dedektör modeli</td><td>Gerçek YOLO + HybridSORT</td><td>SITL'de doğrulandı (%21 tespit)</td></tr>
+<tr><td><b>Kapanma</b></td><td>Sim fizik motoru</td><td>Hız vektörü türevi</td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>Kayıt</b></td><td>Yok</td><td><code>/api/kayit/*</code>, 480 kare + CSV</td><td>SITL'de doğrulandı</td></tr>
+<tr><td><b>RF / ELRS / CRSF</b></td><td>Yok</td><td>ESP32 <code>/api/status</code></td><td><span class="r r-dogrulanmadi">Yalnız sahte sunucu</span></td></tr>
+<tr><td><b>Saha filosu</b></td><td>4 araç, tam simülasyon</td><td><b>Sunucu ucu yok</b></td><td>Kalıcı <span class="r r-simule">SİMÜLE</span></td></tr>
+<tr><td><b>Enerji bütçesi</b></td><td>Yerel sayaç</td><td>Ölçülen deşarjdan kestirim</td><td>SITL'de doğrulandı</td></tr>
+</tbody></table></div>
+
+<h3>Simülasyon motoru canlıda kapalıdır</h3>
+<p>
+  <code>tik()</code> fonksiyonu ilk satırlarında <code>if (CANLI_AKTIF) { canliTik(); return; }</code>
+  yapar. Kodda kalan <b>üç</b> <code>Math.random()</code> çağrısının üçü de bu kapının
+  arkasındadır ve canlı modda <b>hiç çalışmaz</b>.
+</p>
+
+
+<!-- ═══════════════ 18 ═══════════════ -->
+<h2 id="b18">18 · Veri Doğruluk Sistemi</h2>
+<p>
+  Bu projenin ayırt edici özelliği: <b>operatör bir değerin gerçek mi tahmin mi olduğunu
+  ekrandan anlayabilir.</b>
+</p>
+
+<h3>Operatör bunu nasıl anlar?</h3>
+<div class="tw"><table>
+<thead><tr><th>İşaret</th><th>Nerede görünür</th><th>Anlamı</th></tr></thead>
+<tbody>
+<tr><td><span class="r r-gercek">GERÇEK</span></td><td>Batarya rozeti, GÜÇ VE SEYİR başlığı</td><td>Uçuş kontrolcüsünden ölçüldü</td></tr>
+<tr><td><span class="r r-tahmin">TAHMİN</span></td><td>Batarya rozeti, <code>~3S</code> işareti</td><td>Çıkarım yapıldı, yanılabilir</td></tr>
+<tr><td><span class="r r-simule">SİMÜLE</span></td><td>Saha filosu, enerji bütçesi, MOCK modda her yer</td><td>Yerel simülasyon</td></tr>
+<tr><td><code>(YAP)</code></td><td>HUD kamera künyesi</td><td>Yapılandırmadan, ölçüm değil</td></tr>
+<tr><td><code>MODEL</code></td><td>DÖNÜŞ İÇİN GEREKEN satırı</td><td>Varsayıma dayalı hesap</td></tr>
+<tr><td><code>VERİ YOK</code></td><td>Her yerde</td><td>Kaynak yok — sayı uydurulmadı</td></tr>
+<tr><td><code>~</code> öneki</td><td><code>0/~10 tespit</code></td><td>Payda sunucudan değil, arayüz sabitinden</td></tr>
+<tr><td>Üstü çizili + soluk</td><td>Ölçüm değerleri</td><td>Veri bayat — güncel değil</td></tr>
+</tbody></table></div>
+
+<h3>Doğrulama kapısı</h3>
+<p>
+  Sunucudan gelen her sayı <code>gecerliSayi(v, alt, ust)</code> kapısından geçer:
+  <code>null</code> / <code>undefined</code> / <code>NaN</code> / sonsuz / aralık dışı →
+  <code>null</code> döner ve arayüz <code>VERİ YOK</code> gösterir.
+</p>
+<div class="kutu k-bilgi">
+  <b class="bas">Neden sıfıra çevrilmiyor?</b>
+  <p>Bozuk bir değeri sessizce <code>0</code> yapmak, onu <b>geçerli bir ölçüm gibi</b>
+  gösterirdi. "Güven 0.00" ile "tespit yok" farklı şeylerdir; "0 uydu" ile "uydu sayısı
+  bilinmiyor" farklı şeylerdir.</p>
+</div>
+
+<h3>Tazelik: "geldi" ≠ "güncel"</h3>
+<p>
+  Her kritik alan kendi zaman damgasını taşır. 30 saniye önce gelmiş bir batarya değeri
+  <b>canlı gibi gösterilmez</b>: üstü çizilir, solar ve alarm üretir.
+</p>
+
+
+<!-- ═══════════════ 19 ═══════════════ -->
+<h2 id="b19">19 · Testler</h2>
+<h3>Otomatik güdüm testleri</h3>
+<p>
+  Aşağıdaki sonuçlar bu belge hazırlanırken <b>fiilen çalıştırılmıştır</b>
+  (<code>python3 -m tests.&lt;ad&gt;</code>).
+</p>
+<div class="tw"><table>
+<thead><tr><th>Test</th><th>Ne test eder</th><th>Sonuç</th><th>Ortam</th></tr></thead>
+<tbody>
+<tr><td><code>test_visual_lead</code></td><td>Görsel güdüm yasası, lead pursuit</td><td><b>59/59</b></td><td>Birim testi</td></tr>
+<tr><td><code>test_gps_guidance</code></td><td>GPS yaklaşma güdümü, istasyon geometrisi</td><td><b>34/34</b></td><td>Birim testi</td></tr>
+<tr><td><code>test_bbox_ibvs</code></td><td>Kutu tabanlı görsel servo, yarışma kısıtı bekçisi</td><td><b>42/42</b></td><td>Birim testi</td></tr>
+<tr><td><code>test_frpn</code></td><td>FRPN güdüm yasası</td><td><b>26/26</b></td><td>Birim testi</td></tr>
+<tr><td><code>test_kurtarma</code></td><td>Temas kaybı sonrası kurtarma</td><td><b>7/7</b></td><td>Birim testi</td></tr>
+<tr><td><code>test_hedef_kestirim</code></td><td>Hedef konum/hız kestirimi</td><td><b>13/13</b></td><td>Birim testi</td></tr>
+<tr><td colspan="2"><b>TOPLAM</b></td><td><b>181/181</b></td><td>—</td></tr>
+</tbody></table></div>
+
+<div class="kutu k-uyari">
+  <b class="bas">Koşturulamayan iki test</b>
+  <p><code>test_tracker.py</code> ve <code>test_sim_truth_temas.py</code> <b>pytest tarzı</b>
+  yazılmıştır ve bu ortamda çalışmaz: <code>pytest</code>/<code>anyio</code> sürüm çakışması
+  (<code>ModuleNotFoundError: _pytest.scope</code>) ve GPU gereksinimi. Bunlar
+  <b>başarısız değil, koşulamadı</b> olarak raporlanmalıdır.</p>
+</div>
+
+<h3>Arayüz ve entegrasyon testleri</h3>
+<div class="tw"><table>
+<thead><tr><th>Test</th><th>Sonuç</th><th>Ortam</th></tr></thead>
+<tbody>
+<tr><td>JS sözdizimi (<code>node --check</code>)</td><td>Temiz</td><td>Statik</td></tr>
+<tr><td>DOM id çapraz denetimi</td><td>Eksik referans yok</td><td>Statik</td></tr>
+<tr><td>Çevrimdışı runtime (gerçek Chrome)</td><td>0 konsol hatası</td><td>Tarayıcı</td></tr>
+<tr><td>Canlı runtime</td><td>0 konsol hatası</td><td>Sahte sunucu</td></tr>
+<tr><td>Dayanıklılık (sunucu öldür → geri getir)</td><td><b>11/11</b> — sayfa yenilemeden toparlandı</td><td>Sahte sunucu</td></tr>
+<tr><td>ELRS paneli</td><td><b>12/12</b></td><td>Sahte ESP32</td></tr>
+<tr><td>Responsive 1920/1600/1366/1280</td><td><b>4/4</b> — kritik öğe kaybı yok</td><td>Tarayıcı</td></tr>
+<tr><td>Batarya senaryoları (A/B/C/D)</td><td>4/4</td><td><b>Gerçek SITL</b> + parametre değişimi</td></tr>
+<tr><td>MAVLink donma tespiti</td><td>Yakalandı</td><td>Sahte sunucu</td></tr>
+</tbody></table></div>
+
+<h3>Gerçek SITL uçuşu (2026-08-13)</h3>
+<div class="tw"><table>
+<thead><tr><th>Veri yolu</th><th>Sonuç</th></tr></thead>
+<tbody>
+<tr><td><code>SYS_STATUS</code></td><td>✅ <code>12600 mV · 0 cA · 100 %</code></td></tr>
+<tr><td><code>GPS_RAW_INT</code></td><td>✅ <code>fix 6 · 10 uydu · HDOP 1.21</code></td></tr>
+<tr><td><code>/api/telemetry/pnp</code></td><td>✅ gerçek YOLO güveni yakalandı (101/480 kare)</td></tr>
+<tr><td><code>/api/kayit/durum</code></td><td>✅ 480 kare + CSV diske yazıldı</td></tr>
+<tr><td>Video akışı</td><td>✅ iris 3.5 FPS · plane 9.7 FPS · 640×480</td></tr>
+<tr><td>RTT / bağlantı</td><td>✅ 8–10 ms ölçüldü</td></tr>
+</tbody></table></div>
+<p>
+  Bu uçuşta iki <b>mevcut kod sorunu</b> da ortaya çıktı: başlatma scriptinin 90 sn EKF
+  bekleme penceresi yüklü makinede yetmiyor, ve <code>run_plane_scenario.py</code>'deki
+  kalkış <b>sabit 8 saniyelik sayaç</b> kullandığı için hedef uçak havalanamıyor. İkisi de
+  bu turlarda <b>düzeltilmedi</b> (dokunulmaması istenen kod).
+</p>
+
+
+<!-- ═══════════════ 20 ═══════════════ -->
+<h2 id="b20">20 · Gerçek Donanım Sınırları</h2>
+<div class="kutu k-kritik">
+  <b class="bas">Hiçbir şey gerçek uçan donanımda test edilmedi</b>
+  <p>Bu sistemin tamamı <b>simülasyon ortamında</b> (Gazebo + ArduPilot SITL) ve sahte
+  sunucularla doğrulanmıştır. Aşağıdaki noktalar gerçek donanımda <b>ayrıca sınanmalıdır</b>.</p>
+</div>
+<div class="tw"><table>
+<thead><tr><th>Bileşen</th><th>Şu anki doğrulama</th><th>Gerçek donanımda sınanmalı</th></tr></thead>
+<tbody>
+<tr><td><b>Uçuş kontrolcüsü</b></td><td>ArduPilot SITL</td><td>Gerçek FC'de mesaj hızları, akım ölçümü yük altında</td></tr>
+<tr><td><b>Batarya</b></td><td>SITL 3S, 12.6 V</td><td>Gerçek paket hücre sayısı; <code>ceil</code> tahmininin doğruluğu</td></tr>
+<tr><td><b>GPS</b></td><td>SITL <code>fix_type=6</code> (RTK)</td><td>Gerçek u-blox tipik <code>3</code> verir; 3/4/5/6 haritalaması</td></tr>
+<tr><td><b>Kamera</b></td><td>Gazebo sanal kamera</td><td>Gerçek optik FOV; SDF ile uyuşuyor mu</td></tr>
+<tr><td><b>YOLO</b></td><td>CPU'da ~3.5 FPS</td><td>GPU'lu donanımda kare hızı ve tespit oranı</td></tr>
+<tr><td><b>ESP32 / ELRS / CRSF</b></td><td><b>Yalnız derleme</b></td><td>Her şey: <code>frame_hz</code>, kare zamanlaması, AP/STA, E-STOP, ACİL DISARM</td></tr>
+<tr><td><b>MAVLink donma tespiti</b></td><td>Sahte sunucu</td><td>Gerçek kesintide davranış; <b>yerde duran disarm araçta yanlış pozitif</b></td></tr>
+<tr><td><b>Hava-hava geometrisi</b></td><td>Hedef havalanamadı</td><td>Gerçek havadaki hedefle kilit ve dalış geometrisi</td></tr>
+<tr><td><b>BATTERY_STATUS</b></td><td>Hiç okunmadı</td><td><code>voltages[10]</code> gerçekten hücre-başı mı</td></tr>
+</tbody></table></div>
+
+
+<!-- ═══════════════ 21 ═══════════════ -->
+<h2 id="b21">21 · Geliştirme Geçmişi</h2>
+<p>Bu dalın son sekiz commit'i, her biri koddan doğrulanmıştır:</p>
+<div class="tw"><table>
+<thead><tr><th>Hash</th><th>Ne getirdi</th></tr></thead>
+<tbody>
+<tr><td><code>d02919e</code></td><td><b>ESP32 firmware.</b> Ölçülen <code>frame_hz</code> (eskiden sabit 50), kare zamanlama düzeltmesi (birikmiş kareler patlıyordu), <code>WIFI_AP_STA</code> ağ topolojisi.</td></tr>
+<tr><td><code>872b859</code></td><td><b>Kendini toparlayan bağlantı.</b> WebSocket ve video yeniden bağlanma (eskiden hiç denenmiyordu), video canlılığının gerçekten ölçülmesi, uçuş modunun <code>custom_mode</code>'dan okunması, kamera künyesindeki uydurma FPS/çözünürlüğün kaldırılması.</td></tr>
+<tr><td><code>7a6101b</code></td><td><b>Sunucu: batarya ve GPS okunuyor.</b> <code>SYS_STATUS</code> ve <code>GPS_RAW_INT</code> mesajları <code>recv_match</code> filtresinde eleniyordu — veri vardı, okunmuyordu. Salt-okunur ekleme.</td></tr>
+<tr><td><code>5d30268</code></td><td><b>Arayüz V2.</b> Gerçek güç/GPS telemetrisi, veri doğrulama kapısı, tazelik makinesi, teşhis katmanı (<kbd>G</kbd>), alarm geçmişi, komut geri bildirimi, bağlantı durum makinesi. Bilgi hiyerarşisi düzeltmesi: iptal düğmesi ekranın altında kalıyordu.</td></tr>
+<tr><td><code>394ebed</code></td><td><b>Sahte değerler gerçeğe bağlandı.</b> Uydurma <code>tespit_conf 0.9/0.35</code> kaldırıldı ve <code>/api/telemetry/pnp</code>'ye bağlandı; faz eşikleri sunucudan okunmaya başladı; <b>kapanma hızı</b> canlıda hiç yazılmıyordu — hız vektörlerinden hesaplanmaya başladı.</td></tr>
+<tr><td><code>1a72458</code></td><td><b>Dört dürüstlük düzeltmesi.</b> Sahte <code>KAYIT ●</code> göstergesi gerçek kayıt durumuna bağlandı; donmuş enerji bütçesi ölçülen deşarjdan kestirilmeye başladı; link çubukları <code>SUNUCU</code> diye yeniden etiketlendi ve ayrı <code>RF LİNK</code> alanı eklendi; kamera FOV'u SDF'teki gerçek değere düzeltildi (78° → 125°, HUD hizalamasını etkiliyordu).</td></tr>
+<tr><td><code>f0a1a82</code></td><td><b>Batarya alarmı düzeltmesi.</b> Gerçek SITL uçuşunda bulunan <code>BATARYA KRİTİK — %100</code> hatası. Evrensel voltaj eşiği kaldırıldı; yüzde önceliği, hücre tahmini (<code>ceil</code>) ve <code>TAHMİN</code> etiketlemesi geldi.</td></tr>
+<tr><td><code>66f3e1d</code></td><td><b>Sağlık ve bağlantı profesyonelleştirmesi.</b> MAVLink donma tespiti (stale-data hatası), tek durum sözlüğü (14 ifade → 6), MAVLINK/WEBSOCKET/SUNUCU/RF katmanlarının ayrılması, renk körlüğü için nokta biçimleri.</td></tr>
+</tbody></table></div>
+
+
+<!-- ═══════════════ 22 ═══════════════ -->
+<h2 id="b22">22 · Dosya Haritası</h2>
+<div class="tw"><table>
+<thead><tr><th>Dosya</th><th>Görevi</th><th>İlişkili bileşen</th></tr></thead>
+<tbody>
+<tr><td><code>control/gcs_ui/operator.html</code></td><td>Operatör arayüzü — tek dosya, ~5400 satır, sıfır bağımlılık</td><td>Frontend</td></tr>
+<tr><td><code>control/gcs_server.py</code></td><td>FastAPI sunucu: MAVLink okuma, kamera, API, WebSocket, kayıt</td><td>Backend</td></tr>
+<tr><td><code>control/guidance/supervisor.py</code></td><td>Faz yöneticisi: GPS ↔ görsel geçişleri, kilit sayacı</td><td>Güdüm</td></tr>
+<tr><td><code>control/guidance/gps_guidance.py</code></td><td>GPS yaklaşma güdüm yasası</td><td>Güdüm</td></tr>
+<tr><td><code>control/guidance/bbox_ibvs.py</code></td><td>Kutu tabanlı görsel servo</td><td>Güdüm</td></tr>
+<tr><td><code>control/run_plane_scenario.py</code></td><td>Hedef uçak senaryoları (düz, kare, daire)</td><td>Simülasyon</td></tr>
+<tr><td><code>vision/detection_state.py</code></td><td>Tespit/pose sonuçlarının paylaşımlı durumu</td><td>Görü</td></tr>
+<tr><td><code>vision/detector.py</code>, <code>tracker.py</code></td><td>YOLO dedektörü ve HybridSORT takipçisi</td><td>Görü</td></tr>
+<tr><td><code>firmware/elrs_square_gcs/elrs_square_gcs.ino</code></td><td>ESP32 CRSF üreteci + Wi-Fi arayüzü</td><td>RF</td></tr>
+<tr><td><code>firmware/elrs_square_gcs/README.md</code></td><td>Pin haritası, emniyet test sırası, ağ topolojisi</td><td>RF</td></tr>
+<tr><td><code>scripts/start_harmonic.sh</code></td><td>Gazebo + iki SITL'i sırayla başlatır; <code>stop</code> ve <code>durum</code> alt komutları</td><td>Simülasyon</td></tr>
+<tr><td><code>sim/gazebo_harmonic/models/iris_with_standoffs/model.sdf</code></td><td>Avcı araç modeli + <b>kamera FOV kaynağı</b></td><td>Simülasyon</td></tr>
+<tr><td><code>sim/gazebo_harmonic/models/mini_talon_vtail/model.sdf</code></td><td>Hedef araç modeli + kamera</td><td>Simülasyon</td></tr>
+<tr><td><code>sim/ardupilot_params/avci_copter.parm</code></td><td>ArduCopter parametreleri</td><td>Simülasyon</td></tr>
+<tr><td><code>tests/</code></td><td>181 güdüm birim testi</td><td>Test</td></tr>
+<tr><td><code>CLAUDE.md</code></td><td>Depoda geliştirme kuralları, test mekanizması, bilinen tuzaklar</td><td>Süreç</td></tr>
+</tbody></table></div>
+
+
+<!-- ═══════════════ 23 ═══════════════ -->
+<h2 id="b23">23 · Operatör İçin Kullanım Rehberi</h2>
+<p><b>"Sistemi açtım, şimdi neye bakmalıyım?"</b> — sistemin kendi mantığına göre sıralanmıştır.</p>
+
+<h3>Adım 1 — Gerçek mi simülasyon mu?</h3>
+<p>
+  Üst şeritte <code>CANLI</code> mı <code>MOCK</code> mu yazıyor? <code>MOCK</code> ise
+  gördüğünüz <b>hiçbir şey gerçek araç verisi değildir</b>. Sol paneldeki turuncu
+  <code>SİMÜLE</code> etiketleri bunu doğrular.
+</p>
+
+<h3>Adım 2 — Sistem durumu ızgarası</h3>
+<p>Sol paneldeki 10 hücreye bakın. Hepsi <code>● CANLI</code> mı?</p>
+<ul>
+  <li><b>MAVLINK</b> ve <b>WEBSOCKET</b> ikisi de canlı olmalı. WEBSOCKET canlı ama MAVLINK <code>DEĞİŞMİYOR</code> ise araçtan veri gelmiyordur.</li>
+  <li><b>GPS</b> en az <code>3B FIX</code> olmalı.</li>
+  <li><b>BATARYA</b> rozeti <code>GERÇEK</code> mi <code>TAHMİN</code> mi?</li>
+</ul>
+
+<h3>Adım 3 — Uçuş zarfı</h3>
+<p>
+  İrtifa, hız ve yönelme makul mü? Değerlerin altındaki ince <b>tazelik çubuğu</b> doluysa
+  veri günceldir. Üstü çizili bir değer görürseniz o veri <b>bayattır</b>.
+</p>
+
+<h3>Adım 4 — Kamera</h3>
+<p>
+  Kamera sekmesindeki nokta yeşil mi? Görüntü akıyor mu? Akmıyorsa ortada
+  <code>SİNYAL YOK</code> / <code>YENİDEN BAĞLANIYOR</code> kartı ve geri sayım çıkar —
+  sistem kendiliğinden yeniden denemektedir.
+</p>
+
+<h3>Adım 5 — RF link (ESP32 kullanıyorsanız)</h3>
+<p>
+  <code>RF LİNK</code> alanı <code>VERİ YOK</code> diyorsa ESP32'ye bağlı değilsiniz.
+  Bağlıysanız LQ %70'in üstünde olmalı. <b>Üst şeritteki 5 çubuk RF değildir</b> — o sunucu
+  bağlantısıdır.
+</p>
+
+<h3>Adım 6 — Alarm şeridi</h3>
+<p>
+  Görüntünün üstünde alarm var mı? Her alarm kaç saniyedir açık olduğunu gösterir.
+  <b>Alarm yoksa hiçbir şey görünmez</b> — boş alan iyi haberdir.
+</p>
+
+<h3>Adım 7 — Hedef durumu</h3>
+<p>
+  <code>HEDEF</code> hücresi: <code>KİLİT · 34 m</code> / <code>TESPİT 0.92</code> /
+  <code>TESPİT YOK</code>. Sağ panelde faz geçişini engelleyen sebep yazılıdır.
+</p>
+
+<h3>Adım 8 — Kayıt</h3>
+<p>
+  Görüntünün altında <code>KAYIT ●</code> yanıp sönüyorsa kayıt <b>gerçekten</b> sürüyordur.
+  <code>KAYIT YOK</code> ise kayıt kapalıdır.
+</p>
+
+<h3>Adım 9 — Görev</h3>
+<p>Sağ panelde sırayla:</p>
+<ol>
+  <li><code>GÖREVİ BAŞLAT · KALKIŞ</code> (veya <kbd>B</kbd>)</li>
+  <li><code>ANGAJE ET</code> — <b>1.2 sn basılı tutun</b> (veya <kbd>E</kbd>). Erken bırakırsanız iptal olur.</li>
+  <li><code>GÖREVİ İPTAL ET</code> — <kbd>Esc</kbd>. Tek tuş, gecikmesiz.</li>
+</ol>
+<div class="kutu k-uyari">
+  <b class="bas"><kbd>Esc</kbd> her zaman iptaldir</b>
+  <p>Hangi ekranda olursanız olun — yardım katmanı veya teşhis paneli açıkken bile —
+  <kbd>Esc</kbd> görev iptal komutunu gönderir. Bu bilinçli bir emniyet kararıdır.
+  Teşhis panelini kapatmak için <kbd>G</kbd> kullanın.</p>
+</div>
+
+<h3>Klavye kısayolları</h3>
+<div class="tw"><table>
+<thead><tr><th>Tuş</th><th>İşlev</th></tr></thead>
+<tbody>
+<tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>FPV / 2B harita / 3B harita</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>1..4</kbd></td><td>Kamera kanalı</td></tr>
+<tr><td><kbd>B</kbd></td><td>Görevi başlat</td></tr>
+<tr><td><kbd>E</kbd> (basılı tut)</td><td>Angaje et</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Görevi iptal et</td></tr>
+<tr><td><kbd>G</kbd></td><td>Teşhis katmanı</td></tr>
+<tr><td><kbd>V</kbd></td><td>Video üstü telemetri</td></tr>
+<tr><td><kbd>F</kbd> / <kbd>Shift</kbd>+<kbd>F</kbd></td><td>Tam ekran: konsol / yalnız görüntü</td></tr>
+<tr><td><kbd>T</kbd></td><td>Gece ↔ gündüz teması</td></tr>
+<tr><td><kbd>?</kbd></td><td>Kısayol listesi</td></tr>
+</tbody></table></div>
+
+
+<!-- ═══════════════ 24 ═══════════════ -->
+<h2 id="b24">24 · Sorun Giderme</h2>
+<p><b>"Ne görürsem ne anlama gelir?"</b></p>
+<div class="tw"><table>
+<thead><tr><th>Belirti</th><th>Olası neden</th><th>Nereden kontrol edilir</th><th>Ne yapmalı</th></tr></thead>
+<tbody>
+<tr><td><code>MOCK</code> rozeti</td><td>Sayfa <code>file://</code> ile açıldı ya da sunucu yok</td><td>Adres çubuğu; <kbd>G</kbd> → SİSTEM → Mod</td><td><code>http://localhost:8000/ui/operator.html</code> adresini kullanın</td></tr>
+<tr><td><b>WEBSOCKET</b> <code>KOPUK</code></td><td><code>gcs_server</code> çalışmıyor veya ağ kesildi</td><td><kbd>G</kbd> → WebSocket readyState, deneme sayacı</td><td>Sistem kendiliğinden yeniden dener; sunucuyu kontrol edin</td></tr>
+<tr><td><b>MAVLINK</b> <code>DEĞİŞMİYOR</code>, WEBSOCKET canlı</td><td>Sunucu ayakta ama araçtan veri gelmiyor — MAVLink hattı sessiz olabilir</td><td><kbd>G</kbd> → HAM TELEMETRİ; değerler donuk mu</td><td>SITL/araç bağlantısını, UDP portlarını kontrol edin. <b>Araç yerde ve hareketsizse yanlış alarm olabilir</b></td></tr>
+<tr><td><b>GPS</b> <code>FIX YOK</code></td><td>GPS çözümü alınamıyor</td><td>GÜÇ VE SEYİR → uydu sayısı, HDOP</td><td>Açık gökyüzü bekleyin; güdüm GPS fazına güvenemez</td></tr>
+<tr><td><b>GPS</b> <code>DONDURULDU</code></td><td>Sunucudaki GPS karıştırma etkin</td><td><code>/api/gps_noise</code></td><td>Karıştırmayı kapatın (deney amaçlıysa beklenen)</td></tr>
+<tr><td><b>BATARYA</b> rozeti <code>TAHMİN</code></td><td>Uçuş kontrolcüsü yüzde bildirmiyor (kapasite tanımsız)</td><td>GÜÇ VE SEYİR yan satırı — <code>TAHMİN 3S · eşik …</code></td><td>Hücre sayısını doğrulayın; <code>BATT_CAPACITY</code> ayarlanabilir</td></tr>
+<tr><td><b>BATARYA</b> <code>VERİ YOK</code></td><td><code>SYS_STATUS</code> gelmiyor</td><td><kbd>G</kbd> → HAM TELEMETRİ → <code>batt_v</code></td><td>Batarya monitörü yapılandırmasını kontrol edin</td></tr>
+<tr><td><b>VİDEO</b> <code>SİNYAL YOK</code></td><td>Kamera akışı kesildi</td><td>Video kartındaki geri sayım; <kbd>G</kbd> → VİDEO</td><td>Otomatik yeniden denenir; <code>ŞİMDİ YENİDEN DENE</code> ile hızlandırın</td></tr>
+<tr><td><b>RF LİNK</b> <code>VERİ YOK</code></td><td>ESP32'ye bağlı değilsiniz</td><td>Adres çubuğunda <code>?elrs=</code> parametresi</td><td>ESP32 ağına bağlanın veya doğru IP'yi verin</td></tr>
+<tr><td><b>RF LİNK</b> LQ düşük</td><td>Telsiz bağlantı zayıf</td><td>ELRS konsolu → LQ, RSSI</td><td>Anten/menzil kontrolü; %30 altı kritiktir</td></tr>
+<tr><td><b>HEDEF</b> <code>TESPİT YOK</code></td><td>YOLO hedefi göremiyor</td><td>Sağ panel → faz engeli satırı</td><td>Menzil/açı düzelene kadar normaldir; tespit kesintilidir</td></tr>
+<tr><td>Değer <b>üstü çizili</b></td><td>Veri bayat — güncel değil</td><td>Tazelik çubuğu</td><td>Bağlantıyı kontrol edin; sayıya güvenmeyin</td></tr>
+<tr><td>Komut <code>REDDEDİLDİ (404/501)</code></td><td>Sunucu o ucu desteklemiyor</td><td>Olay kaydı → MAVLINK satırı</td><td>Gerçek <code>gcs_server</code> çalışıyor mu kontrol edin</td></tr>
+<tr><td><code>KALAN UÇUŞ SÜRESİ</code> <code>TAHMİN YOK</code></td><td>Deşarj hızı henüz ölçülemedi</td><td>GÜÇ VE SEYİR → eğilim oku</td><td>Birkaç dakika bekleyin; ölçüm oturunca dolar</td></tr>
+</tbody></table></div>
+
+
+<!-- ═══════════════ 25 ═══════════════ -->
+<h2 id="b25">25 · Geliştirici İçin Veri Akışı Referansı</h2>
+
+<h3>25.1 · API uçları (<code>gcs_server.py</code>)</h3>
+<div class="tw"><table>
+<thead><tr><th>Metot</th><th>Uç</th><th>Arayüz kullanıyor mu</th></tr></thead>
+<tbody>
+<tr><td>WS</td><td><code>/ws</code></td><td>✅ ana telemetri</td></tr>
+<tr><td>GET</td><td><code>/api/chase_status</code></td><td>✅ 5 Hz</td></tr>
+<tr><td>GET</td><td><code>/api/telemetry/pnp</code></td><td>✅ 2 Hz</td></tr>
+<tr><td>GET</td><td><code>/api/kayit/durum</code></td><td>✅ 1 Hz</td></tr>
+<tr><td>GET</td><td><code>/api/video_feed/{vehicle}</code></td><td>✅ MJPEG</td></tr>
+<tr><td>POST</td><td><code>/api/command/iris/start_chase</code> · <code>stop_chase</code></td><td>✅ angajman / iptal</td></tr>
+<tr><td>POST</td><td><code>/api/kayit/basla</code> · <code>/api/kayit/dur</code></td><td>❌ (salt okunur gösterge)</td></tr>
+<tr><td>POST</td><td><code>/api/command/plane/scenario/{name}</code></td><td>❌</td></tr>
+<tr><td>GET/POST</td><td><code>/api/guidance_mode</code>, <code>/api/gudum_ozellikleri</code></td><td>❌</td></tr>
+<tr><td>GET/POST</td><td><code>/api/gps_noise</code>, <code>/api/video_noise</code>, <code>/api/plane_throttle</code></td><td>❌</td></tr>
+<tr><td>GET</td><td><code>/api/debug/telem</code>, <code>/api/debug/carpisma</code>, <code>/api/hasar</code></td><td>❌ teşhis</td></tr>
+<tr><td>—</td><td><code>/api/logistics/dispatch</code></td><td>⚠ arayüz çağırır, <b>sunucuda yok</b> → filo <code>SİMÜLE</code></td></tr>
+</tbody></table></div>
+
+<h3>25.2 · WebSocket paketi</h3>
+<pre><code>{
+  "iris":  { x, y, z, vx, vy, vz, speed, roll, pitch, yaw, armed, mode,
+             lat, lon, alt_amsl,
+             <span class="g">batt_v, batt_a, batt_pct,</span>          <span class="c">// SYS_STATUS</span>
+             <span class="g">gps_fix, gps_sat, gps_eph</span> },      <span class="c">// GPS_RAW_INT</span>
+  "plane": { …aynı alanlar… },
+  "gps_noise": 0.0, "gps_frozen": false, "plane_throttle": 55
+}</code></pre>
+<p>Gönderim hızı: 10 Hz (<code>asyncio.sleep(0.1)</code>).</p>
+
+<h3>25.3 · Önemli frontend fonksiyonları</h3>
+<div class="tw"><table>
+<thead><tr><th>Fonksiyon</th><th>Görevi</th></tr></thead>
+<tbody>
+<tr><td><code>telemetriUygula(p)</code></td><td>WS paketini <code>D</code> durumuna işler; kapanma hızını hesaplar</td></tr>
+<tr><td><code>gecerliSayi(v, alt, ust)</code></td><td>Gelen her sayının doğrulama kapısı</td></tr>
+<tr><td><code>bataryaDurumu()</code></td><td>Batarya şiddet değerlendirmesi — tek doğruluk kaynağı</td></tr>
+<tr><td><code>bataryaHucreTahmini(v)</code></td><td>Gözlenen en yüksek voltajdan hücre sayısı türetir (<code>ceil</code>)</td></tr>
+<tr><td><code>mavDegisimGuncelle(I, P)</code></td><td>Araç verisinin değişip değişmediğini ölçer</td></tr>
+<tr><td><code>tazelikDurumu(damga, ...)</code></td><td>Zaman damgasını TAZE/YASLI/BAYAT durumuna çevirir</td></tr>
+<tr><td><code>durumCek()</code></td><td><code>chase_status</code> yoklayıcı + RTT ölçümü</td></tr>
+<tr><td><code>pnpCek()</code></td><td>Görüş hattı telemetrisi yoklayıcı</td></tr>
+<tr><td><code>kayitDurumCek()</code></td><td>Kayıt durumu yoklayıcı</td></tr>
+<tr><td><code>vidNabiz()</code></td><td>Video canlılığı ölçümü (sağlama)</td></tr>
+<tr><td><code>saglikDegerlendir()</code></td><td>10 sağlık hücresini günceller</td></tr>
+<tr><td><code>alarmlariDegerlendir()</code></td><td>10 alarm kuralını değerlendirir</td></tr>
+<tr><td><code>wsBagla()</code> / <code>wsPlanla()</code></td><td>WebSocket bağlanma ve üstel geri çekilme</td></tr>
+<tr><td><code>vidBagla()</code> / <code>vidYenidenDene()</code></td><td>Video akışı bağlanma ve yeniden deneme</td></tr>
+</tbody></table></div>
+
+<h3>25.4 · Zamanlayıcılar</h3>
+<div class="tw"><table>
+<thead><tr><th>Aralık</th><th>Fonksiyon</th><th>İş</th></tr></thead>
+<tbody>
+<tr><td>50 ms (20 Hz)</td><td><code>tik</code></td><td>Simülasyon motoru (canlıda erken döner)</td></tr>
+<tr><td>100 ms (10 Hz)</td><td><code>domTik</code></td><td>DOM güncelleme, sağlık, alarm, video nabzı</td></tr>
+<tr><td>200 ms (5 Hz)</td><td><code>durumYokla</code></td><td><code>chase_status</code></td></tr>
+<tr><td>500 ms (2 Hz)</td><td><code>pnpYokla</code></td><td><code>telemetry/pnp</code></td></tr>
+<tr><td>500 ms (2 Hz)</td><td><code>elrsYokla</code></td><td>ESP32 <code>/api/status</code></td></tr>
+<tr><td>1000 ms (1 Hz)</td><td><code>kayitYokla</code></td><td><code>kayit/durum</code></td></tr>
+<tr><td>1000 ms (1 Hz)</td><td><code>yavasTik</code></td><td>Filo, bütçe, üst şerit</td></tr>
+<tr><td>rAF</td><td><code>cerceve</code></td><td>Canvas çizimi</td></tr>
+</tbody></table></div>
+<p>Tüm yoklamalar <code>document.hidden</code> kapısının arkasındadır; sekme gizliyken durur.</p>
+
+<h3>25.5 · ESP32 <code>/api/status</code> alanları</h3>
+<pre><code>state · state_code · armed · mission_active · arm_permit · estop
+lq · rssi_dbm · telemetry_age_ms
+frame_hz · frame_skips · uptime_s
+ap_ip · ap_clients · sta_enabled · sta_connected · sta_ip · sta_rssi
+channels_us[16]</code></pre>
+
+</main>
+</div>
+
+<button class="basa" id="basa" aria-label="Sayfa başına dön">↑ Başa dön</button>
+
+<script>
+(function(){
+  "use strict";
+  /* ── mimari diyagram açıklamaları ── */
+  var BILGI = {
+    drone:["ARAÇ","İki simüle araç: ArduCopter <i>iris</i> (AVCI-01, sysid 5) ve ArduPlane <i>mini_talon_vtail</i> (HEDEF, sysid 2). Gazebo Harmonic içinde fizikleriyle uçarlar."],
+    fc:["ArduPilot (SITL)","Uçuş kontrolcüsü yazılımı. Gerçek donanım yerine bilgisayarda koşar (SITL). Motorları/yüzeyleri sürer, EKF ile konum kestirir, MAVLink mesajları üretir."],
+    mav:["MAVLink","UDP üzerinden akan standart mesaj protokolü. Port 14541 iris'e özel, 14550 her iki araç için yayın, 14551 Mission Planner'a ayrılmış."],
+    srv:["gcs_server.py","FastAPI sunucu. MAVLink okur, <code>telemetry_state</code>'i günceller, kamera karelerini JPEG'e çevirir, güdümü yürütür, REST + WebSocket sunar. Port 8000."],
+    ui:["operator.html","Tek dosyalık operatör arayüzü. Sıfır harici bağımlılık; <code>file://</code> ile çevrimdışı da açılır. ~5400 satır."],
+    cam:["Gazebo kamera","Sanal kameralar: <code>/iris_cam/image</code> (125° FOV, 640×480, 25° yukarı tilt) ve <code>/talon_cam/image</code> (103.1° FOV)."],
+    yolo:["YOLO + HybridSORT","Nesne tespit ağı ve çoklu-nesne takipçisi. Kamera karesinde hedef uçağı arar, kutu ve güven üretir. Bu kurulumda CPU'da koşar (~3.5 FPS)."],
+    det:["detection_state","Tespit ve pose sonuçlarının paylaşımlı durumu (<code>vision/detection_state.py</code>). <code>set_detection()</code> / <code>get_detection()</code>."],
+    pnp:["/api/telemetry/pnp","Görüş hattının GERÇEK çıktısını yayınlar: YOLO güveni, pose güveni, görüş menzili, kilit sayacı ve faz kapıları. Güdüme hiçbir şey göndermez, salt gözlemdir."],
+    sup:["supervisor","Faz yöneticisi. GPS ↔ görsel faz geçişlerini yönetir. Kilit ölçütü: 15 karelik pencerede en az 10 karede conf ≥ 0.5."],
+    gud:["Güdüm yasaları","<code>gps_guidance</code> (istasyon geometrisi) ve <code>bbox_ibvs</code> (kutu tabanlı görsel servo). 181 birim testiyle korunur."],
+    chase:["/api/chase_status","Aktif takip durumu: faz, menzil, güdüm modu, kilit sayacı, kadraj açıları. Arayüz 5 Hz yoklar ve RTT'yi buradan ölçer."],
+    esp:["ESP32","<code>elrs_square_gcs.ino</code>. Kendi Wi-Fi AP'sini yayınlar, CRSF paketleri üretir, fiziksel E-STOP ve ARM izin anahtarını okur. Harici kütüphane kullanmaz."],
+    crsf:["CRSF protokolü","<code>RC_CHANNELS_PACKED (0x16)</code>: 16×11 bit kanal, 0xD5 polinomlu CRC8, 400 kbaud, hedef 50 Hz. Gerçekleşen hız ölçülür."],
+    elrs:["ELRS TX/RX","ExpressLRS telsiz bağlantısı. <code>LINK_STATISTICS (0x14)</code> mesajından gerçek LQ ve RSSI çözümlenir."],
+    ap:["ESP32 Wi-Fi","AP <code>192.168.4.1</code> her zaman açık (saha yedeği). <code>STA_SSID</code> doluysa AP+STA modunda mevcut ağa da katılır."]
+  };
+  var kutu = document.getElementById("dbilgi");
+  Array.prototype.forEach.call(document.querySelectorAll(".dkutu"), function(g){
+    function ac(){
+      var b = BILGI[g.getAttribute("data-b")];
+      if (b) kutu.innerHTML = "<b>" + b[0] + "</b>" + b[1];
+    }
+    g.addEventListener("click", ac);
+    g.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); ac(); } });
+  });
+
+  /* ── aktif bölüm izleme ── */
+  var baglar = Array.prototype.slice.call(document.querySelectorAll("#nav a"));
+  var basliklar = baglar.map(function(a){ return document.querySelector(a.getAttribute("href")); }).filter(Boolean);
+  function aktifSec(){
+    var y = window.scrollY + 90, s = null;
+    basliklar.forEach(function(h){ if (h.offsetTop <= y) s = h; });
+    baglar.forEach(function(a){
+      a.classList.toggle("aktif", s && a.getAttribute("href") === "#" + s.id);
+    });
+  }
+  /* ── başa dön ── */
+  var basa = document.getElementById("basa");
+  basa.addEventListener("click", function(){ window.scrollTo({top:0, behavior:"smooth"}); });
+  function kaydir(){
+    basa.classList.toggle("gor", window.scrollY > 420);
+    aktifSec();
+  }
+  window.addEventListener("scroll", kaydir, {passive:true});
+  kaydir();
+
+  /* ── arama ── */
+  var ara = document.getElementById("araKutu");
+  ara.addEventListener("input", function(){
+    var q = ara.value.trim().toLocaleLowerCase("tr");
+    baglar.forEach(function(a){
+      a.classList.toggle("gizli", q.length > 0 && a.textContent.toLocaleLowerCase("tr").indexOf(q) < 0);
+    });
+  });
+})();
+</script>
+</body>
+</html>
