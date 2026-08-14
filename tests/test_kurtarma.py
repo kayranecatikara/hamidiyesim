@@ -48,6 +48,9 @@ def main():
     class _V2(KurtCfg):
         KURT_V2 = True
 
+    class _Eski(KurtCfg):          # V2 öncesi davranış (kill-switch kapalı)
+        KURT_V2 = False
+
     def _kos(cfg, dizi, dt=0.05):
         """dizi = [(roll°, pitch°, yaw°)...] → (aktif_kareler, kurt)"""
         k = Kurtarma(cfg)
@@ -71,12 +74,13 @@ def main():
             f"— araç 75°'ye kadar dönmeye devam etti, hedef KAYMADI")
 
     # K9 — ESKİ DAVRANIŞ BİT BİT AYNI (varsayılan KAPALI)
-    _akt_v1, _k1 = _kos(KurtCfg, _diz)
+    _akt_v1, _k1 = _kos(_Eski, _diz)
     _akt_v2, _k2 = _kos(_V2, _diz)
-    kontrol("K9 V2 KAPALIYKEN kilit_yaw kurulmaz (eski davranış korunur)",
-            KurtCfg.KURT_V2 is False and _k1.kilit_yaw is None,
-            f"AVCI_KURT_V2 varsayılan {KurtCfg.KURT_V2} → kilit_yaw "
-            f"{_k1.kilit_yaw} (çağıran eskisi gibi iyaw yollar)")
+    _akt_e, _ke = _kos(_Eski, _diz)
+    kontrol("K9 V2 KAPATILABİLİR (kill-switch: kilit_yaw kurulmaz)",
+            _ke.kilit_yaw is None and KurtCfg.KURT_V2 is True,
+            f"AVCI_KURT_V2=0 → kilit_yaw {_ke.kilit_yaw} (eski davranış); "
+            f"varsayılan ise AÇIK ({KurtCfg.KURT_V2}) — 2026-08-14'te girdi")
 
     # K10 — FRENLEME PITCH'İ ARTIK BIRAKMAYI ENGELLEMİYOR (kusur 2)
     # Senaryo: kaçak dönme tetikler; sonra dönme durur ve roll düzelir,
@@ -84,7 +88,7 @@ def main():
     _fren = [(0, 0, 0), (0, 0, 20), (0, 0, 40)]           # tetik
     _fren += [(2, -46, 40) for _ in range(40)]            # 2 s: roll temiz,
     #                                                       pitch frenlemede
-    _a_v1, _kk1 = _kos(KurtCfg, _fren)
+    _a_v1, _kk1 = _kos(_Eski, _fren)
     _a_v2, _kk2 = _kos(_V2, _fren)
     kontrol("K10 V2: frenleme pitch'i (−46°) bırakmayı ENGELLEMEZ",
             _a_v1[-1] is True and _a_v2[-1] is False,

@@ -82,7 +82,13 @@ class KurtCfg:
     #    ⚠ pitch TETİKTE KALIR (>60° hâlâ tetikler) — araç gerçekten burun
     #    aşağı devrilirse yeniden tetiklenir. Gevşeyen yalnız ÇIKIŞ.
     #    Gerekçe: takla ROLL'dur; pitch normal uçuşun (ve frenlemenin) parçası.
-    KURT_V2 = _env_f("AVCI_KURT_V2", 0.0) >= 0.5   # 0 = eski davranış
+    KURT_V2 = _env_f("AVCI_KURT_V2", 1.0) >= 0.5   # 0 = eski davranış
+    # ⇑ 2026-08-14: SİSTEME GİRDİ. 16 uçuş (2 tur, 8v8), tür dağılımı eşit:
+    #   kurtarma süresi medyanı 11.2 s → 5.6 s (n=8 olay)
+    #   en yakın menzil 0.52 → 0.40 m · dikey ıska −0.10 → +0.10 m
+    #   görsel temas %64 → %62 (fark yok) · isabet 7/8 → 5/8
+    # İsabet farkı (2 koşu) koşu değişkenliğinin altında; kullanıcı
+    # panelden açıp kapatarak kendi gözüyle de doğruladı ve onayladı.
 
 
 class Kurtarma:

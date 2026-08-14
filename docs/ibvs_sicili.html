@@ -457,11 +457,11 @@
       <span class="etiket">denenen özellik</span>
     </div>
     <div class="kutucuk t-girdi">
-      <span class="sayi">13</span>
+      <span class="sayi">14</span>
       <span class="etiket">✅ sisteme girdi</span>
     </div>
     <div class="kutucuk t-bekle">
-      <span class="sayi">5</span>
+      <span class="sayi">4</span>
       <span class="etiket">⏸ beklemede / kararsız</span>
     </div>
     <div class="kutucuk t-elendi">
@@ -1145,28 +1145,16 @@
       </div>
       <div class="kaynak">kaynak: commit 702e479 · bbox_ibvs.py Cfg "KÖR HÜCUM SÜRE SINIRI"</div>
     </article>
-  </section>
-
-  <!-- ═══════════════════════════════════════════════════════════
-       BÖLÜM 2 — BEKLEMEDE / KARARSIZ
-       ═══════════════════════════════════════════════════════════ -->
-  <section class="bolum">
-    <div class="bolum-bas">
-      <h2><span class="no">BÖLÜM 2</span> ⏸ Beklemede / kararsız</h2>
-      <p>Ölçüldü ama karar verilemedi: ya n yetersiz, ya sonuç bölünmüş, ya da önceden ilan
-         edilmiş bir karar kuralı durdurdu. Varsayılanları KAPALI — ama elenmediler.</p>
-    </div>
-
     <!-- ── K-V2 ── -->
-    <article class="kart k-bekle">
+    <article class="kart k-girdi">
       <div class="kart-bas">
         <h3><span class="kod">K-V2</span> — Kurtarma bekçisi kilitlenme düzeltmesi</h3>
-        <span class="rozet r-bekle">kullanıcı onayında</span>
+        <span class="rozet r-girdi">girdi</span>
       </div>
       <div class="meta">
         <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_KURT_V2</span></div>
-        <div><span class="m-a">varsayılan</span><span class="m-d">0 = KAPALI (önerilen: AÇIK)</span></div>
-        <div><span class="m-a">uçuş (n)</span><span class="m-d">8 (4v4) + 35 tarihsel kontrol olayı</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">1 = AÇIK (kill-switch AVCI_KURT_V2=0)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">16 (2 tur × 4v4, tür dağılımı eşit)</span></div>
         <div><span class="m-a">kaynak</span><span class="m-d">c56b9a8 · dde63ff · Y01-Y08</span></div>
       </div>
       <div class="blok">
@@ -1227,18 +1215,42 @@
         bu kez rapor yazılmadan önce yakalandı. Panel artık
         <code>"modul:ALAN"</code> biçimini destekliyor.</p>
       </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>TUR 1 + TUR 2 BİRLEŞİK (n=8v8)</th><th class="s">eski bekçi</th><th class="s">K-V2</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">kurtarma süresi (birincil)</td><td class="s">11.2 s</td><td class="s kazanan">5.6 s</td></tr>
+            <tr><td class="ad">en yakın menzil</td><td class="s">0.52 m</td><td class="s kazanan">0.40 m</td></tr>
+            <tr><td class="ad">⚑ dikey ıska (− = altta)</td><td class="s">−0.10 m (altta 5/8)</td><td class="s kazanan">+0.10 m (altta 3/8)</td></tr>
+            <tr><td class="ad">görsel temas</td><td class="s">%64</td><td class="s">%62</td></tr>
+            <tr><td class="ad">İSABET</td><td class="s kazanan">7/8</td><td class="s kaybeden">5/8</td></tr>
+            <tr><td class="ad">tamamlanan kurtarma olayı</td><td class="s">3</td><td class="s">8</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ İKİ HÜKMÜM DÜZELTİLDİ</span>
+        <p><strong>1) "10.7 → 4.9 s" ŞİŞİKTİ.</strong> Tur 2'de K-V2 olayları
+        11.3 / 14.3 / 15.6 s de sürdü. Birleşik medyan <strong>5.6 s</strong> (n=8 olay)
+        — hâlâ kontrolün 11.2 s'sinin altında, ama "4.9" dağılımın bir ucunu
+        örnekleyen sayıydı.</p>
+        <p><strong>2) DİKEY SİNYALİ TERSİNE DÖNDÜ.</strong> Kullanıcı "hedef düz
+        giderken alttan kaçırdık" dedi. Tur 1 (n=4v4) K-V2 aleyhine görünüyordu
+        (kontrol +0.10, K-V2 −0.10 m). Tur 2 bunu TERSİNE çevirdi (kontrol −0.20 m
+        ve <strong>4/4 altta</strong>, K-V2 +0.20 m). Birleşikte altta kalma
+        <em>kontrol kolunda daha fazla</em> ⇒ <strong>alttan kaçırma K-V2'nin
+        ürettiği bir gerileme DEĞİL</strong>, sistemde zaten var olan bir özellik.
+        §5.4'ün ders kitabı örneği.</p>
+      </div>
       <div class="karar">
-        <span class="b-a">karar — kullanıcı onayında</span>
-        <p>Önceden ilan edilen kural <strong>girmesi yönünde</strong>: süre belirgin
-        düştü, iki birincil ölçüt de kazandı, isabet/menzilde gerileme yok, emniyet
-        ihlali yok. Ama varsayılanı değiştirmek güdüm davranışını değiştirmektir
-        (§1) → <strong>karar kullanıcıya</strong>. Varsayılan şimdilik KAPALI.</p>
-        <p>⚠ <strong>Dürüst sınır:</strong> K-V2 kolunda 3 tamamlanmış olay var.
-        Kıyasın ağırlığı 35 olaylık tarihsel havuzdan geliyor ve o havuz senaryo
-        bakımından eşlenmiş DEĞİL (§5.9). Ayrım büyük olduğu için yön güvenilir,
-        ama etkinin BÜYÜKLÜĞÜ ±birkaç saniye oynayabilir.
-        Ayrıca tetik sayısı kollar arasında kıyaslanamaz: faz geçişi bekçiyi
-        yeniden kurduğu için bazı olaylar "toparlandı" basmadan kesiliyor.</p>
+        <span class="b-a">karar — GİRDİ (2026-08-14)</span>
+        <p>Dört ölçüt K-V2 lehine, isabet kontrol lehine (7/8 vs 5/8). Önceden ilan
+        edilen kural "isabette gerileme yok" istiyordu → otomatik giremedi ve §5.6
+        gereği ölçüt değiştirilmeden <strong>kullanıcıya götürüldü</strong>.
+        Kullanıcı panelden açıp kapatarak <strong>kendi gözüyle doğruladı</strong>
+        ve onayladı. İsabetteki 2 koşuluk fark, aynı kolda en yakın menzilin
+        0.11–1.97 m arasında gezdiği bir gürültü seviyesinde ayırt edilemez;
+        kurtarma süresi ise <strong>8 olayda</strong> ölçüldü ve ayrım büyük.</p>
       </div>
       <div class="ders">
         <span class="b-a">ders</span>
@@ -1252,6 +1264,18 @@
       </div>
       <div class="kaynak">kaynak: commit c56b9a8, dde63ff · logs/kayit/ucus_20260813_154505 · logs/kacamak/Y01-Y08 · testler K8-K13</div>
     </article>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BÖLÜM 2 — BEKLEMEDE / KARARSIZ
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2><span class="no">BÖLÜM 2</span> ⏸ Beklemede / kararsız</h2>
+      <p>Ölçüldü ama karar verilemedi: ya n yetersiz, ya sonuç bölünmüş, ya da önceden ilan
+         edilmiş bir karar kuralı durdurdu. Varsayılanları KAPALI — ama elenmediler.</p>
+    </div>
 
     <!-- ── M2 ── -->
     <article class="kart k-bekle">
