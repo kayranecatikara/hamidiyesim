@@ -605,14 +605,20 @@ düşerse arayüz kendiliğinden MOCK'a döner ve bunu rozetle bildirir.</p>
   <span class="r r-tahmin">TAHMİN</span> rozeti, <code>~3S</code> işareti ve alarm metnindeki
   "(TAHMİNİ 3S eşiğine göre)" ifadesiyle her yerde belirtir.
 </p>
-<div class="kutu k-bilgi">
-  <b class="bas">BATTERY_STATUS (msg 147) — henüz uygulanmadı</b>
-  <p>Bu MAVLink mesajının <code>voltages[10]</code> dizisi <b>hücre başına voltajı</b> taşır;
-  hücre sayısı tahmin edilmez, <b>ölçülür</b>. Ayrıca tüketilen mAh'i de verir.</p>
-  <p><b>Neden uygulanmadı:</b> sunucuya yeni mesaj işleyicisi gerekir ve SITL'in bu diziyi
-  gerçekten hücre-başı doldurup doldurmadığı <b>önce ölçülmelidir</b> — basit SITL batarya
-  arka ucu tüm paketi <code>voltages[0]</code>'a koyuyor olabilir.
-  <span class="r r-dogrulanmadi">DOĞRULANMADI</span></p>
+<div class="kutu k-kritik">
+  <b class="bas">BATTERY_STATUS (msg 147) — ÖLÇÜLDÜ, uygulanmadı</b>
+  <p>Bu mesajın <code>voltages[10]</code> dizisinin hücre başına voltaj taşıyıp taşımadığı
+  2026-08-14'te gerçek SITL'de <b>ölçüldü</b>. Sonuç:</p>
+  <pre><code>voltages[10] = [12600, 65535, 65535, 65535, 65535,
+                65535, 65535, 65535, 65535, 65535]</code></pre>
+  <p>Yalnız <b>tek eleman dolu</b>: <code>12600 mV</code> — bu, hücre voltajı değil
+  <b>tüm paket voltajıdır</b>. Kalan dokuzu <code>65535</code> (MAVLink'te "mevcut değil").</p>
+  <p><b>Sonuç: BATTERY_STATUS hücre tahminini ORTADAN KALDIRMAZ.</b> SITL'de
+  <code>SYS_STATUS</code> ile birebir aynı bilgiyi veriyor (12600 mV · 0 cA · %100), üstelik
+  aynı hızda (14.4 Hz). Bu yüzden <b>uygulanmadı</b> — varsayımla değil, ölçümle verilen karar.</p>
+  <p>Tek ek bilgisi <code>current_consumed</code> (tüketilen mAh). Gerçek donanımda hücre-başı
+  voltaj sağlayan bir BMS varsa durum değişebilir; bu
+  <span class="r r-dogrulanmadi">DOĞRULANMADI</span>.</p>
 </div>
 
 
@@ -1024,17 +1030,50 @@ d|r|/dt = (r · Δv) / |r|
   <code>66f3e1d</code>.</p>
 </div>
 
-<h3>Değişim denetçisi</h3>
+<h3>Mesaj yaşı — sunucu kaynaklı yer gerçeği</h3>
 <p>
-  <code>mavDegisimGuncelle()</code>, konum · irtifa · yönelme · hız · mod · ARM alanlarının
-  <b>imzasını</b> karşılaştırır. İmza değişmiyorsa araç veri üretmiyor demektir.
+  Sunucu <b>her MAVLink mesaj tipinin son alınma anını</b> damgalar ve yaşını saniye olarak
+  WebSocket paketine ekler (<code>payload.mesaj_yasi</code>). Yaş sunucuda hesaplanır, bu
+  yüzden tarayıcı/sunucu saat farkı sorunu yoktur.
 </p>
+<pre><code>"mesaj_yasi": {
+  "iris":  { "ATTITUDE": 0.03, "GPS_RAW_INT": 0.05, "SYS_STATUS": 0.04, … },
+  "plane": { … }
+}</code></pre>
+<p>Arayüz tazeliği artık <b>tahmin etmez</b>, sunucudan öğrenir:</p>
+<div class="tw"><table>
+<thead><tr><th>Gösterge</th><th>Kullandığı mesaj</th><th>Eşik</th></tr></thead>
+<tbody>
+<tr><td>MAVLINK sağlığı</td><td><code>ATTITUDE</code> / <code>LOCAL_POSITION_NED</code> / <code>HEARTBEAT</code> — en tazesi</td><td>3 sn uyarı · 12 sn kritik</td></tr>
+<tr><td>Batarya tazeliği</td><td><code>SYS_STATUS</code></td><td>3 sn yaşlı · 12 sn bayat</td></tr>
+<tr><td>GPS tazeliği</td><td><code>GPS_RAW_INT</code></td><td>3 sn yaşlı · 12 sn bayat</td></tr>
+</tbody></table></div>
+<p>
+  <b>Eşikler gerekçelidir:</b> ölçülen gerçek mesaj hızı SITL'de ~14.4 Hz, yani normal yaş
+  0.1 sn'nin altındadır. 3 sn ≈ 40'tan fazla kayıp mesaj — gerçek bir kesinti. 12 sn ise
+  kurtarma umudunun kalmadığı sınır.
+</p>
+
+<div class="kutu k-kritik">
+  <b class="bas">Neden imza sezgisinden vazgeçildi</b>
+  <p>Önceki sürüm araç alanlarının <b>değişip değişmediğine</b> bakıyordu. Bu bir çareydi —
+  sunucu o zaman mesaj yaşı bildirmiyordu. Gerçek SITL testinde <b>yanlış pozitif ürettiği
+  görüldü</b>: araç yerde, disarm ve hareketsizken değerler doğal olarak değişmiyor ve arayüz
+  <code>DEĞİŞMİYOR · 12 sn</code> alarmı basıyordu.</p>
+  <p>Operatörü alarmları görmezden gelmeye alıştıran türden bir hata. Mesaj yaşı <b>yer
+  gerçeğidir</b>: araç hareketsiz olsa bile <code>ATTITUDE</code> akmaya devam eder, mesajlar
+  gerçekten durursa yaş büyür. İmza sezgisi yalnız <b>yedek</b> olarak duruyor (sunucu yaş
+  bildirmiyorsa).</p>
+</div>
+
 <div class="kutu k-uyari">
-  <b class="bas">Dürüstlük sınırı</b>
-  <p>Bu, "MAVLink öldü" <b>kanıtı değildir</b> — yerde duran, disarm bir araç da bir süre aynı
-  değerleri üretebilir. Gösterge bu yüzden "MAVLINK YOK" demez, <b>ölçtüğü şeyi söyler</b>:
-  <code>DEĞİŞMİYOR</code>. Eşikler belirsizliği hesaba katacak kadar geniştir
-  (5 sn uyarı / 12 sn kritik).</p>
+  <b class="bas">Kapatılan boşluk: tek akışın durması</b>
+  <p>Eskiden bir <b>tek</b> mesaj tipi dursa (örn. <code>GPS_RAW_INT</code>) ama diğerleri
+  aksa, arayüz donmuş "3B FIX · 14 UYDU" değerini <b>CANLI</b> göstermeye devam ediyordu.
+  Tazelik damgası her WS paketinde yenileniyordu; oysa sunucu MAVLink ölse bile son bilinen
+  değeri 10 Hz yayınlar.</p>
+  <p>Artık <code>mesajdur</code> alarmı bu durumu ayrıca bildirir:
+  <code>TELEMETRİ AKIŞI DURDU — GPS (14 sn) güncellenmiyor</code>.</p>
 </div>
 
 <h3>Yeniden bağlanma</h3>
@@ -1076,7 +1115,7 @@ YENİDEN BAĞLANIYOR · BAĞLANTI KOPTU · YEREL SİMÜLASYON</code></pre>
   operatör de durumu ayırt edebilir.</p>
 </div>
 
-<h3>On sağlık hücresi</h3>
+<h3>On iki sağlık hücresi</h3>
 <div class="tw"><table>
 <thead><tr><th>Hücre</th><th>Ne kontrol eder</th><th>Kaynak</th></tr></thead>
 <tbody>
@@ -1089,7 +1128,9 @@ YENİDEN BAĞLANIYOR · BAĞLANTI KOPTU · YEREL SİMÜLASYON</code></pre>
 <tr><td><b>GPS</b></td><td>Fix tipi + uydu sayısı</td><td><code>GPS_RAW_INT</code> <span class="r r-gercek">GERÇEK</span></td></tr>
 <tr><td><b>BATARYA</b></td><td>Yüzde veya voltaj + tahmin işareti</td><td><code>SYS_STATUS</code> <span class="r r-gercek">GERÇEK</span></td></tr>
 <tr><td><b>RF LİNK</b></td><td>ELRS LQ + RSSI</td><td>CRSF <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>YOLO</b></td><td>Dedektör ayakta mı (hedefi görüp görmemesinden ayrı)</td><td><code>pnp</code> ucu cevabı <span class="r r-turetilmis">TÜRETİLMİŞ</span></td></tr>
 <tr><td><b>HEDEF</b></td><td>Kilit / tespit güveni / menzil</td><td><code>pnp</code> + <code>chase_status</code> <span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><b>KAYIT</b></td><td>Uçuş kaydı sürüyor mu, kare sayısı</td><td><code>/api/kayit/durum</code> <span class="r r-gercek">GERÇEK</span></td></tr>
 </tbody></table></div>
 
 <h3>Teşhis katmanı (<kbd>G</kbd> tuşu)</h3>
@@ -1110,14 +1151,15 @@ YENİDEN BAĞLANIYOR · BAĞLANTI KOPTU · YEREL SİMÜLASYON</code></pre>
 <p>
   Alarmlar <b>gerçek ölçümlerden</b> türer ve koşul kalkınca <b>kendiliğinden kapanır</b>
   (yapışkan uyarı yoktur). Her alarm bir kimliğe sahiptir; aynı alarm tekrar tekrar log'a
-  düşmez. Kodda tanımlı <b>on alarm</b> vardır:
+  düşmez. Kodda tanımlı <b>on bir alarm</b> vardır:
 </p>
 <div class="tw"><table>
 <thead><tr><th>Kimlik</th><th>Tetikleme koşulu</th><th>Kaynak</th><th>Seviye</th></tr></thead>
 <tbody>
 <tr><td><code>baglanti</code></td><td>Canlı mod, WebSocket bağlı değil</td><td><code>CANLI_AKTIF</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>KRİTİK</td></tr>
 <tr><td><code>tlm</code></td><td>Paket yaşı &gt; 3 sn</td><td><code>D.sonKare</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>KRİTİK</td></tr>
-<tr><td><code>mavdon</code></td><td>Araç değer imzası &gt; 5 sn değişmedi</td><td><code>mavDegisimYasi()</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI → KRİTİK (12 sn)</td></tr>
+<tr><td><code>mavdon</code></td><td>Araçtan mesaj &gt; 3 sn gelmiyor</td><td>sunucu mesaj yaşı <span class="r r-gercek">GERÇEK</span></td><td>UYARI → KRİTİK (12 sn)</td></tr>
+<tr><td><code>mesajdur</code></td><td>Tek bir mesaj akışı durdu (SYS_STATUS / GPS_RAW_INT &gt; 12 sn)</td><td>sunucu mesaj yaşı <span class="r r-gercek">GERÇEK</span></td><td>UYARI</td></tr>
 <tr><td><code>video</code></td><td>Akış durumu ≠ akış / kapalı</td><td><code>VID.durum</code> <span class="r r-turetilmis">TÜRETİLMİŞ</span></td><td>UYARI / KRİTİK</td></tr>
 <tr><td><code>gps</code></td><td><code>gps_frozen</code> bayrağı</td><td>sunucu durumu <span class="r r-gercek">GERÇEK</span></td><td>KRİTİK</td></tr>
 <tr><td><code>gpsfix</code></td><td><code>fix_type &lt; 2</code> veya uydu &lt; 6</td><td><code>GPS_RAW_INT</code> <span class="r r-gercek">GERÇEK</span></td><td>KRİTİK / UYARI</td></tr>

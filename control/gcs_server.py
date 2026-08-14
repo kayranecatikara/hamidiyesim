@@ -1823,10 +1823,30 @@ def video_feed(vehicle: str):
 # -----------------------------------------------------------------------
 # MAVLINK TELEMETRİ (14550=plane/ana GCS broadcast, 14541=iris)
 # -----------------------------------------------------------------------
+# ── MESAJ BAŞINA SON ALINMA ZAMANI (2026-08-14) ────────────────────────
+# NEDEN: telemetry_state son BİLİNEN değeri tutar ve WebSocket bunu MAVLink
+# ölse bile 10 Hz yayınlamayı sürdürür. Arayüz "paket geldi"yi "veri taze"
+# sanıyordu. Somut arıza: GPS modülü koparsa GPS_RAW_INT durur ama
+# LOCAL_POSITION_NED (EKF ölü hesapla) akmaya devam eder → arayüz donmuş
+# "3B FIX · 14 UYDU" değerini CANLI göstermeye devam eder. Aynısı batarya
+# monitörü ölürse SYS_STATUS için geçerlidir.
+#
+# ÇÖZÜM: her mesaj tipinin son alınma anını sunucu damgalar; yaş bilgisini
+# WebSocket paketine ekler. Arayüz artık TAHMİN ETMEZ, sunucudan öğrenir.
+#
+# RİSK: yok. Salt yazma; hiçbir okuma yolu, güdüm veya komut etkilenmez.
+# API'ye yalnız EKLEME yapılır (mesaj_yasi), mevcut alanlar değişmez.
+_son_mesaj = {"iris": {}, "plane": {}}
+
+
 def _process_mavlink_msg(msg, vehicle_name):
     """Gelen MAVLink mesajını işle ve telemetry_state'e yaz."""
     msg_type = msg.get_type()
     sys_id = msg.get_srcSystem()
+
+    # Mesaj tipi bazında son alınma anı — tazelik denetimi için.
+    if vehicle_name in _son_mesaj:
+        _son_mesaj[vehicle_name][msg_type] = time.time()
 
     # İstatistik güncelle
     _mavlink_stats["total"] += 1
@@ -2103,6 +2123,14 @@ async def websocket_endpoint(websocket: WebSocket):
             payload["gps_noise"] = _gps_noise_level
             payload["gps_frozen"] = _noisy_plane_telem.get("frozen", False)
             payload["plane_throttle"] = _plane_throttle
+            # Mesaj tipi bazında YAŞ (saniye). Arayüz tazeliği buradan öğrenir;
+            # "paket geldi"yi "veri taze" sanmaz (bkz. _son_mesaj açıklaması).
+            # Yaş sunucuda hesaplanır → tarayıcı/sunucu saat farkı sorunu olmaz.
+            _simdi = time.time()
+            payload["mesaj_yasi"] = {
+                arac: {tip: round(_simdi - ts, 2) for tip, ts in tipler.items()}
+                for arac, tipler in _son_mesaj.items()
+            }
             await websocket.send_json(payload)
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:

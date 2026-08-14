@@ -876,7 +876,9 @@ button{background:none;border:0;cursor:pointer}
         <div class="saglik-h" data-d="" data-h="gps"><span class="etiket">GPS</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="batarya"><span class="etiket">BATARYA</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="elrs"><span class="etiket">RF LİNK</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="yolo"><span class="etiket">YOLO</span><span class="d">—</span></div>
         <div class="saglik-h" data-d="" data-h="hedef"><span class="etiket">HEDEF</span><span class="d">—</span></div>
+        <div class="saglik-h" data-d="" data-h="kayit"><span class="etiket">KAYIT</span><span class="d">—</span></div>
       </div>
     </section>
 
@@ -1455,6 +1457,44 @@ const DUR = { CANLI:"CANLI", BAYAT:"BAYAT", KOPUK:"KOPUK",
               YOK:"VERİ YOK", SIM:"SİMÜLE", TAHMIN:"TAHMİN" };
 const DUR_SIDDET = { CANLI:"ok", BAYAT:"uyari", KOPUK:"kritik",
                      "VERİ YOK":"", "SİMÜLE":"uyari", "TAHMİN":"uyari" };
+
+/* ══ MESAJ TİPİ BAZINDA TAZELİK — SUNUCU KAYNAKLI ══════════════════════
+   BULUNAN ARIZA (audit, 2026-08-14): arayüz tazeliği "WS paketi geldi mi"
+   ile ölçüyordu. Ama gcs_server, bir MAVLink mesaj tipi TAMAMEN DURSA BİLE
+   son bilinen değeri 10 Hz yayınlamayı sürdürür.
+
+   Somut senaryo: GPS modülü kopar → GPS_RAW_INT durur, ama LOCAL_POSITION_NED
+   (EKF ölü hesapla) akmaya devam eder. Arayüz donmuş "3B FIX · 14 UYDU"
+   değerini CANLI göstermeye devam ederdi. Aynısı batarya monitörü ölürse
+   SYS_STATUS için geçerliydi. Dünkü mavDegisimGuncelle() bunu yakalamaz —
+   imzasında gps_fix ve batt_v YOK.
+
+   ÇÖZÜM: sunucu her mesaj tipinin yaşını bildiriyor (payload.mesaj_yasi).
+   Arayüz artık TAHMİN ETMEZ.
+
+   EŞİKLER — gerekçeli, rastgele değil:
+     Ölçülen gerçek hız (SITL): SYS_STATUS ve GPS_RAW_INT ~14.4 Hz.
+     Yani normal yaş < 0.1 sn. 3 sn = ~43 kayıp mesaj → gerçek bir kesinti.
+     12 sn = kurtarma umudu kalmadı. Aynı eşikler dünkü batarya tazeliğinde
+     de kullanılıyordu; tutarlılık için korundu. */
+const MESAJ_YASI = { veri:null, destekli:false };
+
+/* Bir MAVLink mesaj tipinin yaşı (sn). Sunucu bildirmiyorsa null. */
+function mesajYasi(tip){
+  if (!MESAJ_YASI.destekli || !MESAJ_YASI.veri) return null;
+  const y = MESAJ_YASI.veri[tip];
+  return (typeof y === "number" && isFinite(y)) ? y : null;
+}
+
+/* Mesaj tipinden tazelik durumu. Sunucu desteklemiyorsa "bilinmiyor" döner —
+   sahte tazelik ÜRETİLMEZ. */
+function mesajTazeligi(tip, yasliSn, bayatSn){
+  const y = mesajYasi(tip);
+  if (y === null) return null;                 /* bilinmiyor */
+  if (y > (bayatSn || 12)) return TAZELIK.BAYAT;
+  if (y > (yasliSn || 3))  return TAZELIK.YASLI;
+  return TAZELIK.TAZE;
+}
 
 /* ── TAZELİK ─────────────────────────────────────────────────────────────
    "Veri geldi" ile "veri GÜNCEL" aynı şey değil. 30 sn önce gelmiş bir
@@ -4287,13 +4327,27 @@ function telemetriUygula(p){
     D.batt_v   = gecerliSayi(I.batt_v,   0, 100);
     D.batt_a   = gecerliSayi(I.batt_a,  -500, 500);
     D.batt_pct = gecerliSayi(I.batt_pct, 0, 100);
-    if (D.batt_v !== null) TAZE["batt"] = simdi();
+    /* ⚠ TAZE["batt"] ARTIK BURADA BASILMIYOR — bkz. MESAJ_YASI.
+       Eskiden her WS paketinde damgalanıyordu; sunucu MAVLink ölse bile son
+       bilinen değeri yayınladığı için damga hep taze görünüyordu. Gerçek
+       tazelik sunucudan gelen mesaj yaşından okunur. */
 
     /* GERÇEK GPS KALİTESİ — GPS_RAW_INT */
     D.gps_fix = gecerliSayi(I.gps_fix, 0, 8);
     D.gps_sat = gecerliSayi(I.gps_sat, 0, 64);
     D.gps_eph = gecerliSayi(I.gps_eph, 0, 100);
-    if (D.gps_fix !== null) TAZE["gps"] = simdi();
+    /* TAZE["gps"] de kaldırıldı — aynı gerekçe. */
+  }
+
+  /* ══ MESAJ YAŞLARI — SUNUCUDAN, TAHMİN DEĞİL ═══════════════════════
+     Sunucu her MAVLink mesaj tipinin son alınma anını damgalar ve yaşını
+     saniye olarak yollar. Yaş sunucuda hesaplandığı için tarayıcı/sunucu
+     saat farkı sorunu yoktur.
+     Eski sunucu bu alanı yollamıyorsa MESAJ_YASI boş kalır ve arayüz
+     tazeliği "bilinmiyor" olarak gösterir — sahte tazelik üretmez. */
+  if (p.mesaj_yasi && typeof p.mesaj_yasi === "object"){
+    MESAJ_YASI.veri = p.mesaj_yasi.iris || null;
+    MESAJ_YASI.destekli = true;
   }
   if (I && P){                                   /* menzil yedeği — chase kapalıyken de dolu */
     const dx = (+P.x) - (+I.x), dy = (+P.y) - (+I.y), dz = (+P.z) - (+I.z);
@@ -4416,6 +4470,9 @@ function wsBagla(){
     canliRozet(false);
     if (!WS.kapali) kayit("MAVLINK", "UYARI", "Telemetri bağlantısı kapandı — simülasyona düşüldü, yeniden denenecek");
     WSM.hz = 0;
+    /* Mesaj yaşları GEÇERSİZ KILINIR: son pakette gelen "0.05 sn" değerleri
+       bağlantı koptuktan sonra donar ve tazelik kontrolünü yanıltırdı. */
+    MESAJ_YASI.veri = null;
     wsPlanla();
   });
   ws.addEventListener("error", () => { canliRozet(false); });
@@ -4780,14 +4837,36 @@ function alarmlariDegerlendir(){
   if (CANLI && CANLI_AKTIF && tlmYas > 3) alarmAc("tlm", "kritik", "TELEMETRİ ZAMAN AŞIMI — " + tlmYas.toFixed(0) + " sn veri yok");
   else alarmKapatId("tlm");
 
-  /* ARAÇ VERİSİ DONDU — paket akıyor ama değerler değişmiyor.
-     Bu, WebSocket kopmasından FARKLI bir arızadır: sunucu ayakta,
-     MAVLink hattı sessiz. Eskiden hiç görünmüyordu. */
-  const mvY2 = mavDegisimYasi();
-  if (CANLI && CANLI_AKTIF && isFinite(mvY2) && mvY2 > 5)
-    alarmAc("mavdon", mvY2 > 12 ? "kritik" : "uyari",
-            "ARAÇ VERİSİ DEĞİŞMİYOR — " + mvY2.toFixed(0) + " sn (paket akıyor, MAVLink sessiz olabilir)");
+  /* MAVLINK SESSİZ — sunucu ayakta ve WS paketi akıyor ama araçtan mesaj
+     GELMİYOR. WebSocket kopmasından FARKLI bir arıza sınıfıdır.
+
+     ⚠ 2026-08-14: bu alarm eskiden "değerler değişmiyor mu" sezgisine
+     dayanıyordu ve gerçek SITL testinde YANLIŞ POZİTİF verdi — yerde
+     duran disarm araçta sürekli alarm basıyordu. Artık sunucudan gelen
+     GERÇEK mesaj yaşına dayanıyor; hareketsiz araçta alarm ÜRETMEZ. */
+  const mvA = Math.min(
+    mesajYasi("ATTITUDE") !== null ? mesajYasi("ATTITUDE") : Infinity,
+    mesajYasi("LOCAL_POSITION_NED") !== null ? mesajYasi("LOCAL_POSITION_NED") : Infinity,
+    mesajYasi("HEARTBEAT") !== null ? mesajYasi("HEARTBEAT") : Infinity
+  );
+  if (CANLI && CANLI_AKTIF && isFinite(mvA) && mvA > 3)
+    alarmAc("mavdon", mvA > 12 ? "kritik" : "uyari",
+            "MAVLINK SESSİZ — araçtan " + mvA.toFixed(0) + " sn mesaj gelmiyor (sunucu bağlantısı ayakta)");
   else alarmKapatId("mavdon");
+
+  /* MESAJ TİPİ DURDU — bütün hat değil, TEK bir akış kesildi.
+     Örn. GPS_RAW_INT durur ama ATTITUDE akmaya devam eder: donmuş GPS
+     değeri canlı sanılırdı. Bu alarm o boşluğu kapatır. */
+  const durmusTipler = [];
+  if (CANLI && CANLI_AKTIF && MESAJ_YASI.destekli){
+    [["SYS_STATUS","batarya"], ["GPS_RAW_INT","GPS"]].forEach(function(x){
+      const y = mesajYasi(x[0]);
+      if (y !== null && y > 12) durmusTipler.push(x[1] + " (" + y.toFixed(0) + " sn)");
+    });
+  }
+  if (durmusTipler.length)
+    alarmAc("mesajdur", "uyari", "TELEMETRİ AKIŞI DURDU — " + durmusTipler.join(" · ") + " güncellenmiyor");
+  else alarmKapatId("mesajdur");
 
   if (CANLI && VID.durum !== "akis" && VID.durum !== "kapali")
     alarmAc("video", VID.durum === "hata" ? "kritik" : "uyari", "VİDEO AKIŞI YOK — " + (VID_DURUMLAR[VID.durum] || {}).bas);
@@ -4820,7 +4899,8 @@ function alarmlariDegerlendir(){
   else alarmKapatId("gpsfix");
 
   /* BAYAT TELEMETRİ — veri "geldi" ama güncel değil. */
-  const battBayat = D.batt_v !== null && tazelikDurumu(TAZE["batt"], 4, 12) === TAZELIK.BAYAT;
+  /* Batarya tazeliği artık SYS_STATUS mesajının GERÇEK yaşından okunur. */
+  const battBayat = D.batt_v !== null && mesajTazeligi("SYS_STATUS", 3, 12) === TAZELIK.BAYAT;
   if (battBayat) alarmAc("bayat", "uyari", "BATARYA VERİSİ GÜNCEL DEĞİL — son ölçüm eskidi");
   else alarmKapatId("bayat");
 
@@ -4860,16 +4940,43 @@ function saglikDegerlendir(){
   else if (tlmYas > 3) saglikYaz("telemetri", "kritik", DUR.BAYAT + " · " + tlmYas.toFixed(0) + " sn");
   else saglikYaz("telemetri", "ok", DUR.CANLI + (WSM.hz ? " · " + WSM.hz.toFixed(0) + " Hz" : ""));
 
-  /* MAVLINK — araç GERÇEKTEN veri üretiyor mu? WebSocket'ten AYRI ölçülür:
-     sunucu MAVLink ölse bile son durumu 10 Hz yayınlamayı sürdürür, o yüzden
-     "paket geldi" araç canlı demek DEĞİLDİR (bkz. mavDegisimGuncelle). */
-  const mvY = mavDegisimYasi();
+  /* MAVLINK — araç GERÇEKTEN mesaj yolluyor mu? WebSocket'ten AYRI ölçülür.
+     ARTIK SUNUCUDAN GELEN GERÇEK MESAJ YAŞI KULLANILIYOR (2026-08-14).
+
+     Neden değişti: önceki sürüm araç alanlarının DEĞİŞİP değişmediğine
+     bakıyordu. Bu bir çareydi (sunucu yaş bildirmiyordu) ve gerçek SITL
+     testinde YANLIŞ POZİTİF ürettiği görüldü: araç yerde, disarm ve
+     hareketsizken değerler doğal olarak değişmiyor ve arayüz
+     "DEĞİŞMİYOR · 12 sn" alarmı basıyordu. Operatörü alarm görmezden
+     gelmeye alıştıran türden bir hata.
+
+     Sunucu artık her mesaj tipinin yaşını bildiriyor — bu YER GERÇEĞİDİR.
+     Araç hareketsiz olsa bile ATTITUDE/LOCAL_POSITION_NED akmaya devam
+     eder; mesajlar durursa yaş büyür. Yanlış pozitif yok.
+
+     Eski imza sezgisi YEDEK olarak duruyor: sunucu yaş bildirmiyorsa
+     (eski sürüm) ona düşülür. */
+  const mvYas = Math.min(
+    mesajYasi("ATTITUDE") !== null ? mesajYasi("ATTITUDE") : Infinity,
+    mesajYasi("LOCAL_POSITION_NED") !== null ? mesajYasi("LOCAL_POSITION_NED") : Infinity,
+    mesajYasi("HEARTBEAT") !== null ? mesajYasi("HEARTBEAT") : Infinity
+  );
   if (!CANLI) saglikYaz("mavlink", "uyari", DUR.SIM);
   else if (!CANLI_AKTIF) saglikYaz("mavlink", "kritik", DUR.KOPUK);
-  else if (!isFinite(mvY)) saglikYaz("mavlink", "", DUR.YOK);
-  else if (mvY > 12) saglikYaz("mavlink", "kritik", "DEĞİŞMİYOR · " + mvY.toFixed(0) + " sn");
-  else if (mvY > 5) saglikYaz("mavlink", "uyari", "DEĞİŞMİYOR · " + mvY.toFixed(0) + " sn");
-  else saglikYaz("mavlink", "ok", DUR.CANLI + (MAV.hz ? " · " + MAV.hz.toFixed(0) + " Hz" : ""));
+  else if (isFinite(mvYas)){
+    /* Ölçülen gerçek hız ~14 Hz → normal yaş < 0.1 sn.
+       3 sn ≈ 40+ kayıp mesaj (gerçek kesinti) · 12 sn ≈ kurtarma yok. */
+    if (mvYas > 12) saglikYaz("mavlink", "kritik", DUR.KOPUK + " · " + mvYas.toFixed(0) + " sn sessiz");
+    else if (mvYas > 3) saglikYaz("mavlink", "uyari", DUR.BAYAT + " · " + mvYas.toFixed(1) + " sn");
+    else saglikYaz("mavlink", "ok", DUR.CANLI + " · " + mvYas.toFixed(2) + " sn");
+  } else {
+    /* YEDEK: sunucu yaş bildirmiyor → eski imza sezgisi. Yanlış pozitif
+       riski taşıdığı için eşikler geniş ve metin "olabilir" diyor. */
+    const mvD = mavDegisimYasi();
+    if (!isFinite(mvD)) saglikYaz("mavlink", "", DUR.YOK);
+    else if (mvD > 12) saglikYaz("mavlink", "uyari", "DEĞİŞMİYOR · " + mvD.toFixed(0) + " sn");
+    else saglikYaz("mavlink", "ok", DUR.CANLI + (MAV.hz ? " · " + MAV.hz.toFixed(0) + " Hz" : ""));
+  }
 
   if (!CANLI) saglikYaz("video", "uyari", DUR.SIM + " · SENTETİK");
   else if (VID.durum === "akis"){
@@ -4882,19 +4989,38 @@ function saglikDegerlendir(){
 
   /* GPS — artık GERÇEK fix tipi ve uydu sayısı var (GPS_RAW_INT).
      Mesaj gelmiyorsa uydurmuyoruz, elimizdeki tek gerçek göstergeye düşüyoruz. */
+  const gsTaze = mesajTazeligi("GPS_RAW_INT", 3, 12);
   if (!CANLI) saglikYaz("gps", "uyari", "SİMÜLE");
   else if (!CANLI_AKTIF) saglikYaz("gps", "kritik", "VERİ YOK");
   else if (!D.gps_sabit) saglikYaz("gps", "kritik", "DONDURULDU");
+  /* Bayat GPS ızgarada da BAYAT görünür — aynı gerekçe (bkz. batarya). */
+  else if (gsTaze === TAZELIK.BAYAT && D.gps_fix !== null)
+    saglikYaz("gps", "uyari", DUR.BAYAT + " · " + (GPS_FIX_ADI[D.gps_fix] || "FIX " + D.gps_fix));
   else if (D.gps_fix !== null)
     saglikYaz("gps", D.gps_fix < 2 ? "kritik" : D.gps_fix < 3 ? "uyari" : "ok",
               (GPS_FIX_ADI[D.gps_fix] || "FIX " + D.gps_fix)
               + (D.gps_sat !== null ? " · " + D.gps_sat : ""));
   else saglikYaz("gps", D.konum_gecerli ? "ok" : "uyari", D.konum_gecerli ? "KONUM VAR" : "BEKLİYOR");
 
-  /* BATARYA — şiddet bataryaDurumu()'ndan; tahminse hücrede de belli olur. */
+  /* BATARYA — şiddet bataryaDurumu()'ndan; tahminse hücrede de belli olur.
+     ⚠ TAZELİK DE HÜCREYE YANSIR (2026-08-14 testinde bulundu): veri 20 sn
+     bayatken alarm çalıyor ve GÜÇ VE SEYİR satırının üstü çiziliyordu, ama
+     sağlık hücresi hâlâ yeşil "● 83 %" gösteriyordu. Izgaraya bakan operatör
+     yanılırdı. Bayat veri artık ızgarada da BAYAT olarak görünür. */
   const bs = bataryaDurumu();
-  if (bs.veriVar){
-    saglikYaz("batarya", bs.d || "ok", bs.kisa + (bs.tahmin ? " ~" + (bs.hucre ? bs.hucre + "S" : "?") : ""));
+  const bsTaze = mesajTazeligi("SYS_STATUS", 3, 12);
+  /* ⚠ BAĞLANTI ÖNCE KONTROL EDİLİR (2026-08-14 D senaryosunda bulundu):
+     sunucu kopunca D.batt_pct son değeri tutmaya devam ediyor ve hücre
+     "● 82 %" diye YEŞİL kalıyordu — diğer bütün hücreler KOPUK derken.
+     Operatör ızgaraya bakıp bataryanın canlı olduğunu sanardı.
+     GPS'te bu kontrol zaten vardı; bataryada eksikti. */
+  if (CANLI && !CANLI_AKTIF) saglikYaz("batarya", "kritik", DUR.KOPUK);
+  else if (bs.veriVar){
+    if (bsTaze === TAZELIK.BAYAT)
+      saglikYaz("batarya", "uyari", DUR.BAYAT + " · " + bs.kisa);
+    else
+      saglikYaz("batarya", bs.d || "ok",
+                bs.kisa + (bs.tahmin ? " ~" + (bs.hucre ? bs.hucre + "S" : "?") : ""));
   } else if (CANLI && CANLI_AKTIF) saglikYaz("batarya", "uyari", "VERİ YOK");
   else saglikYaz("batarya", "uyari", "SİMÜLE");
 
@@ -4921,6 +5047,24 @@ function saglikDegerlendir(){
   else if (!CANLI_AKTIF) saglikYaz("mod", "kritik", "VERİ YOK");
   else if (D.ucus_modu === null) saglikYaz("mod", "uyari", D.armed ? "ARM" : "DISARM");
   else saglikYaz("mod", D.armed ? "ok" : "", ucusModuAdi() + (D.armed ? "" : " · DISARM"));
+
+  /* YOLO — görü hattının KENDİSİ ayakta mı? Bu, HEDEF hücresinden farklı
+     bir sorudur: dedektör çalışıyor ama hedefi görmüyor olabilir.
+     Kaynak: /api/telemetry/pnp ucunun cevap verip vermediği (PNP.bagli). */
+  if (!CANLI) saglikYaz("yolo", "uyari", DUR.SIM);
+  else if (!PNP.bagli) saglikYaz("yolo", "kritik", DUR.KOPUK + " · pnp ucu cevapsız");
+  else {
+    const pYas = (simdi() - PNP.son) / 1000;
+    if (pYas > 6) saglikYaz("yolo", "uyari", DUR.BAYAT + " · " + pYas.toFixed(0) + " sn");
+    else saglikYaz("yolo", "ok", DUR.CANLI + (D.tespit_var ? " · TESPİT" : " · ARIYOR"));
+  }
+
+  /* KAYIT — gerçek sunucu durumundan (18K). Uydurma yok. */
+  if (!CANLI) saglikYaz("kayit", "", DUR.YOK + " · ÇEVRİMDIŞI");
+  else if (!KAYIT.bagli) saglikYaz("kayit", "", DUR.YOK);
+  else if (KAYIT.veri && KAYIT.veri.aktif)
+    saglikYaz("kayit", "ok", "SÜRÜYOR · " + (KAYIT.veri.kare || 0) + " kare");
+  else saglikYaz("kayit", "", "KAPALI");
 
   /* HEDEF — tespit/kilit durumu tek bakışta. Menzil ve güven GERÇEK
      kaynaklardan; tespit yoksa menzil gösterilmez (uydurma yok). */
@@ -4979,7 +5123,7 @@ function telemetriV2Yaz(){
 
   /* ── BATARYA ── */
   const bSat = $('[data-tlm="batarya"]'), bOlcek = $("#battOlcek");
-  const battTaze = tazelikDurumu(TAZE["batt"], 4, 12);
+  const battTaze = mesajTazeligi("SYS_STATUS", 3, 12);
   if (D.batt_v === null && D.batt_pct === null){
     yaz2("#tBatt", canli ? "VERİ YOK" : "SİMÜLE " + nf(D.batarya_v, 1) + " V");
     yaz2("#tBattYan", canli ? "Uçuş kontrolcüsü SYS_STATUS yayınlamıyor"
@@ -5005,7 +5149,10 @@ function telemetriV2Yaz(){
     yaz2("#tBattYan", yan.filter(Boolean).join(" · "));
 
     const d = bd.d === "ok" ? "" : bd.d;
-    nitelik(bSat, "d", d); nitelik(bSat, "taze", battTaze === TAZELIK.TAZE ? "" : battTaze);
+    /* null = sunucu yaş bildirmiyor (eski sunucu) → tazelik stili YOK.
+       "null" string'i yazmak data-taze="null" üretirdi. */
+    nitelik(bSat, "d", d);
+    nitelik(bSat, "taze", (battTaze && battTaze !== TAZELIK.TAZE) ? battTaze : "");
     nitelik(bOlcek, "d", d || "");
     /* Ölçek YALNIZ gerçek yüzdeyle dolar. Voltajdan yüzde uydurulmaz —
        ölçek boş kalır ve durum yan satırdan okunur. */
@@ -5022,7 +5169,7 @@ function telemetriV2Yaz(){
 
   /* ── GPS ── */
   const gSat = $('[data-tlm="gps"]');
-  const gpsTaze = tazelikDurumu(TAZE["gps"], 4, 12);
+  const gpsTaze = mesajTazeligi("GPS_RAW_INT", 3, 12);
   if (D.gps_fix === null){
     yaz2("#tGps", canli ? (D.konum_gecerli ? "KONUM VAR" : "VERİ YOK") : "SİMÜLE");
     yaz2("#tGpsYan", canli ? "Uçuş kontrolcüsü GPS_RAW_INT yayınlamıyor"
@@ -5038,7 +5185,7 @@ function telemetriV2Yaz(){
     yan.push(gpsTaze === TAZELIK.BAYAT ? "VERİ GÜNCEL DEĞİL" : "GPS_RAW_INT");
     yaz2("#tGpsYan", yan.join(" · "));
     nitelik(gSat, "d", D.gps_fix < 2 ? "kritik" : (D.gps_fix < 3 || (D.gps_sat !== null && D.gps_sat < 6)) ? "uyari" : "");
-    nitelik(gSat, "taze", gpsTaze === TAZELIK.TAZE ? "" : gpsTaze);
+    nitelik(gSat, "taze", (gpsTaze && gpsTaze !== TAZELIK.TAZE) ? gpsTaze : "");
   }
 
   /* ── SUNUCU RTT (gerçek ölçüm) ── */
