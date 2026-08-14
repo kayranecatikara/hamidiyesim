@@ -87,6 +87,10 @@ body{margin:0}
 .scn button:hover{background:var(--card)}
 .scn button svg{width:16px;height:16px;flex:none;stroke:var(--blue)}
 .scn button[aria-pressed="true"]{background:#0f1b2c;border-color:var(--blue)}
+/* Tam görev (kalkış→kare→iniş): desen butonlarından ayrı dursun — tek tuşta
+   baştan sona uçuş, ötekiler gibi süresiz desen değil. */
+.scn .gorev{border-left-color:var(--green)} .scn .gorev svg{stroke:var(--green)}
+.scn .gorev[aria-pressed="true"]{background:#0d1f14;border-color:var(--green)}
 .scn .aggr{border-left-color:var(--orange)} .scn .aggr svg{stroke:var(--orange)}
 .scn .aggr[aria-pressed="true"]{background:#231208;border-color:var(--orange)}
 .scn .manuel{border-left-color:var(--red)} .scn .manuel svg{stroke:var(--red)}

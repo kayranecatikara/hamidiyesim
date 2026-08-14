@@ -205,7 +205,11 @@ def id_to_name(sysid):
 # circle_xl/l/s: daire ÇAPI varyantları (bkz. run_plane_scenario.DAIRE_CAPLARI).
 # Arayüzde butonları YOK — iç daire nişanını farklı yarıçaplarda sınamak için
 # curl ile çağrılır:  curl -X POST localhost:8000/api/command/plane/scenario/circle_s
-_SCENARIO_NAMES = ("duz", "square", "circle", "aggressive",
+#
+# kare_gorev: arayüzdeki "Kalkış → Kare → İniş" butonu. Diğerlerinden farkı
+# SONLU olması — kare turu bitince uçak eve iniyor ve süreç kendi kapanıyor
+# (buton /api/scenario_status ile kendiliğinden BEKLEME'ye döner).
+_SCENARIO_NAMES = ("duz", "square", "kare_gorev", "circle", "aggressive",
                    "circle_xl", "circle_l", "circle_s")
 
 

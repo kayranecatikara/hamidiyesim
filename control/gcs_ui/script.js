@@ -54,7 +54,7 @@ const st = {
   faz: null,                 // GPS | VISUAL | VURULDU | DURDU
   imha: false,
 };
-const SCN_LBL = { square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
+const SCN_LBL = { kare_gorev: 'KARE GÖREVİ', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
 
 // ══ KAMERA ─ MJPEG akışı ═══════════════════════════════════════════════
 // MJPEG multipart bağlantısı süresiz açık kalır; src değiştirmek eski
@@ -727,20 +727,26 @@ function markScenario(){
   const lbl = st.scenario ? SCN_LBL[st.scenario] : null;
   scnBtns.forEach(b => {
     const span = b.querySelector('span');
-    const base = { square: 'Kare Çiz', circle: 'Daire Çiz', aggressive: 'Agresif Uçuş' }[b.dataset.scn];
+    const base = { kare_gorev: 'Kalkış → Kare → İniş', square: 'Kare Çiz',
+                   circle: 'Daire Çiz', aggressive: 'Agresif Uçuş' }[b.dataset.scn];
     span.textContent = (b.dataset.scn === st.scenario) ? 'Durdur — ' + base : base;
   });
   $('oMode').textContent = st.manual ? 'MANUEL' : (lbl || 'BEKLEME');
 }
+// kare_gorev SONLU: kalkış + kare + iniş; bitince süreç kapanır, buton
+// /api/scenario_status yoklamasıyla kendiliğinden BEKLEME'ye döner.
 async function startScenario(name){
   if (st.manual) await exitManual();
-  addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (kalkış + desen)...');
+  const akis = (name === 'kare_gorev') ? 'kalkış + kare + iniş' : 'kalkış + desen';
+  addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (' + akis + ')...');
   scnBtns.forEach(b => b.disabled = true);
   try {
     const r = await (await fetch('/api/command/plane/scenario/' + name, { method: 'POST' })).json();
     if (r.status === 'success'){
       st.scenario = name;
-      addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — hedef kalkıp deseni uçacak.');
+      addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — ' + (name === 'kare_gorev'
+        ? 'hedef kalkacak, kareyi çizecek ve kalkış noktasına inecek.'
+        : 'hedef kalkıp deseni uçacak.'));
     } else addLog('err', 'HATA', 'Senaryo reddedildi: ' + r.message);
   } catch (e){ addLog('err', 'HATA', 'Bağlantı hatası: ' + e); }
   scnBtns.forEach(b => b.disabled = false);
