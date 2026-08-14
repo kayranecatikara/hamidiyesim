@@ -565,38 +565,6 @@ class Cfg:
     YAW_MENZIL_REF = _env_f("AVCI_IBVS_YAW_MENZIL", 0.0)  # m; 0 = kapalı, ~15
     YAW_MIN_KAT = _env_f("AVCI_IBVS_YAW_MINKAT", 0.35)    # tavanın alt sınırı
 
-    # ══ Ö-D · FOV KISITI — BURUN KOMUTU GÖVDEDEN FAZLA AÇILAMAZ ══
-    #
-    # NEDEN (Ö12'nin ÇÜRÜTÜLMESİNDEN doğdu, 16 uçuş):
-    # "Kendi ekseninde mal mal dönme" olayının sebebi yaw komutunun TAVANA
-    # dayanması DEĞİL. Ö12 doymayı %23 → %3 yaptı ve olay YİNE OLDU.
-    # İki olay kaydı (W02, U05) aynı diziyi gösteriyor:
-    #
-    #   kutu 86-120 px (≈2-3 m) · cx 354 → 470 → 608 (kadraj 640)
-    #   → hedef KADRAJIN KENARINDAN ÇIKIYOR → kutu KAYIP → TERM_KOR
-    #   → araç BAYAT komutu kovalıyor → gerçek yaw 550 °/s → bekçi kesiyor
-    #
-    # Kritik ölçüm (U05): kutu kaybolduğu anda komut gövdeden 40° ÖNDEYDİ
-    # (yaw_cmd −147°, iris_yaw −107°). Kutu gidince o 40°'lik borç ödenmeye
-    # devam ediyor ve araç kendi etrafında savruluyor.
-    #
-    # NE YAPAR: slew'den SONRA, burun komutunun gövdeden ne kadar önde
-    # olabileceğini sınırlar:
-    #     cmd_yaw = iris_yaw + clamp(cmd_yaw − iris_yaw, ∓FOV_YAW_HATA)
-    #
-    # ⚠ NEDEN "cx kenara gelince dönmeyi kes" DEĞİL: kutu kaybolduktan
-    # SONRA cx YOKTUR — tehlikeli an tam da orası. cx'e bağlı bir kapı,
-    # ihtiyaç duyulduğu anda kapanır. Borç sınırı ise kutu olsa da olmasa
-    # da geçerlidir. (cx öngörüsü yine de LOGLANIR: `fov_cx_ong`.)
-    #
-    # ⚠ SAKİN TAKİPTE ÖLÜ: normal takipte borç birkaç derece; sınır 25°'de
-    # hiç bağlamaz. Yalnız pas geçme anında devreye girer → §5.10 "başka
-    # durumu bozma" şartı YAPISAL olarak sağlanır.
-    #
-    # ⚠ YALNIZ BURUN: hız vektörü komut() içinde `hiz_yonu`ndan hesaplanır
-    # ve BU SINIRDAN GEÇMEZ. Uçuş yolu / kesişim geometrisi DEĞİŞEMEZ.
-    # Dikey kanal (vz) hiç görmez. Birim testi bunu bit bit sınar.
-    FOV_YAW_HATA = _env_f("AVCI_IBVS_FOV", 0.0)   # °; 0 = KAPALI, ~25 denenir
 
     # ── KUTU GEÇERLİLİĞİ ──
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
@@ -611,7 +579,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg", "eps_elev_ham_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "donus_yavas", "fov_kis", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "donus_yavas", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -1110,18 +1078,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             adim = clamp(yaw_err, -math.radians(_yaw_tavan) * dt,
                          math.radians(_yaw_tavan) * dt)
             cmd_yaw = normalize_angle(cmd_yaw + adim)
-            # Ö-D FOV KISITI (bkz. Cfg.FOV_YAW_HATA): burun komutu gövdeden
-            # şu kadar dereceden fazla ÖNDE olamaz. Kutu kaybolduğunda
-            # ödenecek "borç" kalmaz → savrulma başlamaz.
-            # ⚠ YALNIZ KISAR ve yalnız BURNU etkiler; vx/vy/vz dokunulmaz.
-            fov_kis = 0.0
-            if cfg.FOV_YAW_HATA > 0.0:
-                _borc = normalize_angle(cmd_yaw - iyaw)
-                _lim = math.radians(cfg.FOV_YAW_HATA)
-                if abs(_borc) > _lim:
-                    fov_kis = math.degrees(abs(_borc) - _lim)
-                    cmd_yaw = normalize_angle(
-                        iyaw + clamp(_borc, -_lim, _lim))
             yaw_cmd = cmd_yaw
 
             # ivme sınırı (komut hızı sıçramasın)
@@ -1157,7 +1113,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "donus_tavan": ("" if tani["donus_tavan"] is None
                                 else round(tani["donus_tavan"], 2)),
                 "donus_yavas": int(tani["donus_yavas"]),
-                "fov_kis": round(fov_kis, 1),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),

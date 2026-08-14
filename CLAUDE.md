@@ -351,6 +351,41 @@ süpürür.
 oluyor ve 66-69 m — yani 18 m/s'de 2R = 66 m, aracın MİNİMUM dönüş
 çemberi. Kazanç değil GEOMETRİ. Çare hızı kısmak (R ∝ V²).
 
+
+## 5.12 · ⛔ SİLİNEN ÖZELLİK TAMAMEN SİLİNİR — ARTIK BIRAKMA
+
+**Kullanıcı kuralı (2026-08-14):** *"bazı şeyleri ekliyoruz sonra siliyoruz
+ama her şeyini silmiyoruz; o sildiğimiz şeylerden bir şeyler sistemde kalıp
+sistemi bozuyor."*
+
+Bir özellik ELENDİĞİNDE koddan **eksiksiz** çıkarılır. Kill-switch bırakmak
+da YASAKTIR — ölü env anahtarı, okunmayan `Cfg` alanı, boş kalan log sütunu
+ve "0 ise atla" kapısı birikince güdüm yolu okunamaz hale gelir ve bir
+sonraki değişiklik bunlardan birine çarpar.
+
+**Silme kontrol listesi — hepsi işaretlenmeden "silindi" denmez:**
+
+1. `Cfg` alanı ve `AVCI_*` env varsayılanı
+2. Güdüm döngüsündeki/`komut()` içindeki kod bloğu
+3. CSV log sütunu (`_CSV_ALANLAR` / `_SUTUNLAR` listesi **ve** `writerow`)
+4. `tani` sözlüğüne / `status`'a eklenen anahtarlar
+5. `gcs_server._OZELLIKLER` düğmesi
+6. Birim testleri
+7. Analiz araçlarındaki (`tools/*.py`) o sütuna bakan kod
+8. Koşu scriptlerindeki (`~/.avci_sim/*.sh`) env/panel satırı
+
+**Silme sonrası ZORUNLU doğrulama — ikisi birden:**
+
+- `grep -rn "<ALAN>\|<AVCI_ANAHTAR>\|<sutun_adi>" control/ tools/ tests/`
+  → **sıfır sonuç** (yalnız tarihsel yorum bloğunda adı geçebilir).
+- **Bit bit denklik:** silmeden önceki HEAD ile silinmiş hâl aynı girdilerde
+  karşılaştırılır; güdüm çıktısı (vx, vy, vz, yaw) **birebir aynı** olmalı.
+  Fark çıkarsa silme sırasında davranış değişmiş demektir — geri al.
+
+Karar ve ölçümler kaybolmaz: `UYGULANACAK.md`'de ve `docs/ibvs_sicili.html`
+sicilinde durur. Kod deposu tarihçesi de duruyor — geri getirmek gerekirse
+commit'ten alınır. **Ölü kod tutmak arşiv değildir, borçtur.**
+
 ---
 
 # 6 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
@@ -382,9 +417,11 @@ verilince — ister sisteme **GİRSİN** ister **ELENSİN** — düğmesi
 temizlenir; panelde her zaman sadece o an denenen şey görünür.
 
 *Neden:* düğmeler birikince panel çöplüğe döner ve kullanıcı o adımda neyi
-sınadığını göremez. Silmek özelliği yok etmez — kill-switch env anahtarı
-kodda kalır, karar ve ölçümler `UYGULANACAK.md`'de durur, silinen özellikler
-`_OZELLIKLER` üstündeki yorum bloğunda env anahtarlarıyla listelenir.
+sınadığını göremez.
+
+⚠ **Düğmeyi silmek YETMEZ.** Özellik ELENDİYSE kodu da tamamen çıkarılır —
+bkz. §5.12 (silme kontrol listesi + bit bit denklik doğrulaması). Karar ve
+ölçümler `UYGULANACAK.md` ile `docs/ibvs_sicili.html`'de yaşamaya devam eder.
 
 **Sonuç:** çalıştırma komutları ARTIK DEĞİŞMİYOR. Kol seçimi env ile değil,
 panelden yapılır. Env anahtarları yine duruyor (otomatik kampanyalar ve
