@@ -747,6 +747,39 @@ düşerse arayüz kendiliğinden MOCK'a döner ve bunu rozetle bildirir.</p>
 <tr><td><code>KAMERA HATASI</code></td><td>Akış ucu HTTP hatası döndürdü</td></tr>
 </tbody></table></div>
 
+<div class="kutu k-ok">
+  <b class="bas">Sunucu tarafı video üstverisi (2026-08-14)</b>
+  <p>Arayüzün kendi canlılık ölçümü <b>tarayıcıya gelen</b> akışı ölçer. Sunucunun kare
+  üretip üretmediği <b>ayrı bir sorudur</b> — ikisi farklı arızalardır:</p>
+  <ul>
+    <li><b>Sunucu kare üretmiyor</b> → Gazebo/kaynak sorunu</li>
+    <li><b>Üretiyor ama tarayıcıya gelmiyor</b> → ağ/MJPEG sorunu</li>
+  </ul>
+  <p><code>/api/telemetry/pnp</code> artık <code>video</code> nesnesini de döndürür:
+  <code>kare_yasi</code> · <code>kare_sayisi</code> · <code>genislik</code>/<code>yukseklik</code>
+  (gerçek görüntü şeklinden) · <code>kaynak</code> (gz konusu) · <code>fps</code>
+  (<b>sunucuda 1 sn penceresinde ÖLÇÜLEN</b>). Gerçek SITL'de ölçülen:
+  <code>kare_yasi 0.179 sn · 640×480 · gz:iris_cam/image · 3.1 FPS</code>.</p>
+</div>
+
+<div class="kutu k-kritik">
+  <b class="bas">Tespit kutusu videoya GÖMÜLÜDÜR — arayüz onu yeniden çizmez</b>
+  <p>YOLO kutusu, pose noktaları ve takip kimlikleri sunucuda kareye çizilir
+  (<code>draw_overlay</code>, <code>draw_tracks</code>). Arayüz ikinci bir kutu çizmez —
+  iki kutu hizasızlık ve karışıklık yaratırdı.</p>
+  <p><b>Operatörün karıştırmaması gereken üç ayrı kavram:</b></p>
+  <ul>
+    <li><b>Kamera merkezi</b> — optik eksen, kadrajın ortasında sabit</li>
+    <li><b>YOLO tespiti</b> — videoya gömülü kutu (dedektörün bulduğu)</li>
+    <li><b>Güdüm nişanı</b> — <code>kadraj_yaw_deg</code> açısından türetilen nokta;
+        <code>hedefKutusu()</code> bunu çizer, tespit kutusu <b>değildir</b></li>
+  </ul>
+  <p>Eskiden bilinemeyen şey: videodaki kutu <b>güncel mi</b>? Artık
+  <code>tespit_yas</code> ile ölçülür ve HUD'da gösterilir:
+  <code>TESPİT 0.89 · 0.2 sn</code> (yeşil) · <code>TESPİT ESKİ</code> (kehribar, &gt;1 sn) ·
+  <code>TESPİT KAYIP · 7.9 sn</code> (kırmızı, &gt;3 sn).</p>
+</div>
+
 <h3>Çözünürlük ve FOV</h3>
 <div class="tw"><table>
 <thead><tr><th>Değer</th><th>Kaynak</th><th>Etiket</th></tr></thead>
@@ -814,6 +847,10 @@ düşerse arayüz kendiliğinden MOCK'a döner ve bunu rozetle bildirir.</p>
 <tr><td><code>kilit_n</code>, <code>kilit_pencere</code></td><td><b>Sunucunun fiilen kullandığı</b> eşikler</td><td><span class="r r-config">YAPILANDIRMA</span></td></tr>
 <tr><td><code>gate_menzil</code></td><td>Menzil kapısı eşiği (m)</td><td><span class="r r-config">YAPILANDIRMA</span></td></tr>
 <tr><td><code>engel</code></td><td>Faz geçişini engelleyen sebep</td><td><span class="r r-hesap">HESAPLANMIŞ</span></td></tr>
+<tr><td><code>tespit_yas</code></td><td>Son başarılı tespitten bu yana geçen saniye</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>tespit_id</code></td><td>HybridSORT takip kimliği</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>tespit_merkez</code></td><td>Kutu merkezi/boyutu, kareye NORMALİZE (0-1)</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
+<tr><td><code>video</code></td><td>Kare yaşı, sayacı, çözünürlük, kaynak, ölçülen FPS</td><td><span class="r r-gercek">GERÇEK</span></td></tr>
 </tbody></table></div>
 
 <div class="kutu k-kritik">

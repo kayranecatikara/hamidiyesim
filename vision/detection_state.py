@@ -2,20 +2,37 @@
 # Kamera thread'i ile güdüm döngüleri arasında tespit/pose sonuçlarını paylaşan
 # thread-safe köprü (gcs_server yazar; control.guidance okur).
 import threading
+import time
 
 _lock = threading.Lock()
 _last_detection = None
+# ── TESPİT ZAMAN DAMGASI (2026-08-14) ──────────────────────────────────
+# NEDEN: arayüz "kutu ekranda duruyor" ile "tespit GÜNCEL" ayrımını
+# yapamıyordu. Kutu videoya sunucuda gömülüyor; kare eskiyse operatör bunu
+# göremezdi. Yaş ölçülebilir olmalı ki STALE/LOST dürüstçe gösterilebilsin.
+#
+# EKLEMELİ: mevcut set_detection/get_detection davranışı DEĞİŞMEDİ; yalnız
+# yeni bir damga tutulur ve yeni bir okuyucu eklenir. Güdüm bu alanı
+# kullanmaz, davranışı etkilenmez.
+_last_detection_ts = None      # son BAŞARILI tespit anı (time.time)
 
 def set_detection(det):
     """Store the latest detection result (dict or None)."""
-    global _last_detection
+    global _last_detection, _last_detection_ts
     with _lock:
         _last_detection = det
+        if det is not None:
+            _last_detection_ts = time.time()
 
 def get_detection():
     """Retrieve the latest detection result (dict or None)."""
     with _lock:
         return _last_detection
+
+def get_detection_ts():
+    """Son BAŞARILI tespitin zaman damgası (yoksa None). Salt gözlem."""
+    with _lock:
+        return _last_detection_ts
 
 
 # ── HybridSORT takip durumu (gcs yazar; şimdilik overlay/inceleme için) ──

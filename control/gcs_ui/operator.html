@@ -2687,8 +2687,17 @@ function ufukY(){ return H / 2 + (D.pitch + KAMERA_EGIM) * (H / VFOV); }
 function rollRad(){ return -D.roll * RAD; }
 function hedefEkran(){ return { x: W / 2 + D.hata_x * (W / 2), y: H / 2 + D.hata_y * (H / 2) }; }
 function hedefBoyut(){ return kis(1500 / Math.max(3, D.menzil_m), 14, Math.min(W, H) * 0.7); }
+/* HUD metin altlığı. --hud-zar tek başına yetmiyordu: parlak gökyüzü
+   üstünde gri künye satırları neredeyse okunmuyordu (gerçek SITL
+   görüntüsünde ölçüldü). İkinci bir koyu kat, metni ARKA PLANDAN BAĞIMSIZ
+   okunur kılar — operatör konsolunda okunabilirlik estetikten önce gelir. */
 function metinZemin(c, x, y, gen, yuk){
-  c.save(); c.fillStyle = J["--hud-zar"]; c.fillRect(x - 4, y - 3, gen + 8, yuk + 6); c.restore();
+  c.save();
+  c.fillStyle = "rgba(6,16,21,.62)";
+  c.fillRect(x - 4, y - 3, gen + 8, yuk + 6);
+  c.fillStyle = J["--hud-zar"];
+  c.fillRect(x - 4, y - 3, gen + 8, yuk + 6);
+  c.restore();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3207,11 +3216,47 @@ function fazYayi(c){
   c.restore();
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   ISR TESPİT ŞERİDİ — YOLO'nun GERÇEK çıktısı
+
+   ÖNEMLİ AYRIM (operatörün karıştırmaması gereken üç şey):
+     1) KAMERA MERKEZİ  — optik eksen. Sabit, her zaman kadrajın ortasında.
+     2) YOLO TESPİTİ    — dedektörün bulduğu kutu. Bu kutu videoya SUNUCUDA
+                          gömülüdür (draw_overlay); arayüz onu yeniden
+                          çizmez, çünkü ikinci bir kutu hizasızlık yaratır.
+     3) GÜDÜM NİŞANI    — supervisor'ın kadraj açısından türettiği nokta.
+                          hedefKutusu() bunu çizer. Tespit kutusu DEĞİLDİR.
+
+   Bu şerit, videodaki gömülü kutunun GÜNCEL mi yoksa eski bir kareye mi
+   ait olduğunu söyler — daha önce bilinmiyordu. Tespit yaşı sunucudan
+   gerçek zaman damgasıyla gelir; yoksa "VERİ YOK" yazılır, uydurulmaz. */
+function isrTespitSeridi(c){
+  if (!CANLI) return;
+  const y = D.tespit_yas;
+  let m, renk;
+  if (!PNP.bagli){ m = "TESPİT: VERİ YOK"; renk = J["--murekkep-sonuk"]; }
+  else if (y === null){ m = "TESPİT: HİÇ YOK"; renk = J["--murekkep-sonuk"]; }
+  else if (y > 3){
+    /* Kutu ekranda görünüyor olabilir ama ESKİ bir kareye ait. */
+    m = "TESPİT KAYIP · " + y.toFixed(1) + " sn"; renk = J["--kilit"];
+  } else if (y > 1){
+    m = "TESPİT ESKİ · " + y.toFixed(1) + " sn"; renk = J["--uyari"];
+  } else {
+    m = "TESPİT " + (D.tespit_conf !== null ? D.tespit_conf.toFixed(2) : "—")
+      + (D.tespit_id !== null ? " · ID " + D.tespit_id : "")
+      + " · " + y.toFixed(1) + " sn";
+    renk = J["--avci"];
+  }
+  c.fillStyle = renk;
+  c.fillText(m, 12, 62);
+  c.fillStyle = J["--murekkep-orta"];
+}
+
 function hudMetinleri(c){
   c.save();
   c.font = "11px ui-monospace, monospace";
   c.textAlign = "left"; c.textBaseline = "top";
-  metinZemin(c, 12, 34, 210, 26);
+  metinZemin(c, 12, 34, 236, 40);   /* 3 satır: künye · faz · tespit şeridi */
   c.fillStyle = J["--murekkep-orta"];
   /* Künye, o an GÖSTERİLEN kaynağın optiğini yazar: canlı akışta gerçek
      kameranınkini (SDF yapılandırması), sentetik sahnede sim'inkini.
@@ -3223,6 +3268,7 @@ function hudMetinleri(c){
     ? "KAM +" + kamYap.egim + "° SABİT · FOV " + kamYap.hfov + "×" + kamYap.vfov + " (YAP)"
     : "KAM +" + KAMERA_EGIM + "° SABİT · FOV " + HFOV + "×" + VFOV + " (SİM)", 12, 34);
   c.fillText("FAZ " + fazAdi(), 12, 48);
+  isrTespitSeridi(c);
   c.textAlign = "right";
   metinZemin(c, W - 122, 34, 110, 40);
   c.fillText("AGL " + nf(D.irtifa_agl, 1) + " m", W - 12, 34);
@@ -4519,6 +4565,17 @@ function wsPlanla(){
    sayı uydurmaz, "VERİ YOK" gösterir.
    ══════════════════════════════════════════════════════════════════════════ */
 const PNP = { veri:null, son:0, bagli:false, hataLog:0 };
+
+/* ══ SUNUCU TARAFI VİDEO ÜSTVERİSİ ═════════════════════════════════════
+   Arayüz video canlılığını kendi ölçüyordu (16×16 sağlama) — bu TARAYICI
+   tarafındaki akışı ölçer. Sunucu tarafındaki kare üretimi ayrı bir
+   sorudur: Gazebo kamerası kare üretiyor mu? İkisi FARKLI arızalardır:
+     · sunucu kare üretmiyor  → kaynak/Gazebo sorunu
+     · sunucu üretiyor, tarayıcıya gelmiyor → ağ/MJPEG sorunu
+   Sunucu artık kare yaşı, ÖLÇÜLEN fps, çözünürlük ve kaynak konusunu
+   bildiriyor; ikisi yan yana gösterilebiliyor. */
+const VSUN = { veri:null, destekli:false };
+function videoSunucu(){ return VSUN.destekli && VSUN.veri ? VSUN.veri : null; }
 let _pnpUcusta = false;
 
 function pnpCek(){
@@ -4545,6 +4602,21 @@ function pnpCek(){
       D.kilit_sayac_g = gecerliSayi(p.kilit_sayac, 0, 100000);
       D.engel         = typeof p.engel === "string" ? p.engel : null;
       D.gorus_menzil  = gecerliSayi(p.gorus_menzil, 0, 100000);
+
+      /* ══ GÖRÜ GÖZLEM ALANLARI (2026-08-14, sunucu EKLEMELİ) ══════════
+         Kutu videoya sunucuda gömülüyor; arayüz o kutunun GÜNCEL mi yoksa
+         eski bir kareye mi ait olduğunu bilemiyordu. Artık ölçülüyor.
+         Eski sunucu bu alanları yollamazsa hepsi null kalır ve arayüz
+         "VERİ YOK" gösterir — sahte değer üretmez. */
+      D.tespit_yas = gecerliSayi(p.tespit_yas, 0, 100000);
+      D.tespit_id  = gecerliSayi(p.tespit_id, 0, 1e9);
+      D.tespit_merkez = (p.tespit_merkez && typeof p.tespit_merkez === "object")
+        ? p.tespit_merkez : null;
+
+      /* Video üstverisi — kare yaşı, ÖLÇÜLEN sunucu FPS'i, çözünürlük, kaynak */
+      if (p.video && typeof p.video === "object"){
+        VSUN.veri = p.video; VSUN.destekli = true;
+      }
     })
     .catch(() => {
       /* Uç yoksa (eski sunucu) ya da hata verdiyse: SESSİZCE eski değere
@@ -4764,6 +4836,17 @@ function vidPaneliYaz(){
   }
   else if (VID.durum === "hata") metin = "Akış ucu hata döndürdü: " + (VID.uc || "—");
   else metin = "Son kare " + (isFinite(vidYas()) ? vidYas().toFixed(1) + " sn önce" : "hiç alınmadı");
+  /* SUNUCU tarafı ayrı bir sorudur: Gazebo kare üretiyor mu? Tarayıcıya
+     gelmemesi ile hiç üretilmemesi FARKLI arızalardır. */
+  const vs = videoSunucu();
+  if (vs && CANLI){
+    const parca = [];
+    if (vs.kare_yasi !== null && vs.kare_yasi !== undefined)
+      parca.push("sunucu kare " + vs.kare_yasi.toFixed(2) + " sn");
+    if (vs.fps) parca.push(vs.fps + " FPS (sunucu)");
+    if (vs.kaynak) parca.push(vs.kaynak);
+    if (parca.length) metin += "  ·  " + parca.join(" · ");
+  }
   if (alt.textContent !== metin) alt.textContent = metin;
 
   const ust = $("#vVideoUst");

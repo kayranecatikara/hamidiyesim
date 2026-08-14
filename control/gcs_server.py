@@ -33,7 +33,7 @@ import uvicorn
 # Cessna renk tabanlı tespit
 from vision.detection_state import (set_detection, set_pose_detection,
                                     set_tracks, wait_new_pose, get_detection,
-                                    get_pose_detection)
+                                    get_pose_detection, get_detection_ts)
 from control import carpisma_state       # A5 — gerçek temas, güdümle ortak durum
 # YOLO detector (vision/detector.py) opsiyonel — startup'ta yüklenir (_yolo_detector).
 
@@ -776,6 +776,42 @@ def _gorus_menzil_kestirimi(pose, iris_att):
         return None, False
 
 
+# ── GÖRÜ GÖZLEM YARDIMCILARI (2026-08-14) ──────────────────────────────
+# Hepsi SALT OKUMA. Güdüm, komut akışı ve kare üretimi etkilenmez.
+# Amaç: arayüzün video ve tespit durumunu TAHMİN ETMEK yerine ÖLÇMESİ.
+def _tespit_yasi():
+    """Son başarılı YOLO tespitinden bu yana geçen saniye (yoksa None)."""
+    ts = get_detection_ts()
+    return None if ts is None else round(time.time() - ts, 2)
+
+
+def _tespit_merkez_norm(det):
+    """Tespit kutusunun merkezi ve boyutu, kare boyutuna NORMALİZE (0-1).
+    Piksel yollamak çözünürlük değişirse yanıltırdı."""
+    if not det or det.get("cx") is None:
+        return None
+    k = latest_frames.get("iris", {})
+    g, y = k.get("w"), k.get("h")
+    if not g or not y:
+        return None
+    return {"cx": round(det["cx"] / g, 4), "cy": round(det["cy"] / y, 4),
+            "w": round(det.get("w", 0) / g, 4), "h": round(det.get("h", 0) / y, 4)}
+
+
+def _video_durumu(arac):
+    """Kare üstverisi: yaş, sayaç, çözünürlük, kaynak konusu.
+    Kare hiç gelmediyse alanlar None — sahte değer üretilmez."""
+    k = latest_frames.get(arac, {})
+    ts = k.get("ts")
+    return {
+        "kare_yasi": None if ts is None else round(time.time() - ts, 3),
+        "kare_sayisi": k.get("id", 0),
+        "genislik": k.get("w"), "yukseklik": k.get("h"),
+        "kaynak": k.get("kaynak"),
+        "fps": k.get("fps"),
+    }
+
+
 @app.get("/api/telemetry/pnp")
 def pnp_telemetry():
     """Görüş hattının GERÇEK çıktısı + faz kapıları + ground-truth kıyası.
@@ -835,6 +871,15 @@ def pnp_telemetry():
         # görüş hattı
         "tespit_var": det is not None,
         "tespit_conf": round(float(det["conf"]), 2) if det else None,
+        # ── TESPİT AYRINTISI (2026-08-14, EKLEMELİ — salt gözlem) ──
+        # Kutu videoya zaten gömülüyor (draw_overlay), ama arayüz kutunun
+        # GÜNCEL mi yoksa eski bir kareye mi ait olduğunu bilemiyordu.
+        # Bu alanlar güdüme GİRMEZ; yalnız operatör göstergesi içindir.
+        "tespit_yas": _tespit_yasi(),
+        "tespit_id": (int(det["track_id"]) if det and det.get("track_id") is not None
+                      else None),
+        "tespit_merkez": _tespit_merkez_norm(det),
+        "video": _video_durumu("iris"),
         "pose_var": pose is not None,
         "pose_conf": round(float(pose.get("conf", 0.0)), 2) if pose else None,
         "kanat_gorunur": bool(kanat_ok),
@@ -1412,10 +1457,33 @@ def _chase_thread():
 # -----------------------------------------------------------------------
 # ROS 2 KAMERA
 # -----------------------------------------------------------------------
+# ts/w/h/kaynak/fps alanları 2026-08-14'te EKLENDİ (salt gözlem):
+# arayüz video sağlığını tahmin etmek yerine sunucudan öğrensin. Kare
+# üretimi ve MJPEG yayını DEĞİŞMEDİ; yalnız üstveri de yazılıyor.
 latest_frames = {
-    "iris":  {"data": None, "id": 0},
-    "plane": {"data": None, "id": 0}
+    "iris":  {"data": None, "id": 0, "ts": None, "w": None, "h": None,
+              "kaynak": None, "fps": None, "_p0": None, "_pn": 0},
+    "plane": {"data": None, "id": 0, "ts": None, "w": None, "h": None,
+              "kaynak": None, "fps": None, "_p0": None, "_pn": 0}
 }
+
+
+def _kare_kaydet(arac, jpeg, sekil, kaynak):
+    """Kareyi ve ÜSTVERİSİNİ sakla. fps 1 sn'lik pencerede ÖLÇÜLÜR."""
+    k = latest_frames[arac]
+    k["data"] = jpeg
+    k["id"] += 1
+    k["ts"] = time.time()
+    if sekil is not None and len(sekil) >= 2:
+        k["h"], k["w"] = int(sekil[0]), int(sekil[1])
+    k["kaynak"] = kaynak
+    k["_pn"] += 1
+    if k["_p0"] is None:
+        k["_p0"] = k["ts"]
+    elif k["ts"] - k["_p0"] >= 1.0:
+        k["fps"] = round(k["_pn"] / (k["ts"] - k["_p0"]), 1)
+        k["_pn"] = 0
+        k["_p0"] = k["ts"]
 
 # ══════════════════════════════════════════════════════════════════════
 #  UÇUŞ KAYDI (arayüzdeki "KAYIT" butonu) — 2026-08-09, kullanıcı isteği
@@ -1601,8 +1669,7 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
         _, buf = cv2.imencode('.jpg', img)
     if latest_frames["iris"]["data"] is None:
         print("[GCS] ✓ Iris kamerasından ilk görüntü!")
-    latest_frames["iris"]["data"] = buf.tobytes()
-    latest_frames["iris"]["id"] += 1
+    _kare_kaydet("iris", buf.tobytes(), img.shape, "gz:iris_cam/image")
 
 
 def gz_iris_camera_thread():
@@ -1707,8 +1774,7 @@ def process_plane_frame(img):
     _, buf = cv2.imencode('.jpg', img)
     if latest_frames["plane"]["data"] is None:
         print("[GCS] ✓ Talon (hedef İHA) kamerasından ilk görüntü!")
-    latest_frames["plane"]["data"] = buf.tobytes()
-    latest_frames["plane"]["id"] += 1
+    _kare_kaydet("plane", buf.tobytes(), img.shape, "gz:talon_cam/image")
 
 
 def gz_talon_camera_thread():
@@ -1785,8 +1851,7 @@ class CameraSubscriber(RosNode):
             _, buf = cv2.imencode('.jpg', img)
             if latest_frames["plane"]["data"] is None:
                 print("[GCS] ✓ Plane kamerasından ilk görüntü!")
-            latest_frames["plane"]["data"] = buf.tobytes()
-            latest_frames["plane"]["id"] += 1
+            _kare_kaydet("plane", buf.tobytes(), img.shape, "ros2:image_raw")
         except Exception as e:
             print(f"[GCS CAM] Plane hata: {e}")
 
