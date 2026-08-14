@@ -186,18 +186,78 @@ def _read_vehicle_state(conn, wait=1.5):
     return armed, -_pos["z"]
 
 
-def takeoff(conn, climb_time=8.0):
+# Kalkış tamamlanma ölçütü. TKOFF_ALT ArduPilot varsayılanı 50 m'dir
+# (avci_plane.parm'da TKOFF_* yok); son metreler yavaş kapandığı için
+# %80'i yeterli sayılır. Ortam değişkeniyle ayarlanabilir.
+TIRMANIS_HEDEF_M = float(os.environ.get("AVCI_TKOFF_HEDEF_M", 40.0))
+TIRMANIS_TIMEOUT_S = float(os.environ.get("AVCI_TKOFF_TIMEOUT_S", 45.0))
+
+
+def takeoff(conn, hedef_alt=None, timeout=None):
     """Otonom kalkış: TAKEOFF modu motoru açıp TKOFF_ALT'a tırmandırır,
-    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir."""
-    print("[SCN] Otonom kalkış (TAKEOFF modu)...")
+    TIRMANIŞ DOĞRULANDIKTAN SONRA FBWA'ya geçilip stabilize edilir.
+
+    Dönüş: True = tırmanış doğrulandı · False = doğrulanamadı (FBWA'ya GEÇİLMEZ)
+
+    ⚠ NEDEN SÜRE DEĞİL İRTİFA (2026-08-14'te ölçüldü):
+    Eski hâli sabit `climb_time=8.0` saniye bekliyordu ve irtifayı hiç
+    OKUMUYORDU (_pump onu topluyor ama fonksiyon kullanmıyordu). ArduPilot
+    Plane'in TAKEOFF modu üç aşamadır: yer koşusu → rotasyon → tırmanış.
+    Yüklü makinede (Gazebo + 2 SITL + CPU'da YOLO) 8 saniye YALNIZCA yer
+    koşusunu karşılıyor; uçak rotasyon yapmadan FBWA'ya alınıp nötr
+    elevatorla yerde seyrediyordu.
+
+    Ölçülen sonuç (14 Ağustos koşusu): irtifa 1.2 → 0.8 → 0.1 m,
+    hız 15.8 → 8.3 m/s. Log dizisi: "Mode TAKEOFF" → "Takeoff to 50m" →
+    HEMEN "Mode FBWA". Hedef uçak üç test koşusunda da havalanamadı ve
+    hava-hava geometrisi hiç ölçülemedi.
+
+    ⚠ TIMEOUT'TA SESSİZCE FBWA'YA GEÇİLMEZ:
+    Eski davranış, tırmanış olmasa bile FBWA'ya geçip senaryoyu
+    sürdürüyordu. Sonuç: yerde sürünen bir uçak "uçuyor" sanılıyor ve
+    koşu sessizce geçersiz veri üretiyordu. Artık False döner; main()
+    senaryoyu çalıştırmaz ve neden başarısız olduğunu yazar.
+    """
+    hedef = TIRMANIS_HEDEF_M if hedef_alt is None else hedef_alt
+    sure = TIRMANIS_TIMEOUT_S if timeout is None else timeout
+    print(f"[SCN] Otonom kalkış (TAKEOFF modu) — hedef {hedef:.0f} m, "
+          f"tavan {sure:.0f} s...")
     set_mode(conn, PLANE_MODE_TAKEOFF)
+
     t0 = time.time()
-    while not _abort and time.time() - t0 < climb_time:
+    tirmandi = False
+    son_bildirim = 0.0
+    while not _abort and time.time() - t0 < sure:
         _pump(conn)
+        alt = -_pos["z"]
+        if alt >= hedef:
+            tirmandi = True
+            break
+        # 5 saniyede bir ilerleme bildir — takılırsa nerede olduğu görünsün.
+        gecen = time.time() - t0
+        if gecen - son_bildirim >= 5.0:
+            son_bildirim = gecen
+            print(f"[SCN]   tırmanış… {alt:5.1f} m / {hedef:.0f} m  (+{gecen:.0f} s)")
         time.sleep(0.2)
-    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → FBWA")
+
+    alt = -_pos["z"]
+    if _abort:
+        print(f"[SCN] Kalkış iptal edildi (irtifa {alt:.1f} m)")
+        return False
+    if not tirmandi:
+        print(f"[SCN] ✗ KALKIŞ DOĞRULANAMADI — {sure:.0f} s içinde {hedef:.0f} m'ye "
+              f"ulaşılamadı (son irtifa {alt:.1f} m).")
+        print("[SCN]   FBWA'ya GEÇİLMİYOR ve senaryo BAŞLATILMIYOR: yerde "
+              "sürünen uçakla alınan ölçüm geçersizdir.")
+        print("[SCN]   Bak: motor/gaz, TKOFF_ALT, rüzgâr, makine yükü. "
+              "Eşikler: AVCI_TKOFF_HEDEF_M / AVCI_TKOFF_TIMEOUT_S")
+        return False
+
+    print(f"[SCN] ✓ Tırmanış doğrulandı ({alt:.1f} m, "
+          f"{time.time() - t0:.0f} s) → FBWA")
     set_mode(conn, PLANE_MODE_FBWA)
     hold(conn, 2.0)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +428,19 @@ for _ad, (_roll, _etiket) in DAIRE_CAPLARI.items():
         SCENARIOS[_ad] = (lambda c, r=_roll, e=_etiket: _daire(c, r, e))
 
 
+def _kalkis_basarisiz(conn):
+    """Kalkış doğrulanamadı: senaryo çalıştırılmaz, araç güvenli bırakılır.
+
+    Yüzeyler nötre alınır ve gaz cruise'a bırakılır — senaryo sonundaki
+    çıkışın AYNISI. Yeni bir uçuş komutu ÜRETİLMEZ; araç hangi moddaysa
+    (TAKEOFF) orada kalır ve operatör/GCS devralabilir. Mod değiştirmiyoruz
+    çünkü doğrulanmamış bir durumda mod zorlamak yeni bir risk olurdu.
+    """
+    _rc(conn, throttle=THROTTLE_CRUISE)
+    stop_gcs_keepalive()
+    print("[SCN] Senaryo BAŞLATILMADI — kalkış doğrulanamadı.")
+
+
 def main():
     name = sys.argv[1] if len(sys.argv) > 1 else "square"
     if name not in SCENARIOS:
@@ -396,13 +469,17 @@ def main():
         hold(conn, 1.0)                           # düz uçuşla kısa stabilizasyon
     elif armed:
         print(f"[SCN] Armlı ama yerde (irtifa {alt:.0f}m) — doğrudan kalkış")
-        takeoff(conn)
+        if not takeoff(conn):
+            _kalkis_basarisiz(conn)
+            return
     else:
         result = arm_plane(warmup_duration=3.0)
         if result is None or result[1] != 0:
             print("[SCN] ARM başarısız!")
             return
-        takeoff(conn)
+        if not takeoff(conn):
+            _kalkis_basarisiz(conn)
+            return
 
     SCENARIOS[name](conn)
 
