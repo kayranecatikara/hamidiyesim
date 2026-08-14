@@ -1298,8 +1298,32 @@ const GCS = (() => {
 /* ══════════════════════════════════════════════════════════════════════════
    0 · YARDIMCILAR
    ══════════════════════════════════════════════════════════════════════════ */
-const $  = (s, r) => (r || document).querySelector(s);
+/* ── $ ÖNBELLEĞİ (2026-08-14) ────────────────────────────────────────────
+   ÖLÇÜLDÜ (çalışan sayfada, CDP ile 12 sn): 794 querySelector/sn — 600'ü
+   bu yardımcıdan. domTik 10 Hz'te on binlerce düğüm taraması yapıyordu;
+   oysa sorgulanan düğümler sabit (#id) ve hiç değişmiyor.
+
+   Önbellek YALNIZ kök verilmediğinde (document) ve tek düğüm için tutulur.
+   Doğruluk garantisi: önbellekteki düğüm DOM'dan koparsa (isConnected false)
+   önbellek atılır ve yeniden sorgulanır — dinamik olarak değiştirilen
+   kapsayıcılarda bile davranış birebir aynı kalır. null sonuçlar
+   önbelleğe ALINMAZ (düğüm sonradan eklenebilir). */
+const _selOnbellek = new Map();
+const $  = (s, r) => {
+  if (r) return r.querySelector(s);
+  const v = _selOnbellek.get(s);
+  if (v !== undefined && v.isConnected) return v;
+  const e = document.querySelector(s);
+  if (e) _selOnbellek.set(s, e); else _selOnbellek.delete(s);
+  return e;
+};
 const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+/* ── DEĞİŞMEDİYSE YAZMA (2026-08-14) ─────────────────────────────────────
+   ÖLÇÜLDÜ: 257.7 textContent yazımı/sn, bunun 212.6'sı (%83) AYNI değeri
+   tekrar yazıyordu. textContent'e aynı dizgiyi yazmak bile metin düğümünü
+   yeniden kurar ve yerleşimi geçersiz kılar — bedava değildir.
+   Görünen çıktı birebir aynı kalır; yalnız gereksiz yazım elenir. */
+const metinYaz = (el, s) => { if (el && el.textContent !== s) el.textContent = s; };
 const kis = (v, a, b) => v < a ? a : (v > b ? b : v);
 const simdi = () => performance.now();
 const DEG = 180 / Math.PI, RAD = Math.PI / 180;
@@ -1690,7 +1714,7 @@ function kayit(kaynak, seviye, mesaj){
   el.append(z, k, s, m);
   kayitGovde.appendChild(el);
   while (kayitGovde.childElementCount > 200){ kayitGovde.removeChild(kayitGovde.firstElementChild); }
-  kayitSayi.textContent = kayitGovde.childElementCount + " satır";
+  metinYaz(kayitSayi, kayitGovde.childElementCount + " satır");
   if (otoKaydir) kayitGovde.scrollTop = kayitGovde.scrollHeight;
 }
 kayitGovde.addEventListener("scroll", () => {
@@ -1737,7 +1761,7 @@ const sistemEl = {};
 function sistemYaz(id, d, metin){
   const e = sistemEl[id]; if (!e) return;
   if (e.row.dataset.d !== d || e.dur.textContent !== metin){
-    e.row.dataset.d = d; e.led.dataset.d = d; e.dur.textContent = metin;
+    e.row.dataset.d = d; e.led.dataset.d = d; metinYaz(e.dur, metin);
   }
 }
 
@@ -2169,7 +2193,7 @@ function filoYaz(){
                 : "ETA " + ss(a.eta_s) + " · " + (a.mesafe_m >= 1000 ? (a.mesafe_m/1000).toFixed(1) + " km"
                                                                     : Math.round(a.mesafe_m) + " m");
     if (e.olcu.textContent !== olcuM) e.olcu.textContent = olcuM;
-    e.hizli.textContent = a.durum === "BEKLEMEDE" ? "▲" : "▼";
+    metinYaz(e.hizli, a.durum === "BEKLEMEDE" ? "▲" : "▼");
     e.row.dataset.secili = a.secili ? "1" : "0";
     if (e.kutu.checked !== a.secili) e.kutu.checked = a.secili;
   });
@@ -2308,7 +2332,7 @@ const BICIM = {
 function olcumleriYaz(){
   for (let i = 0; i < olcumEls.length; i++){
     const el = olcumEls[i], a = el.dataset.alan, b = BICIM[a] || { d:1 };
-    el.querySelector(".deger").textContent = nf(D[a], b.d, b.isaret);
+    metinYaz(el.querySelector(".deger"), nf(D[a], b.d, b.isaret));
   }
   $("#anaPitch").style.cssText = analogStil(D.pitch, 45);
   $("#anaRoll").style.cssText  = analogStil(D.roll, 60);
@@ -2349,22 +2373,22 @@ function ustSeritYaz(){
   const bRozet = $("#miniBataryaKaynak");
   const bd = bataryaDurumu();
   if (bd.veriVar){
-    $("#vBatarya").textContent = bd.tam;
+    metinYaz($("#vBatarya"), bd.tam);
     $("#miniBatarya").dataset.durum = bd.d === "ok" ? "" : bd.d;
     /* Rozet: yüzde gerçek ölçümdür; yalnız voltajdan şiddet çıkarıldıysa
        kullanıcı bunun TAHMİN olduğunu rozetten de görmeli. */
     const rm = bd.tahmin ? "TAHMİN" : "GERÇEK";
     if (bRozet && bRozet.textContent !== rm){
-      bRozet.textContent = rm;
+      metinYaz(bRozet, rm);
       bRozet.dataset.k = bd.tahmin ? "simule" : "gercek";
     }
     if (bRozet) bRozet.title = bd.esik;
   } else if (CANLI && CANLI_AKTIF){
-    $("#vBatarya").textContent = "VERİ YOK";
+    metinYaz($("#vBatarya"), "VERİ YOK");
     $("#miniBatarya").dataset.durum = "";
     if (bRozet && bRozet.textContent !== "YOK"){ bRozet.textContent = "YOK"; bRozet.dataset.k = "yok"; }
   } else {
-    $("#vBatarya").textContent = nf(D.batarya_v, 1) + " V · " + ss(D.batarya_sn);
+    metinYaz($("#vBatarya"), nf(D.batarya_v, 1) + " V · " + ss(D.batarya_sn));
     $("#miniBatarya").dataset.durum = D.batarya_v < 20.5 ? "kritik" : (D.batarya_v < 21.8 ? "uyari" : "");
     if (bRozet && bRozet.textContent !== "SİM"){ bRozet.textContent = "SİM"; bRozet.dataset.k = "simule"; }
   }
@@ -2374,14 +2398,14 @@ function ustSeritYaz(){
      rastgele) yazılıyordu; canlı bağlantıda bile uydurma bir sayıydı. */
   const tlmYas = (simdi() - D.sonKare) / 1000;
   if (CANLI && CANLI_AKTIF){
-    $("#vGecikme").textContent = (WSM.hz ? WSM.hz.toFixed(1) + " Hz" : "—")
-                               + (tlmYas > 1.5 ? " · " + tlmYas.toFixed(1) + " sn" : "");
+    metinYaz($("#vGecikme"), (WSM.hz ? WSM.hz.toFixed(1) + " Hz" : "—")
+                           + (tlmYas > 1.5 ? " · " + tlmYas.toFixed(1) + " sn" : ""));
     $("#miniGecikme").dataset.durum = tlmYas > 3 ? "kritik" : (tlmYas > 1.5 ? "uyari" : "");
   } else if (CANLI){
-    $("#vGecikme").textContent = "KOPUK";
+    metinYaz($("#vGecikme"), "KOPUK");
     $("#miniGecikme").dataset.durum = "kritik";
   } else {
-    $("#vGecikme").textContent = "SİM " + Math.round(D.gecikme_ms) + " ms";
+    metinYaz($("#vGecikme"), "SİM " + Math.round(D.gecikme_ms) + " ms");
     $("#miniGecikme").dataset.durum = D.gecikme_ms > 120 ? "kritik" : (D.gecikme_ms > 60 ? "uyari" : "");
   }
 
@@ -2402,7 +2426,7 @@ function ustSeritYaz(){
   }
   const cub = $("#linkCubuk").children;
   for (let i = 0; i < cub.length; i++) cub[i].dataset.on = i < kalite ? "1" : "0";
-  $("#linkMetin").textContent = "Sunucu bağlantısı " + kaliteAd;
+  metinYaz($("#linkMetin"), "Sunucu bağlantısı " + kaliteAd);
   const ms = $("#miniSunucu");
   if (ms) ms.title = "Tarayıcı → gcs_server bağlantısı: " + kaliteAd + "  (RF link kalitesi DEĞİL)";
 
@@ -2474,8 +2498,8 @@ function butceYaz(){
     : kest.kaynak === "simule" ? "SİM " + ss(kest.sn)
     : kest.kaynak === "yetersiz" ? "TAHMİN YOK"
     : "VERİ YOK";
-  $("#vDonusSure").textContent = ss(donusSure);
-  $("#vPencere").textContent = pencere === null ? "—" : (pencere <= 0 ? "00:00" : ss(pencere));
+  metinYaz($("#vDonusSure"), ss(donusSure));
+  metinYaz($("#vPencere"), pencere === null ? "—" : (pencere <= 0 ? "00:00" : ss(pencere)));
 
   /* Kaynak rozeti: bu blok artık koşula göre GERÇEK ya da SİMÜLE olabilir. */
   const kr = $("#butceKaynak");
@@ -2484,7 +2508,7 @@ function butceYaz(){
             : kest.kaynak === "simule" ? "SİMÜLE"
             : kest.kaynak === "yetersiz" ? "VERİ TOPLANIYOR" : "VERİ YOK";
     if (kr.textContent !== m){
-      kr.textContent = m;
+      metinYaz(kr, m);
       kr.dataset.k = kest.kaynak === "olcum" ? "gercek"
                    : kest.kaynak === "simule" ? "simule" : "yok";
     }
@@ -2519,9 +2543,9 @@ function butceYaz(){
 }
 
 function sagPaneliYaz(){
-  $("#vYatay").textContent = nf(D.yatay_menzil, 1) + " m";
-  $("#vKerteriz").textContent = nf(D.kerteriz, 0) + " °";
-  $("#vKilitYasi").textContent = kilitVar() ? nf(D.kilitYasi || 0, 1) + " s" : "—";
+  metinYaz($("#vYatay"), nf(D.yatay_menzil, 1) + " m");
+  metinYaz($("#vKerteriz"), nf(D.kerteriz, 0) + " °");
+  metinYaz($("#vKilitYasi"), kilitVar() ? nf(D.kilitYasi || 0, 1) + " s" : "—");
   /* TESPİT GÜVENİ — artık GERÇEK YOLO çıktısı (pnp.tespit_conf, 18J).
      Üç durum ayrı ayrı gösterilir; eskiden üçü de sayıya çevriliyordu:
        null  → uç cevap vermiyor ya da tespit yok  → "VERİ YOK" / "TESPİT YOK"
@@ -2547,16 +2571,16 @@ function sagPaneliYaz(){
   const p = Math.min(D.ardisik_tespit, eN.v), k = Math.min(D.ardisik_kayip, ESIK.KAYIP_KARE);
   $("#barTespit").style.width = (p / eN.v * 100) + "%";
   $("#barKayip").style.width = (k / ESIK.KAYIP_KARE * 100) + "%";
-  $("#vArdisikTespit").textContent = p + "/" + (eN.gercek ? eN.v : "~" + eN.v)
-    + " tespit" + (D.kilit_pencere ? " (" + D.kilit_pencere + " kare pencere)" : "");
-  $("#vArdisikKayip").textContent = k + "/" + ESIK.KAYIP_KARE + " kayıp";
+  metinYaz($("#vArdisikTespit"), p + "/" + (eN.gercek ? eN.v : "~" + eN.v)
+    + " tespit" + (D.kilit_pencere ? " (" + D.kilit_pencere + " kare pencere)" : ""));
+  metinYaz($("#vArdisikKayip"), k + "/" + ESIK.KAYIP_KARE + " kayıp");
 
   const gm = $("#guduModu");
   const onek = (CANLI_AKTIF && D.gudumModu) ? D.gudumModu + " · " : "";
-  gm.textContent = onek + (D.faz === "GPS" ? "GPS İSTASYON · 20 Hz"
+  metinYaz(gm, onek + (D.faz === "GPS" ? "GPS İSTASYON · 20 Hz"
                  : (D.faz === "GORSEL" || D.faz === "DALIS") ? "GÖRSEL KİLİT · LEAD PURSUIT"
                  : D.faz === "KOR" ? "KÖR DALIŞ"
-                 : D.faz === "KALKIS" ? "KALKIŞ" : "BEKLEME");
+                 : D.faz === "KALKIS" ? "KALKIŞ" : "BEKLEME"));
 
   const not = $("#gecisNot");
   let m;
@@ -3872,7 +3896,7 @@ function izlemeSeridiKur(){
     b.className = "kam-sekme"; b.type = "button"; b.dataset.izleme = m.kod;
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", String(SG.mod === m.kod));
-    b.textContent = m.ad;
+    metinYaz(b, m.ad);
     b.addEventListener("click", () => izlemeModuSec(m.kod));
     kap.appendChild(b);
   });
@@ -3999,7 +4023,7 @@ function isrSeridiYaz(){
   }
   const u = $("#isrUst");
   if (u.textContent !== m) u.textContent = m;
-  $("#saatDamga").textContent = saatMetni();
+  metinYaz($("#saatDamga"), saatMetni());
 
   /* KAYIT göstergesi — GERÇEK sunucu durumundan (18K).
      Yanıp sönme YALNIZCA gerçekten kayıt sürerken olur; artık dekoratif
@@ -4305,7 +4329,7 @@ function canliRozet(canli){
   const r = $("#rozetBaglanti");
   CANLI_AKTIF = canli;
   r.dataset.tip = canli ? "canli" : "mock";
-  r.textContent = canli ? "CANLI" : (CANLI ? (WS.deneme ? "YENİDEN BAĞLANIYOR" : "BAĞLANIYOR") : "MOCK");
+  metinYaz(r, canli ? "CANLI" : (CANLI ? (WS.deneme ? "YENİDEN BAĞLANIYOR" : "BAĞLANIYOR") : "MOCK"));
 }
 /* Komut gönderimi — artık operatöre GÖRÜNÜR geri bildirim veriyor.
    ad: toast'ta gösterilecek insan-okur komut adı. */
@@ -4873,6 +4897,7 @@ const alarmKap = $("#alarmKap");
 function alarmAc(id, seviye, metin){
   const v = ALARM.get(id);
   if (v){
+    v.temizT0 = 0;                 /* koşul geri geldi → kapanma beklemesi iptal */
     if (v.metin !== metin){ v.metin = metin; v.metinEl.textContent = metin; }
     if (v.seviye !== seviye){ v.seviye = seviye; v.el.dataset.s = seviye; }
     return;
@@ -4887,15 +4912,31 @@ function alarmAc(id, seviye, metin){
   k.addEventListener("click", () => { const g = ALARM.get(id); if (g) g.susturuldu = true; el.classList.add("gizli"); });
   el.append(m, y, k);
   alarmKap.appendChild(el);
-  ALARM.set(id, { el:el, metinEl:m, yasEl:y, metin:metin, seviye:seviye, t0:simdi(), susturuldu:false });
+  ALARM.set(id, { el:el, metinEl:m, yasEl:y, metin:metin, seviye:seviye, t0:simdi(),
+                  susturuldu:false, temizT0:0 });
   kayit("ALARM", seviye === "kritik" ? "KRİTİK" : "UYARI", metin);
   alarmGecmiseYaz("acildi", id, seviye, metin);
   if (gelismisAcik && gelSekme === "alarm") alarmGecmisiCiz();
 }
+/* ── KAPANMA HİSTEREZİSİ (2026-08-14) ──────────────────────────────────
+   alarmAc() zaten id bazlı tekilleştirme yapıyordu (aynı alarm tekrar
+   basılmıyor). Kapanma tarafında ise koruma YOKTU: eşiğin tam etrafında
+   salınan bir koşul (ör. tlmYas 2.9 ↔ 3.1 sn) alarmı her domTik'te
+   açıp kapatabiliyor, olay kaydını "açıldı / kalktı" çiftleriyle
+   dolduruyordu.
+
+   Koşul temizlendiği anda alarm SUSAR gibi davranmaz; temizliğin sürmesi
+   beklenir. Alarm gerçekten kalktığında kayıt bir kez düşer. Yeniden
+   bozulursa (alarmAc) bekleme iptal edilir ve alarm hiç kapanmamış gibi
+   sürer — sahte "kalktı/geri geldi" gürültüsü üretilmez. */
+const ALARM_KAPANMA_MS = 1500;
+
 function alarmKapatId(id){
   const v = ALARM.get(id);
   if (!v) return;
-  const sure = Math.round((simdi() - v.t0) / 1000);
+  if (!v.temizT0){ v.temizT0 = simdi(); return; }
+  if (simdi() - v.temizT0 < ALARM_KAPANMA_MS) return;
+  const sure = Math.round((v.temizT0 - v.t0) / 1000);
   v.el.remove(); ALARM.delete(id);
   kayit("ALARM", "BİLGİ", "Uyarı kalktı: " + v.metin);
   alarmGecmiseYaz("kalkti", id, v.seviye, v.metin, sure);
@@ -4911,11 +4952,28 @@ function alarmYaslariYaz(){
 
 /* Alarm kuralları — hepsi gerçek duruma bakar. Simüle alanlar (batarya)
    yalnızca MOCK modda alarm üretir ve metninde SİMÜLE geçer. */
+/* Sunucuya bağlantısız geçen sürenin başlangıcı (0 = bağlı). */
+const BAGSIZ = { t0:0 };
+
 function alarmlariDegerlendir(){
   const tlmYas = (simdi() - D.sonKare) / 1000;
 
-  if (CANLI && !CANLI_AKTIF) alarmAc("baglanti", "kritik", "TELEMETRİ BAĞLANTISI YOK — sunucuya ulaşılamıyor");
-  else alarmKapatId("baglanti");
+  /* ── AÇILIŞ / YENİDEN BAĞLANMA TOLERANSI (2026-08-14) ──────────────────
+     ESKİ: CANLI_AKTIF yalnız WS "open" ile true olduğu için, sayfa
+     açılışında ve HER yeniden bağlanma turunda anında KRİTİK alarm
+     basılıyordu — oysa rozet zaten "BAĞLANIYOR" / "YENİDEN BAĞLANIYOR"
+     diyordu ve durum saniyeler içinde kendiliğinden düzeliyordu.
+
+     YENİ: kopuk hâlin SÜRMESİ şartı. Eşik uydurulmadı — aşağıdaki "tlm"
+     alarmının zaten kullandığı 3 sn ile aynı. Bu süre boyunca operatör
+     bilgisiz kalmaz: rozet ve bağlantı durum makinesi durumu gösterir. */
+  if (CANLI && !CANLI_AKTIF){
+    if (!BAGSIZ.t0) BAGSIZ.t0 = simdi();
+    const sure = (simdi() - BAGSIZ.t0) / 1000;
+    if (sure > 3)
+      alarmAc("baglanti", "kritik",
+              "TELEMETRİ BAĞLANTISI YOK — sunucuya ulaşılamıyor (" + sure.toFixed(0) + " sn)");
+  } else { BAGSIZ.t0 = 0; alarmKapatId("baglanti"); }
 
   if (CANLI && CANLI_AKTIF && tlmYas > 3) alarmAc("tlm", "kritik", "TELEMETRİ ZAMAN AŞIMI — " + tlmYas.toFixed(0) + " sn veri yok");
   else alarmKapatId("tlm");
@@ -5005,7 +5063,7 @@ function saglikYaz(ad, d, metin){
   const e = saglikEl[ad]; if (!e) return;
   if (e.kutu.dataset.d !== d) e.kutu.dataset.d = d;
   if (e.d.textContent !== metin){
-    e.d.textContent = metin;
+    metinYaz(e.d, metin);
     /* Dar hücrede metin kesilebilir — tam hâli tooltip'te kalsın. */
     e.kutu.title = (e.kutu.querySelector(".etiket") || {}).textContent + ": " + metin;
   }
@@ -5319,9 +5377,9 @@ function elrsEmniyet(id, ok){ const e = $(id); if (e) e.dataset.ok = ok ? "1" : 
 function rcKanalYaz(ad, deger){
   const yazi = $("#rc" + ad), bar = $("#barRc" + ad);
   if (!yazi || !bar) return;
-  if (!Number.isFinite(deger)){ yazi.textContent = "—"; bar.style.width = "0"; return; }
+  if (!Number.isFinite(deger)){ metinYaz(yazi, "—"); bar.style.width = "0"; return; }
   const o = kis((deger - 1500) / 500, -1, 1);
-  yazi.textContent = Math.round(deger);
+  metinYaz(yazi, Math.round(deger));
   bar.style.left = o < 0 ? (50 + o * 50) + "%" : "50%";
   bar.style.width = Math.abs(o * 50) + "%";
 }
@@ -5336,18 +5394,18 @@ function elrsCiz(){
   const s = ELRS.veri, taze = ELRS.bagli && (simdi() - ELRS.son < 1600);
   const rozet = $("#elrsDurum");
   if (!taze || !s){
-    rozet.dataset.d = "kritik"; rozet.textContent = "BAĞLI DEĞİL";
+    rozet.dataset.d = "kritik"; metinYaz(rozet, "BAĞLI DEĞİL");
     elrsMetin("#vElrsUst", "VERİ YOK"); elrsMetin("#elrsLq", "— %"); elrsMetin("#elrsRssi", "— dBm"); elrsMetin("#elrsHz", "— Hz");
     ["Roll","Pitch","Thr","Yaw"].forEach(n => rcKanalYaz(n, NaN));
     ["#emLink","#emArm","#emFc","#emMod"].forEach(id => elrsEmniyet(id, false));
     $("#btnElrsArm").disabled = true; $("#btnKare").disabled = true; $("#btnKareDur").disabled = true;
     $("#elrsNot").dataset.d = "kritik";
-    $("#elrsNot").textContent = "ESP32 görev bilgisayarı erişilemiyor — RF değerleri gösterilmiyor.";
+    metinYaz($("#elrsNot"), "ESP32 görev bilgisayarı erişilemiyor — RF değerleri gösterilmiyor.");
     kareSafhaYaz(""); return;
   }
   const lq = Number(s.lq), telemTaze = Number(s.telemetry_age_ms) < 2000;
   const linkOk = Number.isFinite(lq) && lq > 0;
-  rozet.dataset.d = linkOk ? "canli" : "uyari"; rozet.textContent = linkOk ? "CRSF CANLI" : "CRSF · TELEMETRİ YOK";
+  rozet.dataset.d = linkOk ? "canli" : "uyari"; metinYaz(rozet, linkOk ? "CRSF CANLI" : "CRSF · TELEMETRİ YOK");
   elrsMetin("#vElrsUst", linkOk ? "LQ " + lq + "%" : "VERİ YOK");
   elrsMetin("#elrsLq", linkOk ? lq + " %" : "— %");
   elrsMetin("#elrsRssi", linkOk && Number.isFinite(+s.rssi_dbm) ? s.rssi_dbm + " dBm" : "— dBm");
@@ -5464,7 +5522,7 @@ function disarmCiz(){
   const gecen = simdi() - disarmBas;
   const oran = kis(gecen / DISARM_SURE, 0, 1);
   disarmDolum.style.width = (oran * 100) + "%";
-  disarmEtiket.textContent = "BIRAKMA · " + ((DISARM_SURE - gecen) / 1000).toFixed(1) + " sn";
+  metinYaz(disarmEtiket, "BIRAKMA · " + ((DISARM_SURE - gecen) / 1000).toFixed(1) + " sn");
   if (oran < 1) disarmRaf = requestAnimationFrame(disarmCiz);
 }
 function disarmBasla(e){
@@ -5489,9 +5547,9 @@ function disarmBitir(tamamlandi){
   disarmDolum.style.width = "0";
   disarmEtiket.dataset.d = "";
   if (tamamlandi){
-    disarmEtiket.textContent = "DISARM KOMUTU GÖNDERİLDİ";
+    metinYaz(disarmEtiket, "DISARM KOMUTU GÖNDERİLDİ");
   } else {
-    disarmEtiket.textContent = "İPTAL — erken bırakıldı";
+    metinYaz(disarmEtiket, "İPTAL — erken bırakıldı");
     kayit("ELRS", "BİLGİ", "Acil DISARM iptal: düğme " + (gecen / 1000).toFixed(1) +
                            " sn'de bırakıldı (gereken " + (DISARM_SURE / 1000).toFixed(1) + " sn)");
     setTimeout(() => { if (!disarmBas) disarmEtiket.textContent = "1.2 sn basılı tut"; }, 2200);
@@ -5518,7 +5576,7 @@ const toastKap = $("#toastKap");
 function toast(metin, d, sure){
   const el = document.createElement("div");
   el.className = "toast"; el.dataset.d = d || "";
-  el.textContent = metin;
+  metinYaz(el, metin);
   toastKap.appendChild(el);
   while (toastKap.childElementCount > 4) toastKap.removeChild(toastKap.firstElementChild);
   setTimeout(() => el.remove(), sure || 3200);
@@ -5550,9 +5608,42 @@ const BAG_ADI = {
   yeniden:"YENİDEN BAĞLANIYOR", kopuk:"BAĞLANTI KOPTU", sessiz:"VERİ AKMIYOR",
   gecikmeli:"VERİ GECİKMELİ", yuksek_gecikme:"YÜKSEK GECİKME", normal:"NORMAL"
 };
+/* ── HİSTEREZİS (2026-08-14) ─────────────────────────────────────────────
+   SORUN (ölçüldü): baglantiDurumu() ANLIK karar veriyordu. TEK bir 3 s'lik
+   paket boşluğu doğrudan "VERİ AKMIYOR" kırmızısına ve 5 sn'lik hata
+   toast'ına yol açıyordu; boşluk kapanınca "BAĞLANTI GERİ GELDİ" toast'ı.
+   Jitter, toast çiftlerinden oluşan bir spam üretiyordu.
+
+   Gerçek SITL koşusunda ölçülen tetikleyici: gcs_server CPU'da YOLO
+   çalıştırırken %397 CPU'ya çıkıyor ve 10 Hz'lik /ws döngüsü takılıyor —
+   bağlantı SAĞLAM olduğu hâlde arayüz "koptu" diyordu.
+
+   ÇÖZÜM: eşikler (3 s / 1.5 s / 400 ms) AYNEN KORUNDU. Yalnızca kararın
+   KALICI olması şartı eklendi: durum değişikliği benimsenmeden önce
+   ardışık olarak belirli süre sürmeli. Kötüleşme daha uzun beklenir
+   (yanlış alarm pahalıdır), iyileşme daha kısa (operatör toparlanmayı
+   geç görmesin).
+
+   Rozet (canliRozet) bundan ETKİLENMEZ — WS açık/kapalı bilgisi anında
+   gösterilmeye devam eder. Geciken yalnız alarm/toast düzeyindeki karardır. */
+const BAG_AGIRLIK = {
+  yerel:0, normal:0, yuksek_gecikme:1, gecikmeli:2, baglaniyor:3,
+  sessiz:4, yeniden:5, kopuk:6, kapali:6
+};
+const BAG_KOTULESME_MS = 1000;   /* daha kötü duruma geçiş (10 domTik) */
+const BAG_IYILESME_MS  =  600;   /* daha iyi duruma dönüş  ( 6 domTik) */
+const BAG_BEKLE = { aday:null, t0:0 };
+
 function baglantiDurumuGuncelle(){
-  const y = baglantiDurumu();
-  if (y === BAG.durum) return;
+  const ham = baglantiDurumu();
+  if (ham === BAG.durum){ BAG_BEKLE.aday = null; return; }
+  /* Aday değişti → sayacı sıfırla; aynı aday sürüyorsa süreyi ölç. */
+  if (BAG_BEKLE.aday !== ham){ BAG_BEKLE.aday = ham; BAG_BEKLE.t0 = simdi(); return; }
+  const eskiA = BAG_AGIRLIK[BAG.durum], yeniA = BAG_AGIRLIK[ham];
+  const kotulesme = (yeniA === undefined ? 9 : yeniA) > (eskiA === undefined ? 9 : eskiA);
+  if (simdi() - BAG_BEKLE.t0 < (kotulesme ? BAG_KOTULESME_MS : BAG_IYILESME_MS)) return;
+  BAG_BEKLE.aday = null;
+  const y = ham;
   BAG.onceki = BAG.durum; BAG.durum = y; BAG.gecis = simdi();
   /* Geri gelişi ayrıca kutla — operatör "toparlandı mı?" diye bakmasın. */
   if (y === "normal" && (BAG.onceki === "kopuk" || BAG.onceki === "yeniden" || BAG.onceki === "sessiz")){
@@ -5578,7 +5669,7 @@ function alarmGecmisiCiz(){
   if (!ALARM_GECMIS.length){
     const b = document.createElement("div");
     b.className = "bos-liste";
-    b.textContent = "Henüz alarm kaydı yok — sistem açıldığından beri uyarı üretilmedi.";
+    metinYaz(b, "Henüz alarm kaydı yok — sistem açıldığından beri uyarı üretilmedi.");
     kap.appendChild(b); return;
   }
   ALARM_GECMIS.slice().reverse().forEach(a => {
@@ -5586,9 +5677,9 @@ function alarmGecmisiCiz(){
     s.className = "ag-sat"; s.dataset.o = a.olay;
     const p = n => String(n).padStart(2, "0");
     const t = document.createElement("span"); t.className = "t";
-    t.textContent = p(a.t.getHours()) + ":" + p(a.t.getMinutes()) + ":" + p(a.t.getSeconds());
+    metinYaz(t, p(a.t.getHours()) + ":" + p(a.t.getMinutes()) + ":" + p(a.t.getSeconds()));
     const d = document.createElement("span"); d.className = "d";
-    d.textContent = a.olay === "acildi" ? (a.seviye === "kritik" ? "KRİTİK" : "UYARI") : "KALKTI";
+    metinYaz(d, a.olay === "acildi" ? (a.seviye === "kritik" ? "KRİTİK" : "UYARI") : "KALKTI");
     const m = document.createElement("span"); m.textContent = a.metin;
     const su = document.createElement("span"); su.className = "sure";
     su.textContent = a.sure !== undefined && a.sure !== null ? a.sure + " sn sürdü" : "";
