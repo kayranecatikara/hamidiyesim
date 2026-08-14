@@ -748,6 +748,17 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
+    "vterm16": (
+        "V_TERMINAL", "deger", "Terminal hücum hızı 18 → 16 m/s",
+        "Kullanıcı hipotezi: son vuruşta hedefin hızına yaklaşalım, üstüne "
+        "atılmayalım — kapanma düşer, gecikmenin ürettiği hata küçülür. "
+        "ÖLÇÜLDÜ (8 uçuş, 4v4): isabet 3/4 → 4/4, en yakın menzil 0.80 → "
+        "0.52 m, 10 m'den temasa süre 71 → 52 s, dikey ıska +0.30 → +0.10 m. "
+        "Terminal süresi KISALMADI (6.5 → 19.7 s), yani yaklaşamama yok. "
+        "⚠ Daha aşağı İNMEZ: hedef p50 15.1 m/s uçuyor; 15 m/s'de karelerin "
+        "%84'ünde hedeften yavaş kalırız ve son 6.4 m hiç kapanmaz. "
+        "Kapalı = 18 m/s (eski), açık = 16 m/s.",
+        "AVCI_IBVS_VTERM", (18.0, 16.0)),
 }
 
 
