@@ -204,6 +204,35 @@ class Cfg:
     # 14.5) → hem düzeltmeye daha çok kare, hem pencerede daha uzun süre.
     # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
     V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
+
+    # ══ Ö-M · TERMİNAL MANDALINI MENZİLLE BIRAK (histerezis) ══════════
+    #
+    # NEDEN (ölçüldü, 2026-08-14, 16 uçuş):
+    # `terminal_mandal` bir kez True olunca görsel faz boyunca AÇILMIYORDU.
+    # Yani V_TERMINAL "son vuruş hızı" değil, ilk kez 6.4 m'ye indikten
+    # sonraki HER ŞEYİN hızıydı — 200 m uzaktayken bile.
+    # Bunun bedeli iki rejimde ZIT yönde ölçüldü:
+    #     duz + kaçamak : V_TERMINAL 16 m/s DAHA İYİ
+    #                     (isabet 3/4→4/4, 10 m'den temasa 71→52 s)
+    #     circle/aggr   : V_TERMINAL 16 m/s DAHA KÖTÜ
+    #                     (en yakın 2.87→6.18 m; dağılımlar hiç örtüşmüyor)
+    # Sebep: 16 m/s ile hedef 15.1 m/s → kapanma 0.9 m/s. Düz uçuşta yeter
+    # (zaten arkasındayız), dairede köşe kesmeye yetmez.
+    # ⇒ Tek sabit hız iki rejimi birden memnun edemiyor. Asıl kusur hızın
+    # değeri değil, MANDALIN HİÇ AÇILMAMASI.
+    #
+    # NE YAPAR: mandal, menzil TERM_BIRAK_M'yi aşarsa açılır ve seyir yasası
+    # (PI + V_TOPLAM_MAX) geri gelir. Kilitlenme eşiği DEĞİŞMEDİ (25 px).
+    # Histerezis: kilitlen 6.4 m ↔ bırak 20 m. Mandalın var oluş sebebi olan
+    # "moda girip çıkma titremesi" bu geniş bantla engellenir.
+    #
+    # ⚠ KÖR HÜCUM da mandala bağlı (kutu kaybolunca son komutla devam).
+    # Mandal açılınca kör hücum penceresi de kapanır — bu İSTENEN davranış:
+    # 20 m'de kutu kaybolduysa bu "çarpışmayı tamamla" durumu değil,
+    # "hedefi kaybettik" durumudur. Birim testi bunu sınar.
+    #
+    # 0 = KAPALI → mandal eskisi gibi hiç açılmaz (bit bit eski davranış).
+    TERM_BIRAK_M = _env_f("AVCI_IBVS_TERM_BIRAK", 0.0)   # m; 0 = kapalı, ~20
     # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
     V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
 
@@ -1050,11 +1079,22 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                            cfg.KAPANMA_EMA * _rdot
                            + (1.0 - cfg.KAPANMA_EMA) * kapanma)
             boyut_onceki = boyut_simdi
-            # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt, geri dönüş yok
+            # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt
             if not terminal_mandal and math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT:
                 terminal_mandal = True
                 print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
                       f"≥ {cfg.TERMINAL_BOYUT:.0f}) — fren yok, tam taahhüt")
+            # Ö-M: menzil eşiği aşarsa mandalı BIRAK (bkz. Cfg.TERM_BIRAK_M).
+            # Iskaladıktan sonra 200 m uzakta "terminal hücum" hızıyla
+            # uçmanın anlamı yok; seyir yasası geri gelsin.
+            elif (terminal_mandal and cfg.TERM_BIRAK_M > 0.0
+                    and boyut_simdi > 1e-6
+                    and cfg.MENZIL_PX_M / boyut_simdi > cfg.TERM_BIRAK_M):
+                terminal_mandal = False
+                kor_baslangic = None      # kör hücum penceresi de kapanır
+                print(f"[IBVS] ⚑ terminal mandalı BIRAKILDI "
+                      f"(menzil {cfg.MENZIL_PX_M / boyut_simdi:.0f} m > "
+                      f"{cfg.TERM_BIRAK_M:.0f} m) — seyir yasası geri geldi")
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,

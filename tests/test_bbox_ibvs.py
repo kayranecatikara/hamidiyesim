@@ -950,6 +950,85 @@ def main():
 
     # ══════════════════════════════════════════════════════════════════
 
+    # ══════════════════════════════════════════════════════════════════
+    # Ö-M · TERMİNAL MANDALINI MENZİLLE BIRAK (histerezis)
+    # ══════════════════════════════════════════════════════════════════
+    # Mandal döngüde tutuluyor; yasayı burada birebir yeniden kuruyoruz.
+    def _mandal(cfg, boyutlar):
+        """boyut dizisi → her karede mandal durumu (döngüdeki mantığın aynısı)."""
+        m = False; durum = []
+        for b in boyutlar:
+            if not m and b >= cfg.TERMINAL_BOYUT:
+                m = True
+            elif (m and cfg.TERM_BIRAK_M > 0.0 and b > 1e-6
+                    and cfg.MENZIL_PX_M / b > cfg.TERM_BIRAK_M):
+                m = False
+            durum.append(m)
+        return durum
+
+    class _OM(C):
+        TERM_BIRAK_M = 20.0
+
+    _R = lambda m: C.MENZIL_PX_M / m          # metre → piksel boyutu
+    # 40 m → 20 m → 6 m (kilitlenir) → 12 m → 25 m (bırakır) → 40 m
+    _dizi = [_R(40), _R(20), _R(6), _R(12), _R(25), _R(40)]
+
+    # B71 — kilitlenme eşiği DEĞİŞMEDİ
+    kontrol("B71 Ö-M kilitlenme eşiği değişmedi (25 px ≈ 6.4 m)",
+            _mandal(_OM, _dizi)[:3] == [False, False, True],
+            f"40 m → kapalı · 20 m → kapalı · 6 m → KİLİTLENDİ "
+            f"(eşik {C.TERMINAL_BOYUT:.0f} px = {C.MENZIL_PX_M/C.TERMINAL_BOYUT:.1f} m)")
+
+    # B72 — HİSTEREZİS: 12 m'de bırakmaz, 25 m'de bırakır
+    _d = _mandal(_OM, _dizi)
+    kontrol("B72 Ö-M histerezis: 12 m'de TUTAR, 25 m'de BIRAKIR",
+            _d[3] is True and _d[4] is False,
+            f"kilitliyken 12 m → hâlâ terminal (20 m eşiğinin altında) · "
+            f"25 m → BIRAKTI. Band 6.4 ↔ 20 m, mod titremesi olamaz.")
+
+    # B73 — yeniden kilitlenebilir (tek seferlik değil)
+    _tekrar = _mandal(_OM, [_R(6), _R(30), _R(6), _R(30), _R(6)])
+    kontrol("B73 Ö-M bıraktıktan sonra YENİDEN kilitlenir",
+            _tekrar == [True, False, True, False, True],
+            "6→30→6→30→6 m: kilitlen/bırak/kilitlen/bırak/kilitlen — "
+            "ıska sonrası yeni hücum mümkün")
+
+    # B74 — KAPALIYKEN eski davranış BİT BİT: mandal asla açılmaz
+    _kapali = _mandal(C, [_R(6)] + [_R(x) for x in (12, 25, 40, 200, 500)])
+    kontrol("B74 Ö-M kapalıyken mandal ASLA açılmaz (eski davranış)",
+            all(_kapali[1:]) and _kapali[0] is True,
+            f"TERM_BIRAK_M={C.TERM_BIRAK_M} → 6 m'de kilitlendi, 500 m'de "
+            f"bile terminal. Bu, ölçülen kusurun ta kendisi.")
+
+    # B75 — KÖR HÜCUM: mandal açılınca pencere de kapanır
+    # (döngüde `kor_baslangic = None` yapılıyor; burada kaynak denetimi)
+    _src = inspect.getsource(ib.gorsel_dongu) if hasattr(ib, "gorsel_dongu") else ""
+    if not _src:
+        import inspect as _i
+        _src = "".join(_i.getsource(ib).splitlines(True))
+    _i_birak = _src.index("terminal mandalı BIRAKILDI")
+    _blok = _src[max(0, _i_birak - 400):_i_birak]
+    kontrol("B75 Ö-M mandalı bırakırken kör hücum penceresi de kapanır",
+            "kor_baslangic = None" in _blok,
+            "20 m'de kutu kaybolduysa bu 'çarpışmayı tamamla' değil "
+            "'hedefi kaybettik' durumudur → kör hücum sayacı sıfırlanır")
+
+    # B76 — komut() imzası ve çıktısı DEĞİŞMEDİ (Ö-M döngüde, yasada değil)
+    _fark, _n = 0.0, 0
+    for cx in (100., 320., 540.):
+        for bw in (10., 30., 80.):
+            for term in (False, True):
+                a = ib.komut(cx, 300., bw, bw, 0.5, 9., 0.05, C, term,
+                             (0.3, 0.1), 0.04, 0., -2., 0.2, 0.2)
+                b = ib.komut(cx, 300., bw, bw, 0.5, 9., 0.05, _OM, term,
+                             (0.3, 0.1), 0.04, 0., -2., 0.2, 0.2)
+                for u, v in zip(a[:4], b[:4]):
+                    _fark = max(_fark, abs(u - v)); _n += 1
+    kontrol("B76 Ö-M `komut()` yasasına DOKUNMAZ (bit bit aynı)",
+            _fark == 0.0,
+            f"{_n} çıktı ({_n//4} girdi) — maks sapma {_fark:.2e}. Ö-M yalnız "
+            f"MANDALIN DEĞERİNİ değiştirir; hız yasasının kendisi aynıdır.")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
