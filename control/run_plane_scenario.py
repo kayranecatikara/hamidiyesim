@@ -56,7 +56,28 @@ _abort = False
 
 # _pump ile güncellenen son telemetri
 _att = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "ok": False}
-_pos = {"z": 0.0}
+_pos = {"z": 0.0, "vz": 0.0}
+
+
+# ── İRTİFA TUTUCU ──────────────────────────────────────────────────────────
+# NEDEN VAR: FBWA'da elevator İRTİFAYI DEĞİL PITCH AÇISINI komut eder. Düz
+# senaryosu pitch=0, daire senaryosu pitch=150/cos(yatış) gönderiyordu —
+# ikisi de AÇIK ÇEVRİM. Gaz slider'ı seviye uçuşun gerektirdiğinden fazlaysa
+# uçak seviye burunla tırmanır ve hiçbir şey onu geri çağırmaz.
+# ÖLÇÜLDÜ (bu dalda, logs/gps_guidance_20260814_172144.csv): düz fazda
+# tgt_vz medyan −0.29 m/s, yani +17 m/dk; hedef 256 s'de 17 m → 114 m çıktı.
+# Avcı da peşinden tırmandığı için her kaçamak testi aslında "tırmanan hedefi
+# tırmanarak kovalama" ölçüyordu. Daha önce main dalında da ölçülmüştü:
+# dairede +35…+92 m/dk, düzde +13…+59 m/dk; 08-08'de yapılan dört A/B'nin
+# dördü de bu yüzden geçersiz sayıldı.
+#
+# ÇÖZÜM: pitch komutuna PD'li irtifa düzeltmesi. Gaza DOKUNULMAZ (slider
+# kullanıcının; "hedefi yavaşlat" isteği çalışmaya devam etsin).
+# Kazançlar main dalında uçuşla doğrulandı; bu dalda avci_plane.parm aynı.
+IRTIFA_KP = 30.0          # pitch birimi / m hata
+IRTIFA_KD = 60.0          # pitch birimi / (m/s tırmanma) — sönüm, aşmayı keser
+IRTIFA_PITCH_MAX = 300    # ±300 ≈ ±13.5° — stall payı bırakacak kadar ılımlı
+IRTIFA_OTURMA_S = 4.0     # hedefi kilitlemeden önce kalkış transientini bekle
 
 
 def _sig_handler(_sig, _frame):
@@ -80,6 +101,9 @@ def _pump(conn):
             _att.update(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, ok=True)
         elif t == "LOCAL_POSITION_NED":
             _pos["z"] = msg.z
+            # vz: irtifa tutucunun sönüm terimi (bkz. _irtifa_pitch). Mesajda
+            # zaten vardı, okunmuyordu. getattr: alan eksikse senaryo düşmesin.
+            _pos["vz"] = getattr(msg, "vz", _pos.get("vz", 0.0))
 
 
 def _rc(conn, roll=0, pitch=0, throttle=0, yaw=0):
@@ -116,6 +140,64 @@ def gcs_throttle():
         except Exception:
             pass
     return _thr_cache["val"]
+
+
+# Panel düğmesi (CLAUDE.md §6). Senaryo AYRI BİR SÜREÇ olduğu için gcs_server'
+# daki Cfg sınıfına doğrudan erişemez; gcs_throttle ile aynı desenle HTTP'den
+# okunur. Böylece düğme UÇUŞ SIRASINDA, yeniden başlatmadan etki eder.
+# GCS'e ulaşılamazsa env varsayılanına düşer (otomatik kampanyalar için).
+_ENV_IRTIFA_TUT = os.environ.get(
+    "AVCI_SCN_IRTIFA_TUT", "1").lower() not in ("0", "off", "false")
+_irt_cache = {"val": _ENV_IRTIFA_TUT, "t": 0.0}
+
+
+def irtifa_tut_acik():
+    """İrtifa tutucu açık mı — panelden canlı (0.5 s önbellekli)."""
+    now = time.time()
+    if now - _irt_cache["t"] > 0.5:
+        _irt_cache["t"] = now
+        try:
+            req = urllib.request.urlopen(
+                "http://127.0.0.1:8000/api/senaryo_ayar", timeout=0.2)
+            _irt_cache["val"] = bool(json.loads(req.read().decode()).get(
+                "irtifa_tut", _ENV_IRTIFA_TUT))
+        except Exception:
+            pass
+    return _irt_cache["val"]
+
+
+def _irtifa_kilitle(conn, etiket):
+    """Transient geçince o anki irtifayı hedef olarak kilitler ve yazdırır.
+
+    Env ile ezilebilir: AVCI_SCN_ALT=120 → hedef 120 m (A/B'de iki kolu AYNI
+    irtifada uçurmak için; kilitleme anına bağlı kalmaz).
+    """
+    hold(conn, IRTIFA_OTURMA_S)
+    zorla = os.environ.get("AVCI_SCN_ALT")
+    hedef = float(zorla) if zorla else -_pos["z"]
+    durum = "AÇIK" if irtifa_tut_acik() else "KAPALI (açık çevrim)"
+    print(f"[SCN] {etiket} — irtifa tutucu {durum}, hedef {hedef:.1f} m"
+          f"{' (AVCI_SCN_ALT ile zorlandı)' if zorla else ''}")
+    return hedef
+
+
+def _irtifa_pitch(hedef, taban=0):
+    """İrtifa hatasını pitch komutuna çevirir (PD) ve tabana ekler.
+
+    taban: manevranın kendi gerektirdiği pitch (dairede yük faktörü payı).
+    Düzeltme ±IRTIFA_PITCH_MAX ile sınırlıdır, TABAN DEĞİL — yani dairenin
+    yatış payı kırpılıp kaybolmaz.
+
+    Tutucu kapalıyken `taban` AYNEN döner: kill-switch kapalı hâl, özellik
+    eklenmeden önceki komutun bit bit aynısıdır (tests/test_irtifa_tutucu.py).
+    """
+    if not irtifa_tut_acik():
+        return int(taban)
+    hata = hedef - (-_pos["z"])          # +: yükselmemiz gerek
+    tirmanma = -_pos.get("vz", 0.0)      # +: yükseliyoruz (NED vz aşağı pozitif)
+    duzeltme = IRTIFA_KP * hata - IRTIFA_KD * tirmanma
+    duzeltme = max(-IRTIFA_PITCH_MAX, min(IRTIFA_PITCH_MAX, duzeltme))
+    return int(taban + duzeltme)
 
 
 def hold(conn, duration, roll=0, pitch=0, throttle=None, yaw=0):
@@ -212,6 +294,10 @@ def scenario_duz(conn):
     geçersiz oldu. Desen makinesi (FBWA + RC override) irtifayı kabaca
     koruyor; düz referans ölçümü artık buradan alınır.
 
+    ⚠ 2026-08-14: "kabaca koruyor" YANLIŞTI — pitch=0 seviye AÇI demek, seviye
+    UÇUŞ değil. Fazla gazla uçak seviye burunla tırmanıyordu (+17 m/dk
+    ölçüldü, hiç oturmadan). Artık kapalı çevrim: bkz. _irtifa_pitch.
+
     ⚠ BAŞLANGIÇ DAİRESİ (2026-08-09, kullanıcı isteği): kalkıştan hemen sonra
     düze geçince hedef, avcı drone daha kalkarken ufka doğru uzaklaşıyor ve
     her testin ilk ~60 saniyesi sırf mesafe kapatmakla geçiyordu. Uçak artık
@@ -228,8 +314,9 @@ def scenario_duz(conn):
               f"(drone yaklaşsın), sonra düz uçuş")
         _daire_sureli(conn, DAIRE_CAPLARI["circle"][0], bekleme)
     print("[SCN] DÜZ — süresiz düz uçuş (gaz: GCS slider)")
+    hedef = _irtifa_kilitle(conn, "DÜZ")
     while not _abort:
-        hold(conn, 0.5)
+        hold(conn, 0.2, pitch=_irtifa_pitch(hedef))
 
 
 def scenario_square(conn):
@@ -278,25 +365,36 @@ DAIRE_CAPLARI = {
 
 
 def _daire_sureli(conn, roll_cmd, sure_s):
-    """Belirli süre daire çiz (bekleme turu). _daire ile aynı trim mantığı."""
+    """Belirli süre daire çiz (bekleme turu). _daire ile aynı trim mantığı.
+
+    Bekleme turu da kapalı çevrime bağlı: açık çevrim kalsaydı düz fazın
+    hedefi her koşuda BAŞKA bir irtifada kilitlenirdi.
+    """
     import math as _m
     import time as _t
     yatis_deg = roll_cmd / 1000.0 * 45.0
-    pitch_cmd = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
+    pitch_taban = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
     t0 = _t.time()
+    hedef = _irtifa_kilitle(conn, f"BEKLEME TURU ({sure_s:.0f} s)")
     while not _abort and (_t.time() - t0) < sure_s:
-        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
+        hold(conn, 0.2, roll=roll_cmd, pitch=_irtifa_pitch(hedef, pitch_taban))
 
 
 def _daire(conn, roll_cmd, etiket):
-    """Sabit yatışla süresiz tur. Pitch yatışa göre ölçeklenir (irtifa korunsun)."""
+    """Sabit yatışla süresiz tur; irtifa KAPALI ÇEVRİMLE tutulur.
+
+    ⚠ Eski hâli `pitch = 150/cos(yatış)` idi — yalnız yük faktörünü telafi eden
+    AÇIK ÇEVRİM bir tahmin. Yük faktörü payı TABAN olarak korunur, üstüne
+    irtifa hatasının PD düzeltmesi biner.
+    """
     import math as _m
     yatis_deg = roll_cmd / 1000.0 * 45.0
-    pitch_cmd = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
+    pitch_taban = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
     print(f"[SCN] DAİRE {etiket} — roll={roll_cmd} (~{yatis_deg:.0f}° yatış), "
-          f"pitch={pitch_cmd}")
+          f"pitch tabanı={pitch_taban}")
+    hedef = _irtifa_kilitle(conn, f"DAİRE {etiket}")
     while not _abort:
-        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
+        hold(conn, 0.2, roll=roll_cmd, pitch=_irtifa_pitch(hedef, pitch_taban))
 
 
 def scenario_circle(conn):

@@ -743,11 +743,31 @@ def _hedef_cfg(alan):
     """
     if ":" in alan:
         modul, ad = alan.split(":", 1)
+        if modul == "senaryo":
+            # HEDEF senaryosunun ayarı — AYRI SÜREÇ. Burada yazılan değeri
+            # senaryo /api/senaryo_ayar'dan okur (bkz. control/senaryo_cfg.py).
+            from control import senaryo_cfg as _s
+            return _s.SenaryoCfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
 
 _OZELLIKLER = {
+    "hedef_irtifa_tut": (
+        "senaryo:IRTIFA_TUT", "bool", "H-İT · Hedef irtifa tutucu (düz + daire)",
+        "ÖLÇÜLDÜ (uçuş 172144): hedef düz fazda DURMADAN tırmanıyor — tgt_vz "
+        "medyan −0.29 m/s, yani +17 m/dk; 256 s'de 17 m → 114 m. Sebep: "
+        "FBWA'da elevator PITCH AÇISI komut eder, irtifa değil; pitch=0 "
+        "'seviye burun' demek, 'seviye uçuş' değil. Gaz fazlaysa uçak seviye "
+        "burunla tırmanır ve hiçbir şey geri çağırmaz. Avcı da peşinden "
+        "tırmandığı için her kaçamak testi aslında 'tırmanan hedefi tırmanarak "
+        "kovalama' ölçüyordu; §4 geçerlilik bandı (20-250 m) uzun koşuda ihlal "
+        "ediliyordu. AÇIK: pitch'e PD'li irtifa düzeltmesi biner (±13.5° "
+        "sınırlı). ⚠ Bu bir HEDEF aracı ayarıdır, güdüm değil. ⚠ GAZA "
+        "DOKUNMAZ. ⚠ Kaçamak fazında ÖLÜ — manuel devralma senaryo sürecini "
+        "SIGKILL ediyor. ⚠ Hedefin HIZINI bir miktar ARTIRIR: tırmanışa giden "
+        "fazla enerji artık hıza gidiyor.",
+        "AVCI_SCN_IRTIFA_TUT", True),
     "ob_kose": (
         "KOSE_V", "deger", "Ö-B · Köşe dönüşü (yavaş dön, düzde hızlan)",
         "Dönüş yarıçapı R = V²/(g·tanθ). 18 m/s'de R = 33 m; hedef (15 m/s, "
@@ -799,6 +819,18 @@ def _ozellik_durumu():
 @app.get("/api/gudum_ozellikleri")
 def get_gudum_ozellikleri():
     return {"ozellikler": _ozellik_durumu()}
+
+
+@app.get("/api/senaryo_ayar")
+def get_senaryo_ayar():
+    """Senaryo SÜRECİNİN okuduğu ayarlar (bkz. control/senaryo_cfg.py).
+
+    Panel düğmesi bu süreçteki SenaryoCfg'yi değiştirir; senaryo ayrı bir
+    süreç olduğu için değeri buradan 0.5 s'de bir çeker. Böylece düğme
+    uçuş sırasında, yeniden başlatmadan etki eder.
+    """
+    from control import senaryo_cfg as _s
+    return {"irtifa_tut": bool(_s.SenaryoCfg.IRTIFA_TUT)}
 
 
 @app.post("/api/gudum_ozellikleri")
