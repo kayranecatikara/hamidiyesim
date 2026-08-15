@@ -69,7 +69,25 @@ class SupCfg:
     # kor_dalis ≤ %3) — bkz. UYGULANACAK.md B6.
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
-    KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
+    # ══ KAYIP_M — görsel fazı bırakma eşiği (Ö-N kampanyası, 2026-08-15) ══
+    # Ardışık kutusuz kare sayısı; aşılınca görsel faz 'kayip' döndürür ve
+    # GPS'e dönülür. 20 kare ≈ 0.66-1.0 s (döngü 20-30 Hz).
+    #
+    # NİYE ÖLÇÜLÜYOR (mevcut loglardan, 8 kare-senaryosu koşusu):
+    #   · Görsel fazların %96'sı (156/163) TAM BU EŞİKTE ölüyor — yani eşik
+    #     kare senaryosunda sistemin en çok bağlayan kapısı.
+    #   · Kesildikten sonra görselin geri gelme süresi: medyan 6.8 s AMA
+    #     %22'si 1 s, %27'si 2 s içinde. Yani her dört kesintiden birinde
+    #     kutu neredeyse oradaydı; boşuna GPS'e dönülmüş.
+    #   · Fazı BİTİRMEYEN iç boşluklar: medyan 2, p90 10 kare. Yani normal
+    #     tespit boşlukları eşiğin çok altında; eşiği büyütmek onları
+    #     etkilemez, yalnız "az kalsın geri gelecekti" durumlarını kurtarır.
+    #
+    # ⚠ TERMİNAL FAZ ETKİLENMEZ (yapısal): kör hücum dalı bu kontrolden ÖNCE
+    # `continue` eder ve kendi TERMINAL_SURE bütçesini kullanır.
+    # ⚠ RİSK: büyütmek bayat komutla uçulan süreyi uzatır (18 m/s'de 20 kare
+    # ≈ 18 m). Hedef gerçekten kaybolduysa GPS'e geç dönülür.
+    KAYIP_M = int(os.environ.get("AVCI_HYBRID_KAYIP_M", 20))
 
     # ══ D0 KURAL UYUMU — DEVİR ÖLÇÜTÜ SADELEŞTİRİLDİ (2026-08-10) ══
     # Kullanıcı tespiti: "görsel temas sağlandıktan sonra GPS'ten güdüm

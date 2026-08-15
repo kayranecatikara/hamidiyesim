@@ -743,11 +743,30 @@ def _hedef_cfg(alan):
     """
     if ":" in alan:
         modul, ad = alan.split(":", 1)
+        if modul == "supervisor":
+            from control.guidance import supervisor as _s
+            return _s.SupCfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
 
 _OZELLIKLER = {
+    "on_kayip_esik": (
+        "supervisor:KAYIP_M", "kazanc",
+        "Ö-N · Görseli bırakma eşiği (ardışık kutusuz kare)",
+        "ÖLÇÜLDÜ (8 kare-senaryosu koşusu): görsel fazların %96'sı (156/163) "
+        "TAM BU EŞİKTE ölüyor — kare senaryosunda en çok bağlayan kapı. "
+        "Kesildikten sonra görselin geri gelme süresi medyan 6.8 s AMA "
+        "%22'si 1 s, %27'si 2 s içinde: her dört kesintiden birinde kutu "
+        "neredeyse oradaydı, boşuna GPS'e dönülmüş. Fazı bitirmeyen normal "
+        "boşluklar medyan 2 / p90 10 kare — yani eşiği büyütmek onlara "
+        "dokunmaz, yalnız 'az kalsın geri gelecekti' hâllerini kurtarır. "
+        "20 = bugünkü varsayılan (~0.7-1.0 s) · 40 = deney kolu (~1.3-2.0 s). "
+        "⚠ Terminal kör hücum ETKİLENMEZ (yapısal: kendi TERMINAL_SURE "
+        "bütçesini kullanır). ⚠ Büyütmek bayat komutla uçulan süreyi uzatır "
+        "(18 m/s'de 20 kare ≈ 18 m). ⚠ Değer SIRADAKİ görsel fazta geçerli "
+        "olur — eşik faz başında okunuyor.",
+        "AVCI_HYBRID_KAYIP_M", 40),
 }
 
 
