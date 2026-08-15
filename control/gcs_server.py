@@ -748,18 +748,6 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
-    "ok_kor_devam": (
-        "KOR_DEVAM", "bool", "Ö-K · Kör devam (kutu boşluğunda nişanı döndür)",
-        "ÖLÇÜLDÜ: kutu kaybolunca güdüm son komutu 1 s boyunca DONDURUYOR. "
-        "Düz uçuşta doğru; dairede yanlış — kerteriz 21.5°/s döndüğü için "
-        "o 1 saniyede nişan 22° kayıyor ve 16 m yanlış yöne uçuluyor. "
-        "200 s'lik daire uçuşunda TOPLAM 67 SANİYE bayat komutla uçulmuş. "
-        "Bu özellik komutu dondurmak yerine son ölçülen LOS dönüş hızıyla "
-        "döndürmeye devam eder: 'kör bekle' yerine 'kör devam et'. "
-        "⚠ D0 UYUMLU: hedefin GPS'ini kullanmaz, yalnız son görsel ölçüm. "
-        "⚠ Düz uçuşta ÖLÜ (λ̇≈0 → döndürme 0). ⚠ Toplam döndürme 40° ile "
-        "sınırlı — bayat kestirimle sınırsız ekstrapolasyon aracı savurur.",
-        "AVCI_IBVS_KOR", True),
 }
 
 

@@ -16,6 +16,37 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## Ö-K — KÖR DEVAM · ÖLÇÜLDÜ, ELENDİ, SİLİNDİ (2026-08-15)
+
+**Fikir:** kutu kaybolunca güdüm son komutu 1 s (20 kare) boyunca DONDURUYOR.
+Dairede kerteriz 21.5°/s döndüğü için o komut anında bayatlıyor. Ö-K,
+dondurmak yerine son ölçülen LOS azimut hızıyla nişanı döndürmeye devam
+ediyordu (40° tavanla). D0 uyumluydu — hedefin GPS'ini kullanmıyordu.
+
+**Ölçüm (K01-K12, 12 uçuş, dönüşümlü A/B, daire + duz):**
+
+| ölçüt | kapalı (K) | **açık (O)** | karar kuralı |
+|---|---|---|---|
+| en yakın menzil, daire (medyan) | **3.24 m** | 4.28 m | birincil — GERİLEDİ |
+| isabet, daire | 0/5 | 0/5 | düz |
+| isabet, duz | 2/2 | 1/2 | ara veri (n<4) |
+
+**Karar: GİRMEZ.** Birincil ölçüt düz kaldı, en yakın menzil kötüleşti.
+Mekanizma kapısı (§5.1) geçilmişti — `kor_don_deg` deney kolunda gerçekten
+dönüyordu — yani özellik çalıştı ama işe yaramadı.
+
+**Neden işe yaramadı (hipotez, ölçülmedi):** bayat bir λ̇ kestirimiyle
+ekstrapolasyon, kutu 50-100 m'de zaten %11-16 tespitle geldiği için
+gürültülü bir λ̇ üzerine kuruluyordu. Yanlış yöne döndürmek, dondurmaktan
+daha kötü.
+
+**Silme:** §5.12 uyarınca `Cfg.KOR_DEVAM`/`KOR_MAX_DEG`, `AVCI_IBVS_KOR`,
+döngü bloğu, `kor_don_deg` sütunu, panel düğmesi, B62-B67 testleri ve
+`~/.avci_sim/kosuK.sh` çıkarıldı. Doğrulama: grep sıfır + `komut()` 7776
+girdi kombinasyonunda **bit bit aynı** (fark 0).
+
+---
+
 ## DURUM — 2026-08-09 · MANEVRA (en güncel)
 
 Kullanıcı gözlemi: "düz uçuşta ıskalamıyor, hedef **manevra** yapınca görsel

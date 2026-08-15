@@ -535,36 +535,9 @@ class Cfg:
     # etkisiz (kullanıcının doğruladığı düz uçuş davranışı korunur).
     # ⚠ Taban: DONUS_V_MIN altına inmez — hedeften tamamen kopmayalım.
     # AVCI_IBVS_DONUS=0 → kapalı (varsayılan).
-    # ══ Ö-K · KÖR DEVAM — kutu boşluğunda komutu DONDURMA, DÖNDÜR ═══════
-    #
-    # NEDEN (dairenin kök neden zinciri, 2026-08-15 ölçümü):
-    # Kutu kaybolunca güdüm SON KOMUTU 1 s (20 kare) boyunca aynen
-    # sürdürüyor. Düz uçuşta bu doğru — hedefin seyri bir karede değişmez.
-    # DAİREDE YANLIŞ: hedefin kerterizi 21.5°/s dönüyor, yani dondurulan
-    # komut anında bayatlıyor. 1 saniyede nişan 22° kayıyor ve 16 m yanlış
-    # yöne uçuluyor. Ölçüldü: 200 s'lik daire uçuşunda TOPLAM 67 SANİYE
-    # bayat komutla uçulmuş (uçuşun üçte biri).
-    #
-    # Zincirin tamamı: kuyruğa yerleşemiyoruz (60 m içinde 0-30° kuyrukta
-    # SIFIR kare) → 50-100 m'de takılıyoruz → orada tespit %11-16 →
-    # görsel faz kutuyu tutamıyor → bayat komutla savruluyoruz → hedefin
-    # ÖNÜNE düşüyoruz (kuyruk açısı 130-170°) → mesafe 85-120 m'ye açılıyor
-    # → GPS yeniden yaklaşıyor ama 6 s sonra döngü baştan. Dairede GPS fazı
-    # 50 parçaya bölünmüş (medyan 6 s); düz uçuşta 7 parça (medyan 12 s,
-    # max 41 s) ve orada iş bitiyor.
-    #
-    # NE YAPAR: kutu yokken komutu dondurmak yerine, SON ÖLÇÜLEN LOS dönüş
-    # hızıyla nişanı döndürmeye devam eder (hız vektörü + burun birlikte).
-    # "Kör bekle" yerine "kör devam et".
-    #
-    # ⚠ D0 UYUMLU: hedefin GPS'ini KULLANMAZ. Girdi yalnız son görsel
-    # ölçümden gelen `los_hiz[0]` (atalet LOS azimut hızı) ve kendi dt'miz.
-    # ⚠ SINIRLI: toplam döndürme KOR_MAX_DEG'i aşamaz — bayat bir hız
-    # kestirimiyle sınırsız ekstrapolasyon aracı savurur.
-    # ⚠ DÜZ UÇUŞTA ÖLÜ: orada los_hiz ≈ 0 → döndürme ≈ 0, komut aynen donar.
-    KOR_DEVAM = _env_f("AVCI_IBVS_KOR", 0.0) >= 0.5   # 0 = KAPALI
-    KOR_MAX_DEG = _env_f("AVCI_IBVS_KOR_MAX", 40.0)   # °; toplam döndürme tavanı
-
+    # ⛔ Ö-K (kör devam) 2026-08-15'te ÖLÇÜLDÜ ve ELENDİ: birincil ölçüt düz,
+    # en yakın menzil 3.24 → 4.28 m GERİLEDİ. Kod §5.12 uyarınca tamamen
+    # çıkarıldı; ölçüm UYGULANACAK.md ve docs/ibvs_sicili.html'de durur.
     DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
     DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
 
@@ -635,7 +608,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg", "eps_elev_ham_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "kor_don_deg", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -914,7 +887,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     vy_p = float(_i0.get("vy", 0.0) or 0.0)
     vz_p = float(_i0.get("vz", 0.0) or 0.0)
     son_v_cmd = None       # kutu boşluğunda sürdürülecek son komut
-    kor_aci = 0.0          # Ö-K: kör devam sırasında biriken döndürme (rad)
     terminal_mandal = False   # terminal hücum kilidi (bir kez girilince kalır)
     kor_baslangic = None      # kör hücumun başladığı duvar anı (süre sınırı)
     prev_time = None
@@ -1044,31 +1016,17 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 # Kutu yok: SON KOMUT sürdürülür (hedefin seyri bir karede
                 # değişmez). Sıfır komut vermek kısa bir tespit boşluğunu
                 # kalıcı kayba çevirir. İntegral dokunulmaz (bozulmasın).
-                # Ö-K (bkz. Cfg.KOR_DEVAM): dondurmak yerine son ölçülen LOS
-                # dönüş hızıyla nişanı DÖNDÜRMEYE DEVAM et.
-                kor_don = 0.0
                 if son_v_cmd is not None:
-                    _vx, _vy, _vz, _yw = son_v_cmd
-                    if cfg.KOR_DEVAM and abs(los_hiz[0]) > 1e-4:
-                        kor_aci += los_hiz[0] * dt
-                        _lim = math.radians(cfg.KOR_MAX_DEG)
-                        kor_aci = clamp(kor_aci, -_lim, _lim)
-                        kor_don = math.degrees(kor_aci)
-                        _c, _s = math.cos(kor_aci), math.sin(kor_aci)
-                        _vx, _vy = _vx * _c - _vy * _s, _vx * _s + _vy * _c
-                        _yw = normalize_angle(_yw + kor_aci)
-                    send_velocity(conn, _vx, _vy, _vz, _yw)
+                    send_velocity(conn, *son_v_cmd)
                 else:
                     send_velocity(conn, vx_p, vy_p, vz_p, cmd_yaw or iyaw)
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KUTU_YOK", "kayip_sayac": kayip_sayac,
-                                "kor_don_deg": round(kor_don, 1),
                                 "iris_yaw_deg": round(math.degrees(iyaw), 1)})
                 f.flush()
                 continue
 
             kayip_sayac = 0
-            kor_aci = 0.0     # Ö-K: kutu geri geldi, biriken döndürme sıfırlanır
             kor_baslangic = None       # kutu geri geldi → kör sayaç sıfırlanır
             cx, cy, bw, bh, conf = kutu
 
