@@ -1053,6 +1053,10 @@ _ELIPS_BANK = int(os.environ.get("AVCI_ELIPS_BANK", 1000))
 _ELIPS_IRT  = float(os.environ.get("AVCI_ELIPS_IRTIFA", 30.0))
 _ELIPS_ROLL_LIM = os.environ.get("AVCI_ELIPS_ROLL_LIMIT", "55")
 _ELIPS_ILERI = float(os.environ.get("AVCI_ELIPS_ILERI", 25.0))
+# GAZ KAYNAGI (kullanici karari): varsayilan PANEL SURGUSU — hiz sabit
+# tutulmaz, kullanici sürgüyle ayarlar. 0 yapilirsa eski davranis: gaz PI
+# dongusu _ELIPS_HIZ'i (18 m/s) kilitler.
+_ELIPS_GAZ_SLIDER = os.environ.get("AVCI_ELIPS_GAZ_SLIDER", "1") == "1"
 
 
 def _param_yaz(conn, ad, deger, timeout=3.0):
@@ -1112,8 +1116,10 @@ def elips_ciz(conn, a, b, tur, hiz_hedef, bank, irtifa_hedef, ileri,
     C = (P0[0] - (a * math.sin(t_bas) * u[0] - b * math.cos(t_bas) * w[0]),
          P0[1] - (a * math.sin(t_bas) * u[1] - b * math.cos(t_bas) * w[1]))
     R_min = b * b / a
-    print(f"[ELIPS] {2*a:.0f} x {2*b:.0f} m, {tur:.1f} tur, hedef hiz "
-          f"{hiz_hedef:.1f} m/s, irtifa {irtifa_hedef:.0f} m, yatis komutu {bank}")
+    _gaz_et = ("gaz PANEL SURGUSUNDEN (hiz sabit tutulmaz)" if _ELIPS_GAZ_SLIDER
+               else f"hedef hiz {hiz_hedef:.1f} m/s (PI)")
+    print(f"[ELIPS] {2*a:.0f} x {2*b:.0f} m, {tur:.1f} tur, {_gaz_et}, "
+          f"irtifa {irtifa_hedef:.0f} m, yatis komutu {bank}")
     print(f"[ELIPS] en dar viraj yaricapi {R_min:.1f} m -> "
           f"{math.degrees(math.atan(hiz_hedef**2/(9.81*R_min))):.0f} derece yatis ister")
     sonsuz = tur <= 0
@@ -1163,10 +1169,17 @@ def elips_ciz(conn, a, b, tur, hiz_hedef, bank, irtifa_hedef, ileri,
         yuk = 1.0 / max(math.cos(_att["roll"]), 0.25)
         burun = int(_kelepce((irtifa_hedef - irtifa) * 55 + _pos["vz"] * 70
                              + (yuk - 1.0) * 220, -250, 450))
-        # ── GAZ: PI (P tek basina 1.3 m/s kalici hata birakti — olculdu) ──
-        h_hata = hiz_hedef - hiz
-        gaz_i = _kelepce(gaz_i + h_hata * 8.0 * CONTROL_RATE, -250.0, 250.0)
-        gaz = int(_kelepce(650 + h_hata * 150 + gaz_i, 200, 1000))
+        # ── GAZ ──
+        # Varsayilan: PANEL SURGUSU. Hiz ne cikarsa o; desen hiza kendini
+        # uydurur cunku yatis on beslemesi OLCULEN hizdan hesaplanir.
+        # AVCI_ELIPS_GAZ_SLIDER=0 ise PI, _ELIPS_HIZ'i kilitler (P tek basina
+        # 1.3 m/s kalici hata birakiyordu — olculdu).
+        if _ELIPS_GAZ_SLIDER:
+            gaz = int(gcs_throttle())
+        else:
+            h_hata = hiz_hedef - hiz
+            gaz_i = _kelepce(gaz_i + h_hata * 8.0 * CONTROL_RATE, -250.0, 250.0)
+            gaz = int(_kelepce(650 + h_hata * 150 + gaz_i, 200, 1000))
         _rc(conn, roll=roll_cmd, pitch=burun, throttle=gaz)
         if t > 0.5:
             sapmalar.append(uz); hizlar.append(hiz); irtifalar.append(irtifa)
