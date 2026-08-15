@@ -837,63 +837,86 @@ def main():
             f"DIKEY_ROLL={C.DIKEY_ROLL} → eps_elev = ham okuma")
 
     print("=" * 60)
-    # ── Ö11: ISKA SONRASI DÖNÜŞ İÇİN YAVAŞLAMA ──
-    # Ölçüldü: aşım her koşuda tetikten +7 s sonra, 66-69 m = 2R (minimum
-    # dönüş çemberi). Kazanç değil GEOMETRİ; çare hızı kısmak (R ∝ V²).
-    class _DY(ib.Cfg):
-        DONUS_YAVAS = 9.0
+    # ══════════════════════════════════════════════════════════════════
+    # Ö-B · KÖŞE DÖNÜŞÜ — yavaş dön, düzde hızlan
+    # ══════════════════════════════════════════════════════════════════
+    # Ö11 (aynı fizik, durumsuz tetik) ELENDİ ve KOMPLE SİLİNDİ (§5.12):
+    # uçuş başına yalnız 0.4-0.6 s ateşliyordu ve daire regresyonunda en
+    # yakın menzili %65 kötüleştirdi. Ö-B histerezis + süre tavanı + çıkış
+    # rampası ekler; kusuru "yavaş dön" değil "YAVAŞ KAL"dı.
+    class _KB(ib.Cfg):
+        KOSE_V = 9.0
 
-    _uzak = CX + 300.0          # eps_yaw ≈ 61° → dönmemiz gerekiyor
-    _yakin_aci = CX + 40.0      # eps_yaw ≈ 13.5° → hedefe nişanlıyız
-    _argDY = (_uzak, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05)
+    _argK = (CX + 300.0, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05)
 
-    # GEÇTİK + DÖNMEMİZ GEREK → hız kısılmalı
-    _g_ac = ib.komut(*_argDY, _DY, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
-    _g_ka = ib.komut(*_argDY, C, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
+    # B62 — aktifken hız KOSE_V'ye kısılır
+    _k_ac = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                     {"aktif": True, "rampa": 0.0})
+    _k_ka = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                     {"aktif": False, "rampa": 0.0})
     _R = lambda v: v * v / 9.81
-    kontrol("B62 hedefi geçince (ṙ<−5) ve dönüş gerekince Ö11 hızı KISAR",
-            _g_ac[5]["v_los"] < _g_ka[5]["v_los"] - 3.0
-            and _g_ac[5]["donus_yavas"],
-            f"ṙ=−10, açı 61°: {_g_ka[5]['v_los']:.1f} → {_g_ac[5]['v_los']:.1f} m/s "
-            f"(U-dönüşü 2R: {2*_R(_g_ka[5]['v_los']):.0f} → "
-            f"{2*_R(_g_ac[5]['v_los']):.0f} m — uçuşta ölçülen aşım 66 m)")
+    kontrol("B62 Ö-B aktifken hız KOSE_V'ye kısılır (dönüş çemberi daralır)",
+            _k_ac[5]["v_los"] <= _KB.KOSE_V + 1e-9
+            and _k_ka[5]["v_los"] > _KB.KOSE_V,
+            f"{_k_ka[5]['v_los']:.1f} → {_k_ac[5]['v_los']:.1f} m/s · "
+            f"R {_R(_k_ka[5]['v_los']):.0f} → {_R(_k_ac[5]['v_los']):.0f} m "
+            f"(hedefin çemberi 13 m — artık İÇİNE girebiliriz)")
 
-    # YAKLAŞIRKEN (ṙ>0) etkisiz — düz takip bozulmaz
-    _y_ac = ib.komut(*_argDY, _DY, False, (0.0, 0.0), 0.0, 0.0, +3.0, 0.0)
-    _y_ka = ib.komut(*_argDY, C, False, (0.0, 0.0), 0.0, 0.0, +3.0, 0.0)
-    kontrol("B63 yaklaşırken (ṙ>0) Ö11 ETKİSİZ (düz takip bozulmaz)",
-            abs(_y_ac[5]["v_los"] - _y_ka[5]["v_los"]) < 1e-12
-            and not _y_ac[5]["donus_yavas"],
-            f"ṙ=+3 → hız {_y_ac[5]['v_los']:.1f} m/s, kısma yok")
+    # B63 — çıkış RAMPASI: bir anda tam gaz yok
+    _k_rmp = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                      {"aktif": False, "rampa": 11.0})
+    kontrol("B63 Ö-B çıkışta RAMPA uygular (ani tam gaz yok)",
+            abs(_k_rmp[5]["v_los"] - 11.0) < 1e-9,
+            f"rampa 11.0 m/s → v_los {_k_rmp[5]['v_los']:.1f} m/s; "
+            f"rampa bitince (0.0) serbest: {_k_ka[5]['v_los']:.1f} m/s")
 
-    # HEDEFE NİŞANLIYKEN (küçük açı) serbest bırakır — kendiliğinden çıkış
-    _n_ac = ib.komut(_yakin_aci, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05,
-                     _DY, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
-    _n_ka = ib.komut(_yakin_aci, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05,
-                     C, False, (0.0, 0.0), 0.0, 0.0, -10.0, 0.0)
-    kontrol("B64 hedefe nişan alınca (açı<45°) Ö11 KENDİLİĞİNDEN bırakır",
-            abs(_n_ac[5]["v_los"] - _n_ka[5]["v_los"]) < 1e-12
-            and not _n_ac[5]["donus_yavas"],
-            f"açı 13.5° → hız {_n_ac[5]['v_los']:.1f} m/s, durum tutulmuyor "
-            "(dönüş ilerledikçe kendiliğinden serbest)")
+    # B64 — HİSTEREZİS: gir 60° / çık 25°, ve SÜRE TAVANI
+    def _dm(cfg, acilar, dt=0.1):
+        """döngüdeki durum makinesinin birebir aynısı"""
+        st = {"aktif": False, "t0": 0.0, "rampa": 0.0, "sayac": 0, "kare": 0}
+        cikti = []
+        for i, a in enumerate(acilar):
+            now = i * dt
+            if not st["aktif"]:
+                if a > cfg.KOSE_GIR_ACI and st["rampa"] <= 0.0:
+                    st.update(aktif=True, t0=now)
+            else:
+                if a < cfg.KOSE_CIK_ACI or (now - st["t0"]) > cfg.KOSE_T:
+                    st["aktif"] = False
+                    st["rampa"] = cfg.KOSE_V
+            if st["aktif"]:
+                st["rampa"] = 0.0
+            elif st["rampa"] > 0.0:
+                st["rampa"] += cfg.KOSE_RAMPA * dt
+                if st["rampa"] >= cfg.V_TOPLAM_MAX:
+                    st["rampa"] = 0.0
+            cikti.append(st["aktif"])
+        return cikti
+    _h = _dm(_KB, [50, 70, 55, 40, 30, 20, 30])
+    kontrol("B64 Ö-B histerezis: 50°'de girmez, 70°'de girer, 55/40/30'da TUTAR, 20°'de çıkar",
+            _h == [False, True, True, True, True, False, False],
+            f"gir {_KB.KOSE_GIR_ACI:.0f}° / çık {_KB.KOSE_CIK_ACI:.0f}° → "
+            f"aradaki bantta durum KORUNUR (Ö11'de her kare yeniden bakılıyordu)")
 
-    # ASLA HIZLANDIRMAZ
-    _hizlandi = False
-    for _cxq in (CX + 40, CX + 150, CX + 300):
-        for _bq in (8, 20, 40):
-            for _kq in (-12.0, -6.0, 0.0, 4.0):
-                _a = ib.komut(_cxq, C.CY_NISAN, _bq, _bq, 0.0, 16.0, 0.05,
-                              _DY, False, (0.0, 0.0), 0.0, 0.0, _kq, 0.0)
-                _k = ib.komut(_cxq, C.CY_NISAN, _bq, _bq, 0.0, 16.0, 0.05,
-                              C, False, (0.0, 0.0), 0.0, 0.0, _kq, 0.0)
-                if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
-                    _hizlandi = True
-    kontrol("B65 Ö11 hızı ASLA artırmaz (yalnız kısan tavan)",
-            not _hizlandi, "36 kombinasyonda hiçbirinde hızlanma yok")
+    # B65 — SÜRE TAVANI: açı hep yüksek kalsa bile bırakır ("yavaş KALMA")
+    _uzun = _dm(_KB, [70] * 200)         # 20 s boyunca 70° (kararlı hâl)
+    _acik_s = sum(_uzun) * 0.1
+    _cevrim = sum(1 for a, b in zip(_uzun, _uzun[1:]) if a and not b)
+    kontrol("B65 Ö-B süre tavanı + rampa kilidi: sürekli 70°'de bile YAVAŞ KALMAZ",
+            _acik_s <= 0.65 * 20.0 and _cevrim >= 3,
+            f"20 s boyunca 70° → {_acik_s:.1f} s aktif "
+            f"(%{100*_acik_s/20.0:.0f} görev döngüsü, {_cevrim} yay çevrimi). "
+            f"Tavan {_KB.KOSE_T:.1f} s + rampa kilidi → yay-yavaş/düz-hızlı "
+            f"çevrimi. Ö11'in 'YAVAŞ KAL' kusuru yapısal olarak imkânsız.")
 
-    kontrol("B66 Ö11 kapatılabilir (varsayılan KAPALI)",
-            abs(C.DONUS_YAVAS) < 1e-9 and not _g_ka[5]["donus_yavas"],
-            f"DONUS_YAVAS={C.DONUS_YAVAS} → hiç devreye girmez")
+    # B66 — kapatılabilir (varsayılan KAPALI)
+    _kapali = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                       {"aktif": True, "rampa": 0.0})
+    kontrol("B66 Ö-B kapatılabilir (varsayılan KAPALI)",
+            abs(C.KOSE_V) < 1e-9
+            and abs(_kapali[5]["v_los"] - _k_ka[5]["v_los"]) < 1e-12,
+            f"KOSE_V={C.KOSE_V} → durum 'aktif' olsa bile hız kısılmaz "
+            f"({_kapali[5]['v_los']:.1f} m/s), eski davranış bit bit korunur")
 
     print("=" * 60)
     # ── Ö12: YAKIN MENZİLDE YAW SLEW TAVANI (kendi ekseninde dönme çaresi) ──
