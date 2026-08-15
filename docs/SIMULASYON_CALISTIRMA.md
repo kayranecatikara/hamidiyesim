@@ -48,6 +48,7 @@ olmadan arm edilmiyor. `SIM_GPS1_LCKTIME` ve `GPS1_DELAY_MS` zaten 0.
 
     cd ~/projects/hamidiyesim
     source /opt/ros/humble/setup.bash
+    export AVCI_GORSEL=on
     export AVCI_GZ_CAMERA=1
     export AVCI_NO_BROWSER=1
     fuser -k 8000/tcp 2>/dev/null
