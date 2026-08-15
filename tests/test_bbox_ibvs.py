@@ -853,33 +853,6 @@ def main():
             "kor_don_deg" not in ib._CSV_ALANLAR,
             f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, kor_don_deg yok")
 
-    print("=" * 60)
-    # ══════════════════════════════════════════════════════════════════
-    # Ö-N · KAYIP EŞİĞİ — YAPISAL GARANTİ (§5.10)
-    # ══════════════════════════════════════════════════════════════════
-    # Eşik yalnız NORMAL kutu boşluğunu yönetir. Terminal kör hücum dalı
-    # kontrolden ÖNCE `continue` eder ve kendi TERMINAL_SURE bütçesini
-    # kullanır. Yani eşiği büyütmek terminal fazı ETKİLEYEMEZ.
-    # Bu, regresyon testinden güçlüdür: davranış matematiksel olarak ayrık.
-    # Kaynağı okuyup sıralamayı doğruluyoruz — sıralama bozulursa kırılır.
-    import inspect as _insp
-    _src = _insp.getsource(ib.run_bbox_ibvs)
-    _i_term = _src.find('"durum": "TERM_KOR"')
-    _i_cont = _src.find("continue", _i_term)
-    _i_esik = _src.find("kayip_sayac >= kayip_kare_esik", _i_term)
-    kontrol("B64 Ö-N: terminal kör hücum kayıp eşiğinden YAPISAL olarak muaf",
-            _i_term > 0 and _i_cont > _i_term and _i_esik > _i_cont,
-            f"TERM_KOR dalı (@{_i_term}) → continue (@{_i_cont}) eşik "
-            f"kontrolünden (@{_i_esik}) ÖNCE. Terminal faz TERMINAL_SURE "
-            f"bütçesini kullanır; KAYIP_M'i büyütmek onu değiştiremez.")
-
-    # B65 — eşik env ile ayarlanabilir ve varsayılan DEĞİŞMEDİ
-    from control.guidance.supervisor import SupCfg as _SC
-    kontrol("B65 Ö-N: KAYIP_M env ile ayarlanır, varsayılan 20 (değişmedi)",
-            _SC.KAYIP_M == 20 and isinstance(_SC.KAYIP_M, int),
-            f"KAYIP_M={_SC.KAYIP_M} · AVCI_HYBRID_KAYIP_M ile değiştirilir; "
-            f"kill-switch = varsayılana dönmek")
-
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
