@@ -748,28 +748,6 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
-    "om_term_birak": (
-        "TERM_BIRAK_M", "deger", "Ö-M · Terminal mandalını menzille bırak",
-        "ÖLÇÜLDÜ: terminal mandalı bir kez kilitlenince görsel faz boyunca "
-        "açılmıyordu — 200 m uzaktayken bile 'terminal hücum' hızıyla "
-        "uçuyorduk. Bunun bedeli iki rejimde ZIT çıktı: düz uçuşta 16 m/s "
-        "daha iyi (isabet 3/4→4/4), dairede daha kötü (2.87→6.18 m). Asıl "
-        "kusur hızın değeri değil, mandalın hiç açılmaması. Bu özellik "
-        "menzil 20 m'yi aşınca mandalı bırakır ve seyir yasası (PI + 24 m/s) "
-        "geri gelir. Kilitlenme eşiği DEĞİŞMEDİ (6.4 m); histerezis 6.4 ↔ 20 m. "
-        "⚠ komut() yasasına dokunmaz (test B76: bit bit aynı).",
-        "AVCI_IBVS_TERM_BIRAK", (0.0, 20.0)),
-    "vterm16": (
-        "V_TERMINAL", "deger", "Terminal hücum hızı 18 → 16 m/s",
-        "Kullanıcı hipotezi: son vuruşta hedefin hızına yaklaşalım, üstüne "
-        "atılmayalım — kapanma düşer, gecikmenin ürettiği hata küçülür. "
-        "ÖLÇÜLDÜ (8 uçuş, 4v4): isabet 3/4 → 4/4, en yakın menzil 0.80 → "
-        "0.52 m, 10 m'den temasa süre 71 → 52 s, dikey ıska +0.30 → +0.10 m. "
-        "Terminal süresi KISALMADI (6.5 → 19.7 s), yani yaklaşamama yok. "
-        "⚠ Daha aşağı İNMEZ: hedef p50 15.1 m/s uçuyor; 15 m/s'de karelerin "
-        "%84'ünde hedeften yavaş kalırız ve son 6.4 m hiç kapanmaz. "
-        "Kapalı = 18 m/s (eski), açık = 16 m/s.",
-        "AVCI_IBVS_VTERM", (18.0, 16.0)),
 }
 
 

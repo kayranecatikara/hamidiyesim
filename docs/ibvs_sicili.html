@@ -453,11 +453,11 @@
   <!-- ═══════════════ ÖZET ŞERİDİ ═══════════════ -->
   <section class="serit" aria-label="Özet">
     <div class="kutucuk">
-      <span class="sayi">26</span>
+      <span class="sayi">27</span>
       <span class="etiket">denenen özellik</span>
     </div>
     <div class="kutucuk t-girdi">
-      <span class="sayi">14</span>
+      <span class="sayi">15</span>
       <span class="etiket">✅ sisteme girdi</span>
     </div>
     <div class="kutucuk t-bekle">
@@ -1145,6 +1145,85 @@
       </div>
       <div class="kaynak">kaynak: commit 702e479 · bbox_ibvs.py Cfg "KÖR HÜCUM SÜRE SINIRI"</div>
     </article>
+
+    <!-- ── Ö-M ── -->
+    <article class="kart k-girdi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö-M</span> — Terminal mandalını menzille bırak (+ V_TERMINAL 16)</h3>
+        <span class="rozet r-girdi">girdi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_TERM_BIRAK · AVCI_IBVS_VTERM</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">20 m · 16 m/s (İKİSİ BİRLİKTE)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">21 (3 kol × 3 senaryo) + 16 (V_TERMINAL turu)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">docs/kampanya/OM_OLCUTLER.md</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Terminal mandalı, menzil <strong>20 m</strong>'yi aşınca AÇILIR ve seyir
+        yasası (PI + 24 m/s tavan) geri gelir. Kilitlenme eşiği değişmedi
+        (kutu ≥ 25 px ≈ 6.4 m). Histerezis 6.4 ↔ 20 m. Mandal açılırken kör
+        hücum penceresi de kapanır.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı gözlemi: <em>"hedefe çok sert giriyoruz, ıskaladığımızda
+        delip geçip gidiyoruz."</em> Terminal hızı 18 → 16 denendi ve
+        <strong>iki rejimde ZIT</strong> çıktı: düz uçuşta daha iyi (isabet
+        3/4→4/4, 10 m'den temasa 71→52 s), dairede daha kötü (2.87→6.18 m,
+        dağılımlar örtüşmüyor). Koddan çıkan kök neden:
+        <code>terminal_mandal</code> bir kez kilitlenince görsel faz boyunca
+        <strong>açılmıyordu</strong> — yani 16 m/s "son vuruş hızı" değil,
+        6.4 m'ye ilk inişten sonraki <em>her şeyin</em> hızıydı. Hedef
+        15.1 m/s uçarken kapanma 0.9 m/s'ye düşüyor ve bir daha
+        yaklaşılamıyordu.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">nasıl sınandı — ÜÇ KOL</span>
+        <p>Katkının hızdan mı mandaldan mı geldiğini ayırmak için:
+        <strong>A</strong> TABAN (18, kilitli) · <strong>B</strong> Ö-M
+        (16 + bırakır) · <strong>C</strong> yalnız-16 (kilitli).</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>duz + kaçamak (n=3/kol)</th><th class="s">en yakın</th><th class="s">isabet</th><th class="s">görsel temas</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">A · TABAN (18, kilitli)</td><td class="s">0.47 m</td><td class="s">3/3</td><td class="s">%57</td></tr>
+            <tr class="birincil"><td class="ad">B · Ö-M (16 + bırakır)</td><td class="s kazanan">0.43 m</td><td class="s">3/3</td><td class="s kazanan">%72</td></tr>
+            <tr><td class="ad">C · yalnız-16 (kilitli)</td><td class="s kaybeden">1.18 m</td><td class="s">3/3</td><td class="s">%67</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">C kolunun kanıtı</span>
+        <p>16 m/s <strong>tek başına kötü</strong> (0.47 → 1.18 m). Mandal
+        bırakma onu kurtarıyor (0.43 m) ve üstüne görsel temasa
+        <strong>+15 puan</strong> ekliyor. ⇒ Kazanımı üreten şey hızın değeri
+        değil, <strong>mandalın açılması</strong>. Bu yüzden ikisi
+        <em>birlikte</em> girdi; <code>TERM_BIRAK=0</code> yapılırsa
+        <code>VTERM</code> da 18'e alınmalıdır.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ MANEVRADA HÜKÜM YOK — mekanizma kapısı (§5.1)</span>
+        <p><code>circle</code>'da B kolunun 3 koşusundan <strong>2'sinde mandal
+        hiç bırakılmadı</strong> (M11: 0, M17: 0). Sebep: dairede araç 6.4 m'ye
+        <em>zaten inemiyor</em>, mandal hiç kurulmuyor ki bırakılsın. Geçerli tek
+        koşu kaldı → n=1, hüküm kurulamaz. <code>aggressive</code>'de de aynı.
+        Yapısal olarak orada bir şey bozamaz: kurulmayan mandal bırakılamaz.</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders — planlanmamış asıl bulgu</span>
+        <p>Manevralı senaryolarda terminal mandalı <strong>neredeyse hiç
+        kurulmuyor</strong> (terminal süresi <code>circle</code> 2.4-7.2 s,
+        <code>aggressive</code> 0.0-2.5 s; düz uçuşta 7.4-16 s). Ve
+        <code>circle</code>'da <strong>hiçbir kolda hiç isabet yok (0/9)</strong>,
+        düz uçuşta 9/9. Yani dairede sorun "terminal hızı" DEĞİL, 6.4 m'ye
+        <strong>hiç inememek</strong> — üç kampanyadır orada yanlış yeri
+        tartışmışız. Sıradaki iş bu.</p>
+      </div>
+      <div class="kaynak">kaynak: docs/kampanya/OM_OLCUTLER.md · VTERM_OLCUTLER.md · VTERM_REGRESYON_OLCUTLER.md · logs/kacamak/M01-M21, T18*/T16*, R18*/R16* · testler B71-B76</div>
+    </article>
+
     <!-- ── K-V2 ── -->
     <article class="kart k-girdi">
       <div class="kart-bas">

@@ -203,7 +203,17 @@ class Cfg:
     # penceresinden çok hızlı geçiliyor. 18 m/s'de kapanma 3.5 m/s (hedef
     # 14.5) → hem düzeltmeye daha çok kare, hem pencerede daha uzun süre.
     # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
-    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
+    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 16.0)   # m/s; hücum hızı
+    # ⇑ 2026-08-15: 18 → 16, Ö-M İLE BİRLİKTE ve YALNIZ onunla.
+    # 16 tek başına ölçüldü ve KÖTÜ çıktı: düz uçuşta en yakın menzil
+    # 0.47 → 1.18 m, dairede 2.87 → 6.18 m (dağılımlar örtüşmüyor).
+    # Sebep: mandal kilitli kalınca 16 m/s "son vuruş hızı" değil, 6.4 m'ye
+    # ilk inişten sonraki HER ŞEYİN hızı oluyordu; hedef 15.1 m/s uçarken
+    # kapanma 0.9 m/s'ye düşüyor ve bir daha yaklaşılamıyordu.
+    # Mandal 20 m'de bırakınca kovalama seyir yasasına (24 m/s tavan) döner
+    # ve 16 yalnız son 6.4 metrede geçerli olur — ölçülen kazanç budur.
+    # ⚠ İKİSİ BİRLİKTE GİRDİ. AVCI_IBVS_TERM_BIRAK=0 yapılırsa bu değer de
+    # 18'e alınmalı, yoksa ölçülmüş KÖTÜ konfigürasyona düşülür.
 
     # ══ Ö-M · TERMİNAL MANDALINI MENZİLLE BIRAK (histerezis) ══════════
     #
@@ -232,7 +242,18 @@ class Cfg:
     # "hedefi kaybettik" durumudur. Birim testi bunu sınar.
     #
     # 0 = KAPALI → mandal eskisi gibi hiç açılmaz (bit bit eski davranış).
-    TERM_BIRAK_M = _env_f("AVCI_IBVS_TERM_BIRAK", 0.0)   # m; 0 = kapalı, ~20
+    TERM_BIRAK_M = _env_f("AVCI_IBVS_TERM_BIRAK", 20.0)  # m; 0 = kapalı
+    # ⇑ 2026-08-15: SİSTEME GİRDİ (21 uçuş, 3 kol, 3 senaryo).
+    # duz+kaçamak (n=3/kol), mekanizma koşu başına 1-2 kez bıraktı:
+    #     A TABAN (18, kilitli)    en yakın 0.47 m · temas %57
+    #     B Ö-M   (16 + bırakır)   en yakın 0.43 m · temas %72
+    #     C yalnız-16 (kilitli)    en yakın 1.18 m · temas %67
+    # C kolu kanıtı: 16 m/s TEK BAŞINA kötü (0.47→1.18 m); kazanımı üreten
+    # şey hızın değeri değil MANDALIN AÇILMASI.
+    # ⚠ circle/aggressive'de HÜKÜM YOK: orada araç 6.4 m'ye zaten inemiyor,
+    # mandal hiç kurulmuyor ki bırakılsın (B kolunun 3 koşusundan 2'si
+    # mekanizma kapısından geçemedi). Yapısal olarak da orada bir şey
+    # bozamaz — kurulmayan mandal bırakılamaz.
     # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
     V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
 

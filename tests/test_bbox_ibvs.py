@@ -969,6 +969,9 @@ def main():
     class _OM(C):
         TERM_BIRAK_M = 20.0
 
+    class _OMKapali(C):        # Ö-M öncesi davranış (kill-switch kapalı)
+        TERM_BIRAK_M = 0.0
+
     _R = lambda m: C.MENZIL_PX_M / m          # metre → piksel boyutu
     # 40 m → 20 m → 6 m (kilitlenir) → 12 m → 25 m (bırakır) → 40 m
     _dizi = [_R(40), _R(20), _R(6), _R(12), _R(25), _R(40)]
@@ -994,11 +997,12 @@ def main():
             "ıska sonrası yeni hücum mümkün")
 
     # B74 — KAPALIYKEN eski davranış BİT BİT: mandal asla açılmaz
-    _kapali = _mandal(C, [_R(6)] + [_R(x) for x in (12, 25, 40, 200, 500)])
-    kontrol("B74 Ö-M kapalıyken mandal ASLA açılmaz (eski davranış)",
-            all(_kapali[1:]) and _kapali[0] is True,
-            f"TERM_BIRAK_M={C.TERM_BIRAK_M} → 6 m'de kilitlendi, 500 m'de "
-            f"bile terminal. Bu, ölçülen kusurun ta kendisi.")
+    _kapali = _mandal(_OMKapali, [_R(6)] + [_R(x) for x in (12, 25, 40, 200, 500)])
+    kontrol("B74 Ö-M KAPATILABİLİR (kill-switch: mandal asla açılmaz)",
+            all(_kapali[1:]) and _kapali[0] is True and C.TERM_BIRAK_M == 20.0,
+            f"AVCI_IBVS_TERM_BIRAK=0 → 500 m'de bile terminal (ölçülen "
+            f"kusurun kendisi); varsayılan ise {C.TERM_BIRAK_M:.0f} m — "
+            f"2026-08-15'te girdi")
 
     # B75 — KÖR HÜCUM: mandal açılınca pencere de kapanır
     # (döngüde `kor_baslangic = None` yapılıyor; burada kaynak denetimi)
