@@ -265,10 +265,15 @@ def stop_plane_scenario():
 
 @app.get("/api/scenario_status")
 def scenario_status():
-    """Frontend buton senkronu: süreç yaşıyorsa aktif senaryo adı."""
-    if _scenario_proc is not None and _scenario_proc.poll() is None:
-        return {"active": True, "name": _scenario_name}
-    return {"active": False, "name": None}
+    """Frontend buton senkronu: süreç yaşıyorsa aktif senaryo adı.
+
+    `manuel_faz`: manuel modda "kalkis" | "ucus" | "hazir" | "hata".
+    Arayüz kalkış sırasında düğmeye "KALKIŞ..." yazar ve kumandanın o an
+    yok sayıldığını gösterir.
+    """
+    aktif = _scenario_proc is not None and _scenario_proc.poll() is None
+    return {"active": aktif, "name": _scenario_name if aktif else None,
+            "manuel": _manual_active, "manuel_faz": _manual_faz}
 
 # -----------------------------------------------------------------------
 # MANUEL KONTROL
@@ -278,11 +283,46 @@ class ManualCmd(BaseModel):
     elevator: int
     throttle: int
 
+# Manuel modun o anki fazı — arayüz /api/scenario_status'tan okur.
+# "kalkis" iken kullanıcı girdisi YOK SAYILIR (bkz. set_manual_control).
+_manual_faz = "hazir"
+
+# Bu irtifanın ÜSTÜNDE armlıysak kalkış ATLANIR, doğrudan devralınır.
+# run_plane_scenario.AIRBORNE_ALT_M ile aynı eşik.
+MANUEL_AIRBORNE_ALT_M = 15.0
+# TAKEOFF modundan FBWA'ya geçiş irtifası. TKOFF_ALT parametresi genelde
+# bunun üstünde; erken devralmak burnu düşürüp tırmanışı kesiyordu.
+MANUEL_KALKIS_ALT_M = 40.0
+MANUEL_KALKIS_ZAMAN_ASIMI_S = 60.0
+MANUEL_ARM_ZAMAN_ASIMI_S = 25.0
+# TAKEOFF → FBWA geçişinde kısa süre yüksek gaz.
+# ⚠ ÖLÇÜLDÜ (n=1/kol, yani ARA VERİ — hüküm değil, §5.4):
+#     yumuşatma YOK : tepe 42.0 m → en düşük 21.2 m  (sapma 20.8 m)
+#     yumuşatma VAR : tepe 48.5 m → en düşük 23.1 m  (sapma 25.4 m)
+# Yani gaz takviyesi enerji alışverişini ÖNLEMİYOR, ERTELİYOR: önce daha
+# yükseğe çıkıyor, sonra daha çok iniyor. En düşük nokta ~2 m iyileşiyor —
+# güvenlik açısından önemli olan o, bu yüzden açık bırakıldı; ama "iyileştirdi"
+# denecek kadar veri YOK. MANUEL_GECIS_S = 0 ile kapanır.
+# Çöküşün kendisi FİZİK: TAKEOFF'ta 22 m/s olan hız FBWA'da 15 m/s'ye
+# düşerken kaybedilen enerji irtifadan çıkıyor.
+MANUEL_GECIS_S = 6.0
+_manual_gecis_throttle = 1850
+
+
 @app.post("/api/command/plane/start_manual")
 def start_manual_mode():
     """Hangi senaryo uçuyorsa durdurur, uçağı klavye kontrolüne devralır.
+
     FBWA modunda: W/S = pitch açı hedefi, A/D = yatış açı hedefi (stall'a
-    karşı açı limitli — ham MANUAL moddan çok daha kontrol edilebilir)."""
+    karşı açı limitli — ham MANUAL moddan çok daha kontrol edilebilir).
+
+    ⚠ 2026-08-15 (kullanıcı isteği): uçak YERDEYSE artık önce KENDİ KALKIŞINI
+    YAPAR. Eskiden manuel mod aracın zaten havada olduğunu varsayıyordu;
+    yerdeyken basılınca FBWA + RC override gidiyordu ama araç ARMLI DEĞİLDİ,
+    yani hiçbir şey olmuyordu — kalkışı ayrıca senaryo başlatıp yaptırmak
+    gerekiyordu. Akış artık: ARM → TAKEOFF modu → ~40 m → FBWA + düz uçuş,
+    sonra kumanda kullanıcıya geçer. Havadayken basılırsa kalkış ATLANIR.
+    """
     global _manual_active
     global _manual_aileron, _manual_elevator, _manual_throttle
 
@@ -302,6 +342,84 @@ def start_manual_mode():
     t.start()
     print("[GCS] Manuel kontrol thread'i başlatıldı.")
     return {"status": "success", "message": "Manuel mod aktif (FBWA)"}
+
+
+def _plane_irtifa_m():
+    """Hedef uçağın irtifası (m). telemetry_state NED'dir, z aşağı pozitif."""
+    return -float(telemetry_state["plane"].get("z", 0.0) or 0.0)
+
+
+def _manuel_kalkis(conn, send_mode):
+    """Yerden otonom kalkış — manuel devralmadan ÖNCE.
+
+    ⚠ BLOCKING RECV YOK. Bu thread paylaşılan _mav_conn üzerinde ASLA ACK
+    beklemez (aynı bağlantıyı async listener da okuyor; eski kodda bu yüzden
+    devralma saniyelerce gecikiyor ve araç düşebiliyordu). Teyit her adımda
+    telemetry_state'ten alınır — HEARTBEAT'i listener zaten yazıyor.
+
+    Dönen: True = uçak havada ve devralınabilir, False = kalkış başarısız.
+    """
+    global _manual_faz
+
+    if telemetry_state["plane"].get("armed") and \
+            _plane_irtifa_m() > MANUEL_AIRBORNE_ALT_M:
+        print(f"[MANUAL] Araç zaten havada ({_plane_irtifa_m():.0f} m) — "
+              f"kalkış atlandı, doğrudan devralınıyor.")
+        return True
+
+    # ── ARM ─────────────────────────────────────────────────────────────
+    _manual_faz = "kalkis"
+    print("[MANUAL] Uçak yerde — otonom kalkış başlıyor. ARM gönderiliyor...")
+    t0 = time.time()
+    while _manual_active and not telemetry_state["plane"].get("armed"):
+        if time.time() - t0 > MANUEL_ARM_ZAMAN_ASIMI_S:
+            print("[MANUAL] ✗ ARM olmadı (zaman aşımı) — kalkış iptal. "
+                  "GPS kilidi gelmiş mi?")
+            _manual_faz = "hata"
+            return False
+        # force arm (2989): prearm kontrollerini atlar, sim için güvenli
+        conn.mav.command_long_send(
+            conn.target_system, conn.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0,
+            1, 2989, 0, 0, 0, 0, 0)
+        time.sleep(1.0)
+    if not _manual_active:
+        return False
+    print("[MANUAL] ✓ ARM edildi.")
+
+    # ── TAKEOFF ─────────────────────────────────────────────────────────
+    def _send_takeoff():
+        conn.mav.command_long_send(
+            conn.target_system, conn.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            PLANE_MODE_TAKEOFF, 0, 0, 0, 0, 0)
+
+    print(f"[MANUAL] TAKEOFF modu — {MANUEL_KALKIS_ALT_M:.0f} m bekleniyor...")
+    _send_takeoff()
+    t0 = time.time()
+    son_yazi = 0.0
+    while _manual_active:
+        irt = _plane_irtifa_m()
+        if irt >= MANUEL_KALKIS_ALT_M:
+            print(f"[MANUAL] ✓ Kalkış tamam ({irt:.0f} m) → FBWA, düz uçuş.")
+            return True
+        gecen = time.time() - t0
+        if gecen > MANUEL_KALKIS_ZAMAN_ASIMI_S:
+            # Havadaysa yine de devral — düşürmektense elde tutmak iyidir.
+            if irt > MANUEL_AIRBORNE_ALT_M:
+                print(f"[MANUAL] Kalkış zaman aşımı ama araç havada "
+                      f"({irt:.0f} m) — devralınıyor.")
+                return True
+            print(f"[MANUAL] ✗ Kalkış başarısız ({irt:.0f} m) — iptal.")
+            _manual_faz = "hata"
+            return False
+        if telemetry_state["plane"].get("mode") != PLANE_MODE_TAKEOFF and \
+                gecen - son_yazi > 1.0:
+            _send_takeoff()                     # mod oturmadıysa tekrarla
+            son_yazi = gecen
+        time.sleep(0.2)
+    return False
 
 
 def _manual_control_thread():
@@ -344,6 +462,35 @@ def _manual_control_thread():
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 PLANE_MODE_FBWA, 0, 0, 0, 0, 0)
 
+        # KALKIŞ — uçak yerdeyse önce kendi kalkışını yapar (kullanıcı isteği
+        # 2026-08-15). Havadaysa bu çağrı hemen True döner.
+        global _manual_faz
+        if not _manuel_kalkis(conn, _send_fbwa):
+            print("[MANUAL] Kalkış yapılamadı — manuel mod kapatılıyor.")
+            keepalive.stop()
+            _manual_active = False
+            return
+
+        # Devralma: yüzeyler nötr = FBWA'da DÜZ UÇUŞ. Kullanıcı W/A/S/D ile
+        # devreye girene kadar uçak böyle gider.
+        #
+        # ⚠ GEÇİŞ ÇÖKÜŞÜ: TAKEOFF'ta uçak 22 m/s ve tam gazla tırmanıyor;
+        # FBWA'ya nötrle geçilince hız 15 m/s'ye düşerken kaldırma azalıyor ve
+        # araç alçalıyor. ÖLÇÜLDÜ (yumuşatma yokken): 42 → 21 m, yani 21 m
+        # kayıp. Çare gaz: geçişte birkaç saniye yüksek gaz enerjiyi tutuyor,
+        # sonra kullanıcının slider değerine bırakılıyor.
+        if _manual_gecis_throttle > 0:
+            _manual_faz = "ucus"
+            _send_fbwa()
+            t0 = time.time()
+            while _manual_active and time.time() - t0 < MANUEL_GECIS_S:
+                conn.mav.rc_channels_override_send(
+                    conn.target_system, conn.target_component,
+                    1500, 1500, _manual_gecis_throttle, 1500, 0, 0, 0, 0)
+                time.sleep(0.1)
+            print(f"[MANUAL] Geçiş bitti ({MANUEL_GECIS_S:.0f} s, gaz "
+                  f"{_manual_gecis_throttle}) — kumanda kullanıcıda.")
+        _manual_faz = "ucus"
         print("[MANUAL] FBWA komutu gönderildi, RC override döngüsü başlıyor (10 Hz)...")
         _send_fbwa()
         mode_ok = False
@@ -374,6 +521,7 @@ def _manual_control_thread():
             1500, 1500, 1600, 1500, 0, 0, 0, 0
         )
         keepalive.stop()
+        _manual_faz = "hazir"
         print("[MANUAL] Kapatıldı.")
 
     except Exception as e:
@@ -381,6 +529,7 @@ def _manual_control_thread():
         print(f"[MANUAL] HATA: {e}")
         traceback.print_exc()
         _manual_active = False
+        _manual_faz = "hata"
 
 
 @app.post("/api/command/plane/manual")
@@ -389,6 +538,10 @@ def command_plane_manual(cmd: ManualCmd):
     global _manual_aileron, _manual_elevator, _manual_throttle
     if not _manual_active:
         return {"status": "skip"}
+    # KALKIŞ SIRASINDA KUMANDA YOK SAYILIR: TAKEOFF modu tırmanışı kendi
+    # yönetiyor; araya giren RC override burnu düşürüp kalkışı bozuyordu.
+    if _manual_faz == "kalkis":
+        return {"status": "skip", "faz": "kalkis"}
     _manual_aileron  = cmd.aileron
     _manual_elevator = cmd.elevator
     _manual_throttle = cmd.throttle

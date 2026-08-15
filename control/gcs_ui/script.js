@@ -768,6 +768,25 @@ setInterval(async () => {
     const d = await (await fetch('/api/scenario_status')).json();
     const backend = d.active ? d.name : null;
     if (backend !== st.scenario){ st.scenario = backend; markScenario(); }
+    // Manuel modda kalkış fazı: uçak yerdeyse önce kendi kalkışını yapıyor,
+    // o sırada kumanda YOK SAYILIYOR (sunucu skip döner). Kullanıcı düğmeden
+    // görsün diye etiket ve uyarı burada güncelleniyor.
+    if (st.manual && d.manuel_faz && d.manuel_faz !== manFaz){
+      manFaz = d.manuel_faz;
+      const lbl = $('manLbl');
+      if (manFaz === 'kalkis'){
+        if (lbl) lbl.textContent = 'KALKIŞ...';
+        $('manwrap').hidden = true;
+        addLog('sys', 'MANUEL', 'Uçak yerdeydi — otonom kalkış yapılıyor, '
+              + 'kumanda kalkış bitince devreye girer.');
+      } else if (manFaz === 'ucus'){
+        if (lbl) lbl.textContent = 'Manuel Kapat';
+        $('manwrap').hidden = false;
+        addLog('sys', 'MANUEL', 'Kalkış tamam — düz uçuşta, kumanda sende.');
+      } else if (manFaz === 'hata'){
+        addLog('err', 'MANUEL', 'Kalkış başarısız — sunucu günlüğüne bakın.');
+      }
+    }
   } catch (e) {}
 }, 2000);
 
@@ -776,6 +795,7 @@ setInterval(async () => {
 //   aileron/elevator = 1500 ± 450   (FBWA: tam sapma = maks açı hedefi)
 //   throttle         = 1000 + %gaz × 10
 const manBtn = $('manBtn'), stick = $('stick'), knob = $('knob');
+let manFaz = 'hazir';     // sunucudan gelen manuel faz: kalkis | ucus | hazir
 const MAX_R = 57;
 let mAil = 0, mElv = 0, mThr = 60;            // yumuşatılmış komutlar (-1..1, %)
 let jsAil = 0, jsElv = 0, dragging = false;
@@ -847,12 +867,14 @@ function manualTick(){
 async function enterManual(){
   manBtn.disabled = true;
   $('manLbl').textContent = 'Bağlanıyor...';
-  addLog('sys', 'SYS', 'Aktif senaryo durduruluyor, uçuş devralınıyor (yerde FBWA → havada FBWB)...');
+  addLog('sys', 'SYS', 'Aktif senaryo durduruluyor, uçuş devralınıyor. '
+        + 'Uçak yerdeyse önce KENDİ KALKIŞINI yapar.');
   st.scenario = null; markScenario();
   try {
     const r = await (await fetch('/api/command/plane/start_manual', { method: 'POST' })).json();
     if (r.status === 'success'){
       st.manual = true;
+      manFaz = '';                 // ilk durum yoklamasi fazi kesin uygulasin
       for (const k in keys) keys[k] = false;
       mAil = 0; mElv = 0; jsAil = 0; jsElv = 0; dragging = false;
       mThr = parseInt($('thrSl').value, 10) || 60;   // kullanıcının ayarladığı gazla devam
