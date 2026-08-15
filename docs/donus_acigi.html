@@ -1,0 +1,918 @@
+<title>Dönüş Yarıçapı Açığı</title>
+
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     DÖNÜŞ YARIÇAPI AÇIĞI — jetonlar
+     Açık palet bare :root'ta TAM. Koyu palet YALNIZ jetonları yeniden
+     tanımlar. Hiçbir renk yalnız media/[data-theme] içinde yaşamıyor.
+     ═══════════════════════════════════════════════════════════════ */
+  :root {
+    --kagit:      #eef1f0;
+    --yuzey:      #fbfcfc;
+    --yuzey-2:    #e6ebe9;
+    --murekkep:   #16211f;
+    --murekkep-2: #3f4f4c;
+    --sonuk:      #6c7c78;
+    --cizgi:      #ccd6d3;
+    --cizgi-kuv:  #a9b8b4;
+
+    --isaret:     #0a6b6f;   /* enstrüman teali — birincil vurgu */
+    --isaret-yum: #dbeceb;
+    --turuncu:    #b5502a;   /* uçuş testi turuncusu — sınır/çürütme */
+    --turuncu-yum:#f6e5de;
+
+    --olur:       #1c6b45;
+    --olur-yum:   #dcece4;
+    --kismen:     #8a6100;
+    --kismen-yum: #f5ecd6;
+    --olmaz:      #9a3324;
+    --olmaz-yum:  #f5e2de;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino,
+             "Book Antiqua", "URW Palladio L", Georgia, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+    --mono:  ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+             "Liberation Mono", "DejaVu Sans Mono", monospace;
+
+    --golge: 0 1px 2px rgba(22,33,31,.05), 0 0 0 1px rgba(22,33,31,.06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --kagit:      #0c1413;
+      --yuzey:      #131d1c;
+      --yuzey-2:    #1b2726;
+      --murekkep:   #e2e9e7;
+      --murekkep-2: #b7c4c1;
+      --sonuk:      #849692;
+      --cizgi:      #26332f;
+      --cizgi-kuv:  #384945;
+
+      --isaret:     #55c2c4;
+      --isaret-yum: #0e2b2c;
+      --turuncu:    #e08a63;
+      --turuncu-yum:#2c1a12;
+
+      --olur:       #5ec48d;
+      --olur-yum:   #11291d;
+      --kismen:     #e0ae4c;
+      --kismen-yum: #2a2211;
+      --olmaz:      #ef8a7c;
+      --olmaz-yum:  #2e1815;
+
+      --golge: 0 1px 2px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.05);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --kagit:      #0c1413;
+    --yuzey:      #131d1c;
+    --yuzey-2:    #1b2726;
+    --murekkep:   #e2e9e7;
+    --murekkep-2: #b7c4c1;
+    --sonuk:      #849692;
+    --cizgi:      #26332f;
+    --cizgi-kuv:  #384945;
+
+    --isaret:     #55c2c4;
+    --isaret-yum: #0e2b2c;
+    --turuncu:    #e08a63;
+    --turuncu-yum:#2c1a12;
+
+    --olur:       #5ec48d;
+    --olur-yum:   #11291d;
+    --kismen:     #e0ae4c;
+    --kismen-yum: #2a2211;
+    --olmaz:      #ef8a7c;
+    --olmaz-yum:  #2e1815;
+
+    --golge: 0 1px 2px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.05);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--kagit);
+    color: var(--murekkep);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+  .sayfa {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 52px 22px 110px;
+    display: flex;
+    flex-direction: column;
+    gap: 52px;
+  }
+  a { color: var(--isaret); text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--isaret); outline-offset: 3px;
+  }
+  code { font-family: var(--mono); font-size: .885em; }
+
+  /* ── tepe ── */
+  .tepe { display: flex; flex-direction: column; gap: 16px; }
+  .goz {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .17em;
+    text-transform: uppercase; color: var(--sonuk);
+  }
+  h1 {
+    margin: 0; font-family: var(--serif); font-weight: 600;
+    font-size: clamp(34px, 6.5vw, 52px); line-height: 1.06;
+    letter-spacing: -.018em; text-wrap: balance;
+  }
+  .ust-ozet {
+    margin: 0; max-width: 64ch; font-size: 18px; color: var(--murekkep-2);
+  }
+  .ust-ozet strong { color: var(--murekkep); font-weight: 600; }
+
+  /* ── bölüm ── */
+  .bolum { display: flex; flex-direction: column; gap: 22px; }
+  .bolum-bas {
+    display: flex; flex-direction: column; gap: 7px;
+    padding-bottom: 13px; border-bottom: 2px solid var(--cizgi-kuv);
+  }
+  .bolum-bas h2 {
+    margin: 0; font-family: var(--serif); font-size: 27px; font-weight: 600;
+    letter-spacing: -.012em; line-height: 1.22; text-wrap: balance;
+  }
+  .bolum-bas .no {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .15em;
+    color: var(--isaret); text-transform: uppercase; font-weight: 600;
+  }
+  .bolum-bas p { margin: 0; color: var(--sonuk); font-size: 15px; max-width: 68ch; }
+  h3 {
+    margin: 0; font-family: var(--serif); font-size: 20.5px; font-weight: 600;
+    line-height: 1.3; letter-spacing: -.008em;
+  }
+  p { margin: 0; max-width: 70ch; color: var(--murekkep-2); }
+  .bolum > p + p { margin-top: -6px; }
+  strong { color: var(--murekkep); font-weight: 620; }
+
+  /* ── ÖLÇÜM bloğu: bu belgedeki en önemli ayrım ──
+     Literatür bulgusu ile BUGÜN loglarda ölçülen şey görsel olarak ayrı. */
+  .olcum {
+    background: var(--isaret-yum);
+    border-left: 3px solid var(--isaret);
+    border-radius: 0 3px 3px 0;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .olcum > .bas {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--isaret); font-weight: 700;
+  }
+  .olcum p { color: var(--murekkep-2); }
+  .olcum strong { color: var(--murekkep); }
+
+  .curut {
+    background: var(--turuncu-yum);
+    border-left: 3px solid var(--turuncu);
+    border-radius: 0 3px 3px 0;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .curut > .bas {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--turuncu); font-weight: 700;
+  }
+
+  /* ── tablo ── */
+  .tablo-kutu {
+    overflow-x: auto; border: 1px solid var(--cizgi);
+    border-radius: 3px; background: var(--yuzey);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 460px; }
+  thead th {
+    text-align: left; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .11em; text-transform: uppercase; color: var(--sonuk);
+    font-weight: 700; padding: 10px 13px;
+    border-bottom: 1px solid var(--cizgi-kuv); white-space: nowrap;
+    background: var(--yuzey-2);
+  }
+  tbody td {
+    padding: 9px 13px; border-bottom: 1px solid var(--cizgi);
+    color: var(--murekkep-2); vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.s, th.s {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    white-space: nowrap; text-align: right;
+  }
+  td.ad { color: var(--murekkep); }
+  tr.one td { background: var(--isaret-yum); }
+  tr.one td.ad { font-weight: 640; color: var(--murekkep); }
+  .iyi  { color: var(--olur);  font-weight: 640; }
+  .kotu { color: var(--olmaz); font-weight: 640; }
+
+  /* ── yöntem kartı ── */
+  .kart {
+    background: var(--yuzey); border: 1px solid var(--cizgi);
+    border-top: 3px solid var(--cizgi-kuv); border-radius: 3px;
+    box-shadow: var(--golge); padding: 22px 22px 24px;
+    display: flex; flex-direction: column; gap: 15px;
+  }
+  .kart.v-olur   { border-top-color: var(--olur); }
+  .kart.v-kismen { border-top-color: var(--kismen); }
+  .kart.v-olmaz  { border-top-color: var(--olmaz); }
+  .kart-bas {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 14px; flex-wrap: wrap;
+  }
+  .rozet {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 5px 10px; border-radius: 2px;
+    white-space: nowrap; font-weight: 700; flex-shrink: 0;
+  }
+  .r-olur   { color: var(--olur);   background: var(--olur-yum); }
+  .r-kismen { color: var(--kismen); background: var(--kismen-yum); }
+  .r-olmaz  { color: var(--olmaz);  background: var(--olmaz-yum); }
+
+  .kunye {
+    font-family: var(--mono); font-size: 12.5px; color: var(--sonuk);
+    line-height: 1.55; overflow-wrap: anywhere;
+    padding-bottom: 12px; border-bottom: 1px dashed var(--cizgi);
+  }
+  .kunye a { color: var(--isaret); }
+  .etiket {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--sonuk); font-weight: 700;
+    display: block; margin-bottom: 3px;
+  }
+  .alan { display: flex; flex-direction: column; gap: 2px; }
+
+  /* ── aday özellik ── */
+  .aday {
+    background: var(--yuzey); border: 1px solid var(--cizgi-kuv);
+    border-radius: 3px; padding: 24px; box-shadow: var(--golge);
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .aday-bas { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .aday-bas .kod {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--yuzey); background: var(--isaret);
+    padding: 3px 9px; border-radius: 2px; letter-spacing: .06em;
+  }
+  .kilit {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+    gap: 1px; background: var(--cizgi); border: 1px solid var(--cizgi);
+    border-radius: 2px; overflow: hidden;
+  }
+  .kilit > div {
+    background: var(--yuzey-2); padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .kilit .d {
+    font-family: var(--mono); font-size: 13px; color: var(--murekkep);
+    overflow-wrap: anywhere;
+  }
+
+  ul.duz, ol.duz {
+    margin: 0; padding-left: 21px; display: flex; flex-direction: column;
+    gap: 8px; color: var(--murekkep-2); max-width: 70ch;
+  }
+  ul.duz li::marker { color: var(--isaret); }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 11px; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 13.5px; color: var(--sonuk); max-width: 70ch; }
+  .cizim {
+    background: var(--yuzey); border: 1px solid var(--cizgi);
+    border-radius: 3px; padding: 20px; overflow-x: auto;
+  }
+
+  .altbilgi {
+    border-top: 1px solid var(--cizgi); padding-top: 22px;
+    font-size: 13.5px; color: var(--sonuk); max-width: 72ch;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  @media (max-width: 640px) {
+    .sayfa { padding: 32px 15px 76px; gap: 40px; }
+    .kart, .aday { padding: 18px 16px 20px; }
+    body { font-size: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="sayfa">
+
+  <header class="tepe">
+    <div class="goz">avci_sim · manevralı hedef · literatür + taze ölçüm · 2026-08-15</div>
+    <h1>Dönüş Yarıçapı Açığı</h1>
+    <p class="ust-ozet">
+      Altı araştırma sorusunun cevabı ve bir kök neden. Kısa hâli:
+      <strong>manevralı hedefte ıskalamamızın sebebi güdüm yasası ya da oyun
+      teorisi değil — hedefin 33 m yarıçapla döndüğü yerde bizim 122 m'yle
+      dönmemiz.</strong> Ve bu bir fizik sınırı değil: aracın zarfı 33 m'ye
+      izin veriyor, güdüm o kadar dönüş istemiyor.
+    </p>
+  </header>
+
+  <!-- ═══════════ 0 · ÖNCE ÜÇ DÜZELTME ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Bölüm 0</span>
+      <h2>Önce: brifingin üç maddesini ölçüp düzelttim</h2>
+      <p>Araştırmaya başlamadan önce, verilen teşhisin kendisini mevcut
+         loglardan yeniden hesapladım. Üçü de kısmen ya da tamamen değişti.
+         Yanlış teşhis üzerine literatür taramak, doğru cevabı yanlış soruya
+         vermek olurdu.</p>
+    </div>
+
+    <div class="curut">
+      <span class="bas">Düzeltme 1 — “kuyruk konisinde sıfır kare” · KARE'de doğru değil</span>
+      <p>Brifing: <em>“60 m içinde VE 0-30° kuyruk açısında sıfır kare.”</em>
+      20 Hz bbox logunu <code>meta.csv</code> ile eşleyip 17 913 kare üzerinden
+      yeniden saydım (N01-N08, kare senaryosu):</p>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>menzil</th><th class="s">kuyrukta (&lt;30°)</th><th class="s">dışında</th><th class="s">kuyruk oranı</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">&lt; 30 m</td><td class="s">635</td><td class="s">919</td><td class="s">41%</td></tr>
+            <tr><td class="ad">30-60 m</td><td class="s">4 784</td><td class="s">5 355</td><td class="s">47%</td></tr>
+            <tr><td class="ad">60-100 m</td><td class="s">2 641</td><td class="s">2 542</td><td class="s">51%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Karede kuyruk konisine giriyoruz</strong> — 60 m içinde 5 419
+      kare, karelerin yaklaşık yarısı. Yani karedeki 0/8 “arkasına geçemiyoruz”
+      değil. <strong>Dairede ise brifing haklı:</strong> orada kuyruk oranı
+      &lt;30 m'de %17, &gt;100 m'de %2. İki senaryonun kök nedeni
+      <strong>farklı</strong> ve tek bir çare ikisini birden çözmez.</p>
+    </div>
+
+    <div class="curut">
+      <span class="bas">Düzeltme 2 — Homicidal Chauffeur yanlış model</span>
+      <p>Isaacs'ın kaçma koşulunu tam formuyla buldum ve sayılarımızla çözdüm
+      (Bopardikar &amp; Bullo 2007, denk. 2). Sonuç brifingi
+      <strong>doğruluyor</strong>: β=0.045, γ=0.833 ile kaçanın kazandığı
+      bölgedeyiz. <em>Ama model bize uymuyor.</em> Homicidal Chauffeur, kaçanın
+      <strong>anında dönebildiğini</strong> varsayar. Bizim hedefimiz sabit
+      kanatlı ve loglardan ölçtüm: dönüş yarıçapı <strong>36.2 m</strong>
+      (daire) / <strong>33.1 m</strong> (kare). Doğru model
+      <strong>Game of Two Cars</strong> — ve orada tablo tamamen değişir.</p>
+    </div>
+
+    <div class="curut">
+      <span class="bas">Düzeltme 3 — kutu en/boy oranı açı taşımıyor (cazip bir fikri öldürdü)</span>
+      <p>“Kutunun <code>w/h</code> oranı hedefin bize göre açısını verir, ondan
+      kuyruk konisi sinyali çıkarırız” fikri bedava görünüyordu. 13 890 eşleşmiş
+      karede sınadım: kuyruk açısı 0-30° iken medyan <code>w/h</code> =
+      <strong>1.12</strong>, 150-180° iken <strong>1.14</strong>. Pearson
+      r = <strong>−0.22</strong>. Dedektör bu piksel boyutlarında neredeyse kare
+      kutu veriyor. <strong>Fikir ölü</strong> — uçuş harcanmadan.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 1 · KÖK NEDEN ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Bölüm 1</span>
+      <h2>Kök neden: dönüş yarıçapı açığı</h2>
+      <p>Hedefin ve bizim yol eğriliğimizi aynı yöntemle, aynı loglardan ölçtüm:
+         ardışık konumlardan rota değişimi, <code>R = V/|ψ̇|</code>.</p>
+    </div>
+
+    <div class="olcum">
+      <span class="bas">Ölçüm — bugün, N01-N08 (kare) ve K01-K08 (daire) loglarından</span>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>senaryo</th><th>kim</th><th class="s">dönüş yarıçapı (medyan)</th><th class="s">yanal ivme (medyan)</th></tr></thead>
+          <tbody>
+            <tr class="one"><td class="ad">kare</td><td class="ad">hedef</td><td class="s">33.1 m</td><td class="s">6.9 m/s²</td></tr>
+            <tr class="one"><td class="ad">kare</td><td class="ad"><strong>biz</strong></td><td class="s kotu">121.8 m</td><td class="s kotu">2.3 m/s²</td></tr>
+            <tr><td class="ad">daire</td><td class="ad">hedef</td><td class="s">36.2 m</td><td class="s">6.1 m/s²</td></tr>
+            <tr><td class="ad">daire</td><td class="ad"><strong>biz</strong></td><td class="s kotu">60.4 m</td><td class="s kotu">3.1 m/s²</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Karede hedeften 3.7 kat geniş dönüyoruz.</strong> Ve bu bir
+      fizik sınırı değil: <code>ANGLE_MAX 4500</code> (45°) 9.81 m/s²,
+      <code>WPNAV_ACCEL 800</code> 8.0 m/s² veriyor. Biz 2.3 kullanıyoruz.
+      En keskin anımız (p10) 23.5 m yarıçap — <strong>uçak yapabiliyor,
+      güdüm istemiyor.</strong></p>
+    </div>
+
+    <figure>
+      <div class="cizim">
+        <svg viewBox="0 0 560 430" role="img"
+             aria-label="Ölçekli çizim: hedefin 33 metrelik dönüş çemberi ile bizim 122 metrelik dönüş çemberimiz, aynı noktada teğet.">
+          <defs>
+            <marker id="ok" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,1 L9,5 L0,9 z" fill="var(--turuncu)"/>
+            </marker>
+          </defs>
+          <!-- zemin çizgisi (ortak teğet) -->
+          <line x1="60" y1="392" x2="500" y2="392"
+                stroke="var(--cizgi-kuv)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <!-- bizim çember: r=174 px (122 m @ 0.7 m/px) -->
+          <circle cx="280" cy="218" r="174" fill="none"
+                  stroke="var(--turuncu)" stroke-width="2.2" opacity=".92"/>
+          <!-- hedef çemberi: r=47 px (33 m) -->
+          <circle cx="280" cy="345" r="47" fill="none"
+                  stroke="var(--isaret)" stroke-width="2.6"/>
+          <!-- yarıçap okları -->
+          <line x1="280" y1="345" x2="280" y2="392"
+                stroke="var(--isaret)" stroke-width="1.6"/>
+          <line x1="300" y1="218" x2="300" y2="392"
+                stroke="var(--turuncu)" stroke-width="1.6"
+                marker-end="url(#ok)"/>
+          <!-- teğet noktası -->
+          <circle cx="280" cy="392" r="4.5" fill="var(--murekkep)"/>
+          <!-- etiketler -->
+          <text x="288" y="372" font-family="ui-monospace, monospace"
+                font-size="13" font-weight="700" fill="var(--isaret)">33 m</text>
+          <text x="308" y="300" font-family="ui-monospace, monospace"
+                font-size="13" font-weight="700" fill="var(--turuncu)">122 m</text>
+          <text x="280" y="330" text-anchor="middle"
+                font-family="ui-monospace, monospace" font-size="11.5"
+                letter-spacing="1" fill="var(--isaret)">HEDEF</text>
+          <text x="280" y="66" text-anchor="middle"
+                font-family="ui-monospace, monospace" font-size="11.5"
+                letter-spacing="1" fill="var(--turuncu)">BİZ</text>
+          <text x="60" y="414" font-family="ui-monospace, monospace"
+                font-size="11" fill="var(--sonuk)">ölçekli · 0.7 m/px · ortak teğet noktasında hizalı</text>
+        </svg>
+      </div>
+      <figcaption>
+        Ölçekli. Hedef aynı noktadan dönmeye başladığında bizim çemberimizin
+        içinde kalıyor; biz dışarı savruluyoruz. Kuyruk açısının 130-170°'ye
+        çıkması ve mesafenin 85-120 m'ye açılması bu geometrinin sonucu.
+      </figcaption>
+    </figure>
+
+    <h3>İki ayrı kusur, iki ayrı sebep</h3>
+    <p>Yanal ivme talebini menzile göre ayırınca saf takibin kendi teorisiyle
+    karşılaştırılabilir hâle geliyor. Saf takipte hız vektörü LOS'a kilitli
+    olduğu için talep <code>a = V·V<sub>hedef</sub>/d</code>:</p>
+
+    <div class="olcum">
+      <span class="bas">Ölçüm — saf takibin yanal ivme talebi, menzile göre (kare, 8 koşu)</span>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>menzil</th><th class="s">n</th><th class="s">ölçülen (medyan)</th><th class="s">teori a=V·V<sub>t</sub>/d</th><th>yorum</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">&lt; 30 m</td><td class="s">72</td><td class="s kotu">3.30</td><td class="s">13.50</td><td>talep <strong>tavanı da aşıyor</strong> (8-9.8), biz 3.3 veriyoruz</td></tr>
+            <tr><td class="ad">30-60 m</td><td class="s">534</td><td class="s">2.49</td><td class="s">6.00</td><td>geçiş bölgesi</td></tr>
+            <tr><td class="ad">60-100 m</td><td class="s">664</td><td class="s">2.13</td><td class="s">3.38</td><td>yasa zaten az istiyor</td></tr>
+            <tr><td class="ad">&gt; 100 m</td><td class="s">501</td><td class="s">1.75</td><td class="s">1.93</td><td>teoriyle örtüşüyor ✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Uzakta ölçüm teoriyi <strong>doğruluyor</strong> (1.75 ↔ 1.93): saf
+      takip 100 m'de zaten dönmek istemiyor — bu yasanın <em>özelliği</em>,
+      kusuru değil. Yakında ise talep 13.5 m/s²'ye fırlıyor;
+      <strong>tavanımız 8-9.8 ve biz yalnız 3.3 veriyoruz.</strong>
+      Hedefin sürdürdüğü ivme 6.25 m/s².</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 2 · SORU 5 ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Soru 5</span>
+      <h2>Bu yakalama teorik olarak mümkün mü?</h2>
+      <p>Önce sorulması gereken soru buydu; cevabı “hayır” olsaydı diğer beşin
+         anlamı değişirdi.</p>
+    </div>
+
+    <div class="kart v-kismen">
+      <div class="kart-bas">
+        <h3>Homicidal Chauffeur — kaçan kazanır, ama bu bizim oyunumuz değil</h3>
+        <span class="rozet r-kismen">koşullu</span>
+      </div>
+      <div class="kunye">
+        Isaacs (1965) <em>Differential Games</em> · Merz (1971) Stanford doktora tezi ·
+        koşulun açık formu: Bopardikar &amp; Bullo, “A Cooperative Homicidal Chauffeur Game”,
+        CDC 2007 / Automatica 2009 —
+        <a href="https://motion.me.ucsb.edu/pdf/2007e-bbh.pdf">motion.me.ucsb.edu/pdf/2007e-bbh.pdf</a>
+        (tam metin okundu)
+      </div>
+      <p>Kaçma politikası <strong>vardır</strong> ⟺
+      <code>R &gt; 2/(π−2) = 1.752</code> <em>ve</em> <code>γ ≥ γ<sub>min</sub>(R)</code>,
+      burada <code>1/R = √(1−γ²) + γ·arcsin(γ) − 1</code> ve <code>R = 1/β</code>.</p>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>varsayım</th><th class="s">β</th><th class="s">R=1/β</th><th class="s">γ</th><th class="s">γ<sub>min</sub>(R)</th><th>sonuç</th></tr></thead>
+          <tbody>
+            <tr><td class="ad">yatay zarf 0.65 m</td><td class="s">0.0197</td><td class="s">50.8</td><td class="s">0.833</td><td class="s">0.198</td><td class="kotu">kaçan kazanır</td></tr>
+            <tr><td class="ad">gövde ~1.5 m</td><td class="s">0.0455</td><td class="s">22.0</td><td class="s">0.833</td><td class="s">0.300</td><td class="kotu">kaçan kazanır</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Yakalamayı garantiye almak için gereken (γ=0.833 sabitken):
+      <code>β &gt; 0.374</code> — yani <strong>yakalama yarıçapı &gt; 12.3 m</strong>,
+      ya da <strong>dönüş yarıçapı &lt; 4.0 m</strong>, ya da
+      <strong>avcı hızı &gt; 50 m/s</strong>. Üçü de bizim zarfımızın dışında.</p>
+      <div class="curut">
+        <span class="bas">⚠ Ama bu model bize uymuyor</span>
+        <p>Homicidal Chauffeur kaçanın <strong>sıfır dönüş yarıçapıyla</strong>,
+        <strong>optimal</strong> oynadığını varsayar. Bizim hedefimiz 33-36 m
+        yarıçapla dönüyor ve <strong>önceden programlanmış bir desen</strong>
+        uçuyor — bize bakıp kaçmıyor. Yani bu sonuç
+        <em>“optimal ve sonsuz çevik bir kaçana karşı garanti veremezsin”</em>
+        der; <em>“daire çizen bir sabit kanatlıyı yakalayamazsın”</em> demez.
+        Doğru çerçeve <strong>Game of Two Cars</strong>: her iki tarafın da
+        dönüş kısıtı var ve bizimki hedefinkiyle neredeyse aynı (33 m ↔ 33-36 m).
+        Orada belirleyici olan <strong>kim yarıçapını fiilen kullanıyor</strong> —
+        ve ölçüm diyor ki hedef kullanıyor, biz kullanmıyoruz.</p>
+      </div>
+      <div class="kunye" style="border-bottom:none;padding-bottom:0">
+        Game of Two Cars barieri: “The Game of Two Identical Cars: An Analytical
+        Description of the Barrier”, JOTA 2023 —
+        <a href="https://arxiv.org/abs/2206.10199">arxiv.org/abs/2206.10199</a>
+        (özet düzeyinde tarandı)
+      </div>
+    </div>
+
+    <div class="kart v-olur">
+      <div class="kart-bas">
+        <h3>Saf takip dairesel hedefi yakalar — dönüş kısıtı yoksa</h3>
+        <span class="rozet r-olur">bizi doğruluyor</span>
+      </div>
+      <div class="kunye">
+        Von Moll, Casbeer, Weintraub (AFRL), Pachter (AFIT), “Pure Pursuit of a
+        Target on a Circular Trajectory” —
+        <a href="https://www.isaacew.com/publication/vonmoll2024pure/vonmoll2024pure.pdf">isaacew.com</a>
+        (tam metin okundu)
+      </div>
+      <p>Dairesel yörüngedeki bir hedefe saf takip uygulayan <em>hızlı</em> bir
+      avcının kesişim süresini hesaplıyorlar. Kritik nokta künyede değil
+      notasyonda: <strong>avcının dönüş yarıçapı diye bir parametreleri yok.</strong>
+      Avcı burnunu anında LOS'a çevirebiliyor. O varsayım altında saf takip
+      daireyi <strong>yakalıyor</strong>.</p>
+      <p>Bu bizim için doğrudan bir kanıt: <strong>daire senaryosundaki 0/45,
+      saf takibin kusuru değil, dönüş kısıtımızın sonucu.</strong> Yasayı
+      değiştirmeden önce dönüş otoritesine bakılmalı.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 3 · SORULAR 1-4, 6 ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Sorular 1-4 &amp; 6</span>
+      <h2>Literatür: ne var, bize uyuyor mu</h2>
+      <p>Her yöntemde tek ölçüt: <em>hedefin GPS'i yok</em> ve <em>gimbal yok</em>
+         kısıtları altında çalışır mı.</p>
+    </div>
+
+    <div class="kart v-olur">
+      <div class="kart-bas">
+        <h3>Bearing-angle: kutu boyutunu <em>açı ölçümü</em> olarak modelle</h3>
+        <span class="rozet r-olur">uygulanabilir · en yüksek getiri</span>
+      </div>
+      <div class="kunye">
+        Zian Ning, Yin Zhang, Jianan Li, Zhang Chen, Shiyu Zhao (2024),
+        “A Bearing-Angle Approach for Unknown Target Motion Analysis Based on
+        Visual Measurements” —
+        <a href="https://arxiv.org/abs/2401.17117">arXiv:2401.17117</a>
+        (özet + PDF okundu)
+      </div>
+      <p><strong>Soru 2 ve 4'ün ortak cevabı.</strong> Bearing-only kestirimin
+      bilinen kusuru: menzili gözlemlenebilir kılmak için gözlemcinin
+      <em>yanal manevra</em> yapması gerekir — ve bu, takip görevinin istediği
+      hareketle çelişir. Yazarların tespiti: tespit kutusu zaten elimizde ve
+      <strong>boyut bilgisi bugüne dek kullanılmamış</strong>. Kutuyu bir
+      <em>bearing-angle</em> ölçümü olarak modelleyince gözlemlenebilirlik
+      <strong>ek yanal manevra olmadan</strong> belirgin artıyor.</p>
+      <p><strong>Bizim için niye kritik:</strong> biz kutu boyutunu zaten
+      kullanıyoruz — ama naif tersleme ile: <code>R = 160/√(w·h)</code>. Ölçülmüş
+      yanlılığımız (yakında −1..−3 m, uzakta <strong>−12..−21 m</strong>) tam da
+      naif terslemenin ürettiği hata deseni. Bu yöntem aynı ölçümü bir kestirici
+      içinde değerlendirir ve <strong>menzille birlikte hedefin hızını da</strong>
+      gözlemlenebilir kılar.</p>
+      <p><strong>⚠ D0 kontrolü:</strong> Yarışma kuralı hedefin
+      <em>GPS/konum verisine erişimi</em> yasaklıyor. Bu yöntem hiçbir dış veri
+      almıyor — yalnız kendi görüntümüzden çıkarım yapıyor. <strong>Kural
+      ihlali yok</strong>; “hedefin hızını bilmek” yasak değil, “hedefin
+      telemetrisini okumak” yasak.</p>
+    </div>
+
+    <div class="kart v-kismen">
+      <div class="kart-bas">
+        <h3>Gözlemlenebilirlik: saf takip menzil bilgisini <em>yok eder</em></h3>
+        <span class="rozet r-kismen">teşhis değerli · çaresi bize uymuyor</span>
+      </div>
+      <div class="kunye">
+        Li ve ark. (2023), “Three-Dimensional Bearing-Only Target Following via
+        Observability-Enhanced Helical Guidance”, IEEE T-RO 39(2) —
+        <a href="https://shiyuzhao.westlake.edu.cn/Three-Dimensional_Bearing-Only_Target_Following_via_Observability-Enhanced_Helical_Guidance.pdf">westlake.edu.cn</a>
+        (tam metin okundu) · ayrıca “Observability Enhancement of Maneuvering
+        Target with Bearings-Only Information”, AIAA JGCD —
+        <a href="https://arc.aiaa.org/doi/10.2514/1.G003003">10.2514/1.G003003</a> (tarandı)
+      </div>
+      <p>Saf takip / PN, kerteriz açısını sabit tutmaya çalışır. Bu
+      <strong>dejenere bir geometri</strong> üretir: gözlemcinin hareketi LOS
+      düzleminde kalır, menzil bearing'den kestirilemez hâle gelir. Terminal
+      güdümün istediği şey (LOS hızı → 0) tam da kestiriciyi kör eden şeydir.
+      Çareleri sarmal/salınımlı bir yörünge ile taban çizgisi üretmek.</p>
+      <p><strong>Bize uymayan yanı:</strong> sarmal manevra <em>mesafe koruyan
+      takip</em> (standoff) için tasarlanmış; biz <strong>çarpmak</strong>
+      istiyoruz ve zaten dönüş otoritemiz yetmiyor — üstüne bir de salınım
+      bütçesi ayıramayız. <strong>Ama teşhis bizim için doğrudan geçerli</strong>
+      ve yukarıdaki bearing-angle yöntemi bu sorunu <em>manevra harcamadan</em>
+      çözdüğü için tercih edilmeli.</p>
+    </div>
+
+    <div class="kart v-kismen">
+      <div class="kart-bas">
+        <h3>Geliş açısı dayatan güdüm (impact-angle) — menzilsiz, LOS hızsız</h3>
+        <span class="rozet r-kismen">kısmen · hedef sabit varsayımı</span>
+      </div>
+      <div class="kunye">
+        Kim H.G., Lee J.Y., Kim H.J. (2018), “Look Angle Constrained Impact Angle
+        Control Guidance Law for Homing Missiles With Bearings-Only Measurements”,
+        IEEE TAES 54(6):3096-3107 —
+        <a href="https://doi.org/10.1109/TAES.2018.2843600">10.1109/TAES.2018.2843600</a>
+        (tam metne erişilemedi; künye + özet doğrulandı) · devamı: “Two-Layer
+        Sliding-Mode Guidance with FOV and Impact-Angle Constraints under
+        Bearings-Only Measurements”, IJASS 2025 —
+        <a href="https://link.springer.com/article/10.1007/s42405-025-01115-1">springer</a> (tarandı)
+      </div>
+      <p><strong>Soru 1'in en yakın cevabı.</strong> Kayan yüzey tabanlı bir
+      yasa hedefe <em>belirli bir açıdan</em> varmayı garanti ediyor ve komut
+      <strong>ne bağıl menzil ne de LOS açısal hızı içeriyor</strong> — yani
+      saf bearing ile uygulanabilir. Üstelik “look angle” kısıtı arayıcının
+      görüş alanını aşmamayı garantiliyor; bizim gimbalsiz sabit kameramız için
+      bu <em>tam da doğru kısıt</em>.</p>
+      <p><strong>Uymayan yanı:</strong> yasa <strong>sabit hedef</strong> için
+      türetilmiş. Hareketli hedefte “istenen geliş açısı” hedefin rotasına göre
+      tanımlanmalı; o rota bizde <em>bilinmiyor</em>. Yani bu yasa ancak
+      bearing-angle kestiricisi (yukarıda) hedefin rotasını verirse
+      kullanılabilir. <strong>Sıralı bağımlılık:</strong> önce kestirici,
+      sonra geliş açısı.</p>
+    </div>
+
+    <div class="kart v-olur">
+      <div class="kart-bas">
+        <h3>Monoküler kesme, derinlik kestirmeden — ve neyi varsaydığı</h3>
+        <span class="rozet r-olur">bizi doğruluyor · sınırı da gösteriyor</span>
+      </div>
+      <div class="kunye">
+        Jana, Tony, Bhise, Varun VP, Ghose (2022), “Interception of an aerial
+        manoeuvring target using monocular vision”, <em>Robotica</em> 40(12) —
+        <a href="https://www.cambridge.org/core/journals/robotica/article/interception-of-an-aerial-manoeuvring-target-using-monocular-vision/45EC80975FCD5727049599E55622B446">cambridge.org</a>
+        (makale sayfası okundu)
+      </div>
+      <p>Bizim mimarimizin neredeyse birebir eşi: DJI M600, tek kamera, yalnız
+      piksel koordinatı; derinlik, hız, konum <strong>kestirilmiyor</strong>.
+      Iska mesafeleri 0.01-0.02 m. Ama iki cümlelik sınırı bizim problemimizin
+      tanımı:</p>
+      <ul class="duz">
+        <li>Hedef hızı <strong>≤5 m/s</strong>'te yüksek başarı, 8 m/s'de düşüyor
+        — bizim hedefimiz <strong>15 m/s</strong>.</li>
+        <li>“<strong>Tail-chase engagement geometry assumed</strong>” — yani
+        kuyruğa yerleşmiş olmayı <em>varsayıyorlar</em>. Bizim çözemediğimiz
+        şey tam olarak o varsayımın kendisi.</li>
+      </ul>
+      <p>Sonuç: saf takip + monoküler, <strong>kuyrukta ve yavaş hedefte</strong>
+      çözülmüş bir problem. Bizim rejimimiz onların açıkça kapsam dışı bıraktığı
+      yer.</p>
+    </div>
+
+    <div class="kart v-olmaz">
+      <div class="kart-bas">
+        <h3>Öğrenme tabanlı güdüm (Soru 6)</h3>
+        <span class="rozet r-olmaz">şimdilik uygun değil</span>
+      </div>
+      <div class="kunye">
+        Gaudet, Furfaro, Linares (2020), “Reinforcement learning for angle-only
+        intercept guidance of maneuvering targets”, <em>Aerospace Science and
+        Technology</em> 99:105746 —
+        <a href="https://arxiv.org/abs/1906.02113">arXiv:1906.02113</a> (özet + ar5iv tarandı)
+      </div>
+      <p>En güçlü sonuç: yalnız arayıcı LOS açıları ve türevleriyle çalışan,
+      menzil kestirimi <strong>gerektirmeyen</strong> bir politika; meta-öğrenme
+      sayesinde hedef ivmesine uyum sağlıyor ve <em>mükemmel hedef ivmesi
+      bilgisiyle çalışan</em> ZEM güdümünden daha iyi.</p>
+      <p><strong>Ama bize uymuyor:</strong> ekzo-atmosferik, divert iticili bir
+      araç — dönüş kısıtı yok, bizim asıl darboğazımız orada yok. Dahası
+      yarışma güvenilirliği açısından sim-to-real riski yüksek ve
+      <strong>bizim ölçüm disiplinimizle</strong> (§5.1 mekanizma kapısı,
+      kill-switch, bit bit denklik) uyumsuz: politikayı “neden böyle yaptı”
+      diye ölçemeyiz. <strong>Öneri: yarışma için hayır.</strong> Kök nedeni
+      klasik yöntemle çözdükten sonra bir araştırma kolu olarak düşünülebilir.</p>
+    </div>
+
+    <div class="kart v-kismen">
+      <div class="kart-bas">
+        <h3>Tespit kesintisine dayanıklılık (Soru 3)</h3>
+        <span class="rozet r-kismen">kısmen · bizde zaten kısmen var</span>
+      </div>
+      <div class="kunye">
+        “Visual Servoing of a Moving Target by an Unmanned Aerial Vehicle”,
+        <em>Sensors</em> 21(17):5708 —
+        <a href="https://doi.org/10.3390/s21175708">10.3390/s21175708</a> ·
+        NOVA, “Object-Centric Visual Autonomy for High-Speed Target Tracking in
+        GPS-Denied Environments” — <a href="https://arxiv.org/pdf/2506.18689">arXiv:2506.18689</a>
+        (ikisi de arama düzeyinde tarandı, tam metin okunmadı)
+      </div>
+      <p>Ortak reçete: YOLO kutusunu doğrudan kontrol girdisi yapmak yerine bir
+      <strong>UKF/EKF durumuna</strong> beslemek; açı dinamiğini de duruma
+      katmak kesintili ölçümde dayanıklılığı artırıyor. Yeni işler
+      <em>innovation</em> tabanlı güven ölçütüyle hareket modelleri arasında
+      geçiş yapıyor.</p>
+      <p><strong>Bizdeki durum:</strong> faz savrulmasını ölçtük ve Ö-N
+      kampanyasında eşiği büyütmenin işe yaramadığını gördük — çünkü sorun
+      eşik değil, <strong>kutunun geri gelmemesi</strong> (medyan 6.8 s). Bu
+      literatürün önerdiği şey eşik ayarı değil <em>durum tahmini</em>; yani
+      yine bearing-angle kestiricisine çıkıyor. Ayrı bir aday olarak
+      önermiyorum — B adayının içinde.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 4 · SIRALAMA ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Bölüm 4</span>
+      <h2>Uygulanabilirlik × beklenen etki</h2>
+    </div>
+    <div class="tablo-kutu">
+      <table>
+        <thead><tr><th>#</th><th>yöntem</th><th class="s">uygulanabilirlik</th><th class="s">beklenen etki</th><th>engel</th></tr></thead>
+        <tbody>
+          <tr class="one"><td class="s">1</td><td class="ad">Dönüş otoritesini fiilen kullanmak (yanal ivme talebi)</td><td class="s iyi">yüksek</td><td class="s iyi">yüksek</td><td>literatürde “yeni” değil — bizde eksik olan</td></tr>
+          <tr class="one"><td class="s">2</td><td class="ad">Bearing-angle kestirici (kutu = açı ölçümü)</td><td class="s">orta</td><td class="s iyi">yüksek</td><td>kestirici yazımı + doğrulama emeği</td></tr>
+          <tr><td class="s">3</td><td class="ad">İvme/jerk zarfını açmak (araç parametresi)</td><td class="s iyi">çok yüksek</td><td class="s">orta</td><td>tavan zaten talebin üstünde olabilir</td></tr>
+          <tr><td class="s">4</td><td class="ad">Geliş açısı dayatan güdüm (impact-angle)</td><td class="s">düşük</td><td class="s iyi">yüksek</td><td>hedef rotası gerekli → #2'ye bağımlı</td></tr>
+          <tr><td class="s">5</td><td class="ad">Gözlemlenebilirlik için sarmal manevra</td><td class="s kotu">düşük</td><td class="s kotu">düşük</td><td>dönüş bütçemiz zaten yetmiyor</td></tr>
+          <tr><td class="s">6</td><td class="ad">RL / öğrenme tabanlı güdüm</td><td class="s kotu">çok düşük</td><td class="s">bilinmiyor</td><td>ölçüm disiplinimizle uyumsuz, sim-to-real riski</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════ 5 · ADAYLAR ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Bölüm 5</span>
+      <h2>Üç somut aday</h2>
+      <p>Her biri için tetik koşulu, mekanizma sütunu, kazanımın ölçüleceği
+         senaryo, regresyonun aranacağı senaryo ve kill-switch. Sıra
+         <em>uygulama sırası</em>: en ucuzdan en pahalıya.</p>
+    </div>
+
+    <article class="aday">
+      <div class="aday-bas">
+        <span class="kod">ADAY C</span>
+        <h3>Jerk zarfını aç — kod yok, tek parametre</h3>
+      </div>
+      <p>Yanal ivme tavanımız 8 m/s² ama <code>WPNAV_JERK 4</code> m/s³. Sıfırdan
+      hedefin sürdürdüğü 6.25 m/s²'ye ulaşmak <strong>1.6 saniye</strong> sürüyor;
+      18 m/s'de bu <strong>28 metre</strong> demek. Kare köşesi 2-3 saniyede
+      bitiyor. Yani tavan değil <em>tavana çıkma hızı</em> bağlıyor olabilir.</p>
+      <div class="kilit">
+        <div><span class="etiket">tetik</span><span class="d">sürekli (araç parametresi)</span></div>
+        <div><span class="etiket">mekanizma sütunu</span><span class="d">gerçekleşen yanal ivme p90; 6.1 → yükselmeli</span></div>
+        <div><span class="etiket">kazanım nerede</span><span class="d">kare (köşede ivme rampası)</span></div>
+        <div><span class="etiket">regresyon nerede</span><span class="d">duz+yok (taban), duz+kaçamak</span></div>
+        <div><span class="etiket">kill-switch</span><span class="d">WPNAV_JERK 4 (panelden “param” tipi)</span></div>
+        <div><span class="etiket">maliyet</span><span class="d">kod yok · 8 uçuş</span></div>
+      </div>
+      <p><strong>§4'teki elenmişlerden farkı:</strong> “yayda yavaşla” ve “dönüş
+      talebine göre hız kısma”, dönüş yarıçapını <em>hızı düşürerek</em>
+      küçültmeye çalışıyordu ve hedefi yakalayamaz hâle geliyorduk. Bu aday
+      <strong>hızı hiç değiştirmiyor</strong>; aynı hızda daha çabuk yatırıyor.
+      Ölçüm de bu yönü gösteriyor: 3.7 kat açığı kapatmak için hız düşürmeye
+      gerek yok, 45°'lik zarfın kullanılmayan kısmı yetiyor.</p>
+      <p><strong>Risk:</strong> jerk artışı dikey kanalda ve terminal fazda
+      sertlik yaratabilir; regresyon koşuları tam bunun için.</p>
+    </article>
+
+    <article class="aday">
+      <div class="aday-bas">
+        <span class="kod">ADAY A</span>
+        <h3>Yanal ivme talebi — LOS'a <em>dik</em> ivme ileri-beslemesi</h3>
+      </div>
+      <p>Bugün <code>hiz_yonu</code> bir <strong>açı</strong> komutluyoruz
+      (<code>bbox_ibvs.py:757</code>) ve dönüşün ne kadar sert olacağına aracın
+      hız kontrolcüsü karar veriyor. Öneri: LOS açısal hızıyla orantılı bir
+      <strong>ivme</strong> bileşenini, MAVLink
+      <code>SET_POSITION_TARGET_LOCAL_NED</code>'in ivme alanlarıyla
+      (<code>afx/afy</code>) doğrudan komutlamak: <code>a⊥ = N·V_c·λ̇</code>,
+      N≈3.</p>
+      <div class="kilit">
+        <div><span class="etiket">tetik</span><span class="d">kutu var VE |λ̇| &gt; gürültü tabanı</span></div>
+        <div><span class="etiket">mekanizma sütunu</span><span class="d">pn_ivme (m/s²) — sıfırsa koşu geçersiz</span></div>
+        <div><span class="etiket">kazanım nerede</span><span class="d">kare — düz bacak + köşede λ̇ sıçraması (§5.13 zarf)</span></div>
+        <div><span class="etiket">regresyon nerede</span><span class="d">duz+yok, duz+kaçamak, daire</span></div>
+        <div><span class="etiket">kill-switch</span><span class="d">AVCI_IBVS_PN_N = 0 → terim tamamen sıfır</span></div>
+        <div><span class="etiket">maliyet</span><span class="d">orta · 12 uçuş</span></div>
+      </div>
+      <p><strong>⭐ İki yapısal garanti</strong> (§5.10'un “regresyon testinden
+      güçlü” dediği tür — birim testiyle kanıtlanabilir):</p>
+      <ul class="duz">
+        <li><strong>Düz uçuşta matematiksel olarak ölü.</strong> Düz giden
+        hedefte λ̇ ≈ 0 → <code>a⊥ ≈ 0</code>. Bugünkü %65'lik çekirdeğimiz
+        <em>tanım gereği</em> değişmez.</li>
+        <li><strong>Gölge etme yapısal olarak imkânsız.</strong> İvme
+        <em>yalnız LOS'a dik</em> uygulanır; LOS yönündeki hız bileşeni
+        (<code>v_los</code>, PI yasasının çıktısı) <strong>birebir korunur</strong>.
+        Kapanma hızı kanalına dokunulmuyor.</li>
+      </ul>
+      <div class="curut">
+        <span class="bas">§4 zorunlu cevap — “lead/PN denendi ve elendi” maddesinden farkı</span>
+        <p>Elenen şey <code>lead_az = clamp(lead_süre·λ̇, ±25°)</code> idi:
+        <strong>nişan noktasını</strong> kaydıran, sınırlı bir <em>açı ofseti</em>.
+        Hız vektörünü hedeften uzağa çevirdiği için kapanma bileşenini kesiyordu —
+        gözlenen “gölge etme” tam olarak budur. Bu aday nişanı hiç kaydırmıyor;
+        <strong>dönüş hızını</strong> komutluyor ve LOS'a dik uyguladığı için
+        kapanma bileşenine dokunamıyor. Farklı kanal, farklı arıza modu.
+        <br><br>
+        <strong>Dürüst uyarı:</strong> yine de PN ailesindendir ve aynı şekilde
+        başarısız olabilir. Bu yüzden mekanizma sütunu ve “gölge etme”yi
+        yakalayacak ölçüt (kapanma hızı medyanı) koşmadan önce ilan edilmeli.</p>
+      </div>
+      <p><strong>Ön koşul:</strong> ArduPilot GUIDED modunun hız+ivme birleşik
+      typemask'ini kabul ettiği <strong>uçmadan önce</strong> doğrulanmalı;
+      etmiyorsa aynı etki <code>hiz_yonu</code>'na λ̇ ile orantılı <em>dönüş
+      hızı</em> ekleyerek de kurulabilir (ikinci en iyi).</p>
+    </article>
+
+    <article class="aday">
+      <div class="aday-bas">
+        <span class="kod">ADAY B</span>
+        <h3>Bearing-angle kestirici — kutuyu naif terslemeyi bırak</h3>
+      </div>
+      <p>Ning ve ark. (2024) yöntemi: kutuyu <code>(kerteriz, açısal boy)</code>
+      ölçümü olarak bir EKF'ye ver. Çıktı: yanlılığı giderilmiş menzil
+      <em>ve</em> hedefin hız vektörü — hepsi görüntüden, dış veri yok.</p>
+      <div class="kilit">
+        <div><span class="etiket">tetik</span><span class="d">kutu var (kestirici sürekli koşar)</span></div>
+        <div><span class="etiket">mekanizma sütunu</span><span class="d">kestirim kovaryansı + menzil hatası</span></div>
+        <div><span class="etiket">kazanım nerede</span><span class="d">önce ÇEVRİMDIŞI (aşağıya bak), sonra kare + daire</span></div>
+        <div><span class="etiket">regresyon nerede</span><span class="d">duz+kaçamak (terminal mantığı menzili kullanıyor)</span></div>
+        <div><span class="etiket">kill-switch</span><span class="d">AVCI_IBVS_KESTIRICI=0 → 160/√(w·h)</span></div>
+        <div><span class="etiket">maliyet</span><span class="d">yüksek · kestirici + doğrulama</span></div>
+      </div>
+      <p><strong>⚠ Burada çevrimdışı doğrulama meşru</strong> ve bunu özellikle
+      vurguluyorum, çünkü §2 “replay kanıt değildir” diyor. O kural
+      <em>güdüm kararları</em> için geçerli. Burada ölçülen şey bir
+      <strong>kestiricinin doğruluğu</strong>: mevcut loglardaki kutu dizisini
+      kestiriciye verip Gazebo'nun gerçek menziliyle kıyaslamak, güdüm
+      davranışına dair hiçbir iddia içermez. Uçuş kararı yalnız kestirim hatası
+      bugünkü −12..−21 m'yi belirgin yenerse verilir.</p>
+      <p><strong>Neden en pahalı ama en yüksek tavanlı:</strong> hedefin hız
+      vektörünü görüntüden elde edersek, Soru 1'in gerçek cevabı olan
+      <em>geliş açısı dayatan güdüm</em> (Kim ve ark. 2018) uygulanabilir hâle
+      gelir. Kuyruk konisine “yerleş ve orada kal” davranışı ancak o zaman
+      yazılabilir.</p>
+    </article>
+  </section>
+
+  <!-- ═══════════ 6 · DÜRÜST BÖLÜM ═══════════ -->
+  <section class="bolum">
+    <div class="bolum-bas">
+      <span class="no">Bölüm 6</span>
+      <h2>Literatür bu problemi çözmüş mü?</h2>
+    </div>
+    <p><strong>Bizim tam bileşimimiz için: hayır, açık problem.</strong>
+    Gimbalsiz sabit kamera + hedef durumu bilinmiyor + fiziksel çarpışma +
+    hedefin dönüş yarıçapı bizimkiyle karşılaştırılabilir + 15-25 m/s. Bu
+    beşinin aynı anda sağlandığı, uçuşla doğrulanmış bir çalışma bulamadım.
+    En yakını (Jana 2022) kuyruk geometrisini <em>varsayıyor</em> ve ≤8 m/s'de
+    çalışıyor.</p>
+    <div class="olcum">
+      <span class="bas">Ama asıl cevap bu değil</span>
+      <p><strong>Bizim ölçülen arızamız açık problemin içinde değil.</strong>
+      122 m yarıçapla dönerken 33 m yarıçapla dönen bir hedefi kovalamak,
+      literatürün <em>çözülmüş</em> saydığı bir eksiklik: yeterli yanal ivme
+      talep etmemek. Güdüm literatürü bunu 1950'lerden beri biliyor —
+      saf takip manevralı hedefte yüksek, terminalde teorik olarak sonsuz yanal
+      ivme ister; PN (N=3-5) ise hedefin yük faktörünün yaklaşık <strong>iki
+      katını</strong> ister. Hedefimiz 6.25 m/s² çekiyor; iki katı 12.5 m/s².
+      <strong>Biz 2.3 veriyoruz.</strong></p>
+      <p>Yani sıralama şu olmalı: <strong>önce sıradan olanı düzelt</strong>
+      (Aday C ve A), sonra açık problemin gerçekten açık olan kısmına
+      (kuyruk konisine yerleşme, Aday B → geliş açısı) geç. Bugün açık
+      problemi çözmeye çalışırsak, çözülmüş bir eksikliğin üstüne araştırma
+      inşa etmiş oluruz.</p>
+    </div>
+    <p>Ve bir uyarı: bu raporun kök neden bölümü <strong>ölçüm</strong>,
+    öneri bölümü <strong>hipotez</strong>. Aday C ve A'nın işe yarayacağına
+    dair hiçbir taze uçuş kanıtı yok — yalnız arızanın nerede olduğuna dair
+    kanıt var. Karar kuralları koşmadan önce ilan edilmeli (§4).</p>
+  </section>
+
+  <footer class="altbilgi">
+    <p><strong>Yöntem ve okuma derinliği.</strong> “Tam metin okundu” yazan
+    kaynakların PDF'i indirilip metne çevrildi. “Tarandı” yazanlar arama sonucu
+    ve özet düzeyinde değerlendirildi; alıntılanan iddiaları tam metinden
+    doğrulamadım. Ölçüm blokları (teal) bu oturumda
+    <code>logs/kacamak/</code> altındaki koşulardan bugün hesaplandı;
+    literatür kartları (künyeli) dış kaynaktır. İkisini karıştırmamak için
+    görsel olarak ayrıldılar.</p>
+    <p>Bir kaynağa tam metin erişemedim: Kim, Lee &amp; Kim (2018) IEEE TAES —
+    künye ve özet doğrulandı, yasa formülü <em>okunmadı</em>. O karttaki
+    “menzil ve LOS hızı gerektirmez” iddiası yayıncının özetine dayanıyor.</p>
+  </footer>
+
+</div>
