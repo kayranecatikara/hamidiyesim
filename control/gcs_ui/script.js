@@ -1536,6 +1536,146 @@ function ozellikYenile(){
     .catch(() => {});
 }
 
+// ══ HEDEF AYARLARI — İRTİFA TUTUCU (KALICI) ════════════════════════════
+// Deney düğmesi DEĞİL: ölçüldü (12 uçuş) ve sistemin sabit parçası oldu.
+// Hedef senaryosu AYRI SÜREÇ olduğu için ayar /api/senaryo_ayar üzerinden
+// gidiyor; senaryo onu 0.5 s'de bir çekiyor, yani uçuş sırasında etki eder.
+let irtTutAcik = true;
+
+function irtTutCiz(){
+  const b = $('irtTutBtn');
+  if (!b) return;
+  b.classList.toggle('aktif', irtTutAcik);
+  b.setAttribute('aria-pressed', irtTutAcik ? 'true' : 'false');
+  b.textContent = irtTutAcik ? 'İRTİFA TUTUCU · AÇIK' : 'İRTİFA TUTUCU · KAPALI';
+}
+
+function irtTutYenile(){
+  fetch('/api/senaryo_ayar').then(r => r.json()).then(d => {
+    irtTutAcik = !!d.irtifa_tut;
+    irtTutCiz();
+  }).catch(() => {});
+}
+
+(function irtTutKur(){
+  const b = $('irtTutBtn');
+  if (!b) return;
+  b.addEventListener('click', () => {
+    const yeni = !irtTutAcik;
+    fetch('/api/senaryo_ayar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ irtifa_tut: yeni })
+    }).then(r => r.json()).then(d => {
+      irtTutAcik = !!d.irtifa_tut;
+      irtTutCiz();
+      addLog('sys', 'HEDEF', `İrtifa tutucu: ${irtTutAcik ? 'AÇIK' : 'KAPALI'}`);
+    }).catch(() => addLog('err', 'HEDEF', 'İrtifa tutucu değiştirilemedi.'));
+  });
+  irtTutYenile();
+})();
+
+// ══ KAÇAMAK TESTİ — panelden tek düğmeyle ══════════════════════════════
+// Hedef düz uçar, drone kuyruk yaklaşması kurar, mesafe eşiğe inince hedef
+// seçilen kaçamağı yapar. Kareler kaydedilir; bitince vuruş KONTROLLÜ/ŞANS
+// diye sınıflandırılır (CLAUDE.md §3.3 + §4).
+const KAC_TURLER = [
+  ['yok', 'YOK (taban)'], ['yatay', 'YATAY'], ['capraz', 'ÇAPRAZ'],
+  ['dikey_yukari', 'TIRMAN'], ['dikey_asagi', 'DALIŞ'], ['hizlan', 'HIZLAN'],
+];
+const KAC_TETIKLER = [[8, '8 m'], [15, '15 m'], [25, '25 m']];
+let kacTur = 'yatay', kacTetik = 8;
+
+function kacSecimCiz(){
+  const t = $('kac-tur'), m = $('kac-tetik');
+  if (!t || !m) return;
+  t.innerHTML = ''; m.innerHTML = '';
+  KAC_TURLER.forEach(([v, ad]) => {
+    const b = document.createElement('button');
+    b.className = 'mod-btn' + (v === kacTur ? ' aktif' : '');
+    b.textContent = ad;
+    b.addEventListener('click', () => { kacTur = v; kacSecimCiz(); });
+    t.appendChild(b);
+  });
+  KAC_TETIKLER.forEach(([v, ad]) => {
+    const b = document.createElement('button');
+    b.className = 'mod-btn' + (v === kacTetik ? ' aktif' : '');
+    b.textContent = ad;
+    b.addEventListener('click', () => { kacTetik = v; kacSecimCiz(); });
+    m.appendChild(b);
+  });
+}
+
+function kacBasla(){
+  fetch('/api/kacamak/basla', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kacamak: kacTur, tetik_m: kacTetik, kayit_s: 240 })
+  }).then(r => r.json()).then(d => {
+    if (d.status !== 'success'){
+      const el = $('kac-durum');
+      if (el) el.textContent = 'HATA: ' + (d.message || '');
+      addLog('err', 'KAÇAMAK', d.message || 'başlatılamadı');
+    } else {
+      addLog('sys', 'KAÇAMAK', `${kacTur}, tetik ${kacTetik} m — başladı`);
+    }
+    kacDurumYenile();
+  }).catch(() => {});
+}
+
+function kacDur(){
+  fetch('/api/kacamak/durdur', { method: 'POST' })
+    .then(() => kacDurumYenile()).catch(() => {});
+}
+
+function kacSonucCiz(s){
+  const el = $('kac-sonuc');
+  if (!el) return;
+  if (!s){ el.innerHTML = ''; return; }
+  const vur = s.imha ? '<span class="kac-basari">✓ İSABET</span>'
+                     : '<span class="kac-iska">✗ ıska</span>';
+  let sinif = '';
+  if (s.sinif === 'KONTROLLÜ') sinif = '<span class="kac-basari">KONTROLLÜ</span>';
+  else if (s.sinif === 'ŞANS') sinif = '<span class="kac-sans">ŞANS</span>';
+  let h = `${vur} &nbsp; en yakın <b>${s.en_yakin ?? '—'} m</b>`;
+  if (sinif) h += ` &nbsp; vuruş: ${sinif}`;
+  h += `<br>salınım <b>${s.cx_salinim ?? '—'}</b>/s &nbsp; yatış p90 <b>${s.roll_p90 ?? '—'}°</b>`;
+  if (s.gerekce) h += `<br><span class="kac-olcut">${s.gerekce}</span>`;
+  Object.entries(s.olcut || {}).forEach(([ad, [ok, det]]) => {
+    h += `<br><span class="kac-olcut">${ok ? '✓' : '✗'} ${ad} — ${det}</span>`;
+  });
+  el.innerHTML = h;
+}
+
+function kacDurumYenile(){
+  fetch('/api/kacamak/durum').then(r => r.json()).then(d => {
+    const el = $('kac-durum'), b = $('kac-basla'), s = $('kac-dur');
+    if (b) b.disabled = d.kosuyor;
+    if (s) s.disabled = !d.kosuyor;
+    if (el){
+      el.className = 'kacamak-durum' + (d.kosuyor ? ' kosuyor' : '');
+      el.textContent = d.kosuyor
+        ? `KOŞUYOR — ${d.kacamak}, tetik ${d.tetik} m, ${d.gecen_s || 0} s\n`
+          + (d.satirlar || []).slice(-3).join('\n')
+        : 'hazır';
+    }
+    kacSonucCiz(d.sonuc);
+    const g = $('kac-gecmis');
+    if (g){
+      g.innerHTML = (d.gecmis || []).slice(0, 5).map(x =>
+        `${x.imha ? '✓' : '✗'} ${x.ad} — ${x.en_yakin} m, salınım ${x.cx_salinim ?? '—'}/s`
+      ).join('<br>');
+    }
+  }).catch(() => {});
+}
+
+(function kacKur(){
+  kacSecimCiz();
+  const b = $('kac-basla'), s = $('kac-dur');
+  if (b) b.addEventListener('click', kacBasla);
+  if (s) s.addEventListener('click', kacDur);
+  kacDurumYenile();
+  setInterval(kacDurumYenile, 2000);
+})();
+
 // ══ AÇILIŞ ═════════════════════════════════════════════════════════════
 markScenario();
 kayitTazele();

@@ -14,7 +14,7 @@ import cv2
 import webbrowser
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 try:
     import rclpy
@@ -64,8 +64,14 @@ if not os.path.exists(ui_path):
 app.mount("/ui", StaticFiles(directory=ui_path, html=True), name="ui")
 
 # Uçuş log paneli — gps_log_viz.py'nin ürettiği HTML tarayıcıdan açılsın diye
-# logs/ dizini servis edilir. Panel her GPS uçuşu bitince otomatik tazelenir
-# (bkz. control/guidance/gps_guidance.py:_panel_tazele). Kısayol: /panel
+# logs/ dizini servis edilir. Kısayol: /panel
+#
+# ⚠ 2026-08-15'te YAŞANDI: buradaki yorum "panel her GPS uçuşu bitince otomatik
+# tazelenir (gps_guidance._panel_tazele)" diyordu — ÖYLE BİR FONKSİYON YOK.
+# tools/gps_log_viz.py:panel_uret() hiçbir yerden çağrılmıyordu, dolayısıyla
+# logs/gps_log_panel.html HİÇ üretilmiyordu ve "Uçuş Logları" düğmesi 404
+# veriyordu. Artık panel İSTENDİĞİNDE üretiliyor: düğmeye her basışta en son
+# uçuşlarla yeniden kuruluyor, yani bayat da kalmıyor.
 _logs_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 os.makedirs(_logs_path, exist_ok=True)
 app.mount("/loglar", StaticFiles(directory=_logs_path), name="loglar")
@@ -75,8 +81,27 @@ def read_root():
     return RedirectResponse(url="/ui/index.html")
 
 @app.get("/panel")
-def log_paneli():
-    """Uçuş log paneli kısayolu — en son uçuşları görselleştirir."""
+def log_paneli(son: int = 8):
+    """Uçuş log panelini ÜRETİP açar — en son `son` uçuşu görselleştirir.
+
+    Üretim isteğe bağlı yapıldı: tek kaynak `tools/gps_log_viz.py:panel_uret`.
+    GPS güdüm koduna dokunulmuyor (iş bölümü: GPS Kayra'da).
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        from tools import gps_log_viz
+        gps_log_viz.panel_uret(last=son, sessiz=True)
+    except Exception as e:
+        # Panel üretilemezse sessizce yönlendirip 404 verdirmek yerine
+        # sebebini SÖYLE — "düğme çalışmıyor" şikâyetinin kaynağı buydu.
+        print(f"[PANEL] üretilemedi: {e}")
+        return HTMLResponse(
+            "<h2>Uçuş log paneli üretilemedi</h2>"
+            f"<p><b>Sebep:</b> {type(e).__name__}: {e}</p>"
+            "<p>En sık sebep: <code>logs/</code> altında henüz "
+            "<code>gps_guidance_*.csv</code> yok — bir uçuş koşun.</p>",
+            status_code=503)
     return RedirectResponse(url="/loglar/gps_log_panel.html")
 
 # -----------------------------------------------------------------------
@@ -601,7 +626,17 @@ def chase_status():
 # AVCI_GORSEL=on ile geri açılır.
 _GORSEL_ACIK = os.environ.get("AVCI_GORSEL", "off").lower() in ("on", "1")
 _GECERLI_MODLAR = ("gps", "visual", "hybrid") if _GORSEL_ACIK else ("gps",)
-_guidance_mode = "gps"
+# ⚠ 2026-08-15 (kullanıcı kararı): görsel faz açıkken varsayılan HİBRİT.
+# YAŞANDI: AVCI_GORSEL=on verilip görsel fazın açıldığı sanılıyordu, ama bu
+# bayrak modu yalnız SEÇİLEBİLİR yapıyordu; varsayılan "gps" kaldığı için
+# 8 uçuşluk bir kampanya saf GPS güdümüyle koştu ve loglarda
+# "[CHASE] Güdüm modu: GPS — görsel temas sağlansa da devredilmez" yazıyordu.
+# Artık AVCI_GORSEL=on demek "hibrit başla" demek; ayrıca POST gerekmiyor.
+# AVCI_GUDUM_MODU=gps|visual|hybrid ile başlangıç modu ezilebilir.
+_guidance_mode = os.environ.get(
+    "AVCI_GUDUM_MODU", "hybrid" if _GORSEL_ACIK else "gps").lower()
+if _guidance_mode not in _GECERLI_MODLAR:
+    _guidance_mode = _GECERLI_MODLAR[0]
 
 
 class GuidanceModeCmd(BaseModel):
@@ -802,6 +837,26 @@ def get_senaryo_ayar():
     """
     from control import senaryo_cfg as _s
     return {"irtifa_tut": bool(_s.SenaryoCfg.IRTIFA_TUT)}
+
+
+class SenaryoAyarCmd(BaseModel):
+    irtifa_tut: bool
+
+
+@app.post("/api/senaryo_ayar")
+def set_senaryo_ayar(cmd: SenaryoAyarCmd):
+    """Hedef senaryosunun KALICI ayarları — panelin "Hedef Ayarları" bölümü.
+
+    _OZELLIKLER'den ayrı tutuluyor: orası o an DENENEN özelliğin listesi ve
+    karar verilince satır siliniyor (§6). İrtifa tutucu ölçüldü ve sistemin
+    sabit parçası oldu, deney değil (12 uçuş: düz +17.8 → +0.2 m/dk,
+    daire +58.6 → +0.7 m/dk, bedeli hedef hızında %0.5).
+    """
+    from control import senaryo_cfg as _s
+    _s.SenaryoCfg.IRTIFA_TUT = bool(cmd.irtifa_tut)
+    print(f"[SENARYO] İrtifa tutucu: "
+          f"{'AÇIK' if cmd.irtifa_tut else 'KAPALI'}")
+    return {"status": "success", "irtifa_tut": bool(_s.SenaryoCfg.IRTIFA_TUT)}
 
 
 @app.post("/api/gudum_ozellikleri")
@@ -1636,7 +1691,13 @@ def _chase_thread():
 # -----------------------------------------------------------------------
 latest_frames = {
     "iris":  {"data": None, "id": 0},
-    "plane": {"data": None, "id": 0}
+    "plane": {"data": None, "id": 0},
+    # DIŞ GÖRÜŞ (chase) kameraları — SDF'teki iris_chase/talon_chase topic'leri.
+    # Aracı DIŞARIDAN gösterirler; tespit/kilit hattına GİRMEZLER, ham geçerler.
+    # Yalnız gz-transport (Harmonic) yolunda beslenir: ROS 2 (Classic) köprüsü
+    # bu topic'leri yayınlamaz, o kurulumda akış boş kalır (arayüz "kaynak yok").
+    "iris_chase":  {"data": None, "id": 0},
+    "talon_chase": {"data": None, "id": 0},
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1983,6 +2044,42 @@ def gz_talon_camera_thread():
         time.sleep(1)
 
 
+def gz_chase_camera_thread(key, topic, etiket):
+    """Gazebo Harmonic dış görüş (chase) kamerası → HAM MJPEG.
+
+    iris/plane akışlarından farkı: HİÇBİR işleme yok — YOLO, takip, kilit
+    overlay'i, parazit simülasyonu, hakem logu, hiçbiri. Kare doğrudan JPEG'e
+    kodlanıp latest_frames[key]'e yazılır. Bu görüntü hakem ispatı DEĞİLDİR,
+    yalnız operatör izlemesi içindir; tespit hattına karışmaması bilinçlidir.
+    """
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.image_pb2 import Image as GzImage
+    except Exception as e:
+        print(f"[GCS] gz-transport Python yok, {etiket} dış görüş atlandı: {e}")
+        return
+
+    def cb(msg):
+        try:
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(
+                (msg.height, msg.width, 3))
+            ok, buf = cv2.imencode('.jpg', cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+            if not ok:
+                return
+            if latest_frames[key]["data"] is None:
+                print(f"[GCS] ✓ {etiket} dış görüş kamerasından ilk görüntü!")
+            latest_frames[key]["data"] = buf.tobytes()
+            latest_frames[key]["id"] += 1
+        except Exception as e:
+            print(f"[GCS GZ-CAM] {etiket} dış görüş hata: {e}")
+
+    node = GzNode()
+    node.subscribe(GzImage, topic, cb)
+    print(f"[GCS] gz-transport {etiket} dış görüş dinleniyor ({topic}, Harmonic)")
+    while True:
+        time.sleep(1)
+
+
 class CameraSubscriber(RosNode):
     def __init__(self):
         if not _ROS2_VAR:
@@ -2037,7 +2134,11 @@ async def generate_mjpeg(vehicle: str):
 
 @app.get("/api/video_feed/{vehicle}")
 def video_feed(vehicle: str):
-    if vehicle not in ["iris", "plane"]:
+    # ⚠ Eskiden burada sabit ["iris", "plane"] listesi vardı: dış görüş
+    # kameraları eklenince istekler SESSİZCE iris'e düşüyor, panelde
+    # "Avcı Dış Görüş" düğmesi avcının KENDİ ön kamerasını gösteriyordu.
+    # Doğru kaynak tamponların kendisi.
+    if vehicle not in latest_frames:
         vehicle = "iris"
     return StreamingResponse(generate_mjpeg(vehicle),
                              media_type="multipart/x-mixed-replace; boundary=frame")
@@ -2298,6 +2399,15 @@ async def startup_event():
     if os.environ.get("AVCI_GZ_CAMERA", "0") == "1":
         threading.Thread(target=gz_iris_camera_thread, daemon=True).start()   # avcı iris
         threading.Thread(target=gz_talon_camera_thread, daemon=True).start()  # hedef Talon
+        # Dış görüş (chase) kameraları — AVCI_GZ_CHASE_CAM=0 ile kapatılabilir
+        # (iki ek 640x480@15Hz render; zayıf GPU'da kapatmak isteyebilirsiniz).
+        if os.environ.get("AVCI_GZ_CHASE_CAM", "1") == "1":
+            for _key, _env, _vars, _et in (
+                ("iris_chase",  "AVCI_GZ_IRIS_CHASE_TOPIC",  "/iris_chase/image",  "Avcı"),
+                ("talon_chase", "AVCI_GZ_TALON_CHASE_TOPIC", "/talon_chase/image", "Talon"),
+            ):
+                threading.Thread(target=gz_chase_camera_thread, daemon=True,
+                                 args=(_key, os.environ.get(_env, _vars), _et)).start()
     else:
         threading.Thread(target=ros2_spin_thread, daemon=True).start()
     if os.environ.get("AVCI_NO_BROWSER", "0") != "1":

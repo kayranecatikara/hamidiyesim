@@ -101,31 +101,39 @@ def main():
         rps.irtifa_tut_acik = _asil
 
     # ── İT6: MEKANİZMA KAPISI — düğme doğru alana mı yazıyor ────────────
+    # ⚠ 2026-08-15 (kullanıcı kararı): irtifa tutucu artık _OZELLIKLER'de
+    # DEĞİL. Orası o an DENENEN özelliğin listesi ve karar verilince satır
+    # siliniyor (§6); tutucu ise ölçüldü ve sistemin KALICI parçası oldu.
+    # Panelde kendi düğmesi var, ucu /api/senaryo_ayar (GET + POST).
     from control import gcs_server as gcs
     from control.senaryo_cfg import SenaryoCfg
-    satir = gcs._OZELLIKLER.get("hedef_irtifa_tut")
-    kontrol("İT6a panelde düğme var", satir is not None)
-    if satir:
-        alan, tip, _etiket, _acik, env, acik_deger = satir
-        sinif, ad = gcs._hedef_cfg(alan)
-        kontrol("İT6b düğme SenaryoCfg.IRTIFA_TUT'a yazıyor",
-                sinif is SenaryoCfg and ad == "IRTIFA_TUT",
-                f"{sinif.__name__}.{ad}")
-        kontrol("İT6c kill-switch env anahtarı bildirilmiş",
-                env == "AVCI_SCN_IRTIFA_TUT" and tip == "bool"
-                and acik_deger is True)
-        # Düğmeyi kapat → endpoint kapalı demeli → senaryo kapalı okur.
-        eski = SenaryoCfg.IRTIFA_TUT
-        try:
-            setattr(sinif, ad, False)
-            kontrol("İT6d düğme kapanınca /api/senaryo_ayar kapalı döner",
-                    gcs.get_senaryo_ayar()["irtifa_tut"] is False,
-                    str(gcs.get_senaryo_ayar()))
-            setattr(sinif, ad, True)
-            kontrol("İT6e düğme açılınca açık döner",
-                    gcs.get_senaryo_ayar()["irtifa_tut"] is True)
-        finally:
-            SenaryoCfg.IRTIFA_TUT = eski
+    kontrol("İT6a tutucu deney listesinde DEĞİL (kalıcı özellik)",
+            "hedef_irtifa_tut" not in gcs._OZELLIKLER)
+    eski = SenaryoCfg.IRTIFA_TUT
+    try:
+        # POST kapatır → GET kapalı döner → senaryo kapalı okur.
+        d = gcs.set_senaryo_ayar(gcs.SenaryoAyarCmd(irtifa_tut=False))
+        kontrol("İT6b POST kapatınca SenaryoCfg kapanır",
+                d["irtifa_tut"] is False and SenaryoCfg.IRTIFA_TUT is False)
+        kontrol("İT6c GET aynı değeri döner",
+                gcs.get_senaryo_ayar()["irtifa_tut"] is False,
+                str(gcs.get_senaryo_ayar()))
+        d = gcs.set_senaryo_ayar(gcs.SenaryoAyarCmd(irtifa_tut=True))
+        kontrol("İT6d POST açınca açılır",
+                d["irtifa_tut"] is True
+                and gcs.get_senaryo_ayar()["irtifa_tut"] is True)
+    finally:
+        SenaryoCfg.IRTIFA_TUT = eski
+
+    # Panelde düğmenin KENDİSİ duruyor mu (arayüz + JS + uç noktası üçü de).
+    _kok = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _html = open(os.path.join(_kok, "control/gcs_ui/index.html"),
+                 encoding="utf-8").read()
+    _js = open(os.path.join(_kok, "control/gcs_ui/script.js"),
+               encoding="utf-8").read()
+    kontrol("İT6e panelde kalıcı düğme var (index.html + script.js)",
+            'id="irtTutBtn"' in _html and "irtTutBtn" in _js
+            and "/api/senaryo_ayar" in _js)
 
     # ── İT7: ENV VARSAYILANI ────────────────────────────────────────────
     import importlib

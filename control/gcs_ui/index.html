@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=61">
+<link rel="stylesheet" href="style.css?v=62">
 </head>
 <body>
 
@@ -176,6 +176,41 @@
                  Liste sunucudan gelir (/api/gudum_ozellikleri): yeni özellik
                  eklerken yalnız gcs_server._OZELLIKLER'e satır eklenir,
                  buraya ve CSS'e dokunulmaz. -->
+            <!-- HEDEF AYARLARI — KALICI. Buradakiler deney değil, sistemin
+                 sabit parçası; "Güdüm Özellikleri" listesi gibi karar verilince
+                 SİLİNMEZ (CLAUDE.md §6, kullanıcı kararı 2026-08-15). -->
+            <div class="grp">
+              <span class="label">🛩 Hedef Ayarları</span>
+              <div class="scn">
+                <button id="irtTutBtn" class="mod-btn" aria-pressed="false">
+                  İRTİFA TUTUCU
+                </button>
+              </div>
+              <span class="hint" id="irtTutNot">
+                Kapalıyken hedef düz uçuşta +17.8 m/dk, dairede +58.6 m/dk
+                tırmanıyor (12 uçuşta ölçüldü). Açıkken 0.2 m/dk.
+              </span>
+            </div>
+
+            <!-- KAÇAMAK TESTİ — panelden tek düğmeyle (CLAUDE.md §3.3).
+                 Hedef düz uçar, drone kuyruk yaklaşması kurar, mesafe eşiğe
+                 inince hedef seçilen kaçamağı yapar. Kareler kaydedilir,
+                 bitince vuruş KONTROLLÜ/ŞANS diye sınıflandırılır. -->
+            <div class="grp">
+              <span class="label">🎯 Kaçamak Testi</span>
+              <div class="kac-satir"><span class="kp-k">Kaçamak</span></div>
+              <div class="mod-grup" id="kac-tur"></div>
+              <div class="kac-satir"><span class="kp-k">Tetik</span></div>
+              <div class="mod-grup" id="kac-tetik"></div>
+              <div class="mod-grup" style="margin-top:6px">
+                <button id="kac-basla" class="mod-btn">▶ TESTİ BAŞLAT</button>
+                <button id="kac-dur" class="mod-btn">■ DURDUR</button>
+              </div>
+              <div id="kac-durum" class="kacamak-durum">hazır</div>
+              <div id="kac-sonuc" class="kacamak-sonuc"></div>
+              <div id="kac-gecmis" class="kacamak-gecmis"></div>
+            </div>
+
             <div class="grp">
               <span class="label">🎛 Güdüm Özellikleri</span>
               <div id="ozellik-panel" class="ozellik-panel">
@@ -337,6 +372,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=61"></script>
+<script src="script.js?v=62"></script>
 </body>
 </html>
