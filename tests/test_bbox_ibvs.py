@@ -837,6 +837,72 @@ def main():
             f"DIKEY_ROLL={C.DIKEY_ROLL} → eps_elev = ham okuma")
 
     print("=" * 60)
+    # ══════════════════════════════════════════════════════════════════
+    # Ö-K · KÖR DEVAM — kutu boşluğunda komutu döndür
+    # ══════════════════════════════════════════════════════════════════
+    # Yasa döngüde; burada birebir yeniden kuruluyor.
+    def _kor(cfg, v_cmd, los_rate, kare, dt=0.05):
+        """kare adet kör kare sonra komut ne olur → (vx, vy, yaw, toplam°)"""
+        vx, vy, vz, yw = v_cmd
+        aci = 0.0
+        for _ in range(kare):
+            if cfg.KOR_DEVAM and abs(los_rate) > 1e-4:
+                aci += los_rate * dt
+                lim = math.radians(cfg.KOR_MAX_DEG)
+                aci = max(-lim, min(lim, aci))
+        c, sn = math.cos(aci), math.sin(aci)
+        return (vx * c - vy * sn, vx * sn + vy * c,
+                ib.normalize_angle(yw + aci), math.degrees(aci))
+
+    class _KK(C):
+        KOR_DEVAM = True
+
+    _v0 = (16.0, 0.0, 0.0, 0.0)          # 16 m/s kuzeye, yaw 0
+    _lam = math.radians(21.5)            # dairede ölçülen LOS hızı
+
+    # B62 — dairede 1 s kör: nişan 21.5° döner (dondurulmuş komut 0° kalır)
+    _ac = _kor(_KK, _v0, _lam, 20)
+    _ka = _kor(C,   _v0, _lam, 20)
+    kontrol("B62 Ö-K: 1 s kör uçuşta nişan LOS hızıyla döner",
+            abs(_ac[3] - 21.5) < 0.5 and abs(_ka[3]) < 1e-9,
+            f"λ̇=21.5°/s · 20 kare → Ö-K {_ac[3]:.1f}° döndürdü, KAPALI "
+            f"{_ka[3]:.1f}° (dondurdu). Ölçüm: dairede 1 s'de kerteriz 22° kayıyor.")
+
+    # B63 — DÜZ UÇUŞTA ÖLÜ: λ̇≈0 → döndürme yok
+    _duz = _kor(_KK, _v0, 0.0, 20)
+    kontrol("B63 Ö-K düz uçuşta ÖLÜ (λ̇≈0 → komut bit bit donar)",
+            abs(_duz[3]) < 1e-9 and abs(_duz[0] - 16.0) < 1e-9,
+            f"λ̇=0 → döndürme {_duz[3]:.1f}°, hız {_duz[0]:.1f} m/s aynen. "
+            f"Düz uçuşta davranış DEĞİŞMEZ.")
+
+    # B64 — TAVAN: bayat kestirimle sınırsız ekstrapolasyon yok
+    _uzun = _kor(_KK, _v0, _lam, 200)     # 10 s kör
+    kontrol("B64 Ö-K toplam döndürme KOR_MAX_DEG'i aşamaz",
+            abs(_uzun[3] - _KK.KOR_MAX_DEG) < 1e-6,
+            f"10 s kör → ham 215° isterdi, tavan {_KK.KOR_MAX_DEG:.0f}° "
+            f"uygulandı ({_uzun[3]:.0f}°). Bayat hız kestirimi aracı savuramaz.")
+
+    # B65 — HIZ BÜYÜKLÜĞÜ korunur (yalnız YÖN döner)
+    kontrol("B65 Ö-K hızın BÜYÜKLÜĞÜNÜ değiştirmez, yalnız yönünü döndürür",
+            abs(math.hypot(_ac[0], _ac[1]) - 16.0) < 1e-9,
+            f"16.0 → {math.hypot(_ac[0], _ac[1]):.6f} m/s · dönüş "
+            f"{_ac[3]:.1f}°. Kapanma hızına dokunulmuyor.")
+
+    # B66 — YÖN İŞARETİ doğru: LOS sağa dönerse komut da sağa döner
+    _sag = _kor(_KK, _v0, +_lam, 20)
+    _sol = _kor(_KK, _v0, -_lam, 20)
+    kontrol("B66 Ö-K dönüş YÖNÜ LOS'u takip eder (işaret doğru)",
+            _sag[3] > 0 and _sol[3] < 0 and _sag[1] > 0 and _sol[1] < 0,
+            f"λ̇>0 → +{_sag[3]:.0f}° (vy {_sag[1]:+.1f}) · λ̇<0 → "
+            f"{_sol[3]:.0f}° (vy {_sol[1]:+.1f})")
+
+    # B67 — kapatılabilir (varsayılan KAPALI)
+    kontrol("B67 Ö-K kapatılabilir (varsayılan KAPALI)",
+            C.KOR_DEVAM is False and abs(_ka[3]) < 1e-9
+            and abs(_ka[0] - 16.0) < 1e-9,
+            f"KOR_DEVAM={C.KOR_DEVAM} → komut bit bit donar "
+            f"({_ka[0]:.1f}, {_ka[1]:.1f}), eski davranış aynen")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
