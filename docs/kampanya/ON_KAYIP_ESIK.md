@@ -174,8 +174,100 @@ regresyonu n=2/kol olduğu için **tek başına hüküm kurmaz** — yalnız "is
 
 ---
 
-## 9 · RAPORDAN ÖNCE ÜÇ SORU (§5.8) — koşu sonrası doldurulacak
+## 9 · RAPORDAN ÖNCE ÜÇ SORU (§5.8)
 
-1. Özellik çalıştı mı? (faz sonu sayacı 19'u aştı mı) → …
-2. Ölçütüm kötü bir sebeple mi iyileşti? (İK-1 ne diyor) → …
-3. n kaç, bu n'de hüküm kurulur mu? → …
+1. **Özellik çalıştı mı?** EVET, tartışmasız. Kontrol kolunda 85 fazın 76'sı
+   tam **19**'da, deney kolunda 50 fazın 43'ü tam **39**'da bitti. Mekanizma
+   kapısı sonuna kadar açık.
+2. **Ölçütüm kötü bir sebeple mi iyileşti?** EVET — ve bu sonucu belirledi.
+   Birincil "iyileşti" göründü ama tam permütasyon testinde **p = 0.83**
+   (gürültü). Geçerlilik eşi İK-1 ise 8.8 puan düştü ve bu **seyrelme değil
+   gerçek kayıp**: mutlak kutulu kare 678 → 566 (−%17).
+3. **n kaç, hüküm kurulur mu?** Kare n=4/kol → hüküm kurulur. Düz n=2/kol →
+   yalnız EVET/HAYIR kapısı, hüküm kurulmaz (§5.4).
+
+---
+
+## 10 · SONUÇ (12 uçuş, 2026-08-15)
+
+### Kare — kazanım senaryosu (n=4/kol)
+
+| ölçüt | K20 (kontrol) | N40 (deney) | yorum |
+|---|---|---|---|
+| **BİRİNCİL** en yakın menzil, medyan | 13.82 m | 11.21 m | **p = 0.83 → GÜRÜLTÜ** |
+| isabet | 0/4 | 0/4 | düz |
+| **İK-1 kutu oranı** | %31.2 | %22.4 | −8.8 puan (ilan edilen sınır: 5) |
+| İK-1b mutlak kutulu kare | 678 | 566 | **−%17 → seyrelme değil, gerçek kayıp** |
+| **medyan mesafe** | **68.6 m** | **98.7 m** | **+%44 KÖTÜ** |
+| **60 m içinde geçen süre** | **94 s** | **57 s** | **−%39** |
+| İK-2 salınım (cx dgş/s) | 0.259 | 0.184 | ⚠ İK-1 düştüğü için GÜVENİLMEZ |
+| İK-3 yatış p90 | 23.4° | 21.8° | fark yok denecek kadar az |
+| İK-4 kuyruk konisi (oran) | ~%40 | ~%30 | kötüleşti |
+| İK-6 faz sayısı *(mekanizma)* | 85 | 50 | totoloji, kazanım DEĞİL |
+
+Ham değerler — en yakın menzil (m):
+K20 `3.80, 12.95, 14.70, 15.93` · N40 `13.00, 4.06, 9.42, 14.91`.
+Dağılımlar neredeyse tamamen örtüşüyor.
+
+### Düz — regresyon (n=2/kol, hüküm kurulmaz)
+
+| koşu | kol | isabet | en yakın | vuruş anı | medyan mesafe |
+|---|---|---|---|---|---|
+| N09 yatay | K20 | ıska | 0.83 m | — | 106.4 m |
+| N11 capraz | K20 | **ISABET** | 0.28 m | **120.5 s** | 45.5 m |
+| N10 yatay | N40 | **ISABET** | 1.73 m | 173.7 s | 62.9 m |
+| N12 capraz | N40 | **ISABET** | 1.55 m | 196.4 s | 121.2 m |
+
+Deney kolu 2/2, kontrol 1/2 — **ama** kullanıcının hedefi *"daha kısa sürede
+vurabilecek"*: N40'ın vuruşları 174 ve 196 s'de, K20'ninki 120 s'de. n=2,
+hüküm yok; yine de yön diğer tüm ölçütlerle aynı tarafta.
+
+### Video bacağı (§2 adım 4)
+
+`logs/on_N03_K_kare.mp4`, `logs/on_N06_N_kare.mp4`. Yaklaşma olaylarının
+giriş → en yakın → çıkış dizileri incelendi:
+
+- **N06 (N40) kare 58-61**, en yakın 10.1 m: 58'de ufuk ~40° yatık, hedef
+  kadrajda YOK. 60'ta (en yakın an) kutu kadrajın **sağ üst köşesinde** —
+  yani hedef yanımızdan geçiyor, önümüzden değil. 61'de tamamen kayboldu.
+- **N03 (K20) kare 70-90**, 21 s'lik en uzun olay: 70'te hedef güven **0.30**
+  (dedektör eşiği 0.35'e kıl payı), kutu ~12 px, ufuk ~25° yatık. 85'te güven
+  0.36, hâlâ ~10 px, ufuk ~40°. 90'da hedef yok, ufuk ~45°.
+
+**Çapraz doğrulama (§2 adım 6): çelişki YOK.** Loglar "kutu oranı %22-31,
+medyan mesafe 69-99 m" diyor; kareler bunu doğruluyor — her iki kolda da
+hedef, sert yatıştayken görülen sınırda güvenli minik bir leke. Ne K20 ne
+N40 kuyruk takibine oturabiliyor.
+
+---
+
+## 11 · KARAR — ilan edilen kurala göre
+
+- **GİRER değil:** koşul (2) çiğnendi (İK-1 8.8 puan düştü, sınır 5'ti).
+- **ÇIKAR değil:** birincil gerilemedi (gürültü).
+- → **KULLANICIYA.** Bu, §8'de adı konarak öngörülen hâlin ta kendisi:
+  *"birincil iyileşip İK-1'in 5 puandan fazla düştüğü durum"*.
+
+**Yapay zekânın önerisi: ÇIKAR (varsayılan 20'de kalsın, özellik silinsin).**
+Gerekçe: birincil gürültü; sürekliliği ölçen HER ölçüt (medyan mesafe, 60 m
+içi süre, mutlak kutulu kare, kuyruk konisi oranı) deney kolu aleyhine.
+
+**Mekanizma yorumu (hipotez, ölçülmedi):** karede mesafeyi kapatan şey GPS
+fazı. Görselde 2 s bayat komutla beklemek, kutu geri gelmediğinde (%73) o
+GPS yaklaşmasını geciktiriyor; kazanılan %22'lik "az kalsın geri gelecekti"
+vakası bu bedeli karşılamıyor.
+
+---
+
+## 12 · BU KAMPANYANIN ASIL BULGUSU — eşik değil, ölçüt
+
+`kayip_kare_esik` sorunun kaldıracı değilmiş. Ama kampanya daha değerli bir
+şey gösterdi: **"en yakın menzil" isabet üretmeyen bir senaryoda kötü bir
+birincil ölçüt.** 240 s'lik bir uçuşun tek şanslı anını ölçüyor; K20'nin
+`3.80` değeri ile N40'ın `4.06` değeri aynı uçuşların medyan mesafesi 69 m
+ve 101 m iken üretildi.
+
+**Öneri (§5.5 uyarınca kullanıcının hedefinden türetilerek):** kare/manevra
+senaryolarında birincil ölçüt bundan sonra **60 m içinde geçen süre** ya da
+**medyan mesafe** olsun — "daha kısa sürede vurabilecek" cümlesini bunlar
+temsil ediyor, tek bir en-yakın-an değil.
