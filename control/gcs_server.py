@@ -752,36 +752,7 @@ def _hedef_cfg(alan):
     return _ibvs_mod.Cfg, alan
 
 
-_OZELLIKLER = {
-    "hedef_irtifa_tut": (
-        "senaryo:IRTIFA_TUT", "bool", "H-İT · Hedef irtifa tutucu (düz + daire)",
-        "ÖLÇÜLDÜ (uçuş 172144): hedef düz fazda DURMADAN tırmanıyor — tgt_vz "
-        "medyan −0.29 m/s, yani +17 m/dk; 256 s'de 17 m → 114 m. Sebep: "
-        "FBWA'da elevator PITCH AÇISI komut eder, irtifa değil; pitch=0 "
-        "'seviye burun' demek, 'seviye uçuş' değil. Gaz fazlaysa uçak seviye "
-        "burunla tırmanır ve hiçbir şey geri çağırmaz. Avcı da peşinden "
-        "tırmandığı için her kaçamak testi aslında 'tırmanan hedefi tırmanarak "
-        "kovalama' ölçüyordu; §4 geçerlilik bandı (20-250 m) uzun koşuda ihlal "
-        "ediliyordu. AÇIK: pitch'e PD'li irtifa düzeltmesi biner (±13.5° "
-        "sınırlı). ⚠ Bu bir HEDEF aracı ayarıdır, güdüm değil. ⚠ GAZA "
-        "DOKUNMAZ. ⚠ Kaçamak fazında ÖLÜ — manuel devralma senaryo sürecini "
-        "SIGKILL ediyor. ⚠ Hedefin HIZINI bir miktar ARTIRIR: tırmanışa giden "
-        "fazla enerji artık hıza gidiyor.",
-        "AVCI_SCN_IRTIFA_TUT", True),
-    "ob_kose": (
-        "KOSE_V", "deger", "Ö-B · Köşe dönüşü (yavaş dön, düzde hızlan)",
-        "Dönüş yarıçapı R = V²/(g·tanθ). 18 m/s'de R = 33 m; hedef (15 m/s, "
-        "60° yatış) R = 13 m çiziyor — 2.5 kat dar. Dairede İÇERİ HİÇ "
-        "GİREMİYORUZ: circle senaryosunda 9 koşuda 0 isabet. 9 m/s'de "
-        "R = 8.3 m, yani hedefin çemberinden DAHA DAR; açısal hız da tutuyor "
-        "(hedef 66°/s, biz 62°/s). Açık: |eps_yaw| > 60° iken hız 9 m/s'ye "
-        "kısılır; < 25°'ye düşünce VEYA 2.5 s dolunca rampa ile açılır ve "
-        "rampa bitmeden yeniden girilmez. ⚠ Ö11 aynı fiziği DURUMSUZ tetikle "
-        "denedi, uçuş başına 0.4-0.6 s ateşledi ve dairede %65 kötüleştirdi; "
-        "elendi ve komple silindi. Ö-B'nin farkı histerezis + süre tavanı + "
-        "rampa kilidi (test B65: sürekli 70°'de bile görev döngüsü %62).",
-        "AVCI_IBVS_KOSE", (0.0, 9.0)),
-}
+_OZELLIKLER = {}
 
 
 class OzellikCmd(BaseModel):

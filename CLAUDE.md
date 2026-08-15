@@ -386,6 +386,39 @@ Karar ve ölçümler kaybolmaz: `UYGULANACAK.md`'de ve `docs/ibvs_sicili.html`
 sicilinde durur. Kod deposu tarihçesi de duruyor — geri getirmek gerekirse
 commit'ten alınır. **Ölü kod tutmak arşiv değildir, borçtur.**
 
+
+## 5.13 · ÖZELLİĞİ TASARIM ZARFINDA SINA — yoksa eleme sahte olur
+
+**Kullanıcı kuralı (2026-08-15):** *"Ö-B'nin ana mantığı manevralar sırasında
+yavaşla, düz giderken hızlan değil miydi? Hep daire çizdirip 'Ö-B işe
+yaramıyor' demek de çok iyi değil."*
+
+Bir özelliğin **çalışması için gereken koşul** varsa, o koşulun oluşmadığı
+senaryodaki başarısızlık **eleme gerekçesi değildir**. Önce şu yazılır:
+
+> **"Bu özelliğin devreye girip TAMAMLANMASI için senaryoda ne bulunmalı?"**
+
+*Yaşandı:* Ö-B "yayda yavaşla, düz kesimde hızlan" çevrimidir. `circle`
+senaryosunda **düz kesim YOKTUR** — çevrimin ikinci yarısı hiç gerçekleşemez.
+Orada ölçülen %103 gerileme, özelliğin kendi mantığının sınanması DEĞİLDİR.
+Doğru senaryo `square`: düz bacaklar + keskin köşeler.
+
+**§5.10 (regresyon) ile karıştırma — ikisi farklı sorular:**
+- **§5.10:** "özellik, çalıştığı yerin DIŞINDA bir şeyi bozuyor mu?"
+  → `circle`'da gerileme varsa bu geçerli bir REGRESYON bulgusudur.
+- **§5.13:** "özelliğin KAZANIMI hangi senaryoda ölçülür?"
+  → kazanım, tasarım zarfı içindeki senaryoda ölçülür.
+
+Yani `circle`'daki gerileme raporlanır ve karara girer; ama **kazanım o
+senaryoda aranmaz**. Her ikisi de koşulmadan hüküm kurulmaz.
+
+**Kontrol listesi:**
+1. Özelliğin tetik koşulunu yaz.
+2. Hangi senaryoda o koşul oluşur → **KAZANIM ORADA ölçülür**.
+3. Hangi senaryolarda oluşabilir ama istenmez → **REGRESYON orada ölçülür**.
+4. Mekanizma sütununun aktiflik ORANI her senaryoda raporlanır. Kazanım
+   senaryosunda oran düşükse (ör. %5), o ölçüm özelliği sınamıyordur.
+
 ---
 
 # 6 · PANELDE CANLI AÇ/KAPA — her yeni özellik için ZORUNLU
