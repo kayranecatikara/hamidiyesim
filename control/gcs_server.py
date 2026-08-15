@@ -209,8 +209,8 @@ def id_to_name(sysid):
 # kare_gorev: arayüzdeki "Kalkış → Kare → İniş" butonu. Diğerlerinden farkı
 # SONLU olması — kare turu bitince uçak eve iniyor ve süreç kendi kapanıyor
 # (buton /api/scenario_status ile kendiliğinden BEKLEME'ye döner).
-_SCENARIO_NAMES = ("duz", "square", "kare_gorev", "circle", "aggressive",
-                   "circle_xl", "circle_l", "circle_s")
+_SCENARIO_NAMES = ("duz", "square", "kare_gorev", "elips_gorev", "circle",
+                   "aggressive", "circle_xl", "circle_l", "circle_s")
 
 
 def _stop_scenario_proc():

@@ -446,3 +446,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 
 @media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}
 @media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}}
+
+/* Elips görevi: sürekli desen (iniş yok) — mor */
+.scn .elips{border-color:#7c5cff;color:#c9bcff}
+.scn .elips:hover{background:#2a2140}

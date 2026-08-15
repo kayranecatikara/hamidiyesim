@@ -54,7 +54,7 @@ const st = {
   faz: null,                 // GPS | VISUAL | VURULDU | DURDU
   imha: false,
 };
-const SCN_LBL = { kare_gorev: 'KARE GÖREVİ', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
+const SCN_LBL = { kare_gorev: 'KARE GÖREVİ', elips_gorev: 'ELİPS', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF' };
 
 // ══ KAMERA ─ MJPEG akışı ═══════════════════════════════════════════════
 // MJPEG multipart bağlantısı süresiz açık kalır; src değiştirmek eski
@@ -727,7 +727,8 @@ function markScenario(){
   const lbl = st.scenario ? SCN_LBL[st.scenario] : null;
   scnBtns.forEach(b => {
     const span = b.querySelector('span');
-    const base = { kare_gorev: 'Kalkış → Kare → İniş', square: 'Kare Çiz',
+    const base = { kare_gorev: 'Kalkış → Kare → İniş', elips_gorev: 'Elips Çiz',
+                   square: 'Kare Çiz',
                    circle: 'Daire Çiz', aggressive: 'Agresif Uçuş' }[b.dataset.scn];
     span.textContent = (b.dataset.scn === st.scenario) ? 'Durdur — ' + base : base;
   });
@@ -737,7 +738,9 @@ function markScenario(){
 // /api/scenario_status yoklamasıyla kendiliğinden BEKLEME'ye döner.
 async function startScenario(name){
   if (st.manual) await exitManual();
-  const akis = (name === 'kare_gorev') ? 'kalkış + kare + iniş' : 'kalkış + desen';
+  const akis = (name === 'kare_gorev') ? 'kalkış + kare + iniş'
+             : (name === 'elips_gorev') ? 'kalkış + sürekli elips (iniş YOK)'
+             : 'kalkış + desen';
   addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (' + akis + ')...');
   scnBtns.forEach(b => b.disabled = true);
   try {
@@ -746,6 +749,8 @@ async function startScenario(name){
       st.scenario = name;
       addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — ' + (name === 'kare_gorev'
         ? 'hedef kalkacak, kareyi çizecek ve kalkış noktasına inecek.'
+        : name === 'elips_gorev'
+        ? 'hedef kalkıp 344 × 150 m elipsi 18 m/s ile SÜREKLİ çizecek; DURDUR denene kadar iner değil.'
         : 'hedef kalkıp deseni uçacak.'));
     } else addLog('err', 'HATA', 'Senaryo reddedildi: ' + r.message);
   } catch (e){ addLog('err', 'HATA', 'Bağlantı hatası: ' + e); }
