@@ -748,6 +748,32 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
+    "oj_accel": (
+        "WPNAV_ACCEL", "param", "Ö-J1 · Yatay ivme tavanı 8 → 15 m/s²",
+        "ÖLÇÜLDÜ: dairede hedefin dönüşünü eşlemek 6.8 m/s² sürekli yanal "
+        "ivme ister. Aracın tavanı WPNAV_ACCEL = 800 cm/s² = 8.0 m/s² ve "
+        "gerçekleşen ivmenin p90'ı 8.5 — TAVANA DAYANIYOR. Güdümün kendi "
+        "MAX_ACCEL'i 12 m/s², yani ARAÇ bağlıyor, güdüm değil. 1500'e "
+        "çıkınca sınır ANGLE_MAX'a (45° → 9.81 m/s²) geçer, yani FİZİĞE.",
+        "WPNAV_ACCEL", (800.0, 1500.0)),
+    "oj_jerk": (
+        "WPNAV_JERK", "param", "Ö-J2 · Jerk 4 → 15 m/s³",
+        "ASIL DARBOĞAZ BU. Jerk 4 m/s³ ile 6.8 m/s²'ye ulaşmak 1.7 s sürüyor; "
+        "ama dairede gereken ivmenin YÖNÜ 21.5°/s dönüyor — 1.7 s'de yön 37° "
+        "değişiyor. Araç dönüşü kurmayı bitiremeden hedef yön kayıyor, ivme "
+        "3.2 m/s²'de takılıyor ve yer hızı 18 → 9.8 m/s'ye çöküyor. 15 m/s³ "
+        "ile ulaşma süresi 0.45 s. ⚠ Deponun kendi notu: 'ivme tavanını "
+        "açmak tek başına işe yaramaz, jerk onu boğar' — ikisi BİRLİKTE.",
+        "WPNAV_JERK", (4.0, 15.0)),
+    "oj_angle": (
+        "ANGLE_MAX", "param", "Ö-J3 · Yatış tavanı 45° → 55°",
+        "Ö-J1+Ö-J2 açıkken sınır yatışa (45° → 9.81 m/s²) geçer. 55° → "
+        "14.0 m/s². ⚠ Ö6 bunu TEK BAŞINA denedi ve mekanizma kapısından "
+        "geçemedi: araç 38-40°'de kalıyordu. ŞİMDİ SEBEBİNİ BİLİYORUZ — "
+        "yatış tavanı değil JERK bağlıyordu. Bu düğme yalnız Ö-J1+Ö-J2 "
+        "AÇIKKEN anlamlıdır. İtki maliyeti 1.74×; araçta 2.56× pay var "
+        "(MOT_THST_HOVER 0.39).",
+        "ANGLE_MAX", (4500.0, 5500.0)),
 }
 
 
