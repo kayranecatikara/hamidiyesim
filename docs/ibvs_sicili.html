@@ -453,7 +453,7 @@
   <!-- ═══════════════ ÖZET ŞERİDİ ═══════════════ -->
   <section class="serit" aria-label="Özet">
     <div class="kutucuk">
-      <span class="sayi">27</span>
+      <span class="sayi">28</span>
       <span class="etiket">denenen özellik</span>
     </div>
     <div class="kutucuk t-girdi">
@@ -465,7 +465,7 @@
       <span class="etiket">⏸ beklemede / kararsız</span>
     </div>
     <div class="kutucuk t-elendi">
-      <span class="sayi">8</span>
+      <span class="sayi">9</span>
       <span class="etiket">❌ elendi</span>
     </div>
   </section>
@@ -1767,6 +1767,82 @@
         korelasyon vardı, nedensellik yoktu.</p>
       </div>
       <div class="kaynak">kaynak: commit 5b44a24 · logs/kacamak/U01-U08, W01-W08 · logs/O12_OLCUTLER.md · testler B67-B70</div>
+    </article>
+
+
+    <!-- ── Ö-B ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö-B</span> — Köşe dönüşü (yavaş dön, düzde hızlan)</h3>
+        <span class="rozet r-elendi">elendi — komple silindi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_IBVS_KOSE (§5.12: SİLİNDİ)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">—</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">12 (eps sürümü) + 16 (η sürümü) = 28</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">744308b · 21e8a6c · 1c02bbd</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyordu</span>
+        <p>Dönüşte hızı kısıp yarıçapı daraltmak, düz kesimde tam hıza dönmek —
+        multi-speed Dubins literatürünün "cornering turn"ü. Ö11'in
+        <em>"yavaş kal"</em> kusuruna karşı histerezis + süre tavanı + çıkış
+        rampası + rampa kilidi eklendi.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">iki sürüm denendi</span>
+        <p><strong>1) <code>|eps_yaw| &gt; 60°</code> tetiği</strong> — 12 uçuş.
+        Kullanıcı sordu: <em>"bu eşiğe çok az ulaşmıyor muyuz?"</em> Ölçüm onu
+        doğruladı: 60°'ye her senaryoda ancak %1-4 ulaşılıyordu.
+        Ayrıca kullanıcı ikinci bir itiraz getirdi: <em>"simde en iyi çalışan
+        algoritmayı değil, HER KOŞULDA en iyi çalışanı kurmaya çalışalım"</em>
+        — bir açı eşiği simdeki hedefin hızına/yarıçapına göre ayarlanır.</p>
+        <p><strong>2) BOYUTSUZ η tetiği</strong> — 16 uçuş.
+        <code>η = V·λ̇/(g·tanθmax)</code>, eşik = 1 = fiziğin sınırı, ayarlanmış
+        sayı değil. Aktifken hedef hız da ayarsız: <code>a_max/λ̇</code>.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>η sürümü (16 uçuş)</th><th class="s">rol</th><th class="s">KONTROL</th><th class="s">Ö-B</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">square — en yakın menzil</td><td class="s">KAZANIM</td><td class="s kazanan">12.11 m</td><td class="s kaybeden">16.12 m (%+33)</td></tr>
+            <tr><td class="ad">square — isabet</td><td class="s">KAZANIM</td><td class="s">0/4</td><td class="s">0/4</td></tr>
+            <tr><td class="ad">duz+kaçamak — en yakın</td><td class="s">regresyon</td><td class="s">0.94 m</td><td class="s kazanan">0.72 m</td></tr>
+            <tr><td class="ad">circle — en yakın</td><td class="s">regresyon</td><td class="s kazanan">3.93 m</td><td class="s kaybeden">6.31 m (%+60)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⚠ MEKANİZMA KUSURSUZ ÇALIŞTI — SONUÇ YİNE KÖTÜ</span>
+        <p>Aktiflik: <code>square</code> %35 · <code>circle</code> %45 ·
+        <code>duz</code> %5 (kontrolde hepsi %0). η <strong>her kolda tam
+        1.00'e oturdu</strong>. Ö5'in "yavaş kal" kusuru da yoktu: dairede hız
+        14.2 m/s'de kaldı, 10'a çakılmadı. Yani tetik de eyleyici de
+        tasarlandığı gibi işledi — <strong>ama net etki negatif.</strong>
+        Yavaşlamak dönüşü mümkün kılıyor, aynı anda hedefi uzaklaştırıyor;
+        kazanılan dönüş keskinliği, kaybedilen kapanmadan az.</p>
+      </div>
+      <div class="karar">
+        <span class="b-a">karar — ELENDİ, §5.12 ile KOMPLE SİLİNDİ</span>
+        <p>Kullanıcı kararı: <em>"Ö-B'yi de silelim, manevralarda iyileşme için
+        eklemiştik, manevraları kötüleştirdi."</em> Cfg alanları, <code>komut()</code>
+        bloğu, döngü durum makinesi, <code>kose</code>/<code>eta</code> log
+        sütunları, birim testleri (B62-B68), panel düğmesi ve koşu scripti
+        çıkarıldı. Silme sonrası 1350 girdi kombinasyonunda güdüm çıktısı
+        <strong>bit bit aynı</strong> (sapma 0.00e+00).</p>
+      </div>
+      <div class="ders">
+        <span class="b-a">ders — HIZ KOLU DÖRT KEZ DENENDİ, DÖRDÜ DE KAYBETTİ</span>
+        <p>Ö5 (η, sürekli tavan) → Ö11 (kapanma+açı, durumsuz) → Ö-B/eps
+        (keyfi açı) → Ö-B/η (boyutsuz + durum makineli). Her seferinde
+        mekanizma düzeltildi, her seferinde sonuç aynı yöne çıktı.
+        <strong>Artık bunun bir "ayar tutmadı" değil, KOLUN KENDİSİNİN yanlış
+        olduğu söylenebilir.</strong> Ölçülen geometri başka yeri gösteriyor:
+        dairede hedefin açısal hızı 21.5°/s, bizimki 8°/s; yatış tavanımız 45°
+        ama <em>medyan 14° kullanıyoruz</em>. Araç dönebilirdi — güdüm o dönüşü
+        istemiyor. Sıradaki iş: yatış açığının kaynağı.</p>
+      </div>
+      <div class="kaynak">kaynak: docs/kampanya/OB_OLCUTLER.md · OB_ETA_OLCUTLER.md · logs/kacamak/B01-B12, E01-E16</div>
     </article>
 
     <!-- ── M3 ── -->

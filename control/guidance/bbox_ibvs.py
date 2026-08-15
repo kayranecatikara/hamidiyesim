@@ -535,57 +535,6 @@ class Cfg:
     # etkisiz (kullanıcının doğruladığı düz uçuş davranışı korunur).
     # ⚠ Taban: DONUS_V_MIN altına inmez — hedeften tamamen kopmayalım.
     # AVCI_IBVS_DONUS=0 → kapalı (varsayılan).
-    # ══ Ö-B · KÖŞE DÖNÜŞÜ — YAVAŞ DÖN, DÜZDE HIZLAN ═══════════════════
-    #
-    # NEDEN: dönüş yarıçapı R = V²/(g·tanθ). 18 m/s ve 45°'de R = 33 m;
-    # hedef (15 m/s, 60° yatış) R = 13 m çiziyor. Drone 2.5 kat geniş yay
-    # çizip dışarı taşıyor ve dairede İÇERİ HİÇ GİREMİYOR — ölçüldü:
-    # circle senaryosunda 9 koşuda 0 isabet, terminal mandalı kurulamıyor.
-    # 9 m/s'de R = 8.3 m, yani hedefin çemberinden DAHA DAR. Açısal hız da
-    # tutuyor: hedef 15/13 = 66°/s, biz 9/8.3 = 62°/s.
-    #
-    # ⚠ Ö11'DEN FARKI (Ö11 elendi ve KOMPLE SİLİNDİ, §5.12):
-    #   Ö11: `kapanma < −5 ∧ |eps_yaw| > 45°` — DURUM TUTMUYORDU, koşul
-    #        her karede yeniden bakılıyordu. Ölçüldü: uçuş başına yalnız
-    #        0.4-0.6 s ateşledi (mekanizma ölçek kapısından geçemedi) ve
-    #        daire regresyonunda en yakın menzili %65 kötüleştirdi.
-    #   Ö-B: HİSTEREZİS + SÜRE TAVANI + ÇIKIŞ RAMPASI, durum taşınıyor.
-    #        Gir 60° → çık 25° VEYA süre > KOSE_T. Literatür (multi-speed
-    #        Dubins, IEEE T-RO 2025) tam bunu söylüyor: "cornering turn" —
-    #        yalnız YAYDA yavaşla, düz kesimde tam hıza dön.
-    #        Ö11'in kusuru "yavaş dön" değil, "YAVAŞ KAL"dı.
-    # TETİK: BOYUTSUZ DÖNÜŞ TALEP ORANI (kullanıcı itirazı, 2026-08-15)
-    #     η = V·λ̇ / (g·tanθmax)
-    #        η < 1 → bu hızda dönebiliriz
-    #        η > 1 → FİZİKSEL OLARAK dönemeyiz; tek çare hızı düşürmek
-    # Eşik = 1, yani AYARLANMIŞ BİR SAYI DEĞİL, fiziğin sınırı. Hedef başka
-    # hızda/yarıçapta uçarsa λ̇ değişir ve eşik kendiliğinden uyar; biz
-    # hızlanırsak V, yatış tavanı değişirse payda değişir. Simdeki senaryoya
-    # uydurulmuş bir açı eşiği DEĞİL.
-    #
-    # ⚠ İLK SÜRÜM |eps_yaw| > 60° KULLANIYORDU ve ELENDİ: 60°'ye her
-    # senaryoda ancak %1-4 ulaşılıyordu (mekanizma neredeyse hiç ateşlemedi).
-    # Kullanıcı "bu eşiğe çok az ulaşmıyor muyuz" diye sordu; ölçüm onu
-    # doğruladı. Üstelik açı eşiği boyutsal olarak keyfiydi.
-    # ÖLÇÜLEN η (kutulu kareler, kontrol koşuları):
-    #     duz+kaçamak  medyan 0.17 · η>1 karelerin %11'inde
-    #     circle       medyan 1.76 · η>1 karelerin %75'inde
-    #     aggressive   medyan 0.73 · η>1 karelerin %37'sinde
-    # Ayırma gücü η>1'de 6.8 kat; eps_yaw>30° ile 3.7 kattı.
-    #
-    # ⚠ Ö5 DE η KULLANDI VE ELENDİ (v ≤ a_max/λ̇, SÜREKLİ tavan). Sebep:
-    # dairede η>1 karelerin %75'i → hız sürekli ~10 m/s'de kalıyor, hedef
-    # 15 m/s → "yavaş kal", kapanma bitiyor (en yakın 1.89→3.23 m).
-    # Ö5 doğru BÜYÜKLÜĞÜ yanlış EYLEYİCİYLE kullandı. Buradaki fark:
-    # histerezis + SÜRE TAVANI + çıkış rampası + rampa kilidi.
-    KOSE_ETKIN = _env_f("AVCI_IBVS_KOSE", 0.0) >= 0.5   # 0 = KAPALI
-    KOSE_ETA_GIR = _env_f("AVCI_IBVS_KOSE_GIR", 1.0)    # η; üstünde gir
-    KOSE_ETA_CIK = _env_f("AVCI_IBVS_KOSE_CIK", 0.6)    # η; altında çık
-    KOSE_AMAX = _env_f("AVCI_IBVS_KOSE_AMAX", 9.81)     # m/s²; g·tan(45°)
-    KOSE_V_MIN = _env_f("AVCI_IBVS_KOSE_VMIN", 8.0)     # m/s; hız tabanı
-    KOSE_T = _env_f("AVCI_IBVS_KOSE_T", 2.5)      # s; sert süre tavanı
-    KOSE_RAMPA = _env_f("AVCI_IBVS_KOSE_RAMPA", 8.0)    # m/s²; çıkış rampası
-
     DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
     DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
 
@@ -656,7 +605,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "eps_elev_deg", "eps_elev_ham_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "kose", "eta", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
 ]
 
@@ -711,8 +660,7 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0, yaw_hizi=0.0,
-          kose_durum=None):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -772,20 +720,6 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
                       cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
-    # ══ Ö-B KÖŞE DÖNÜŞÜ (bkz. Cfg.KOSE_ETKIN) ══
-    # Aktifken hız, dönüşü MÜMKÜN KILAN en yüksek değere kısılır:
-    #     V_gerekli = a_max / λ̇        (η = 1 olacak hız)
-    # Bu da ayarsızdır — λ̇ ölçülüyor, a_max araç zarfından geliyor.
-    # Taban KOSE_V_MIN: λ̇ çok büyükse sıfıra inip havada kalmayalım.
-    # Durum ÇAĞIRAN tarafından taşınır (kose_durum); komut() saf kalır.
-    if cfg.KOSE_ETKIN and kose_durum is not None:
-        if kose_durum.get("aktif"):
-            _lam = abs(los_hiz[0])
-            _v_ger = (cfg.KOSE_AMAX / _lam) if _lam > 1e-3 else cfg.V_TOPLAM_MAX
-            v_los = min(v_los, max(cfg.KOSE_V_MIN, _v_ger))
-        elif kose_durum.get("rampa", 0.0) > 0.0:
-            # çıkış rampası: bir anda tam gaza geçme, kademeli aç
-            v_los = min(v_los, kose_durum["rampa"])
 
     # Ö5 DÖNÜŞ TAVANI (bkz. Cfg.DONUS_A): gereken yanal ivme V·λ̇ aracın
     # tavanını aşıyorsa hızı kıs — yarıçap V² ile düştüğü için dönüş sıkışır.
@@ -950,8 +884,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     vy_p = float(_i0.get("vy", 0.0) or 0.0)
     vz_p = float(_i0.get("vz", 0.0) or 0.0)
     son_v_cmd = None       # kutu boşluğunda sürdürülecek son komut
-    kose = {"aktif": False, "t0": 0.0, "rampa": 0.0, "sayac": 0, "kare": 0}
-    _v_los_onceki = 18.0      # Ö-B η hesabı için (bir kare gecikmeli)
     terminal_mandal = False   # terminal hücum kilidi (bir kez girilince kalır)
     kor_baslangic = None      # kör hücumun başladığı duvar anı (süre sınırı)
     prev_time = None
@@ -1151,42 +1083,13 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 print(f"[IBVS] ⚑ terminal mandalı BIRAKILDI "
                       f"(menzil {cfg.MENZIL_PX_M / boyut_simdi:.0f} m > "
                       f"{cfg.TERM_BIRAK_M:.0f} m) — seyir yasası geri geldi")
-            # ── Ö-B KÖŞE DÖNÜŞÜ DURUM MAKİNESİ (bkz. Cfg.KOSE_V) ──
-            # Gir: |eps_yaw| > GIR.  Çık: |eps_yaw| < CIK VEYA süre > T.
-            # Çıkışta hız bir anda açılmaz, RAMPA ile yükselir.
-            if cfg.KOSE_ETKIN:
-                # η = V·λ̇ / a_max  — boyutsuz dönüş talep oranı
-                _lam = abs(los_hiz[0])
-                _eta = (_v_los_onceki * _lam / cfg.KOSE_AMAX
-                        if cfg.KOSE_AMAX > 1e-6 else 0.0)
-                if not kose["aktif"]:
-                    # ⚠ ÇIKIŞ RAMPASI BİTMEDEN YENİDEN GİRİLMEZ. Bu kilit
-                    # olmadan, süre tavanı bıraktığı karede açı hâlâ yüksekse
-                    # anında yeniden giriliyor ve Ö11'in "YAVAŞ KAL" kusuru
-                    # arka kapıdan geri geliyor (birim test B65 yakaladı).
-                    # Sonuç: yay-yavaş / düz-hızlı çevrimi — "cornering turn".
-                    if _eta > cfg.KOSE_ETA_GIR and kose["rampa"] <= 0.0:
-                        kose.update(aktif=True, t0=now, sayac=kose["sayac"] + 1)
-                else:
-                    if (_eta < cfg.KOSE_ETA_CIK
-                            or (now - kose["t0"]) > cfg.KOSE_T):
-                        kose["aktif"] = False
-                        # rampa, o anki kısıtlı hızdan başlar
-                        kose["rampa"] = max(cfg.KOSE_V_MIN, _v_los_onceki)
-                if kose["aktif"]:
-                    kose["kare"] += 1
-                    kose["rampa"] = 0.0
-                elif kose["rampa"] > 0.0:
-                    kose["rampa"] += cfg.KOSE_RAMPA * dt
-                    if kose["rampa"] >= cfg.V_TOPLAM_MAX:
-                        kose["rampa"] = 0.0             # rampa bitti, serbest
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
                                                        kapanma, iroll,
-                                                       yaw_hizi, kose)
+                                                       yaw_hizi)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -1209,7 +1112,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,
                                             cfg.MAX_ACCEL, dt)
             vx_p, vy_p, vz_p = vx, vy, vz
-            _v_los_onceki = tani["v_los"]
             son_v_cmd = (vx, vy, vz, yaw_cmd)
             send_velocity(conn, vx, vy, vz, yaw_cmd)
 
@@ -1238,8 +1140,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "sonum_deg": round(math.degrees(tani["sonum"]), 2),
                 "donus_tavan": ("" if tani["donus_tavan"] is None
                                 else round(tani["donus_tavan"], 2)),
-                "kose": int(kose["aktif"]),
-                "eta": round(_v_los_onceki * abs(los_hiz[0]) / cfg.KOSE_AMAX, 3),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
