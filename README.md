@@ -158,6 +158,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0
 ```bash
 cd ~/projects/hamidiyesim
 source /opt/ros/humble/setup.bash
+export AVCI_GORSEL=on          # görsel faz; varsayılan off (yalnız GPS güdümü)
 export AVCI_GZ_CAMERA=1
 python3 -m control.gcs_server
 ```

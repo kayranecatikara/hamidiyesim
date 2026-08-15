@@ -32,8 +32,10 @@ eşleşir ve kabuğunu öldürür (exit 144).
   Plane: `-I1 --sysid 2` + avci_plane.parm.
 - İki SITL çıktısında da `EKF3 IMU0 is using GPS` bekle (arka plan
   until-grep döngüsü).
-- **gcs_server**: `export AVCI_GZ_CAMERA=1 && fuser -k 8000/tcp;
+- **gcs_server**: `export AVCI_GORSEL=on AVCI_GZ_CAMERA=1 && fuser -k 8000/tcp;
   python3 -m control.gcs_server` → `/api/scenario_status` 200 dönene kadar bekle.
+  ⚠ `AVCI_GORSEL=on` ŞART: varsayılanı `off` ve o hâlde görsel faz hiç açılmaz,
+  uçuş yalnız GPS güdümüyle geçer.
 - gcs_server açılış banner'larını KONTROL ET (test edilen kod gerçekten
   aktif mi — ör. `[GPS] istasyon yükselişi DİNAMİK`).
 

@@ -47,7 +47,7 @@ düzelt**, uçma.
 GZ_HEADLESS=1 bash scripts/start_harmonic.sh
 
 # Terminal B — A bittikten SONRA, ayrı terminalde
-source /opt/ros/humble/setup.bash && export AVCI_GZ_CAMERA=1 AVCI_NO_BROWSER=1
+source /opt/ros/humble/setup.bash && export AVCI_GORSEL=on AVCI_GZ_CAMERA=1 AVCI_NO_BROWSER=1
 fuser -k 8000/tcp 2>/dev/null; python3 -m control.gcs_server
 ```
 
