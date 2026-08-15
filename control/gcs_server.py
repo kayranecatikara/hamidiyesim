@@ -749,18 +749,17 @@ def _hedef_cfg(alan):
 
 _OZELLIKLER = {
     "ob_kose": (
-        "KOSE_V", "deger", "Ö-B · Köşe dönüşü (yavaş dön, düzde hızlan)",
-        "Dönüş yarıçapı R = V²/(g·tanθ). 18 m/s'de R = 33 m; hedef (15 m/s, "
-        "60° yatış) R = 13 m çiziyor — 2.5 kat dar. Dairede İÇERİ HİÇ "
-        "GİREMİYORUZ: circle senaryosunda 9 koşuda 0 isabet. 9 m/s'de "
-        "R = 8.3 m, yani hedefin çemberinden DAHA DAR; açısal hız da tutuyor "
-        "(hedef 66°/s, biz 62°/s). Açık: |eps_yaw| > 60° iken hız 9 m/s'ye "
-        "kısılır; < 25°'ye düşünce VEYA 2.5 s dolunca rampa ile açılır ve "
-        "rampa bitmeden yeniden girilmez. ⚠ Ö11 aynı fiziği DURUMSUZ tetikle "
-        "denedi, uçuş başına 0.4-0.6 s ateşledi ve dairede %65 kötüleştirdi; "
-        "elendi ve komple silindi. Ö-B'nin farkı histerezis + süre tavanı + "
-        "rampa kilidi (test B65: sürekli 70°'de bile görev döngüsü %62).",
-        "AVCI_IBVS_KOSE", (0.0, 9.0)),
+        "KOSE_ETKIN", "bool", "Ö-B · Köşe dönüşü (η tetikli)",
+        "Tetik BOYUTSUZ: η = V·λ̇/(g·tanθmax). η>1 ise bu hızda dönmek "
+        "FİZİKSEL OLARAK imkânsız; hız, dönüşü mümkün kılan a_max/λ̇ "
+        "değerine kısılır. Eşik 1 = fiziğin sınırı, ayarlanmış sayı DEĞİL — "
+        "hedef başka hızda/yarıçapta uçarsa kendiliğinden uyar. ÖLÇÜLEN η: "
+        "duz 0.17 (η>1: %11) · circle 1.76 (%75) · aggressive 0.73 (%37). "
+        "⚠ Ö5 aynı büyüklüğü SÜREKLİ tavanla kullanıp elendi ('yavaş kal', "
+        "en yakın 1.89→3.23 m). Buradaki fark: histerezis (gir 1.0 / çık "
+        "0.6) + süre tavanı 2.5 s + çıkış rampası + rampa kilidi. "
+        "Test B67: sürekli η=1.8'de bile görev döngüsü %60, 4 yay çevrimi.",
+        "AVCI_IBVS_KOSE", True),
 }
 
 

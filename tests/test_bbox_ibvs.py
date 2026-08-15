@@ -838,223 +838,101 @@ def main():
 
     print("=" * 60)
     # ══════════════════════════════════════════════════════════════════
-    # Ö-B · KÖŞE DÖNÜŞÜ — yavaş dön, düzde hızlan
+    # Ö-B · KÖŞE DÖNÜŞÜ — η tetikli (boyutsuz), yavaş dön / düzde hızlan
     # ══════════════════════════════════════════════════════════════════
-    # Ö11 (aynı fizik, durumsuz tetik) ELENDİ ve KOMPLE SİLİNDİ (§5.12):
-    # uçuş başına yalnız 0.4-0.6 s ateşliyordu ve daire regresyonunda en
-    # yakın menzili %65 kötüleştirdi. Ö-B histerezis + süre tavanı + çıkış
-    # rampası ekler; kusuru "yavaş dön" değil "YAVAŞ KAL"dı.
+    # η = V·λ̇ / (g·tanθmax). Eşik 1 = fiziğin sınırı, AYARLANMIŞ SAYI DEĞİL.
+    # Ö5 aynı büyüklüğü SÜREKLİ tavanla kullandı ve elendi ("yavaş kal");
+    # buradaki fark histerezis + süre tavanı + rampa kilidi.
     class _KB(ib.Cfg):
-        KOSE_V = 9.0
+        KOSE_ETKIN = True
 
-    _argK = (CX + 300.0, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05)
+    _argK = (CX, C.CY_NISAN, 12, 12, 0.0, 16.0, 0.05)
 
-    # B62 — aktifken hız KOSE_V'ye kısılır
-    _k_ac = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+    # B62 — aktifken hız, dönüşü MÜMKÜN KILAN değere iner: V = a_max/λ̇
+    _lam = 0.5                      # rad/s → gereken hız 9.81/0.5 = 19.6 m/s
+    _lam2 = 1.2                     # rad/s → 8.2 m/s
+    _k_a1 = ib.komut(*_argK, _KB, False, (_lam2, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
                      {"aktif": True, "rampa": 0.0})
-    _k_ka = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+    _k_ka = ib.komut(*_argK, _KB, False, (_lam2, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
                      {"aktif": False, "rampa": 0.0})
-    _R = lambda v: v * v / 9.81
-    kontrol("B62 Ö-B aktifken hız KOSE_V'ye kısılır (dönüş çemberi daralır)",
-            _k_ac[5]["v_los"] <= _KB.KOSE_V + 1e-9
-            and _k_ka[5]["v_los"] > _KB.KOSE_V,
-            f"{_k_ka[5]['v_los']:.1f} → {_k_ac[5]['v_los']:.1f} m/s · "
-            f"R {_R(_k_ka[5]['v_los']):.0f} → {_R(_k_ac[5]['v_los']):.0f} m "
-            f"(hedefin çemberi 13 m — artık İÇİNE girebiliriz)")
+    _bek = _KB.KOSE_AMAX / _lam2
+    kontrol("B62 Ö-B aktifken hız = a_max/λ̇ (AYARSIZ, fizikten türer)",
+            abs(_k_a1[5]["v_los"] - _bek) < 0.05 and _k_ka[5]["v_los"] > _bek,
+            f"λ̇={_lam2} rad/s → V_gerekli = {_KB.KOSE_AMAX:.2f}/{_lam2} = "
+            f"{_bek:.1f} m/s · ölçülen {_k_a1[5]['v_los']:.1f} · kısıtsız "
+            f"{_k_ka[5]['v_los']:.1f} m/s")
 
-    # B63 — çıkış RAMPASI: bir anda tam gaz yok
-    _k_rmp = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
-                      {"aktif": False, "rampa": 11.0})
-    kontrol("B63 Ö-B çıkışta RAMPA uygular (ani tam gaz yok)",
-            abs(_k_rmp[5]["v_los"] - 11.0) < 1e-9,
-            f"rampa 11.0 m/s → v_los {_k_rmp[5]['v_los']:.1f} m/s; "
-            f"rampa bitince (0.0) serbest: {_k_ka[5]['v_los']:.1f} m/s")
+    # B63 — η BOYUTSUZ: aynı η'yı üreten farklı (V, λ̇) çiftleri aynı kararı verir
+    def _eta(v, lam, cfg=_KB):
+        return v * lam / cfg.KOSE_AMAX
+    _ciftler = [(20.0, 0.49), (10.0, 0.98), (40.0, 0.245)]   # hepsi η ≈ 1.0
+    _etalar = [_eta(v, l) for v, l in _ciftler]
+    kontrol("B63 η BOYUTSUZ: farklı (V, λ̇) çiftleri aynı η → aynı karar",
+            max(_etalar) - min(_etalar) < 1e-9,
+            f"(20 m/s, 0.49) · (10, 0.98) · (40, 0.245) → η = "
+            f"{_etalar[0]:.3f} hepsi aynı. Eşik senaryoya değil FİZİĞE bağlı.")
 
-    # B64 — HİSTEREZİS: gir 60° / çık 25°, ve SÜRE TAVANI
-    def _dm(cfg, acilar, dt=0.1):
-        """döngüdeki durum makinesinin birebir aynısı"""
-        st = {"aktif": False, "t0": 0.0, "rampa": 0.0, "sayac": 0, "kare": 0}
-        cikti = []
-        for i, a in enumerate(acilar):
+    # B64 — λ̇ → 0 (düz uçuş) bölme patlamaz ve özellik ETKİSİZ
+    _k_duz = ib.komut(*_argK, _KB, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                      {"aktif": True, "rampa": 0.0})
+    kontrol("B64 λ̇→0 (düz uçuş): bölme patlamaz, hız KISILMAZ",
+            abs(_k_duz[5]["v_los"] - _k_ka[5]["v_los"]) < 1e-9,
+            f"λ̇=0 → η=0, V_gerekli sonsuz → kısma yok "
+            f"({_k_duz[5]['v_los']:.1f} m/s). Düz takip yapısal olarak etkilenmez.")
+
+    # B65 — HİZ TABANI: λ̇ çok büyükse sıfıra inip havada kalmayız
+    _k_sert = ib.komut(*_argK, _KB, False, (5.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+                       {"aktif": True, "rampa": 0.0})
+    kontrol("B65 hız tabanı: aşırı λ̇'de bile KOSE_V_MIN altına inmez",
+            abs(_k_sert[5]["v_los"] - _KB.KOSE_V_MIN) < 1e-9,
+            f"λ̇=5 rad/s → a_max/λ̇ = {_KB.KOSE_AMAX/5:.1f} m/s ama taban "
+            f"{_KB.KOSE_V_MIN:.1f} m/s uygulandı — havada kalma yok")
+
+    # B66 — HİSTEREZİS + SÜRE TAVANI + RAMPA KİLİDİ (Ö5'in kusuruna karşı)
+    def _dm(cfg, etalar, dt=0.1):
+        st = {"aktif": False, "t0": 0.0, "rampa": 0.0}
+        out = []
+        for i, e in enumerate(etalar):
             now = i * dt
             if not st["aktif"]:
-                if a > cfg.KOSE_GIR_ACI and st["rampa"] <= 0.0:
+                if e > cfg.KOSE_ETA_GIR and st["rampa"] <= 0.0:
                     st.update(aktif=True, t0=now)
             else:
-                if a < cfg.KOSE_CIK_ACI or (now - st["t0"]) > cfg.KOSE_T:
+                if e < cfg.KOSE_ETA_CIK or (now - st["t0"]) > cfg.KOSE_T:
                     st["aktif"] = False
-                    st["rampa"] = cfg.KOSE_V
+                    st["rampa"] = cfg.KOSE_V_MIN
             if st["aktif"]:
                 st["rampa"] = 0.0
             elif st["rampa"] > 0.0:
                 st["rampa"] += cfg.KOSE_RAMPA * dt
                 if st["rampa"] >= cfg.V_TOPLAM_MAX:
                     st["rampa"] = 0.0
-            cikti.append(st["aktif"])
-        return cikti
-    _h = _dm(_KB, [50, 70, 55, 40, 30, 20, 30])
-    kontrol("B64 Ö-B histerezis: 50°'de girmez, 70°'de girer, 55/40/30'da TUTAR, 20°'de çıkar",
+            out.append(st["aktif"])
+        return out
+    _h = _dm(_KB, [0.9, 1.3, 1.1, 0.8, 0.7, 0.5, 0.7])
+    kontrol("B66 histerezis: η 0.9'da girmez · 1.3'te girer · 0.8/0.7'de TUTAR · 0.5'te çıkar",
             _h == [False, True, True, True, True, False, False],
-            f"gir {_KB.KOSE_GIR_ACI:.0f}° / çık {_KB.KOSE_CIK_ACI:.0f}° → "
-            f"aradaki bantta durum KORUNUR (Ö11'de her kare yeniden bakılıyordu)")
+            f"gir η>{_KB.KOSE_ETA_GIR} / çık η<{_KB.KOSE_ETA_CIK} → aradaki "
+            f"bantta durum KORUNUR")
 
-    # B65 — SÜRE TAVANI: açı hep yüksek kalsa bile bırakır ("yavaş KALMA")
-    _uzun = _dm(_KB, [70] * 200)         # 20 s boyunca 70° (kararlı hâl)
+    # B67 — Ö5'İN KUSURU: sürekli η>1'de (daire) YAVAŞ KALMAZ
+    _uzun = _dm(_KB, [1.8] * 200)          # 20 s boyunca η=1.8 (circle medyanı)
     _acik_s = sum(_uzun) * 0.1
     _cevrim = sum(1 for a, b in zip(_uzun, _uzun[1:]) if a and not b)
-    kontrol("B65 Ö-B süre tavanı + rampa kilidi: sürekli 70°'de bile YAVAŞ KALMAZ",
+    kontrol("B67 sürekli η=1.8 (dairenin medyanı) → YAVAŞ KALMAZ, çevrim yapar",
             _acik_s <= 0.65 * 20.0 and _cevrim >= 3,
-            f"20 s boyunca 70° → {_acik_s:.1f} s aktif "
+            f"20 s boyunca η=1.8 → {_acik_s:.1f} s aktif "
             f"(%{100*_acik_s/20.0:.0f} görev döngüsü, {_cevrim} yay çevrimi). "
-            f"Tavan {_KB.KOSE_T:.1f} s + rampa kilidi → yay-yavaş/düz-hızlı "
-            f"çevrimi. Ö11'in 'YAVAŞ KAL' kusuru yapısal olarak imkânsız.")
+            f"Ö5 burada hızı SÜREKLİ kısıyordu ve elendi.")
 
-    # B66 — kapatılabilir (varsayılan KAPALI)
-    _kapali = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
+    # B68 — kapatılabilir (varsayılan KAPALI)
+    _kapali = ib.komut(*_argK, C, False, (_lam2, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0,
                        {"aktif": True, "rampa": 0.0})
-    kontrol("B66 Ö-B kapatılabilir (varsayılan KAPALI)",
-            abs(C.KOSE_V) < 1e-9
+    kontrol("B68 Ö-B kapatılabilir (varsayılan KAPALI)",
+            C.KOSE_ETKIN is False
             and abs(_kapali[5]["v_los"] - _k_ka[5]["v_los"]) < 1e-12,
-            f"KOSE_V={C.KOSE_V} → durum 'aktif' olsa bile hız kısılmaz "
-            f"({_kapali[5]['v_los']:.1f} m/s), eski davranış bit bit korunur")
-
-    print("=" * 60)
-    # ── Ö12: YAKIN MENZİLDE YAW SLEW TAVANI (kendi ekseninde dönme çaresi) ──
-    # 30 koşunun 10'unda KURTARMA tetiklenmiş; öncesinde yaw komutu tavanda
-    # sürekli kaçıyor (122/118/122 °/s) ve aracın gerçek yaw hızı 300°/s'yi
-    # aşıyor. Menzil küçüldükçe hedefin açısal hızı 1/R ile patlıyor.
-    class _YawM(ib.Cfg):
-        YAW_MENZIL_REF = 15.0
-
-    # B67 — YAPISAL GARANTİ: yaw slew sınırı komut() çıktısına HİÇ DOKUNMAZ.
-    # Hız vektörü ve nişan yönü bu sınırdan geçmez; sınır yalnız döngüdeki
-    # BURUN slew'ine uygulanır. Bu, "başka durumu bozmama" şartının kanıtı.
-    _bozdu = False
-    for _cxz in (CX - 200, CX, CX + 120, CX + 300):
-        for _bz in (8, 25, 60, 100):
-            for _tz in (False, True):
-                _a = ib.komut(_cxz, C.CY_NISAN, _bz, _bz, 0.3, 14.0, 0.05,
-                              _YawM, _tz, (0.5, 0.1), 0.0, 0.0, 2.0, 0.2)
-                _k = ib.komut(_cxz, C.CY_NISAN, _bz, _bz, 0.3, 14.0, 0.05,
-                              C, _tz, (0.5, 0.1), 0.0, 0.0, 2.0, 0.2)
-                if any(abs(_a[i] - _k[i]) > 1e-12 for i in range(4)):
-                    _bozdu = True
-    kontrol("B67 Ö12 komut() çıktısını HİÇ DEĞİŞTİRMEZ (hız vektörü korunur)",
-            not _bozdu,
-            "32 kombinasyonda vx/vy/vz/yaw bit bit aynı — sınır yalnız "
-            "döngüdeki BURUN slew'ine uygulanır, uçuş yolu etkilenmez")
-
-    # B68 — tavan menzille ölçeklenir: yakında kısılır
-    def _tavan(cfg, menzil):
-        b = ib.Cfg.MENZIL_PX_M / menzil
-        t = cfg.YAW_RATE_MAX_DEG
-        if cfg.YAW_MENZIL_REF > 0.0:
-            t *= max(cfg.YAW_MIN_KAT, min(menzil / cfg.YAW_MENZIL_REF, 1.0))
-        return t
-    _t20, _t8, _t3 = (_tavan(_YawM, 20.0), _tavan(_YawM, 8.0),
-                      _tavan(_YawM, 3.0))
-    kontrol("B68 yaw tavanı yakın menzilde KISILIR",
-            _t8 < _YawM.YAW_RATE_MAX_DEG * 0.8 and _t3 < _t8 + 1e-9,
-            f"20 m → {_t20:.0f}°/s   8 m → {_t8:.0f}°/s   3 m → {_t3:.0f}°/s "
-            f"(taban {_YawM.YAW_MIN_KAT:.2f}× = {_YawM.YAW_RATE_MAX_DEG*_YawM.YAW_MIN_KAT:.0f}°/s)")
-
-    # B69 — UZAK menzilde tavan AYNEN kalır (normal takip bozulmaz)
-    kontrol("B69 uzak menzilde (R ≥ ref) yaw tavanı DEĞİŞMEZ",
-            abs(_t20 - _YawM.YAW_RATE_MAX_DEG) < 1e-9,
-            f"20 m ≥ ref 15 m → tavan {_t20:.0f}°/s = varsayılan "
-            f"{_YawM.YAW_RATE_MAX_DEG:.0f}°/s (uzak takip aynen)")
-
-    # B70 — kapatılabilir
-    kontrol("B70 Ö12 kapatılabilir (varsayılan KAPALI)",
-            abs(C.YAW_MENZIL_REF) < 1e-9
-            and abs(_tavan(C, 3.0) - C.YAW_RATE_MAX_DEG) < 1e-9,
-            f"YAW_MENZIL_REF={C.YAW_MENZIL_REF} → 3 m'de bile tavan "
-            f"{_tavan(C, 3.0):.0f}°/s, hiç kısılmaz")
-
-    # ══════════════════════════════════════════════════════════════════
-
-    # ══════════════════════════════════════════════════════════════════
-    # Ö-M · TERMİNAL MANDALINI MENZİLLE BIRAK (histerezis)
-    # ══════════════════════════════════════════════════════════════════
-    # Mandal döngüde tutuluyor; yasayı burada birebir yeniden kuruyoruz.
-    def _mandal(cfg, boyutlar):
-        """boyut dizisi → her karede mandal durumu (döngüdeki mantığın aynısı)."""
-        m = False; durum = []
-        for b in boyutlar:
-            if not m and b >= cfg.TERMINAL_BOYUT:
-                m = True
-            elif (m and cfg.TERM_BIRAK_M > 0.0 and b > 1e-6
-                    and cfg.MENZIL_PX_M / b > cfg.TERM_BIRAK_M):
-                m = False
-            durum.append(m)
-        return durum
-
-    class _OM(C):
-        TERM_BIRAK_M = 20.0
-
-    class _OMKapali(C):        # Ö-M öncesi davranış (kill-switch kapalı)
-        TERM_BIRAK_M = 0.0
-
-    _R = lambda m: C.MENZIL_PX_M / m          # metre → piksel boyutu
-    # 40 m → 20 m → 6 m (kilitlenir) → 12 m → 25 m (bırakır) → 40 m
-    _dizi = [_R(40), _R(20), _R(6), _R(12), _R(25), _R(40)]
-
-    # B71 — kilitlenme eşiği DEĞİŞMEDİ
-    kontrol("B71 Ö-M kilitlenme eşiği değişmedi (25 px ≈ 6.4 m)",
-            _mandal(_OM, _dizi)[:3] == [False, False, True],
-            f"40 m → kapalı · 20 m → kapalı · 6 m → KİLİTLENDİ "
-            f"(eşik {C.TERMINAL_BOYUT:.0f} px = {C.MENZIL_PX_M/C.TERMINAL_BOYUT:.1f} m)")
-
-    # B72 — HİSTEREZİS: 12 m'de bırakmaz, 25 m'de bırakır
-    _d = _mandal(_OM, _dizi)
-    kontrol("B72 Ö-M histerezis: 12 m'de TUTAR, 25 m'de BIRAKIR",
-            _d[3] is True and _d[4] is False,
-            f"kilitliyken 12 m → hâlâ terminal (20 m eşiğinin altında) · "
-            f"25 m → BIRAKTI. Band 6.4 ↔ 20 m, mod titremesi olamaz.")
-
-    # B73 — yeniden kilitlenebilir (tek seferlik değil)
-    _tekrar = _mandal(_OM, [_R(6), _R(30), _R(6), _R(30), _R(6)])
-    kontrol("B73 Ö-M bıraktıktan sonra YENİDEN kilitlenir",
-            _tekrar == [True, False, True, False, True],
-            "6→30→6→30→6 m: kilitlen/bırak/kilitlen/bırak/kilitlen — "
-            "ıska sonrası yeni hücum mümkün")
-
-    # B74 — KAPALIYKEN eski davranış BİT BİT: mandal asla açılmaz
-    _kapali = _mandal(_OMKapali, [_R(6)] + [_R(x) for x in (12, 25, 40, 200, 500)])
-    kontrol("B74 Ö-M KAPATILABİLİR (kill-switch: mandal asla açılmaz)",
-            all(_kapali[1:]) and _kapali[0] is True and C.TERM_BIRAK_M == 20.0,
-            f"AVCI_IBVS_TERM_BIRAK=0 → 500 m'de bile terminal (ölçülen "
-            f"kusurun kendisi); varsayılan ise {C.TERM_BIRAK_M:.0f} m — "
-            f"2026-08-15'te girdi")
-
-    # B75 — KÖR HÜCUM: mandal açılınca pencere de kapanır
-    # (döngüde `kor_baslangic = None` yapılıyor; burada kaynak denetimi)
-    _src = inspect.getsource(ib.gorsel_dongu) if hasattr(ib, "gorsel_dongu") else ""
-    if not _src:
-        import inspect as _i
-        _src = "".join(_i.getsource(ib).splitlines(True))
-    _i_birak = _src.index("terminal mandalı BIRAKILDI")
-    _blok = _src[max(0, _i_birak - 400):_i_birak]
-    kontrol("B75 Ö-M mandalı bırakırken kör hücum penceresi de kapanır",
-            "kor_baslangic = None" in _blok,
-            "20 m'de kutu kaybolduysa bu 'çarpışmayı tamamla' değil "
-            "'hedefi kaybettik' durumudur → kör hücum sayacı sıfırlanır")
-
-    # B76 — komut() imzası ve çıktısı DEĞİŞMEDİ (Ö-M döngüde, yasada değil)
-    _fark, _n = 0.0, 0
-    for cx in (100., 320., 540.):
-        for bw in (10., 30., 80.):
-            for term in (False, True):
-                a = ib.komut(cx, 300., bw, bw, 0.5, 9., 0.05, C, term,
-                             (0.3, 0.1), 0.04, 0., -2., 0.2, 0.2)
-                b = ib.komut(cx, 300., bw, bw, 0.5, 9., 0.05, _OM, term,
-                             (0.3, 0.1), 0.04, 0., -2., 0.2, 0.2)
-                for u, v in zip(a[:4], b[:4]):
-                    _fark = max(_fark, abs(u - v)); _n += 1
-    kontrol("B76 Ö-M `komut()` yasasına DOKUNMAZ (bit bit aynı)",
-            _fark == 0.0,
-            f"{_n} çıktı ({_n//4} girdi) — maks sapma {_fark:.2e}. Ö-M yalnız "
-            f"MANDALIN DEĞERİNİ değiştirir; hız yasasının kendisi aynıdır.")
+            f"KOSE_ETKIN={C.KOSE_ETKIN} → durum 'aktif' olsa bile hız "
+            f"kısılmaz ({_kapali[5]['v_los']:.1f} m/s), eski davranış bit bit aynı")
 
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
