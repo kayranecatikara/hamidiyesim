@@ -453,7 +453,7 @@
   <!-- ═══════════════ ÖZET ŞERİDİ ═══════════════ -->
   <section class="serit" aria-label="Özet">
     <div class="kutucuk">
-      <span class="sayi">28</span>
+      <span class="sayi">30</span>
       <span class="etiket">denenen özellik</span>
     </div>
     <div class="kutucuk t-girdi">
@@ -465,7 +465,7 @@
       <span class="etiket">⏸ beklemede / kararsız</span>
     </div>
     <div class="kutucuk t-elendi">
-      <span class="sayi">9</span>
+      <span class="sayi">11</span>
       <span class="etiket">❌ elendi</span>
     </div>
   </section>
@@ -474,8 +474,16 @@
     <strong>Nasıl okunur.</strong> "Varsayılan" sütunu koddaki gerçek durumdur:
     <code>bbox_ibvs.Cfg</code> içinde env anahtarının varsayılan değeri sıfır/False ise
     özellik <em>kapalıdır</em>. Panelde canlı aç/kapa düğmesi yalnız o an denenen özellik
-    için durur (<code>CLAUDE.md</code> §6); kararı verilen özelliğin düğmesi silinir ama
-    kill-switch env anahtarı kodda kalır — yani buradaki her özellik hâlâ elle açılabilir.
+    için durur (<code>CLAUDE.md</code> §6); kararı verilen özelliğin düğmesi silinir.
+    <br><br>
+    <strong>⚠ 2026-08-14'ten itibaren kural değişti (§5.12).</strong> Elenen özellik artık
+    koddan <em>eksiksiz</em> çıkarılıyor — kill-switch env anahtarı bile bırakılmıyor.
+    Kullanıcının gerekçesi: <em>"bazı şeyleri ekliyoruz sonra siliyoruz ama her şeyini
+    silmiyoruz; o sildiğimiz şeylerden bir şeyler sistemde kalıp sistemi bozuyor."</em>
+    Yani bu bölümdeki eski kartların çoğu hâlâ elle açılabilir, ama
+    <code>Ö-B · Ö-D · Ö-D2 · Ö11 · Ö-J · Ö-K · Ö-N</code> koddan tamamen silindi;
+    geri getirmek gerekirse commit'ten alınır. Ölçümler burada ve
+    <code>UYGULANACAK.md</code>'de yaşamaya devam eder.
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -1667,6 +1675,130 @@
       <p>Ölçüldü; iyileştirmedi ya da kötüleştirdi. Kodu ve kill-switch'i çoğunda duruyor —
          elenmek "yanlış" demek değil, "bu rejimde işe yaramıyor" demektir.</p>
     </div>
+
+    <!-- ── Ö-N (ELENDİ 2026-08-15 — eşik kaldıraç değil) ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö-N</span> — Görseli bırakma eşiği (20 → 40 kare)</h3>
+        <span class="rozet r-elendi">elendi — silindi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarı</span><span class="m-d">AVCI_HYBRID_KAYIP_M (SİLİNDİ)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">20 kare — hiç değişmedi</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">12 — 8 kare (4v4) + 4 düz regresyon (2v2)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">a3eb281 · N01-N12 · docs/kampanya/ON_KAYIP_ESIK.md</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p><code>SupCfg.KAYIP_M</code> — kaç <em>ardışık kutusuz kare</em> görülünce görsel faz
+        bırakılıp GPS'e dönüleceği. 20 kare ≈ 0.7-1.0 s; deney kolu 40 kare ≈ 1.3-2.0 s.
+        Tek parametre, tek değişken.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Kullanıcı yönü: <em>"Daireyi bırakıp duz/square'e odaklanalım."</em> Kare bizim en kötü
+        senaryomuz (0/8). Mevcut loglardan iki sayı çıktı: kare senaryosunda görsel fazların
+        <strong>%96'sı (156/163) tam bu eşikte ölüyor</strong>, ve kesildikten sonra görselin geri
+        gelme süresinin <strong>%22'si 1 saniyenin altında</strong>. Yani her dört kesintiden
+        birinde kutu neredeyse oradaydı — boşuna GPS'e dönülmüş görünüyordu.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">⚑ yapısal garanti</span>
+        <p>Terminal kör hücum bu eşikten <em>etkilenemez</em>: <code>TERM_KOR</code> dalı eşik
+        kontrolünden ÖNCE <code>continue</code> eder ve kendi <code>TERMINAL_SURE</code> bütçesini
+        kullanır. Regresyon testinden güçlü olan kanıt türü (§5.10) — kampanya boyunca birim
+        testiyle sabitlendi.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">mekanizma kapısı (§5.1) — sonuna kadar açık</span>
+        <p>Kontrol kolunda <strong>85 fazın 76'sı tam 19</strong>'da, deney kolunda
+        <strong>50 fazın 43'ü tam 39</strong>'da bitti. Özellik tartışmasız çalıştı.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">ölçüm — kare senaryosu (n=4/kol)</span>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">K20 kontrol</th><th class="s">N40 deney</th><th class="s">sonuç</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">en yakın menzil, medyan (birincil)</td><td class="s">13.82 m</td><td class="s">11.21 m</td><td class="s"><strong>p = 0.83 → GÜRÜLTÜ</strong></td></tr>
+            <tr><td class="ad">İSABET</td><td class="s">0/4</td><td class="s">0/4</td><td class="s">düz</td></tr>
+            <tr><td class="ad">kutu oranı (geçerlilik eşi)</td><td class="s kazanan">%31.2</td><td class="s kaybeden">%22.4</td><td class="s kaybeden">−8.8 puan (sınır 5'ti)</td></tr>
+            <tr><td class="ad">mutlak kutulu kare</td><td class="s kazanan">678</td><td class="s kaybeden">566</td><td class="s kaybeden">−%17 · seyrelme DEĞİL</td></tr>
+            <tr class="birincil"><td class="ad">medyan mesafe</td><td class="s kazanan">68.6 m</td><td class="s kaybeden">98.7 m</td><td class="s kaybeden">+%44 KÖTÜ</td></tr>
+            <tr class="birincil"><td class="ad">60 m içinde geçen süre</td><td class="s kazanan">94 s</td><td class="s kaybeden">57 s</td><td class="s kaybeden">−%39</td></tr>
+            <tr><td class="ad">salınım (cx işaret dgş/s)</td><td class="s">0.259</td><td class="s">0.184</td><td class="s">⚠ kutu oranı düştüğü için GÜVENİLMEZ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">düz regresyon (n=2/kol — hüküm kurulmaz)</span>
+        <p>N40 2/2, K20 1/2. <em>Ama</em> kullanıcının hedefi <em>"daha kısa sürede vurabilecek"</em>:
+        N40'ın vuruşları <strong>174 ve 196 s</strong>'de, K20'ninki <strong>120 s</strong>'de.
+        Yön diğer bütün ölçütlerle aynı tarafta.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">video bacağı (§2 adım 4)</span>
+        <p>Her iki kolda da hedef, araç 25-45° yatıktayken görülen, güveni <strong>0.30-0.36</strong>
+        olan ~10-12 px'lik bir leke. N06'nın en yakın anında (10.1 m) kutu kadrajın
+        <strong>sağ üst köşesinde</strong> — hedef yanımızdan geçiyor, önümüzden değil. Log ile
+        çelişki yok.</p>
+      </div>
+      <div class="duzeltme">
+        <span class="b-a">⭐ KAMPANYANIN ASIL BULGUSU — eşik değil, ÖLÇÜT</span>
+        <p><code>kayip_kare_esik</code> sorunun kaldıracı değilmiş. Ama kampanya daha değerli bir
+        şey gösterdi: <strong>"en yakın menzil", isabet üretmeyen bir senaryoda kötü bir birincil
+        ölçüttür.</strong> 240 s'lik bir uçuşun tek şanslı anını ölçüyor — K20'nin <code>3.80</code>
+        değeri ile N40'ın <code>4.06</code> değeri, medyan mesafeleri 69 m ve 101 m olan uçuşlardan
+        çıktı. Kare/manevra senaryolarında birincil ölçüt bundan böyle <em>60 m içinde geçen süre</em>
+        ya da <em>medyan mesafe</em> olmalı; kullanıcının <em>"daha kısa sürede vurabilecek"</em>
+        cümlesini bunlar temsil ediyor, tek bir en-yakın-an değil.</p>
+      </div>
+    </article>
+
+    <!-- ── Ö-K (ELENDİ 2026-08-15) ── -->
+    <article class="kart k-elendi">
+      <div class="kart-bas">
+        <h3><span class="kod">Ö-K</span> — Kör devam (kutu boşluğunda nişanı döndür)</h3>
+        <span class="rozet r-elendi">elendi — silindi</span>
+      </div>
+      <div class="meta">
+        <div><span class="m-a">env anahtarları</span><span class="m-d">AVCI_IBVS_KOR · AVCI_IBVS_KOR_MAX (SİLİNDİ)</span></div>
+        <div><span class="m-a">varsayılan</span><span class="m-d">0 = KAPALI (denenen: 40° tavan)</span></div>
+        <div><span class="m-a">uçuş (n)</span><span class="m-d">12 (K01-K12, dönüşümlü, daire + düz)</span></div>
+        <div><span class="m-a">kaynak</span><span class="m-d">fb915ad · 62a3e5f</span></div>
+      </div>
+      <div class="blok">
+        <span class="b-a">ne yapıyor</span>
+        <p>Kutu kaybolunca güdüm son komutu <em>donduruyor</em>. Ö-K bunun yerine son ölçülen LOS
+        azimut hızıyla nişanı döndürmeye devam ediyordu (hız vektörü + burun birlikte, toplam 40°
+        tavanla). "Kör bekle" yerine "kör devam et". <strong>D0 uyumluydu</strong> — hedefin GPS'ini
+        kullanmıyordu, girdi yalnız son görsel ölçümdü.</p>
+      </div>
+      <div class="blok">
+        <span class="b-a">neden önerildi</span>
+        <p>Dairede hedefin kerterizi 21.5°/s dönüyor; dondurulan komut anında bayatlıyor. Ölçülmüştü:
+        200 s'lik daire uçuşunda <strong>toplam 67 saniye</strong> bayat komutla uçulmuş (uçuşun
+        üçte biri). Düz uçuşta λ̇≈0 olduğu için özellik orada ölüydü — yani çekirdek davranışı
+        riske atmıyordu.</p>
+      </div>
+      <div class="tablo-kutu">
+        <table>
+          <thead><tr><th>ölçüt</th><th class="s">kapalı</th><th class="s">Ö-K açık</th><th class="s">sonuç</th></tr></thead>
+          <tbody>
+            <tr class="birincil"><td class="ad">en yakın menzil, daire (medyan)</td><td class="s kazanan">3.24 m</td><td class="s kaybeden">4.28 m</td><td class="s kaybeden">GERİLEDİ</td></tr>
+            <tr><td class="ad">İSABET, daire</td><td class="s">0/5</td><td class="s">0/5</td><td class="s">düz</td></tr>
+            <tr><td class="ad">İSABET, düz</td><td class="s">2/2</td><td class="s">1/2</td><td class="s">ara veri (n&lt;4)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="blok">
+        <span class="b-a">mekanizma kapısı</span>
+        <p><code>kor_don_deg</code> deney kolunda gerçekten dönüyordu — özellik <strong>çalıştı</strong>,
+        ama işe yaramadı. Hipotez (ölçülmedi): 50-100 m'de tespit %11-16 olduğu için λ̇ kestirimi
+        gürültülüydü; yanlış yöne döndürmek, dondurmaktan daha kötü.</p>
+      </div>
+    </article>
 
     <!-- ── Ö12 (ELENDİ 2026-08-13 — hipotez çürüdü) ── -->
     <article class="kart k-elendi">

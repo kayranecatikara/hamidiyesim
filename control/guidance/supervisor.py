@@ -69,6 +69,9 @@ class SupCfg:
     # kor_dalis ≤ %3) — bkz. UYGULANACAK.md B6.
     KILIT_N = int(os.environ.get("AVCI_HYBRID_KILIT_N", 10))
     KILIT_PENCERE = 15    # kayan pencere boyu (~0.5 s @30 Hz)
+    # ⛔ Ö-N (bu eşiği 40'a çıkarmak) 2026-08-15'te 12 uçuşla ÖLÇÜLDÜ ve
+    # ELENDİ: karede medyan mesafe 68.6 → 98.7 m, 60 m içinde geçen süre
+    # 94 → 57 s. Eşik kaldıraç değil. Ölçüm docs/kampanya/ON_KAYIP_ESIK.md.
     KAYIP_M = 20          # ardışık pose'suz kare → GPS'e dön (~0.66 s)
 
     # ══ D0 KURAL UYUMU — DEVİR ÖLÇÜTÜ SADELEŞTİRİLDİ (2026-08-10) ══

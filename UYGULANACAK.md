@@ -16,6 +16,69 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## Ö-N — GÖRSELİ BIRAKMA EŞİĞİ (`KAYIP_M` 20→40) · ÖLÇÜLDÜ, KARAR KULLANICIDA
+
+**Tam rapor:** `docs/kampanya/ON_KAYIP_ESIK.md` (ölçütler koşmadan önce ilan
+edildi, sonuç + video bacağı orada).
+
+12 uçuş: 8 kare (kazanım zarfı, n=4/kol) + 4 düz (regresyon, n=2/kol).
+Mekanizma kapısı sonuna kadar açık: K20'de 76/85 faz tam 19'da, N40'ta 43/50
+faz tam 39'da bitti.
+
+| ölçüt (kare) | K20 | N40 | |
+|---|---|---|---|
+| BİRİNCİL en yakın menzil | 13.82 m | 11.21 m | **p=0.83 → GÜRÜLTÜ** |
+| kutu oranı | %31.2 | %22.4 | −8.8 puan (sınır 5'ti) |
+| mutlak kutulu kare | 678 | 566 | −%17 |
+| medyan mesafe | 68.6 m | 98.7 m | **+%44 kötü** |
+| 60 m içinde süre | 94 s | 57 s | **−%39** |
+| isabet | 0/4 | 0/4 | düz |
+
+Düz regresyon: N40 2/2, K20 1/2 — ama N40'ın vuruşları 174/196 s'de,
+K20'ninki 120 s'de. n=2, hüküm kurulmaz.
+
+**Karar (ilan edilen kurala göre): KULLANICIYA** — GİRER koşulu (2) çiğnendi,
+ÇIKAR koşulu (birincil geriler) sağlanmadı. **Yapay zekânın önerisi: ÇIKAR.**
+
+**⭐ Kampanyanın asıl bulgusu:** `kayip_kare_esik` kaldıraç değilmiş; ama
+**"en yakın menzil", isabet üretmeyen senaryolarda kötü bir birincil ölçüt.**
+240 s'lik uçuşun tek şanslı anını ölçüyor. Kare/manevra senaryolarında
+birincil ölçüt bundan böyle *60 m içinde geçen süre* ya da *medyan mesafe*
+olmalı.
+
+---
+
+## Ö-K — KÖR DEVAM · ÖLÇÜLDÜ, ELENDİ, SİLİNDİ (2026-08-15)
+
+**Fikir:** kutu kaybolunca güdüm son komutu 1 s (20 kare) boyunca DONDURUYOR.
+Dairede kerteriz 21.5°/s döndüğü için o komut anında bayatlıyor. Ö-K,
+dondurmak yerine son ölçülen LOS azimut hızıyla nişanı döndürmeye devam
+ediyordu (40° tavanla). D0 uyumluydu — hedefin GPS'ini kullanmıyordu.
+
+**Ölçüm (K01-K12, 12 uçuş, dönüşümlü A/B, daire + duz):**
+
+| ölçüt | kapalı (K) | **açık (O)** | karar kuralı |
+|---|---|---|---|
+| en yakın menzil, daire (medyan) | **3.24 m** | 4.28 m | birincil — GERİLEDİ |
+| isabet, daire | 0/5 | 0/5 | düz |
+| isabet, duz | 2/2 | 1/2 | ara veri (n<4) |
+
+**Karar: GİRMEZ.** Birincil ölçüt düz kaldı, en yakın menzil kötüleşti.
+Mekanizma kapısı (§5.1) geçilmişti — `kor_don_deg` deney kolunda gerçekten
+dönüyordu — yani özellik çalıştı ama işe yaramadı.
+
+**Neden işe yaramadı (hipotez, ölçülmedi):** bayat bir λ̇ kestirimiyle
+ekstrapolasyon, kutu 50-100 m'de zaten %11-16 tespitle geldiği için
+gürültülü bir λ̇ üzerine kuruluyordu. Yanlış yöne döndürmek, dondurmaktan
+daha kötü.
+
+**Silme:** §5.12 uyarınca `Cfg.KOR_DEVAM`/`KOR_MAX_DEG`, `AVCI_IBVS_KOR`,
+döngü bloğu, `kor_don_deg` sütunu, panel düğmesi, B62-B67 testleri ve
+`~/.avci_sim/kosuK.sh` çıkarıldı. Doğrulama: grep sıfır + `komut()` 7776
+girdi kombinasyonunda **bit bit aynı** (fark 0).
+
+---
+
 ## DURUM — 2026-08-09 · MANEVRA (en güncel)
 
 Kullanıcı gözlemi: "düz uçuşta ıskalamıyor, hedef **manevra** yapınca görsel

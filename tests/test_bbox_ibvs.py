@@ -837,6 +837,22 @@ def main():
             f"DIKEY_ROLL={C.DIKEY_ROLL} → eps_elev = ham okuma")
 
     print("=" * 60)
+    # ══════════════════════════════════════════════════════════════════
+    # Ö-K bekçisi — ELENDİ (2026-08-15), koddan tamamen çıkarıldı (§5.12)
+    # ══════════════════════════════════════════════════════════════════
+    # B62 — kutu yokken komut BIT BIT DONAR. Ö-K bunu bozan tek özellikti;
+    # silindiğine göre "son komut aynen sürer" davranışı geri gelmiş olmalı.
+    # Geri sızarsa (Cfg'ye yeniden eklenirse) bu bekçi yakalar.
+    kontrol("B62 Ö-K tamamen silindi (Cfg'de kör-devam alanı yok)",
+            not any(hasattr(C, _a) for _a in ("KOR_DEVAM", "KOR_MAX_DEG")),
+            "KOR_DEVAM / KOR_MAX_DEG yok → kutu boşluğunda son komut "
+            "dondurulur, döndürülmez (eleme öncesi davranış)")
+
+    # B63 — kör-devam log sütunu da gitti (§5.12 madde 3)
+    kontrol("B63 kor_don_deg CSV sütunu kalmadı",
+            "kor_don_deg" not in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, kor_don_deg yok")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

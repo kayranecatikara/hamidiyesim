@@ -535,6 +535,9 @@ class Cfg:
     # etkisiz (kullanıcının doğruladığı düz uçuş davranışı korunur).
     # ⚠ Taban: DONUS_V_MIN altına inmez — hedeften tamamen kopmayalım.
     # AVCI_IBVS_DONUS=0 → kapalı (varsayılan).
+    # ⛔ Ö-K (kör devam) 2026-08-15'te ÖLÇÜLDÜ ve ELENDİ: birincil ölçüt düz,
+    # en yakın menzil 3.24 → 4.28 m GERİLEDİ. Kod §5.12 uyarınca tamamen
+    # çıkarıldı; ölçüm UYGULANACAK.md ve docs/ibvs_sicili.html'de durur.
     DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
     DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
 
