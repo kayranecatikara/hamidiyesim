@@ -748,6 +748,26 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
+    "c_jerk": (
+        "PSC_JERK_XY", "param",
+        "Aday C · Yatay jerk tavanı (5 → 15 m/s³)",
+        "ÖLÇÜLDÜ: karede hedef 33.1 m yarıçapla dönüyor, biz 121.8 m ile — "
+        "3.7 kat geniş. Fizik değil: ANGLE_MAX 45° bize 9.81 m/s² veriyor, "
+        "biz medyan 2.3 kullanıyoruz. Jerk, ivmenin DEĞİŞİM HIZINI sınırlar: "
+        "bugün 5 m/s³ ile hedefin sürdürdüğü 6.25 m/s²'ye çıkmak 1.25 s = "
+        "18 m/s'de 22.5 m sürüyor. Kare köşesi 2-3 s'de bitiyor. 15 ile "
+        "0.42 s = 7.5 m. Gövde kaynaklı sert tavan 19.4 m/s³ (AC_PosControl "
+        "satır 448), yani 15 güvenli. "
+        "⚠⚠ BU DÜĞME UÇUŞ SIRASINDA ETKİ ETMEZ. ArduPilot jerk'i yalnız "
+        "GUIDED alt modu DEĞİŞİRKEN okuyor (mode_guided.cpp:564 → "
+        "velaccel_control_start). Hız komutu akarken yazılan değer bir "
+        "sonraki alt mod geçişine kadar RAFTA BEKLER. Farkı görmek için: "
+        "düğmeyi çevir, sonra takibi durdurup yeniden başlat (stop_chase → "
+        "start_chase) — o an yeni değer okunur. "
+        "⚠ Dikey kanal ETKİLENMEZ (yapısal): bu parametre yalnız yatay "
+        "düzlemi kurar, dikey PSC_JERK_Z ayrı ve değişmiyor. "
+        "⚠ Yalpalama görülürse ilk geri alınacak şey budur.",
+        "PSC_JERK_XY", (5.0, 15.0)),
 }
 
 
