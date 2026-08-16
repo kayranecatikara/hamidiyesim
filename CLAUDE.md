@@ -40,6 +40,53 @@ güvenlik katmanı olarak kalsın.
 
 ---
 
+## 1.1 · ⛔ KOŞULARA BAŞLAMADAN ÖNCE KOŞU PLANI **SOHBETE** YAZILIR
+
+**Kullanıcı kuralı (2026-08-16):** *"bir daha uzun koşulara başlamadan önce
+kaç koşu yapacağını, neyi test edeceğini, her koşuda neleri farklı
+yapacağını, vs. her şeyi yaz öyle başla koşulara. Bir buçuk saattir seni
+bekliyorum, hiçbir şey demeden başladın."*
+
+*Yaşandı:* Ö5 kampanyasında (20 uçuş, 1 sa 55 dk) plan `docs/kampanya/`
+altına yazıldı ama **sohbete yazılmadı**. Kullanıcı ne koştuğumu, kaç tane
+olduğunu ve ne zaman biteceğini bilmeden bekledi. Kampanya belgesi
+DENEY DİSİPLİNİ içindir (§4); **kullanıcıyı bilgilendirmez.** İkisi ayrı
+yükümlülüktür ve ikisi de zorunludur.
+
+**İlk uçuşu başlatmadan ÖNCE sohbete şu tablo yazılır:**
+
+| # | koşu adı | kol | senaryo/kaçamak | bu koşuda NE farklı | süre |
+|---|---|---|---|---|---|
+| 1 | F01_K_kare | KONTROL | square / yok | `DONUS_A = 0` | ~5 dk |
+| 2 | F02_O_kare | DENEY | square / yok | `DONUS_A = 9.81` | ~5 dk |
+| … | | | | | |
+
+Tablonun yanında şunlar da **sohbete** yazılır (dosyaya değil):
+
+1. **TOPLAM KAÇ UÇUŞ ve TAHMİNİ SÜRE.** Bir koşu ≈ kurulum 90 s + kayıt
+   240 s + kapanış ≈ **5-6 dakika**. 20 uçuş ≈ **2 saat**. Sayıyı yuvarlayıp
+   söyle: *"20 uçuş, yaklaşık 2 saat sürecek."*
+2. **NEYİ SINIYORUM** — tek cümle, tek değişken.
+3. **BİRİNCİL ÖLÇÜT ve KARAR KURALI** — özeti; tamamı kampanya belgesinde.
+4. **NE ZAMAN ARA RAPOR VERECEĞİM** (aşağıdaki kural).
+
+**ARA RAPOR ZORUNLU.** Uzun kampanyada sessiz kalınmaz:
+- İlk A/B çiftinden sonra **mekanizma kapısı** (§5.1) raporlanır — özellik
+  çalışıyor mu, çalışmıyorsa kampanya orada durur, 20 uçuş boşa gitmez.
+- Her senaryo bloğu bittiğinde (kare bitti, düz bitti…) ara sonuç yazılır.
+- ⚠ Ara sayılar **"ARA VERİ, karar değil"** diye etiketlenir (§5.4).
+
+**SÜRE EŞİĞİ.** Toplam tahmin **1 saati aşıyorsa**, plan yazıldıktan sonra
+**başlamadan önce kullanıcının onayı alınır.** 1 saatin altındaysa plan
+yazılır ve başlanır. Kullanıcı "başla" demişse plan yine yazılır (koşular
+başlamadan), ama ayrıca onay beklenmez.
+
+**KAPSAM DEĞİŞİRSE HABER VERİLİR.** Kampanya ortasında uçuş eklenirse
+(ör. n=2'den n=4'e çıkarmak, üçüncü kol eklemek) bu **o anda söylenir**,
+sessizce yapılmaz — kullanıcının bekleme süresi değişiyor demektir.
+
+---
+
 # 2 · TEST MEKANİZMASI — değişmez sekiz adım
 
 1. **TAZE UÇUŞ.** Testi yapay zekâ koşar. Kullanıcı gözlemci değil,
@@ -470,6 +517,10 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 - **ARKA PLANDA GİZLİ SHELL YOK.** Uçuşlar ve analizler sohbette, doğrudan
   çalıştırılır ki kullanıcı ne olup bittiğini görsün. Uzun süren bir işi arka
   plana atıp sessiz kalma; boşa zaman harcama.
+- **PLANI ÖNCE SÖYLE, SONRA KOŞ.** Kaç uçuş, ne kadar sürecek, her koşuda ne
+  değişiyor — hepsi **sohbete**, ilk uçuş başlamadan. Kampanya belgesine
+  yazmak bunun yerine geçmez. Bkz. §1.1 (zorunlu tablo + ara rapor + 1 saat
+  onay eşiği).
 - Bir şey takılırsa **sebebini bul ve söyle**, sessizce yeniden deneme.
 - Kendi önceki hükmünü çürüten veri çıkarsa **açıkça düzelt**.
 - Sonuçlar `UYGULANACAK.md`'ye ilgili maddenin altına işlenir.
