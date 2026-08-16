@@ -16,7 +16,54 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
-## ADAY C — YATAY JERK (`PSC_JERK_XY` 5→15) · ÖLÇÜLDÜ, KARAR KULLANICIDA
+## D — YATAY JERK TARAMASI (`PSC_JERK_XY` 5 / 10 / 15) · 24 UÇUŞ · **VARSAYILAN 10**
+
+**Tam rapor:** `docs/kampanya/D_JERK_TARAMA.md` (ölçütler koşmadan önce ilan
+edildi) · 12 kare + 12 düz, n=4/seviye, dönüşümlü, tür-eşli.
+
+**Sebep:** kullanıcı jerk 15'i kendi uçurdu, "çevik, geride kalmıyor — ama
+kontrolsüz ve salınımlı" dedi, **"en iyi değerine çekelim, 10 olabilir mi"**
+diye sordu.
+
+| | jerk 5 | **jerk 10** | jerk 15 |
+|---|---|---|---|
+| KARE medyan mesafe (birincil) | 66.0 m | **59.5 m** | 54.5 m |
+| KARE 60 m içinde süre | 96 s | **122 s** | 134 s |
+| KARE kutu oranı | %30.2 | **%38.6** | %41.5 |
+| DÜZ isabet | 4/4 | **3/4** | 2/4 |
+| DÜZ terminal nişan sapması (son 2 s) | 7 px | **8 px** | **30 px** |
+| DÜZ terminal yanal ivme | 0.44 | **1.19** | 4.49 m/s² |
+| mekanizma: jerk p90 | 6.73 | **10.49** | 13.33 |
+
+**JERK 5 ELENDİ** — karede %17 daha uzak, kutu oranı en düşük.
+**10 ile 15 arası n=4'te AYRILMADI → §5.6 gereği karar kullanıcıda.**
+Varsayılan ölçümün önerdiği yere (10) çekildi; panel düğmesi **10 ↔ 15**.
+
+**⚠ İKİ ÖNEMLİ BULGU:**
+
+1. **"Salınım" ölçütü geçersiz çıktı, ilan edilen eşik yakaladı.** `cx`
+   işaret değişimi yalnız kutu olan karelerde sayılabiliyor; jerk 5, 10-20 m
+   kovasında 430 kare verirken 15 → 806 kare veriyor. Kutu oranı üç seviyede
+   de %60'ın altında → ölçüt karardan ÇIKARILDI (§5.2). Yerine
+   **`telem.csv` 10 Hz, koşulsuz** kaynaktan rota açısı salınımı ölçüldü:
+   **hiçbir seviye ayrılmıyor** (p=0.29-0.57). Jerk arttıkça araç daha SIK
+   dönüş değiştirmiyor, her dönüşü daha SERT yapıyor (|ψ̇| p90 15.7 → 24.3
+   °/s) ve hedefi kadrajda merkeze daha YAKIN tutuyor (|cx| p90 81 → 62 px).
+
+2. **Karedeki salınımın kökü jerk DEĞİL, dönüş hızı doygunluğu (§5.11).**
+   ω_max = g·tan(45°)/16 m/s = **35 °/s**; ölçülen LOS dönüş hızı karede
+   **medyan 42-57 °/s, kutulu karelerin %65-80'inde ω_max'ın ÜSTÜNDE**.
+   Düzde bu oran %10-12 — düzün çalışıp karenin çalışmamasının sebebi bu.
+   Hiçbir jerk değeri bunu değiştiremez (jerk formülde yok). Kaldıraçlar
+   `V` ve `ANGLE_MAX`. Bkz. `docs/kampanya/D_JERK_TARAMA.md` §1 ve §8.
+
+---
+
+## ADAY C — YATAY JERK (`PSC_JERK_XY` 5→15) · ÖLÇÜLDÜ · **D TARAMASI YERİNE GEÇTİ**
+
+> ⬆ Bu maddenin sorusu D kampanyasında üç seviyeli olarak yeniden soruldu ve
+> cevaplandı. C'nin düz regresyon bulgusu (isabet 4/4 → 0/4) D'de bağımsız
+> olarak DOĞRULANDI (4/4 → 2/4, aynı yön), mekanizması da aynı çıktı.
 
 **Tam rapor:** `docs/kampanya/C_JERK.md` · 18 uçuş (8 kare + 8 düz + 2 daire).
 

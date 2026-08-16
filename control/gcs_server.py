@@ -747,17 +747,27 @@ def _hedef_cfg(alan):
     return _ibvs_mod.Cfg, alan
 
 
+# D KAMPANYASI (jerk taraması, 24 uçuş): düğmenin İKİ ucu da env'den gelir,
+# çünkü tarama 5 / 10 / 15 üç seviyeliydi ve otomatik kampanya her koşuda tam
+# restart yapıyor (§4: koşu boyunca anahtar değişmesin).
+# Panel varsayılanı artık ölçümün bıraktığı açık soru: kapalı = 10 (yeni
+# varsayılan, avci_copter.parm'a yazıldı), açık = 15.
+_JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "10"))
+_JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
+
 _OZELLIKLER = {
     "c_jerk": (
         "PSC_JERK_XY", "param",
-        "Aday C · Yatay jerk tavanı (5 → 15 m/s³)",
-        "ÖLÇÜLDÜ: karede hedef 33.1 m yarıçapla dönüyor, biz 121.8 m ile — "
-        "3.7 kat geniş. Fizik değil: ANGLE_MAX 45° bize 9.81 m/s² veriyor, "
-        "biz medyan 2.3 kullanıyoruz. Jerk, ivmenin DEĞİŞİM HIZINI sınırlar: "
-        "bugün 5 m/s³ ile hedefin sürdürdüğü 6.25 m/s²'ye çıkmak 1.25 s = "
-        "18 m/s'de 22.5 m sürüyor. Kare köşesi 2-3 s'de bitiyor. 15 ile "
-        "0.42 s = 7.5 m. Gövde kaynaklı sert tavan 19.4 m/s³ (AC_PosControl "
-        "satır 448), yani 15 güvenli. "
+        f"Yatay jerk tavanı ({_JERK_TABAN:g} → {_JERK_DENEY:g} m/s³)",
+        "AÇIK KALAN TEK SORU: 10 mu 15 mi? D kampanyası (24 uçuş, "
+        "docs/kampanya/D_JERK_TARAMA.md) 5'i ELEDİ ve varsayılanı 10 yaptı, "
+        "ama 10 ile 15'i n=4'te AYIRAMADI — karar kullanıcınındır. "
+        "ÖLÇÜLEN: karede medyan mesafe 66.0 / 59.5 / 54.5 m (5/10/15) — 15 "
+        "biraz daha yakın. Düzde temasın son 2 s'sinde nişan sapması "
+        "7 / 8 / 30 px — 15 terminalde nişanı kaydırıyor, isabet 4/4 / 3/4 / "
+        "2/4. Yanlılıktan bağımsız salınım ölçütünde (telem 10 Hz, rota açısı) "
+        "10 ile 15 AYRILMIYOR (p=0.571) — yani 15 daha 'salınımlı' değil, "
+        "dönüşleri daha sert ve terminali daha bozuk. "
         "⚠⚠ BU DÜĞME UÇUŞ SIRASINDA ETKİ ETMEZ. ArduPilot jerk'i yalnız "
         "GUIDED alt modu DEĞİŞİRKEN okuyor (mode_guided.cpp:564 → "
         "velaccel_control_start). Hız komutu akarken yazılan değer bir "
@@ -765,9 +775,8 @@ _OZELLIKLER = {
         "düğmeyi çevir, sonra takibi durdurup yeniden başlat (stop_chase → "
         "start_chase) — o an yeni değer okunur. "
         "⚠ Dikey kanal ETKİLENMEZ (yapısal): bu parametre yalnız yatay "
-        "düzlemi kurar, dikey PSC_JERK_Z ayrı ve değişmiyor. "
-        "⚠ Yalpalama görülürse ilk geri alınacak şey budur.",
-        "PSC_JERK_XY", (5.0, 15.0)),
+        "düzlemi kurar, dikey PSC_JERK_Z ayrı ve değişmiyor.",
+        "PSC_JERK_XY", (_JERK_TABAN, _JERK_DENEY)),
 }
 
 

@@ -101,6 +101,22 @@ WPNAV_JERK 4
 # Yatay hız denetleyici P kazancı (doğru ad; firmware varsayılanı da 2.0).
 PSC_VELXY_P 2.0
 
+# ── YATAY JERK TAVANI — GUIDED hız modunun GERÇEK anahtarı ──
+# ⚠ Yukarıdaki WPNAV_JERK bu modda OKUNMUYOR. GUIDED hız komutu
+# velaccel_control_start → pva_control_start → set_max_speed_accel_NE_cm
+# yolundan geçer ve orada kullanılan parametre PSC_JERK_XY'dir
+# (firmware varsayılanı 5.0). Sert gövde tavanı 19.41 m/s³.
+# ⚠ ArduPilot bunu yalnız GUIDED ALT MODU DEĞİŞİRKEN okur — uçuş sırasında
+# yazılan değer bir sonraki stop_chase/start_chase'e kadar rafta bekler.
+#
+# 10 ÖLÇÜLDÜ (D kampanyası, 24 uçuş, docs/kampanya/D_JERK_TARAMA.md):
+#   kare (manevra):  medyan mesafe 66.0 → 59.5 m, 60 m içinde süre 96 → 122 s
+#   düz  (terminal): nişan sapması son 2 s'de 7 → 8 px (15'te 30 px'e fırlıyor)
+#   isabet düzde:    5 → 4/4,  10 → 3/4,  15 → 2/4
+# 15 karede biraz daha yakın (54.5 m) ama düzdeki isabeti daha çok yiyor ve
+# yanlılıktan bağımsız salınım ölçütünde 10'dan AYRILMIYOR (p=0.571).
+PSC_JERK_XY 10
+
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
 # seyir dilimleri): yaw takip hatası std 1.4-2.4°, salınım ~1.1-2.0 Hz.
