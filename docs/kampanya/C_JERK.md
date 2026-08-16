@@ -198,8 +198,135 @@ mesafenin de arttığı (yani "uzakta sürünme") durum.
 
 ---
 
-## 8 · RAPORDAN ÖNCE ÜÇ SORU (§5.8) — koşu sonrası doldurulacak
+## 8 · RAPORDAN ÖNCE ÜÇ SORU (§5.8)
 
-1. Özellik çalıştı mı? (|ȧ| p90 deney kolunda yükseldi mi) → …
-2. Ölçütüm kötü bir sebeple mi iyileşti? (İK-1 ne diyor) → …
-3. n kaç, bu n'de hüküm kurulur mu? → …
+1. **Özellik çalıştı mı?** EVET, tartışmasız. Jerk p90 **7.26 → 14.57 m/s³**
+   (kare), yanal ivme medyanı **1.59 → 3.77 m/s²**. Her koşuda param araçtan
+   geri okunarak teyit edildi.
+2. **Ölçütüm kötü bir sebeple mi iyileşti?** HAYIR. Geçerlilik eşi İK-1
+   (medyan mesafe) **aynı yöne** gitti: 74.6 → 59.3 m. Kutu oranı da arttı
+   (%26.3 → %37.1). "Uzakta sürünme" senaryosu gerçekleşmedi.
+3. **n kaç, hüküm kurulur mu?** Kare n=4/kol ve **tam ayrışma** (p=0.057, bu
+   n'de ulaşılabilir en düşük değer). Düz n=4/kol'a **çıkarıldı** (aşağıda
+   gerekçesi) ve orada da tam ayrışma. İkisinde de hüküm kurulur.
+
+---
+
+## 9 · SONUÇ (18 uçuş, 2026-08-16)
+
+### Kare — kazanım senaryosu (n=4/kol)
+
+| ölçüt | K5 (kontrol) | C15 (deney) | |
+|---|---|---|---|
+| **BİRİNCİL** 60 m içinde süre | 68.5 s | **124.0 s** | **+%81 · p=0.057** |
+| İK-1 medyan mesafe (geçerlilik eşi) | 74.6 m | **59.3 m** | aynı yönde ✓ |
+| İK-2 dönüş yarıçapı (biz) | 118.7 m | **89.9 m** | hedef: 33.1 m |
+| en yakın menzil | 19.07 m | **5.31 m** | |
+| İK-5 kutu oranı | %26.3 | **%37.1** | |
+| İK-6 kuyruk konisi | %44.7 | %50.2 | |
+| İK-3 salınım (cx dgş/s) | 0.213 | 0.594 | ⚠ 2.8× kötü |
+| İK-4 yatış dgş/s · \|yatış\| p90 | 0.352 · 19.4° | 0.358 · 36.1° | yalpalama eşiği (1.5×) **aşılmadı** |
+| İK-7 isabet | 0/4 | 0/4 | düz |
+| **mekanizma** jerk p90 | 7.26 | **14.57** | kapı açık ✓ |
+
+Ham değerler — 60 m içinde süre (s):
+K `76, 59, 69, 68` · C `124, 132, 110, 124`. **Hiç örtüşme yok.**
+
+### Düz — regresyon (n=4/kol)
+
+| ölçüt | K5 | C15 | |
+|---|---|---|---|
+| **İSABET** | **4/4** | **0/4** | ⛔ |
+| en yakın menzil | 1.20 m | 2.23 m | ⛔ |
+| 60 m içinde süre | 110 s | 128 s | daha iyi |
+| medyan mesafe | 71.9 m | 50.5 m | daha iyi |
+| kutu oranı | %77.2 | %88.0 | daha iyi |
+| salınım (cx dgş/s) | 2.782 | 1.840 | daha iyi |
+| KURTARMA kare | 19 | 37 | ~2× |
+
+Ham en yakın (m): K `0.58, 1.70, 1.55, 0.84` · C `2.13, 2.51, 1.85, 2.33`.
+**Burada da hiç örtüşme yok** — ama ters yönde.
+
+⚠ **n neden 4'e çıkarıldı:** ilan edilen plan düz için n=2/kol'du ve orada
+ÇIKAR kapısı tetiklendi (0/2 ↔ 2/2). Karar tamamen o kapıya bakacağı ve
+§5.4 n&lt;4'te hüküm kurulmasını yasakladığı için 4 uçuş **eklendi**. Eklenen
+uçuşlar özelliğin **aleyhine** olan kapıyı güçlendirdi, lehine değil; ölçüt
+değişmedi (§5.6).
+
+### Düz regresyonun MEKANİZMASI — ölçüldü
+
+Deney kolu düzde **her ara ölçütte daha iyi** ama hiç vuramıyor. Temastan
+önceki 2 saniyeye bakınca sebep görünüyor:
+
+| terminal faz, son 2 s | K5 | C15 |
+|---|---|---|
+| \|yanal ivme\| medyan | **0.57 m/s²** | **3.88 m/s²** (6.8×) |
+| \|jerk\| p90 | 8.91 | 19.31 |
+| hedefin merkezden sapması | 8.5 px | 21.5 px |
+
+Kontrol kolu son iki saniyede neredeyse **düz uçuyor** ve hedefi kadrajın
+ortasında tutuyor. Deney kolu yanal olarak savruluyor. Kovalarken işe
+yarayan çeviklik, son anda **piksel gürültüsünü kovalamaya** dönüşüyor:
+menzil küçüldükçe küçük konum hatalarının açısal karşılığı büyüyor, jerk
+serbestken araç o sıçramaları fiilen takip ediyor.
+
+### Daire — yapısal öngörü testi (n=1/kol, karar vermez)
+
+En yakın 3.90 → 3.30 m, dönüş yarıçapı 72.2 → 69.8 m. **Fark yok denecek
+kadar az** — ilan edilen öngörü buydu: sürekli dönüşte ivme oturur, jerk
+alakasız hâle gelir. **Model çürütülmedi.**
+
+### Video bacağı (§2 adım 4)
+
+`logs/c_C01_K_kare.mp4`, `c_C02_C_kare.mp4`, `c_C09_K_duz_yatay.mp4`,
+`c_C10_C_duz_yatay.mp4`.
+
+- **Kazanım:** C01 (kontrol) en yakın anında (19.7 m) hedef ~14 px'lik leke,
+  güven 0.62. C02 (deney) en yakın anında (4.5 m) hedef net çözünmüş uçak,
+  güven 0.93, araç ~50° yatıkta — mekanizma çalışırken böyle görünüyor.
+- **Kayıp:** C09 (kontrol, İSABET) temastan 1 kare önce hedef **tam merkezde**,
+  ufuk **düz**, kutu 90×40 px, güven 0.92 — ders kitabı KONTROLLÜ vuruş.
+  C10 (deney, ıska) aynı anda hedef merkezin üstünde-solunda ve araç
+  **~25° yatıkta**.
+- **Çapraz doğrulama (§2 adım 6): çelişki YOK.** Terminal ivme sayıları
+  (0.57 ↔ 3.88 m/s²) karelere birebir yansımış.
+
+---
+
+## 10 · KARAR — ilan edilen kurala göre
+
+İlan edilen **ÇIKAR** koşullarından biri tetiklendi:
+> *"Düz regresyonda deney kolu 0/2 alırken kontrol ≥1/2"* — n=4'te **0/4 ↔ 4/4**.
+
+GİRER koşulu (3) sağlanamadı. Yalpalama eşiği (1.5×) **aşılmadı**, yani
+ÇIKAR yalnız isabet kaybından geliyor.
+
+**→ Kural ÇIKAR diyor.** Ama §5.10 açık: *"gerileme VARSA ölçülüp raporlanır
+ve kararı kullanıcı verir; sessizce geçilmez."* Karar kullanıcıda.
+
+**Yapay zekânın önerisi:** Aday C'yi **bu hâliyle** (global jerk 15) ÇIKAR,
+ve yerine aşağıdaki C2'yi ölç.
+
+---
+
+## 11 · ADAY C2 — FAZA GÖRE JERK (kanıta dayalı, henüz ölçülmedi)
+
+Veri tek bir şeyi söylüyor: **yüksek jerk kovalamada kazandırıyor, terminalde
+kaybettiriyor.** İkisi farklı fazlar ve zaten ayrı kod yollarımız var.
+
+| | kovalama | terminal |
+|---|---|---|
+| ölçülen etki | 60 m içinde süre +%81 | isabet 4/4 → 0/4 |
+| önerilen jerk | 15 | 5 (bugünkü) |
+
+**Tetik:** terminal mandalı (`terminal_mandal`) — zaten var, `TERM_BIRAK_M`
+ile bırakılıyor. Mandal girince `PSC_JERK_XY` 5'e, çıkınca 15'e yazılır.
+
+⚠ **Önemli engel:** parametre uçuş sırasında **okunmuyor** (§2). Faz geçişinde
+bir GUIDED alt mod yenilemesi gerekir. Uygulanabilirliği koddan
+doğrulanmadan C2 önerilmez — bu satır bir **açık soru**, çözüm değil.
+
+**Alternatif (kod yolu):** jerk'i araç parametresi olarak değil, güdümün
+kendi komut yumuşatması olarak kurmak — `hiz_yonu`'ndaki değişim hızını
+terminalde sınırlamak. Bu, ArduPilot'un mod yenileme sorununu tamamen
+atlar ve bizim kontrolümüzde kalır.

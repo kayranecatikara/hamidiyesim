@@ -16,6 +16,46 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## ADAY C — YATAY JERK (`PSC_JERK_XY` 5→15) · ÖLÇÜLDÜ, KARAR KULLANICIDA
+
+**Tam rapor:** `docs/kampanya/C_JERK.md` · 18 uçuş (8 kare + 8 düz + 2 daire).
+
+⛔ Önce bir düzeltme: raporda (`docs/donus_acigi.html`) bu adayı
+`WPNAV_JERK` diye önermiştim — **yanlıştı, uçsaydık ölü koşu olurdu**.
+GUIDED hız modu `wp_nav`'ın yol üreticisini kullanmıyor; bağlayan parametre
+`PSC_JERK_XY` (AC_PosControl.cpp:439). Sert gövde tavanı 19.41 m/s³.
+
+**KAZANIM (kare, n=4/kol, tam ayrışma, p=0.057):**
+
+| ölçüt | K5 | C15 |
+|---|---|---|
+| **60 m içinde süre (birincil)** | 68.5 s | **124.0 s** (+%81) |
+| medyan mesafe (geçerlilik eşi) | 74.6 m | **59.3 m** ✓ aynı yönde |
+| dönüş yarıçapı | 118.7 m | **89.9 m** |
+| en yakın menzil | 19.07 m | **5.31 m** |
+| mekanizma: jerk p90 | 7.26 | **14.57** |
+
+**REGRESYON (düz, n=4/kol, tam ayrışma):** **isabet 4/4 → 0/4**,
+en yakın 1.20 → 2.23 m. *(n, ÇIKAR kapısını güçlendirmek için 2'den 4'e
+çıkarıldı — özelliğin aleyhine, §5.6.)*
+
+**Regresyonun mekanizması ölçüldü** — temastan önceki 2 s:
+yanal ivme **0.57 → 3.88 m/s²** (6.8×), hedefin merkezden sapması
+8.5 → 21.5 px. Kovalamada işe yarayan çeviklik, terminalde piksel
+gürültüsünü kovalamaya dönüşüyor.
+
+**Daire (yapısal öngörü, n=1/kol):** fark yok (3.90 → 3.30 m) — ilan edilen
+öngörü buydu, sürekli dönüşte jerk alakasız. **Model çürütülmedi.**
+
+**Karar:** ilan edilen kural **ÇIKAR** diyor (düz isabet kapısı). §5.10
+gereği gerileme varsa kararı kullanıcı verir. **Önerim:** global hâlini
+çıkar, **C2 = faza göre jerk** (kovalamada 15, terminalde 5) ölçülsün.
+⚠ C2'nin uygulanabilirliği açık soru: parametre uçuş sırasında okunmuyor;
+alternatifi jerk'i araç parametresi yerine güdümün kendi komut
+yumuşatmasında kurmak.
+
+---
+
 ## Ö-N — GÖRSELİ BIRAKMA EŞİĞİ (`KAYIP_M` 20→40) · ÖLÇÜLDÜ, KARAR KULLANICIDA
 
 **Tam rapor:** `docs/kampanya/ON_KAYIP_ESIK.md` (ölçütler koşmadan önce ilan
