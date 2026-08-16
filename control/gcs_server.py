@@ -747,36 +747,27 @@ def _hedef_cfg(alan):
     return _ibvs_mod.Cfg, alan
 
 
-# D KAMPANYASI (jerk taraması, 24 uçuş): düğmenin İKİ ucu da env'den gelir,
-# çünkü tarama 5 / 10 / 15 üç seviyeliydi ve otomatik kampanya her koşuda tam
-# restart yapıyor (§4: koşu boyunca anahtar değişmesin).
-# Panel varsayılanı artık ölçümün bıraktığı açık soru: kapalı = 10 (yeni
-# varsayılan, avci_copter.parm'a yazıldı), açık = 15.
-_JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "10"))
-_JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
-
 _OZELLIKLER = {
-    "c_jerk": (
-        "PSC_JERK_XY", "param",
-        f"Yatay jerk tavanı ({_JERK_TABAN:g} → {_JERK_DENEY:g} m/s³)",
-        "AÇIK KALAN TEK SORU: 10 mu 15 mi? D kampanyası (24 uçuş, "
-        "docs/kampanya/D_JERK_TARAMA.md) 5'i ELEDİ ve varsayılanı 10 yaptı, "
-        "ama 10 ile 15'i n=4'te AYIRAMADI — karar kullanıcınındır. "
-        "ÖLÇÜLEN: karede medyan mesafe 66.0 / 59.5 / 54.5 m (5/10/15) — 15 "
-        "biraz daha yakın. Düzde temasın son 2 s'sinde nişan sapması "
-        "7 / 8 / 30 px — 15 terminalde nişanı kaydırıyor, isabet 4/4 / 3/4 / "
-        "2/4. Yanlılıktan bağımsız salınım ölçütünde (telem 10 Hz, rota açısı) "
-        "10 ile 15 AYRILMIYOR (p=0.571) — yani 15 daha 'salınımlı' değil, "
-        "dönüşleri daha sert ve terminali daha bozuk. "
-        "⚠⚠ BU DÜĞME UÇUŞ SIRASINDA ETKİ ETMEZ. ArduPilot jerk'i yalnız "
-        "GUIDED alt modu DEĞİŞİRKEN okuyor (mode_guided.cpp:564 → "
-        "velaccel_control_start). Hız komutu akarken yazılan değer bir "
-        "sonraki alt mod geçişine kadar RAFTA BEKLER. Farkı görmek için: "
-        "düğmeyi çevir, sonra takibi durdurup yeniden başlat (stop_chase → "
-        "start_chase) — o an yeni değer okunur. "
-        "⚠ Dikey kanal ETKİLENMEZ (yapısal): bu parametre yalnız yatay "
-        "düzlemi kurar, dikey PSC_JERK_Z ayrı ve değişmiyor.",
-        "PSC_JERK_XY", (_JERK_TABAN, _JERK_DENEY)),
+    "o5_donus": (
+        "DONUS_A", "deger",
+        "Ö5 · Dönüş-farkında hız tavanı (kapalı → 9.81 m/s²)",
+        "YASA: gereken yanal ivme V·λ̇ aracın tavanını aşıyorsa hızı kıs — "
+        "dönüş yarıçapı R = V²/(g·tanθ) hızın KARESİYLE düşer. YALNIZ KISAR; "
+        "hızı asla artırmaz, düz uçuşta λ̇≈0 → tavan sonsuz → etkisiz. "
+        "DEĞER 9.81 = g·tan(ANGLE_MAX 45°), yani 'üretemeyeceğin yanal ivmeyi "
+        "isteme' — ayarlanmış değil, FİZİKTEN türetilmiş. "
+        "NİYE YENİDEN: Ö5 2026-08-11'de düz senaryoda 10 uçuşla elenmişti; "
+        "D kampanyası tetiğin düzde karelerin yalnız %16'sında, KAREDE %57'sinde "
+        "sağlandığını ölçtü — yani Ö5 kendi tasarım zarfının dışında sınanmıştı "
+        "(CLAUDE.md §5.13). Kök neden ölçümü de bunu istiyor: karede LOS dönüş "
+        "hızı medyanı 42-57°/s, aracın tavanı 35°/s — kutulu karelerin %65-80'i "
+        "takip edilemez durumda ve tek kaldıraç V. "
+        "⚠ RİSK, peşinen ilan edilir: karede karelerin %24'ünde tavan DONUS_V_MIN "
+        "= 10 m/s tabanına dayanıyor; hedef 15.1 m/s uçuyor, o anlarda saniyede "
+        "5 m geri kalınır. Kampanyanın asıl sınadığı şey bu takas. "
+        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (araç parametresi değil, güdüm "
+        "döngüsü her karede cfg.DONUS_A okuyor).",
+        "AVCI_IBVS_DONUS", (0.0, 9.81)),
 }
 
 

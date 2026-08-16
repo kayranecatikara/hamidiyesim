@@ -16,6 +16,48 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## Ö5 KAREDE (`DONUS_A` 0 → 9.81) · 20 UÇUŞ · **KARAR KULLANICIDA**
+
+**Tam rapor:** `docs/kampanya/O5_KARE.md` · 8 kare + 8 düz + 4 daire,
+n=4/kol (daire 2/kol), dönüşümlü, tür-eşli. Varsayılan **KAPALI bırakıldı.**
+
+**Niye elenmiş özellik yeniden ölçüldü (§5.13):** Ö5 tetiği düzde karelerin
+%16'sında sağlanıyor, karede **%57**'sinde. 2026-08-11'de düzde elenmişti —
+yani tasarım zarfının dışında sınanmıştı.
+
+| ölçüt | KONTROL | Ö5 | |
+|---|---|---|---|
+| **KARE 60 m içinde süre (birincil)** | 114.0 s | **142.5 s** | +%25 |
+| KARE medyan mesafe (geçerlilik eşi) | 62.3 m | **55.6 m** | ✓ aynı yönde |
+| **DÜZ isabet** | **4/4** | **2/4** | yatay 2/2→**0/2**, çapraz 2/2→2/2 |
+| DÜZ medyan mesafe / kutu oranı | 35.5 m / %65 | **24.2 m / %85** | daha yakın, daha iyi temas |
+| DAİRE 60 m süre / yarıçap | 107.5 s / 50.7 m | **173.5 s / 38.1 m** | |
+| mekanizma: tavan bağlar / `v_los` | %0 / 20.25 | **%94-99 / 15.63** | kapı sonuna kadar açık |
+
+**Karar kuralı → KULLANICIYA** (GİRER'in 3. şartı düştü: düz isabeti azaldı;
+ÇIKAR şartlarının hiçbiri oluşmadı). İlan ederken yazdığım "karede kazanıp
+düzde kaybeden bölünmüş sonuç" hâli aynen çıktı.
+
+**⚠ ÜÇ SENARYODA TEK İMZA — kalıcı bulgu:** Ö5 **takibi belirgin
+iyileştiriyor, bitirişi bozuyor.** Düzde hedefi kontrol kolundan DAHA İYİ
+görüyor (%85 vs %65 kutu) ve yine de vuramıyor — yani "göremedi" açıklaması
+elenir. Sebep tek satırda:
+
+> `V_TERMINAL = 16 m/s`, hedef 15.1 m/s → kalan kapanma **0.9 m/s**.
+> Ö5 hızı 12-16 m/s'ye kısınca bu marj sıfırlanıyor; araç hedefi mükemmel
+> izler ama asla yetişemez.
+
+Bu, **"hızı kısmak" ailesindeki HER özelliğin** (Ö5, Ö11, Ö-B) neden aynı
+duvara çarptığını açıklar. Sıradaki adım bu ailenin devamı olmamalı.
+
+**⚠ Kendi öngörümü düzelttim:** dairede "kalıcı yavaşlık → geride kalır"
+demiştim. Yavaşlık gerçekleşti (`v_los` 19.27 → **11.92 m/s**, hedef 15.1)
+ama araç geride KALMADI, daha yakın durdu — dairede kaybedilen şey hız
+değil geometri; yavaşlayınca yarıçap 50.7 → 38.1 m'ye düşüp içeriden
+kestirme yapıyor.
+
+---
+
 ## D — YATAY JERK TARAMASI (`PSC_JERK_XY` 5 / 10 / 15) · 24 UÇUŞ · **VARSAYILAN 10**
 
 **Tam rapor:** `docs/kampanya/D_JERK_TARAMA.md` (ölçütler koşmadan önce ilan

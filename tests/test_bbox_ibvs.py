@@ -783,6 +783,27 @@ def main():
             abs(C.DONUS_A) < 1e-9 and _d_ka[5]["donus_tavan"] is None,
             f"DONUS_A={C.DONUS_A} → tavan hiç uygulanmaz")
 
+    # B64: YAPISAL GARANTİ — Ö5 DİKEY kanala DOKUNAMAZ (CLAUDE.md §5.10:
+    # "regresyon testinden daha güçlü olan, değişikliğin diğer kanalı
+    # MATEMATİKSEL OLARAK etkileyememesidir"). Ö5 yalnız v_los'u (yatay LOS
+    # hızı) kısar; vz eps_elev'den ayrı hesaplanır ve bu tavandan GEÇMEZ.
+    # Bu test o iddiayı bit bit sınar — dikey için uçuş koşmaya gerek kalmaz.
+    _vz_enb, _n64 = 0.0, 0
+    for _lam in (0.0, 0.3, 1.0, 2.0, 5.0):
+        for _cyd in (200.0, 260.0, 320.0, 400.0):
+            for _b in (8, 20, 40):
+                for _vzz in (-3.0, 3.0):
+                    _a = ib.komut(CX + 40.0, _cyd, _b, _b, 0.0, 20.0, 0.05,
+                                  _Donus, True, (_lam, 0.0), 0.0, _vzz, 3.0, 0.0)
+                    _k = ib.komut(CX + 40.0, _cyd, _b, _b, 0.0, 20.0, 0.05,
+                                  C, True, (_lam, 0.0), 0.0, _vzz, 3.0, 0.0)
+                    _vz_enb = max(_vz_enb, abs(_a[2] - _k[2]))
+                    _n64 += 1
+    kontrol("B64 Ö5 DİKEY kanalı DEĞİŞTİREMEZ (yapısal, bit bit)",
+            _vz_enb < 1e-12,
+            f"{_n64} girdi kombinasyonunda en büyük vz farkı {_vz_enb:.2e} m/s "
+            "— dikey için regresyon uçuşu gerekmez (§5.10 yapısal garanti)")
+
     print("=" * 60)
     # ── T1b: DİKEY KANALDA ROLL/PITCH TELAFİSİ ──
     # Gece ölçümü: kesişim 10-40 cm'ye çözülüyor, isabet/ıska farkı DİKEYDE.
