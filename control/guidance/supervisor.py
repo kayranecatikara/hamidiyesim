@@ -3,11 +3,13 @@ supervisor.py — Faz 4: GPS ↔ görsel güdüm geçişi (hibrit müdahale).
 
 run_hybrid tek görev döngüsüdür (start_chase bunu çalıştırır):
 
-  GPS fazı (gps_guidance) hedefe yaklaşır. Görsel temas oturunca
-  (KILIT_PENCERE karenin KILIT_N'inde tespit, conf ≥ POSE_CONF_MIN, VE handoff
-  menzili içindeyiz YA DA GPS düşmüş/DROPOUT) → GÖRSEL faza (visual_lead)
-  geçilir. Görsel temas kesilirse ya da hedef GEÇİLİRSE (B5 fly-past) → GPS
-  fazına dönülür. stop_chase gelene (veya araç vurulana) kadar bu döngü sürer.
+  ══ FAZ GEÇİŞİ — TEK KRİTER (kullanıcı 2026-08-15) ══
+  GPS↔görsel devir SADECE ardışık-kare detection sayacına bakar; başka hiçbir
+  ölçüt (menzil kapısı, FSM durumu, kayan pencere, conf) DEVREYE GİRMEZ:
+    • GPS → GÖRSEL : tespit modeli hedefi ÜST ÜSTE 10 karede tespit ederse.
+    • GÖRSEL → GPS : tespit modeli hedefi ÜST ÜSTE 20 karede tespit EDEMEZSE.
+  Tek bir ters kare sayacı sıfırlar (gerçekten "üst üste"). stop_chase gelene
+  (veya araç vurulana) kadar bu döngü sürer.
 
   ── 2026-08-06: kilit sinyali pose değil DETECTION güveni ──
   Pose modeli kaldırıldı; "görsel kilit" artık kutunun güvenidir. Eşik adı
@@ -75,15 +77,17 @@ if os.environ.get("AVCI_ERKEN_GORSEL", "0").strip().lower() in ("1", "on", "true
 # görsel algoritma. bbox_ibvs kutu akışına wait_pose adaptörüyle bağlanır.
 _GORSEL_YASA = os.environ.get("AVCI_GORSEL_YASA", "bbox_ibvs").strip().lower()
 
-# ── SAYAÇ-BAZLI GEÇİŞ (kullanıcı isteği 2026-08-12) ──
-# GPS↔görsel DEVİR kararı FSM durumundan DEĞİL, ardışık-kare detection sayacından
-# alınır: üst üste _GOR_ESIK kare detection görülünce GÖRSEL güdüme, üst üste
-# AVCI_HYBRID_KAYIP_M kare görülmeyince GPS güdüme geçilir. Görsel↔GPS ve FSM aynı
-# anda devri TETİKLEMEZ (kullanıcı: "aynı anda devreye girmemeli"). FSM'in kümülatif/
-# kesintisiz kilit birikimi görsel yürütücünün İÇİNDE çalışmaya devam eder (şartname
-# 6.1.4 göstergesi); mission_fsm.py'ye DOKUNULMAZ. KAPALI = mevcut FSM dispatch (byte-aynı).
-_SAYAC_GECIS = os.environ.get("AVCI_HYBRID_SAYAC", "0").strip().lower() in ("1", "on", "true", "acik")
-_GOR_ESIK = int(os.environ.get("AVCI_HYBRID_GOR_N", 10))   # ardışık detection → görsele geç
+# ── SAYAÇ-BAZLI GEÇİŞ — FAZ GEÇİŞİNİN TEK KRİTERİ (kullanıcı 2026-08-15) ──
+# GPS↔görsel DEVİR kararı SADECE ardışık-kare detection sayacından alınır:
+#   • üst üste _GOR_ESIK (10) kare detection    → GÖRSEL güdüme geç,
+#   • üst üste SupCfg.KAYIP_M (20) kare detection YOK → GPS güdüme dön.
+# Başka HİÇBİR ölçüt yok: FSM durumu, menzil kapısı, kayan pencere, conf DEVRE DIŞI.
+# Tek bir ters kare sayacı sıfırlar (gerçek "üst üste"). VARSAYILAN AÇIK — bu artık
+# supervisor'ın devir davranışıdır. AVCI_HYBRID_SAYAC=0 → eski FSM dispatch (yedek,
+# kod korunur). FSM kümülatif/kesintisiz kilit göstergesi (şartname 6.1.4) görsel
+# yürütücünün İÇİNDE çalışmaya devam eder; mission_fsm.py'ye DOKUNULMAZ.
+_SAYAC_GECIS = os.environ.get("AVCI_HYBRID_SAYAC", "1").strip().lower() in ("1", "on", "true", "acik")
+_GOR_ESIK = int(os.environ.get("AVCI_HYBRID_GOR_N", 10))   # üst üste 10 tespit → GÖRSEL
 
 def _acik(ad, vars="0"):
     return os.environ.get(ad, vars).strip().lower() in ("1", "on", "true", "acik")
@@ -112,6 +116,17 @@ _YAPIS_SN = float(os.environ.get("AVCI_HYBRID_YAPIS_SN", 3.0))
 # eşiği → coast köprüsü kaçamak/tutma boşluğunu dayanır, görsel oturum uzar, kilit
 # birikir. 0 = kapalı (sup_cfg.KAYIP_M kullan). bbox_ibvs.py parametrik → dokunulmaz.
 _KAYIP_M_GORSEL = int(os.environ.get("AVCI_HYBRID_KAYIP_M_GORSEL", 0))
+
+# ── #5: SAYAÇ GEÇİŞ HİSTEREZİSİ / DEBOUNCE (thrash azalt, 2026-08-13) ──
+# GPS güdüm "başlangıç salınımı" teşhisinden (#5): sayaç modunda teğet-geçiş sonrası
+# hedef aracın ARKASINDA kalıp yeni GPS segmenti neredeyse ANINDA tekrar görsele
+# dönüyor → baştaki yaw savrulması (burun ~180° dönmek zorunda) görev boyunca
+# defalarca doğuyor (ölçüm: 2 uçuşta 13 GPS→görsel geçiş). DEBOUNCE: GPS fazına
+# girince, sayaç görsele geçmeden önce en az _GPS_MIN_SN beklet → araç yaw/geometrisini
+# toparlasın, geçiş sıklığı düşsün. Kilit muhasebesini ETKİLEMEZ (bağımsız thread).
+# KAPALI → mevcut anında-geçiş davranışı (byte-aynı). gps_guidance.py'ye DOKUNULMAZ.
+_GECIS_HIST = _acik("AVCI_HYBRID_GECIS_HIST")
+_GPS_MIN_SN = float(os.environ.get("AVCI_HYBRID_GPS_MIN_SN", 2.0))   # s; GPS'te min kalış
 
 
 class SupCfg:
@@ -293,6 +308,7 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
         # ══ GPS YÜRÜTÜCÜSÜ ══ (FSM SEARCH/APPROACH/TRACK_LOST veya durum yok) ══
         if gps_fazinda:
             status["faz"] = "GPS"
+            _gps_giris_t = time.monotonic()   # #5 histerezis: GPS fazına giriş anı
             faz_stop = threading.Event()
             _kopru(stop_event, faz_stop)
             # Oran regülasyonu gps ile EŞZAMANLI koşar (APPROACH/TRACK_LOCK'ta
@@ -326,7 +342,11 @@ def run_hybrid(conn, get_plane, get_iris, wait_kare, get_plane_truth,
                         if ok:
                             gor += 1
                             status["kilit_sayac"] = gor
-                            if gor >= esik:
+                            # #5 histerezis: GPS'te min kalış dolmadan görsele GEÇME
+                            # (teğet-geçiş sonrası anında yeniden görsele dönüşü/thrash'i keser).
+                            _hist_bekle = (_GECIS_HIST and
+                                           (time.monotonic() - _gps_giris_t) < _GPS_MIN_SN)
+                            if gor >= esik and not _hist_bekle:
                                 status["sayac_hedef"] = "gorsel"   # ana döngü görsele geçsin
                                 faz_stop.set()
                                 return

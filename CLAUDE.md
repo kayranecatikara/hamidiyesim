@@ -6,6 +6,45 @@ Geliştirme yolu herkes için aynıdır.
 
 ---
 
+# 0 · BU BRANCH'İN VİZYONU — GÖRSEL GÜDÜM (kuzey yıldızı)
+
+Avcı drone'un güdümü **iki fazlıdır**: GPS fazı + görsel faz. Bu branch'te
+odak **yalnızca görsel güdümdür**. Amaç net:
+
+> **GPS güdümü hedefi görsele devrettikten SONRAKİ aşamayı devralıp
+> drone'u hedefe ÇARPTIRMAYA kadar götürmek.** Bunun için mümkün olan en
+> iyi görsel güdüm algoritmasını kurmak.
+
+## GPS fazı — DONMUŞ REFERANS (takımdaki arkadaşın işi, birebir alınır)
+- GPS fazı takımdaki bir arkadaşın (`kayramin_super_gudumu` dalı) yaptığı
+  şekilde **en iyi hâlinde** ve **test edilip doğruluğu kanıtlanmıştır**.
+- Bu branch'te GPS güdümü **geliştirilmez, denenmez, "iyileştirilmez"**.
+  `kayramin_super_gudumu`'ndaki hâli **birebir** kullanılır: `gps_guidance.py`,
+  `kurtarma.py`, `common.py` ve `guidance_core.py`'deki `hedef_kadraj_hatasi`
+  o daldan byte-aynı çekilir. GPS'e dair "salınım/kurtarma/burun borcu" gibi
+  kendi eklemelerim GEÇERSİZDİR — çıkarılır.
+- **Parametreler değerce birebir kayramin.** Tek istisna isim şeması: bu
+  makinenin ArduCopter firmware'i SI adlarını ister (`ATC_ANGLE_MAX`,
+  `WP_SPD`, `PSC_NE_VEL_P`); kayramin'in eski adları (`ANGLE_MAX`,
+  `WPNAV_SPEED`, `PSC_VELXY_P`) bu firmware'de **sessizce reddedilir**
+  (canlı SITL dökümüyle ölçüldü). Bu yüzden **değerler kayramin'inki, adlar
+  bu firmware'in karşılıklarıdır** — kayramin GPS davranışı bu makinede ancak
+  böyle birebir çalışır. Eski-ad dosyasını olduğu gibi basmak = firmware
+  varsayılanları (10 m/s, 30°) = kayramin davranışının KAYBI. Değişiklik
+  önce **canlı `param_request_read` ile** doğrulanır.
+
+## Görsel faz — AKTİF ÇALIŞMA ALANI (asıl iş burada)
+- Görsel güdüm, standart IBVS'ten **farklı** kurduğumuz bir algoritmadır.
+  Şu an bir görsel güdüm algoritması üzerinde çalışıyoruz; **onun üzerinden
+  devam edilir**, sıfırdan başka mimari kurulmaz (aksi açıkça istenmedikçe).
+- Bu fazın görevi: GPS→görsel devir noktasından hedefi devralmak, kadrajda
+  tutmak, şartname kilidini biriktirmek (§7/§8) ve terminal dalışla **fiziksel
+  çarpışmaya** kadar götürmek. Başarı ölçütü = temas/imha, sadece kilit değil.
+- İyileştirme daima §1–§4 döngüsüyle yapılır: uçuş → görüntü+log analizi →
+  emin değişiklik önerisi → kullanıcı onayı → test komutu → A/B doğrulama.
+
+---
+
 # 1 · GELİŞTİRME STRATEJİSİ — döngünün tamamı
 
 Her güdüm özelliği şu beş adımdan geçer. Adım atlanmaz.

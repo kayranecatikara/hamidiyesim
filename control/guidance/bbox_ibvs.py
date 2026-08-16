@@ -91,6 +91,12 @@ def _env_bool(name, default=False):
     return v.strip().lower() in ("on", "1", "true", "yes", "evet")
 
 
+# Adaptif kapanma-hızı ana anahtarı — IMPORT anında okunur (loop'ta çapraz-kare
+# durum gerektiği için _CanliBayrak deposu yerine düz env; test gcs'i zaten
+# yeniden başlatıyor). KAPALI (VARSAYILAN) → hiç okunmaz, davranış BYTE-AYNI.
+_ADAPT_KAPANMA = _env_bool("AVCI_IBVS_ADAPT_KAPANMA")
+
+
 # ── ÇALIŞMA-ANI KİLL-SWITCH KÖPRÜSÜ (2026-08-10) ───────────────────────────
 # PN/PRED/INTERCEPT eskiden IMPORT anında env'den okunuyordu; artık ÇALIŞMA
 # ANINDA ozellik_bayraklari deposundan okunuyor (gcs_server yeniden başlatmadan
@@ -269,6 +275,21 @@ class Cfg(metaclass=_CfgMeta):
     V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 18.0)   # m/s; hücum hızı
     # Dikey bütçe yetmediğinde yatay hız buraya kadar kısılabilir (bkz. komut()).
     V_TERM_MIN = _env_f("AVCI_IBVS_VTERM_MIN", 10.0)   # m/s; hücum hız tabanı
+
+    # ── ADAPTİF KAPANMA HIZI (2026-08-16, kullanıcı isteği) — kill-switch ──
+    # KAPALI (AVCI_IBVS_ADAPT_KAPANMA=off, VARSAYILAN) → terminal v_los=V_TERMINAL
+    # (bit-aynı). AÇIK → terminal hız sabit değil: ölçülen kapanmayı (kutudan,
+    # GPS yok) küçük bir hedefe çeker → v_los ≈ hedef_hızı + KAPANMA_SET.
+    #   v_los = v_los_önceki − (kapanma − KAPANMA_SET)   [asimetrik rate-limit + klemp]
+    # Amaç: çarpışma anı hız farkı küçük (fly-past biter) AMA hedef hızlanınca
+    # kapanma pozitif kalır (yetişemeyip ıskalama biter). ARTIS yavaş / AZALIS
+    # serbest: "çarpışma anında ani hız artışı → titreme" kullanıcı şikayeti bu
+    # asimetriyle engellenir. VTAVAN düşük tavan (ıska olsa toparlanabilsin).
+    KAPANMA_SET  = _env_f("AVCI_IBVS_KAPANMA_SET", 4.0)    # m/s; istenen çarpışma-anı hız farkı
+    ADAPT_ARTIS  = _env_f("AVCI_IBVS_ADAPT_ARTIS", 3.0)    # m/s² ; hızlanma rate-limit (YAVAŞ)
+    ADAPT_AZALIS = _env_f("AVCI_IBVS_ADAPT_AZALIS", 15.0)  # m/s² ; yavaşlama rate-limit (SERBEST)
+    ADAPT_VTAVAN = _env_f("AVCI_IBVS_ADAPT_VTAVAN", 20.0)  # m/s; adaptif hız üst tavanı
+    ADAPT_VMIN   = _env_f("AVCI_IBVS_ADAPT_VMIN", 8.0)     # m/s; adaptif hız tabanı (durmasın)
 
     # ⚠ LEAD MENZİLLE SÖNER (2026-08-09, kullanıcı gözlemi: "çarpacakken
     # birden yukarı itki verip kaçırıyoruz").
@@ -633,7 +654,7 @@ def piksel_elev(cy, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, yaw_rate=0.0):
+          kapanma=None, yaw_rate=0.0, v_los_terminal=None):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -732,10 +753,15 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     hata = cfg.BOYUT_REF - boyut               # px; + = uzak
     hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
     if terminal:
-        # TBOOST (kill-switch): hücum hızını yükselt (bkz. Cfg.TBOOST_VTERM).
-        # KAPALI → V_TERMINAL (bit-aynı). Dikey-bütçe kısıtı aşağıda yine geçerli.
-        v_los = (cfg.TBOOST_VTERM if _ozellik(cfg, "tboost", "TBOOST")
-                 else cfg.V_TERMINAL)         # hücum: fren yok, sabit hız
+        if v_los_terminal is not None:
+            # ADAPTİF KAPANMA (loop hesaplar; bkz. Cfg.KAPANMA_SET). TBOOST'u da
+            # ezer — adaptif açıkken hız zaten kapanmaya göre ayarlanır.
+            v_los = v_los_terminal
+        else:
+            # TBOOST (kill-switch): hücum hızını yükselt (bkz. Cfg.TBOOST_VTERM).
+            # KAPALI → V_TERMINAL (bit-aynı). Dikey-bütçe kısıtı aşağıda geçerli.
+            v_los = (cfg.TBOOST_VTERM if _ozellik(cfg, "tboost", "TBOOST")
+                     else cfg.V_TERMINAL)     # hücum: fren yok, sabit hız
     else:
         v_los = clamp(hiz_I + cfg.K_FWD * hata, cfg.V_MIN, cfg.V_TOPLAM_MAX)
 
@@ -902,6 +928,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
     boyut_onceki = None       # kapanma hızı için (bkz. Cfg.KAPANMA)
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
+    adapt_vlos = None         # m/s; adaptif terminal hızı durumu (bkz. _ADAPT_KAPANMA)
     iyaw_onceki = None        # PN_EGO kancası için drone yaw'ı (opsiyonel)
     # ── KESTİRİM + COAST (bkz. Cfg.PRED) ──
     # est: görüntü-düzlemi (cx,cy) sabit-hız kestiricisi. Kutu boşluğunda
@@ -1190,12 +1217,34 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             #   • INTERCEPT/PRED KAPALI → ham (cx,cy), bit-aynı native.
             cx_giris, cy_giris, _besleme_kaynak = _besleme_nisan(
                 cx, cy, boyut_simdi, kapanma, terminal_mandal, est, cfg)
+            # ── ADAPTİF KAPANMA HIZI (bkz. _ADAPT_KAPANMA / Cfg.KAPANMA_SET) ──
+            # Terminalde v_los'u ölçülen kapanmaya göre ayarla → v_los ≈ hedef
+            # hızı + KAPANMA_SET. Asimetrik rate-limit: hızlanma yavaş (titreme
+            # koruması), yavaşlama serbest (fly-past kes). KAPALI → hint=None →
+            # komut V_TERMINAL kullanır (bit-aynı).
+            v_los_term_hint = None
+            if _ADAPT_KAPANMA and terminal_mandal:
+                if adapt_vlos is None:
+                    adapt_vlos = cfg.V_TERMINAL          # terminale girişte tohum
+                if kapanma is not None and 1e-3 < dt < 0.5:
+                    hedef = adapt_vlos - (kapanma - cfg.KAPANMA_SET)
+                    d = hedef - adapt_vlos
+                    if d > 0:                            # hızlanma → YAVAŞ
+                        d = min(d, cfg.ADAPT_ARTIS * dt)
+                    else:                                # yavaşlama → SERBEST
+                        d = max(d, -cfg.ADAPT_AZALIS * dt)
+                    adapt_vlos = clamp(adapt_vlos + d,
+                                       cfg.ADAPT_VMIN, cfg.ADAPT_VTAVAN)
+                v_los_term_hint = adapt_vlos
+            elif not terminal_mandal:
+                adapt_vlos = None                        # terminal dışı → sıfırla
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx_giris, cy_giris, bw, bh,
                                                        iyaw, hiz_I, dt, cfg,
                                                        terminal_mandal,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
-                                                       kapanma, yaw_rate)
+                                                       kapanma, yaw_rate,
+                                                       v_los_term_hint)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
