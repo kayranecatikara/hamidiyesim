@@ -310,7 +310,25 @@ curl -s -X POST http://127.0.0.1:8000/api/command/iris/start_chase
 bash ~/.avci_sim/kapat.sh
 ```
 
-Senaryolar: `duz` · `square` · `circle` · `circle_s/l/xl` · `aggressive`
+Senaryolar: `duz` · `square` · `elips_gorev` · `circle` · `circle_s/l/xl` · `aggressive`
+
+**`elips_gorev`** (2026-08-17, `kalkis_kare_inis` dalından taşındı): 344 × 150 m
+elips, uzun ekseni kuzey-güneye çivili, **SONSUZ** — iniş yok, durdurulana
+kadar döner (avcı görsel güdümü istediği kadar üstüne salabilsin diye).
+Duman testinde ölçüldü (100 s): **329 × 149 m**, irtifa bandı 0.3 m.
+Hız gaz sürgüsünden gelir, sabit tutulmaz. Ayarlar:
+
+```bash
+AVCI_ELIPS_A=172 AVCI_ELIPS_B=75   # yarı eksenler (m)
+AVCI_ELIPS_IRTIFA=30               # ⚠ diğer senaryolar ~68 m'de uçuyor
+AVCI_ELIPS_GAZ_SLIDER=0            # gazı PI ile 18 m/s'ye kilitle
+AVCI_ELIPS_ROLL_LIMIT=55           # ROLL_LIMIT_DEG (sonunda geri alınır)
+```
+
+⚠ Araç **HAVADAYKEN yeniden başlatılmamalı** — orijinal dalda iki kez araç
+düştü (devirde RC override akışı kesiliyor).
+⚠ **İrtifa TABANI yoktur:** bu desende düz uçuş ~%70 gaz ister; sürgü bunun
+altındayken uçak alçalmak zorundadır.
 
 Kayıt almak (ayrı terminal):
 ```bash

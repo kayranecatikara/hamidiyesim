@@ -478,6 +478,7 @@ if (btnKayit) {
 const SCN_LABELS = {
     duz:        '➜ DÜZ UÇUŞ',
     square:     '▢ KARE ÇİZ',
+    elips_gorev:'⬭ ELİPS ÇİZ',
     circle:     '◯ DAİRE ⌀55 m',
     aggressive: '⚡ AGRESİF UÇUŞ',
     circle_xl:  '◯ DAİRE ⌀96 m',
@@ -487,6 +488,7 @@ const SCN_LABELS = {
 const scnButtons = {
     duz:        document.getElementById('btn-scn-duz'),
     square:     document.getElementById('btn-scn-square'),
+    elips_gorev:document.getElementById('btn-scn-elips'),
     circle:     document.getElementById('btn-scn-circle'),
     aggressive: document.getElementById('btn-scn-aggressive'),
 };

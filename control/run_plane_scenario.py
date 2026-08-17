@@ -56,7 +56,11 @@ _abort = False
 
 # _pump ile güncellenen son telemetri
 _att = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "ok": False}
-_pos = {"z": 0.0}
+# ⭐ x/y/vx/vy/vz ELİPS senaryosu için eklendi (2026-08-17, kalkis_kare_inis
+# dalından taşındı). Mevcut senaryoların hiçbiri bunları okumuyor — ekleme
+# tamamen katmerli, eski davranış birebir aynı.
+_pos = {"x": 0.0, "y": 0.0, "z": 0.0,      # x=kuzey, y=doğu (NED, m)
+        "vx": 0.0, "vy": 0.0, "vz": 0.0}   # vz: pozitif = AŞAĞI
 
 
 def _sig_handler(_sig, _frame):
@@ -79,7 +83,12 @@ def _pump(conn):
         if t == "ATTITUDE":
             _att.update(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, ok=True)
         elif t == "LOCAL_POSITION_NED":
+            _pos["x"] = msg.x            # kuzey (m) — elips izdüşümü buradan
+            _pos["y"] = msg.y            # doğu  (m)
             _pos["z"] = msg.z
+            _pos["vx"] = msg.vx          # yer hızı → elips gaz/yatış beslemesi
+            _pos["vy"] = msg.vy
+            _pos["vz"] = msg.vz          # NED: pozitif = AŞAĞI
 
 
 def _rc(conn, roll=0, pitch=0, throttle=0, yaw=0):
@@ -138,6 +147,43 @@ def _angdiff(a, b):
     return d
 
 
+def _kelepce(x, alt, ust):
+    return max(alt, min(ust, x))
+
+
+def _yer_hizi():
+    return math.hypot(_pos["vx"], _pos["vy"])
+
+
+def _hedefe(hx, hy):
+    """(mesafe_m, kerteriz_rad) — NED: x kuzey, y doğu; kerteriz atan2(doğu, kuzey)."""
+    dx, dy = hx - _pos["x"], hy - _pos["y"]
+    return math.hypot(dx, dy), math.atan2(dy, dx)
+
+
+def _param_yaz(conn, ad, deger, timeout=3.0):
+    """Canlı PARAM_SET + teyit. Dönüş: ESKİ değer (geri almak için)."""
+    conn.mav.param_request_read_send(conn.target_system, conn.target_component,
+                                     ad.encode(), -1)
+    eski, t0 = None, time.time()
+    while time.time() - t0 < timeout:
+        m = conn.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.4)
+        if m and m.param_id.strip("\x00") == ad:
+            eski = m.param_value
+            break
+    conn.mav.param_set_send(conn.target_system, conn.target_component,
+                            ad.encode(), float(deger),
+                            mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        m = conn.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.4)
+        if m and m.param_id.strip("\x00") == ad:
+            print(f"[ELIPS] {ad}: {eski} -> {m.param_value}")
+            return eski
+    print(f"[ELIPS] UYARI {ad} teyit gelmedi")
+    return eski
+
+
 def turn_by(conn, deg, bank=650, timeout=20.0):
     """Heading tabanlı dönüş: hedef yaw'a ulaşana dek FBWA roll komutu.
 
@@ -180,7 +226,12 @@ def _read_vehicle_state(conn, wait=1.5):
             armed = bool(msg.base_mode
                          & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
         elif t == "LOCAL_POSITION_NED":
+            _pos["x"] = msg.x            # kuzey (m) — elips izdüşümü buradan
+            _pos["y"] = msg.y            # doğu  (m)
             _pos["z"] = msg.z
+            _pos["vx"] = msg.vx          # yer hızı → elips gaz/yatış beslemesi
+            _pos["vy"] = msg.vy
+            _pos["vz"] = msg.vz          # NED: pozitif = AŞAĞI
         elif t == "ATTITUDE":
             _att.update(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, ok=True)
     return armed, -_pos["z"]
@@ -354,11 +405,179 @@ def scenario_aggressive(conn):
         hold(conn, random.uniform(1.0, 2.0))
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  ELİPS SENARYOSU  (kalkis_kare_inis dalından taşındı, 2026-08-17)
+# ═══════════════════════════════════════════════════════════════════
+# ⚠ TAŞIMA NOTU: o daldan YALNIZ bu senaryo alındı (kullanıcı kararı).
+# `kare_gorev`, iniş bacağı, sayaç-bazlı faz geçişi ve oradaki görsel güdüm
+# değişikliklerinin HİÇBİRİ getirilmedi.
+#
+# SONSUZ desendir: iniş yok, tur sayısı yok — "Durdur" denene kadar döner,
+# avcı görsel güdümü istediği kadar üstüne salabilsin diye.
+#
+# Ölçümle belirlenmiş tasarım kararları (hepsi canlı SITL uçuşlarında,
+# orijinal dalda):
+#   • HAT TAKİBİ İZDÜŞÜMLE — parametreyi hızla entegre etmek gecikme
+#     biriktiriyordu (sapma 35 m'de sabitlendi, tur 71 s / olması gereken 37 s).
+#     Konum her devirde elipse izdüşürülünce sapma 1.4 m'ye indi.
+#   • YATIŞ ÖN BESLEMESİ, İLERİDEN — yalnız hata-orantılı sürüş kavisli hattı
+#     yapısal olarak gecikmeyle takip ediyordu (sapma 7 m, yatış +56/−27
+#     salınımı). Eğrilik uçlarda 256 m'den 21 m'ye çöktüğü için ön besleme
+#     HAVUÇ noktasından hesaplanır, bulunulan noktadan değil.
+#   • HAVUÇ MESAFESİ HIZA BAĞLI — sabit 25 m, 18 m/s'de yalnız 1.4 s ileri
+#     bakmak demekti; 1.6 × hız yapıldı.
+#   • UZUN EKSEN KUZEY-GÜNEY'E ÇİVİLİ — eksen kalkış yaw'ına oturtulunca desen
+#     her uçuşta başka yöne dönüyordu (kuzeyden 158° sapma ölçüldü).
+#   • ÖLÇÜ 344 × 150 m — referans 224 × 98 m şekli 18 m/s ile UÇULAMIYOR:
+#     uçlarda R_min = b²/a = 21.4 m, bu 57° yatış ister ve düzeltme payı
+#     kalmıyor (üç uçuşta da şekil yumurtaya döndü). Aynı 2.3:1 oranı
+#     korunarak 1.5 kat büyütülünce uçlar 32.7 m / 45° oldu.
+#
+# ⚠ BİLİNEN SINIR (orijinal dalda ölçüldü): bu desende düz uçuş ~%70 gaz
+# ister. Panel sürgüsü bunun altındayken uçak alçalmak ZORUNDADIR — burun
+# irtifayı tutar ama olmayan enerjiyi üretemez. İRTİFA TABANI YOKTUR.
+# ⚠ Bu senaryo araç HAVADAYKEN yeniden BAŞLATILMAMALI (orijinal dalda iki
+# kez araç düştü): devirde RC override akışı kesiliyor.
+#
+# ⚠ İRTİFA: varsayılan 30 m, orijinal dalın kendi kalkışına göre ayarlanmış.
+# BİZDEKİ diğer senaryolar ~68 m'de uçuyor. Hedefi yükseğe almak için:
+#     AVCI_ELIPS_IRTIFA=70 bash ~/.avci_sim/mkur.sh <etiket>
+# (Geçerlilik bandı 20-250 m — 30 m bandın içinde, ama diğer senaryolarla
+#  kıyas yapacaksan irtifayı eşitle.)
+_ELIPS_A    = float(os.environ.get("AVCI_ELIPS_A", 172.0))
+_ELIPS_B    = float(os.environ.get("AVCI_ELIPS_B", 75.0))
+_ELIPS_TUR  = float(os.environ.get("AVCI_ELIPS_TUR", 0))   # 0 = SONSUZ
+_ELIPS_HIZ  = float(os.environ.get("AVCI_ELIPS_HIZ", 18.0))
+_ELIPS_BANK = int(os.environ.get("AVCI_ELIPS_BANK", 1000))
+_ELIPS_IRT  = float(os.environ.get("AVCI_ELIPS_IRTIFA", 30.0))
+_ELIPS_ROLL_LIM = os.environ.get("AVCI_ELIPS_ROLL_LIMIT", "55")
+_ELIPS_ILERI = float(os.environ.get("AVCI_ELIPS_ILERI", 25.0))
+# GAZ KAYNAĞI: varsayılan PANEL SÜRGÜSÜ — hız sabit tutulmaz, kullanıcı
+# sürgüyle ayarlar (diğer senaryolar zaten böyle; elips tek istisnaydı).
+# 0 yapılırsa gaz PI döngüsü _ELIPS_HIZ'i kilitler.
+_ELIPS_GAZ_SLIDER = os.environ.get("AVCI_ELIPS_GAZ_SLIDER", "1") == "1"
+
+
+def _elips_nokta(C, u, w, a, b, t):
+    return (C[0] + a * math.sin(t) * u[0] - b * math.cos(t) * w[0],
+            C[1] + a * math.sin(t) * u[1] - b * math.cos(t) * w[1])
+
+
+def elips_ciz(conn, a, b, tur, hiz_hedef, bank, irtifa_hedef, ileri,
+              roll_limit_deg=45.0):
+    """Havuç takibi + gaz ile HIZ, burun ile İRTİFA denetimi.
+
+    Gaz ve burun AYRI organları sürer (iki döngü aynı organı çekmesin).
+    """
+    _pump(conn)
+    yaw = _att["yaw"]
+    u = (1.0, 0.0)                                   # kuzey
+    w = (0.0, 1.0)                                   # doğu (u'nun sağı)
+    P0 = (_pos["x"], _pos["y"])
+    # GİRİŞ NOKTASI: teğeti uçağın burnuna en yakın parametre seçilir ki
+    # desene sarsıntısız girsin.
+    t_bas, _fark = 0.0, 9e9
+    for _k in range(720):
+        _tt = math.radians(_k * 0.5)
+        _tx = a * math.cos(_tt) * u[0] + b * math.sin(_tt) * w[0]
+        _ty = a * math.cos(_tt) * u[1] + b * math.sin(_tt) * w[1]
+        _f = abs(_angdiff(math.atan2(_ty, _tx), yaw))
+        if _f < _fark:
+            _fark, t_bas = _f, _tt
+    C = (P0[0] - (a * math.sin(t_bas) * u[0] - b * math.cos(t_bas) * w[0]),
+         P0[1] - (a * math.sin(t_bas) * u[1] - b * math.cos(t_bas) * w[1]))
+    R_min = b * b / a
+    _gaz_et = ("gaz PANEL SÜRGÜSÜNDEN (hız sabit tutulmaz)" if _ELIPS_GAZ_SLIDER
+               else f"hedef hız {hiz_hedef:.1f} m/s (PI)")
+    print(f"[ELIPS] {2*a:.0f} x {2*b:.0f} m, {_gaz_et}, "
+          f"irtifa {irtifa_hedef:.0f} m, yatış komutu {bank}")
+    print(f"[ELIPS] en dar viraj yarıçapı {R_min:.1f} m -> "
+          f"{math.degrees(math.atan(hiz_hedef**2/(9.81*R_min))):.0f}° yatış ister")
+    sonsuz = tur <= 0
+    t = t_bas
+    t_son = float("inf") if sonsuz else t_bas + 2 * math.pi * tur
+    cevre = math.pi * (3*(a+b) - math.sqrt((3*a+b)*(a+3*b)))
+    zaman_asimi = float("inf") if sonsuz else tur * cevre / max(hiz_hedef, 5.0) * 2.5
+    if sonsuz:
+        print("[ELIPS] SONSUZ desen — durdurulana kadar çizilir, İNİŞ YOK")
+    t0, son_bilgi = time.time(), 0.0
+    sapmalar, hizlar, irtifalar = [], [], []
+    gaz_i = 0.0                      # hız integrali (kalıcı hatayı kapatır)
+    while not _abort and t < t_son and time.time() - t0 < zaman_asimi:
+        _pump(conn)
+        hiz, irtifa = _yer_hizi(), -_pos["z"]
+        # UÇAĞIN KONUMUNU ELİPSE İZDÜŞÜR (yerel arama, geri gitmez)
+        en_iyi, en_uz = t, 1e18
+        for _k in range(-3, 41):
+            _tt = t + _k * 0.02
+            _px, _py = _elips_nokta(C, u, w, a, b, _tt)
+            _d = math.hypot(_pos["x"] - _px, _pos["y"] - _py)
+            if _d < en_uz:
+                en_uz, en_iyi = _d, _tt
+        t, uz = en_iyi, en_uz
+        tur_hiz = max(math.hypot(
+            a*math.cos(t)*u[0] + b*math.sin(t)*w[0],
+            a*math.cos(t)*u[1] + b*math.sin(t)*w[1]), 1.0)
+        # ── HAVUÇ: hıza göre ileri bak ──
+        ileri_m = max(ileri, hiz * 1.6)
+        hx, hy = _elips_nokta(C, u, w, a, b, t + ileri_m / tur_hiz)
+        hata = _angdiff(_hedefe(hx, hy)[1], _att["yaw"])
+        oran = _kelepce(hata / math.radians(35.0), -1.0, 1.0)
+        # ── YATIŞ ÖN BESLEME: yerel eğrilik yarıçapının GEREKTİRDİĞİ yatış ──
+        t_ff = t + ileri_m / tur_hiz
+        R_yerel = ((b*b*math.sin(t_ff)**2 + a*a*math.cos(t_ff)**2) ** 1.5) / (a * b)
+        bank_ff = math.degrees(math.atan(hiz*hiz / (9.81 * max(R_yerel, 5.0))))
+        ff_cmd = _kelepce(bank_ff / max(roll_limit_deg, 1.0) * 1000.0, 0.0, bank)
+        roll_cmd = int(_kelepce(ff_cmd + bank * oran * 0.6, -bank, bank))
+        # ── BURUN: irtifa + YÜK FAKTÖRÜ ön beslemesi (yatışta taşıma kaybı) ──
+        yuk = 1.0 / max(math.cos(_att["roll"]), 0.25)
+        burun = int(_kelepce((irtifa_hedef - irtifa) * 55 + _pos["vz"] * 70
+                             + (yuk - 1.0) * 220, -250, 450))
+        # ── GAZ ──
+        if _ELIPS_GAZ_SLIDER:
+            gaz = int(gcs_throttle())
+        else:
+            h_hata = hiz_hedef - hiz
+            gaz_i = _kelepce(gaz_i + h_hata * 8.0 * CONTROL_RATE, -250.0, 250.0)
+            gaz = int(_kelepce(650 + h_hata * 150 + gaz_i, 200, 1000))
+        _rc(conn, roll=roll_cmd, pitch=burun, throttle=gaz)
+        if t > 0.5:
+            sapmalar.append(uz); hizlar.append(hiz); irtifalar.append(irtifa)
+        if time.time() - son_bilgi > 6.0:
+            son_bilgi = time.time()
+            print(f"[ELIPS] tur {(t-t_bas)/(2*math.pi):5.2f} | hız {hiz:5.2f} | "
+                  f"irtifa {irtifa:5.1f} | yatış {math.degrees(_att['roll']):+5.1f} | "
+                  f"sapma {uz:4.1f} m")
+        time.sleep(CONTROL_RATE)
+    n = len(sapmalar) or 1
+    print(f"[ELIPS] DESEN BİTTİ — {(t-t_bas)/(2*math.pi):.2f} tur, {time.time()-t0:.0f} s")
+    print(f"[ELIPS] ÖLÇÜM: sapma ort {sum(sapmalar)/n:.1f} m / tepe "
+          f"{max(sapmalar or [0]):.1f} m | hız ort {sum(hizlar)/n:.2f} m/s "
+          f"(yayılım {max(hizlar or [0])-min(hizlar or [0]):.2f}) | irtifa "
+          f"{min(irtifalar or [0]):.1f}-{max(irtifalar or [0]):.1f} m")
+
+
+def scenario_elips_gorev(conn):
+    """Sonsuz elips deseni — İNİŞ YOK, durdurulana kadar döner."""
+    eski_roll = None
+    if _ELIPS_ROLL_LIM:
+        eski_roll = _param_yaz(conn, "ROLL_LIMIT_DEG", float(_ELIPS_ROLL_LIM))
+    try:
+        elips_ciz(conn, _ELIPS_A, _ELIPS_B, _ELIPS_TUR, _ELIPS_HIZ,
+                  _ELIPS_BANK, _ELIPS_IRT, _ELIPS_ILERI,
+                  float(_ELIPS_ROLL_LIM) if _ELIPS_ROLL_LIM else 45.0)
+    finally:
+        # ROLL_LIMIT_DEG mutlaka geri alınır — başka senaryolar etkilenmesin
+        if eski_roll is not None:
+            _param_yaz(conn, "ROLL_LIMIT_DEG", eski_roll)
+
+
 SCENARIOS = {
     "duz": scenario_duz,
     "square": scenario_square,
     "circle": scenario_circle,
     "aggressive": scenario_aggressive,
+    "elips_gorev": scenario_elips_gorev,
 }
 
 # Beş daire çapı tek tek kaydedilir (functools.partial yerine varsayılan
