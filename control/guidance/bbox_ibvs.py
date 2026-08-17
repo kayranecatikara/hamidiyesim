@@ -123,7 +123,13 @@ class Cfg:
     # agresifti (10° hata → 2.5 m/s) ve tavana yapışıp salındı. Nişan doğru
     # yere gelince (≈300) hata küçük kalır; yumuşak kazanç yeter.
     K_VZ = _env_f("AVCI_IBVS_KVZ", 0.5)
-    VZ_MAX = 3.0                    # m/s; dikey hız tavanı
+    # ⭐ 2026-08-17: env'e bağlandı. ZARF BÜYÜTMESİ yatay bütçeyi 3.3 katına
+    # çıkardı (WPNAV_ACCEL 8 → 26 m/s²) ama dikey 3 m/s'de kaldı — 10 kat
+    # asimetri. ÖLÇÜLDÜ: `square`'de (sürekli manevra) araç hedefin
+    # SİSTEMATİK olarak 1-3 m ALTINDA uçuyor (dz −1.05 / −1.75 / −2.84 m);
+    # `duz`'da böyle bir sapma YOK (±1.3 m saçılma). Sürekli yatışta araç
+    # alçalıyor ve 3 m/s tavanıyla toparlayamıyor.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 3.0)      # m/s; dikey hız tavanı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ── HIZ: PI kontrol, kutu boyutu hatası üzerinden (menzil vekili) ──

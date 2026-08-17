@@ -130,3 +130,99 @@ Kullanıcının onayı beklenecek.
 - `~/.avci_sim/kosuA.sh` — tek değişkenli iç döngü koşusu, param geri
   okuyarak teyit eder (§5.1)
 - Uçuşlar: `logs/kacamak/TA01_taban` … `TA05_P4x`
+
+
+---
+
+# FAZ B — İTKİ MODELİ ve DİKEY BÜTÇE · 10 uçuş
+
+Kullanıcı sorusu: *"BU ARACIN TÜM PARAMETRELERİNİ ARACIN YENİ YAPISINA
+UYGUN HALE GETİRDİN Mİ?"* — **Dürüst cevap: HAYIR.** Yalnız 7 parametre
+değiştirilmişti. Sistematik denetim yapıldı ve iki eksik bulundu.
+
+## B.1 · Parametre denetimi — bulunan eksikler
+
+Ölçülen gerçek hover gazı **0.12-0.14** (eski 0.39) → itki/ağırlık ~7-8.
+
+| parametre | değeri | ArduPilot kuralına göre olması gereken | |
+|---|---|---|---|
+| `PSC_ACCZ_P` | 0.5 | 0.141 (= `MOT_THST_HOVER`) | ⛔ 3.5× fazla |
+| `PSC_ACCZ_I` | 1.0 | 0.282 (= 2×hover) | ⛔ 3.5× fazla |
+| `MOT_THST_HOVER` | 0.39 | 0.141 | ⛔ 2.8× yanlış |
+| `ATC_ANG_RLL/PIT_P`, `MOT_SPIN_*`, `MOT_THST_EXPO` | — | — | hiç bakılmamıştı |
+
+## B.2 · ⛔ İTKİ MODELİNİ DÜZELTMEK ÇOK KÖTÜLEŞTİRDİ
+
+`MOT_THST_HOVER` + `PSC_ACCZ_P` + `PSC_ACCZ_I` **eşleşik üçlü** olarak
+düzeltildi (`duz`+kaçamak, tür-eşli):
+
+| kol | en yakın menzil |
+|---|---|
+| TABAN (0.39 / 0.5 / 1.0) | **0.40 m** (yatay), **0.90 m** (çapraz) |
+| eşleşik (0.141 / 0.141 / 0.282) | **11.48 m**, **14.05 m** |
+
+**Teori "uyumsuz" diyor, ölçüm "dokunma" diyor. Ölçüm tutuluyor.**
+`MOT_THST_HOVER`'ı tek başına düzeltmek de (Faz A) aynı yönde kötüleştirmişti
+— iki bağımsız deney aynı sonucu verdi.
+
+## B.3 · `CY_NISAN` hipotezi ÇÜRÜDÜ
+
+`square`'de sistematik dikey sapma bulundu (aşağı), ve nişan noktasının eski
+aracın seyir eğimine göre ayarlandığı biliniyordu. Ölçüldü:
+
+| araç | seyir eğimi (düz+seviye uçuş) |
+|---|---|
+| ESKİ (ANGLE_MAX 45°) | −0.70° / −1.44° / −0.92° |
+| YENİ (ANGLE_MAX 70°) | −1.27° / −1.28° / −1.32° |
+
+**Eğim değişmemiş** → `CY_NISAN = 301` sağlam, sapmanın sebebi bu değil.
+
+## B.4 · DİKEY BÜTÇE — asimetri bulundu ama ÇÖZÜM DEĞİLDİ
+
+Yatay bütçe 3.3 katına çıkarılmışken (`WPNAV_ACCEL` 8 → 26) dikey 3 m/s'de
+kalmıştı — **10 kat asimetri**. `VZ_MAX` 3 → 8 + araç dikey tavanları
+(`WPNAV_SPEED_UP` 600→1200, `_DN` 400→1000, `WPNAV_ACCEL_Z` 250→800):
+
+| kol | \|dz\| medyan (en yakın anda) | en yakın menzil |
+|---|---|---|
+| `VZ_MAX` = 3 (n=3) | 4.46 m | 13.57 m |
+| `VZ_MAX` = 8 (n=3) | 3.82 m | 13.91 m |
+| | **p = 1.000** | **p = 1.000** |
+
+**Hiçbir etkisi yok.** Asimetri gerçekti ama darboğaz değildi.
+
+## B.5 · FAZ B KARARI
+
+Altıncı parametre ailesi de sonuç vermedi. **Denenen ve TABANDAN KÖTÜ ya da
+ETKİSİZ çıkanlar:**
+
+| # | değişiklik | sonuç |
+|---|---|---|
+| 1 | `MOT_THST_HOVER` 0.39→0.14 | açı hatası 7.11° → 47.45° |
+| 2 | `ATC_ACCEL_R_MAX` 250k→110k | 83.71° |
+| 3 | `ATC_RAT_*_P` ×2 | 23.45° |
+| 4 | `ATC_RAT_*_P` ×4 | doyum %61 (rayda) |
+| 5 | itki modeli eşleşik üçlü | en yakın 0.4 → 11.5 m |
+| 6 | dikey bütçe ×3 | p = 1.000 (etkisiz) |
+
+**Depo TABANDA bırakıldı** — ölçülen en iyi yapılandırma bu.
+
+## B.6 · ⭐ ASIL RESİM — ölçülen fark ne, ne değil
+
+| | ESKİ araç | YENİ zarf |
+|---|---|---|
+| iç döngü açı hatası p90 | 7.68-15.54° | **7.11°** — aynı/daha iyi |
+| `duz`+kaçamak en yakın | ~1.5 m | **0.40-0.90 m** — daha iyi |
+| `square` \|dz\| (dikey ıska) | — | 3-5 m |
+| **\|yatış\| p90** | **20-36°** | **40.8°** (tepe 68°) |
+
+**Yeni araç ölçülebilir hiçbir ölçütte "kontrolsüz" değil.** İç döngü eskisi
+kadar iyi, düz senaryoda daha iyi. Ayrışan tek şey **yatış genliği**: araç
+kendini 2 kat sert savuruyor. Kullanıcının gördüğü "dengesizlik" bu.
+
+Ve altı ayar denemesi bunu azaltamadı — çünkü bu bir **ayar** sorunu değil,
+**zarfın kendisi**. Geriye tek sınanmamış kaldıraç: zarfı ara bir seviyeye
+çekmek.
+
+**FAZ C ÖNERİSİ:** `ANGLE_MAX` + `WPNAV_ACCEL` üç seviye —
+eski (45°/8), ara (55°/15), şimdiki (70°/26). Kullanıcı onayı bekleniyor.
