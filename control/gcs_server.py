@@ -748,40 +748,22 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
-    "w1_veld": (
-        "PSC_VELXY_D", "param",
-        "W1 · Hız döngüsü D kazancı (0.5 → 1.2)",
-        "SALINIM NEREDE — ÖLÇÜLDÜ: güdüm komutuna dokunan üç aday (S1 slew "
-        "tavanı, S2 sönümleme, S3 anti-windup) yatışı KIPIRDATAMADI — her "
-        "kolda |yatış| p90 30-35°, yatış değişim hızı p90 51-62 °/s. Demek ki "
-        "salınım güdüm komutunda değil, ALTINDAKİ katmanda: ArduPilot'un "
-        "yatay HIZ denetleyicisi. Bugüne kadar hiç dokunulmamış yer burası. "
-        "D terimi, hız hatasının TÜREVİNE karşılık verir: salınımı söndürür "
-        "ama P yetkisini, ivme tavanını ve PSC_JERK_XY'yi AZALTMAZ — "
-        "kullanıcının 'ivmeyi kısma' şartıyla uyumlu tek klasik kanal budur. "
-        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (AC_PID kazancı her çevrimde "
-        "okur; PSC_JERK_XY gibi alt-mod geçişi beklemez).",
-        "PSC_VELXY_D", (0.5, 1.2)),
-    "w2_velp": (
-        "PSC_VELXY_P", "param",
-        "W2 · Hız döngüsü P kazancı (2.0 → 1.2)",
-        "Aynı katman, ters yaklaşım: D EKLEMEK yerine P'yi DÜŞÜRMEK. "
-        "Gecikmeli döngüde yüksek P salınımın klasik sebebidir (kamera→komut "
-        "73 ms, komut→yaw 300 ms ölçüldü). "
-        "⚠ RİSK PEŞİNEN İLAN EDİLİR: P'yi düşürmek tepkiyi de yavaşlatır ve "
-        "kullanıcının 'ivmeyi kısma' şartını dolaylı olarak ihlal edebilir. "
-        "Kampanyanın KISIT KAPISI (gerçekleşen yanal ivme p90 < kontrolün "
-        "%85'i → kol ELENİR) tam bunu yakalamak için var. W1 ile yan yana "
-        "koşulmasının sebebi bu: hangisi bedava sönümleme veriyor.",
-        "PSC_VELXY_P", (2.0, 1.2)),
     "s2_sonum": (
         "SONUM_T", "deger",
-        "S2 · Ö9 sönümleme, D terimi (kapalı → 0.30 s)",
-        "Güdüm katmanı D terimi. S kampanyası 1. dalgada n=4/kol ölçüldü: "
-        "hiçbir şeyi BOZMADI (ivme p90 kontrolün %101'i, 60 m süre 121 vs "
-        "120 s) ama salınımda kazancı da GÜRÜLTÜ seviyesinde kaldı "
-        "(ψ̇ 0.268 → 0.242, p=0.486). Bedava ama faydası kanıtlanmadı. "
-        "Panelde duruyor ki W1/W2 ile birlikte denenebilsin.",
+        "S2 · Yatay sönümleme, D terimi (kapalı → 0.30 s)",
+        "AÇIK KALAN TEK SORU. S kampanyası 40 uçuş, 3 dalga, 5 aday denedi; "
+        "ikisi (S1 komut dönüş tavanı, S3 anti-windup) kullanıcının 'ivmeyi "
+        "kısma' şartına takılıp ELENDİ, ikisi (W1/W2 ArduPilot hız "
+        "denetleyicisi P/D kazançları) hiçbir fark üretmedi. Geriye bu kaldı. "
+        "yaw_cmd −= SONUM_T·ω — saf-P olan yatay kanala türev terimi ekler. "
+        "ÖLÇÜLEN (duz+kaçamak, n=8/kol): yakın menzil salınımı (ψ̇ <30 m) "
+        "1.450 → 1.174 (−%19, p=0.308); kutu oranı %60.6 → %69.9 (+%15); "
+        "isabet 4/8 → 7/8 (Fisher p=0.282). MALİYETİ ÖLÇÜLMEDİ: yanal ivme "
+        "p90 kontrolün %102'si — çevikliği KISMIYOR. "
+        "⚠ AMA hiçbiri istatistiksel olarak ayrışmıyor ve ilan edilen "
+        "doz-tepki şartı DÜŞTÜ (0.60, 0.30'dan daha az sönümledi). Bu yüzden "
+        "varsayılan yapılmadı, karar kullanıcıda. "
+        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (güdüm döngüsü her karede okur).",
         "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 

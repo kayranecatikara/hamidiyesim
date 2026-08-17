@@ -541,51 +541,16 @@ class Cfg:
     DONUS_A = _env_f("AVCI_IBVS_DONUS", 0.0)     # m/s²; 0 = kapalı, açık ~9.0
     DONUS_V_MIN = _env_f("AVCI_IBVS_DONUS_VMIN", 10.0)   # m/s; hız tabanı
 
-    # ══════════════════════════════════════════════════════════════════
-    # S1 · KOMUT DÖNÜŞ HIZI TAVANI — "yapamayacağın dönüşü emretme"
-    # ══════════════════════════════════════════════════════════════════
-    # KULLANICI İSTEĞİ (2026-08-16): "ivme şeysini bozmadan salınımı azalt."
-    #
-    # ÖLÇÜLDÜ (D kampanyası, 24 uçuş, 20 Hz log):
-    #   hız vektörü komutunun istediği yanal ivme  medyan 8.43  p90 26.3 m/s²
-    #   aracın FİZİKSEL tavanı g·tan(45°)                       9.81 m/s²
-    #   >>> komut aracın dönüş tavanını KARELERİN %43'ÜNDE aşıyor
-    #   >>> komut güdümün kendi MAX_ACCEL=12 sınırını %35'inde aşıyor
-    # Bu sayılar jerk 5 / 10 / 15'te BİREBİR AYNI (medyan 24.0/24.0/23.5 °/s)
-    # → salınımın kaynağı ivme bütçesi DEĞİL, komutun kendisi.
-    #
-    # Aşan her derece WINDUP'tır: limit_acceleration komutu kırpar, güdüm
-    # kırpıldığını bilmez, hata birikir, araç aşırı düzeltir. Gecikmeli
-    # döngüde limit çevriminin ders kitabı tarifi (bkz. pure-pursuit
-    # look-ahead literatürü: küçük look-ahead → hızlı yakınsama + SALINIM).
-    #
-    # YASA: hız vektörü yönünün DEĞİŞİM HIZI, aracın verebileceğiyle sınırlı
-    #     ω_max = g·tan(ANGLE_MAX) / v_los          (canlı, hıza bağlı)
-    #     |Δhiz_yonu| ≤ SLEW_KAT · ω_max · dt
-    #
-    # ⚠ HIZI, İVMEYİ, JERK'İ KISMAZ. v_los'a dokunmaz; MAX_ACCEL ve
-    # PSC_JERK_XY aynen kalır. Araç 45° yatışını ve tüm jerk bütçesini
-    # kullanmaya devam eder — yalnız İMKÂNSIZ dönüş emri verilmez.
-    # SLEW_KAT = 1.0 ayarlanmış değil, FİZİKTEN gelir ("tam olarak
-    # yapabildiğin kadar"). 1'in üstü tavanı gevşetir, altı fizikten de kısar.
-    # AVCI_IBVS_SLEW=0 → kapalı (varsayılan).
-    SLEW_KAT = _env_f("AVCI_IBVS_SLEW", 0.0)      # 0 = kapalı, açık ~1.0
-    SLEW_ANGLE_MAX_DEG = 45.0   # °; araç ANGLE_MAX'i (avci_copter.parm 4500)
-    SLEW_V_MIN = 3.0            # m/s; altında ω_max patlar, sınır uygulanmaz
-
-    # ══════════════════════════════════════════════════════════════════
-    # S3 · ANTI-WINDUP GERİ BESLEME (back-calculation)
-    # ══════════════════════════════════════════════════════════════════
-    # S1 komutu ÖNCEDEN sınırlar (ileri besleme). S3 ise kırpmayı GERİ
-    # BESLER: bir önceki karede istediğimiz yön ile limit_acceleration'ın
-    # gerçekten gönderdiği yön arasındaki farkı komuttan düşer.
-    # Klasik back-calculation anti-windup'ın açı kanalındaki karşılığı.
-    #     borç = hiz_yonu_istenen(t−1) − uygulanan_yon(t−1)
-    #     hiz_yonu ← hiz_yonu − AW_K · borç
-    # ⚠ Yalnız KOMUT AÇISINI etkiler; v_los'a, MAX_ACCEL'e dokunmaz.
-    # AVCI_IBVS_AW=0 → kapalı (varsayılan).
-    AW_K = _env_f("AVCI_IBVS_AW", 0.0)            # 0 = kapalı, açık ~1.0
-    AW_MAX_DEG = 40.0                              # °; geri besleme tavanı
+    # ⛔ S1 (komut dönüş hızı tavanı, SLEW_KAT) ve S3 (anti-windup geri
+    # besleme, AW_K) 2026-08-17'de ÖLÇÜLDÜ ve ELENDİ: ikisi de kullanıcının
+    # "ivmeyi kısma" şartına takıldı — gerçekleşen yanal ivme p90 kontrolün
+    # %81'ine düştü (S1'de tam ayrışma, p=0.024) ve S1 60 m içindeki süreyi
+    # 127 → 81 s indirdi. Kod §5.12 uyarınca tamamen çıkarıldı; ölçüm
+    # docs/kampanya/S_SALINIM.md ve UYGULANACAK.md'de durur.
+    # BULGU (kalıcı): komutun aracın dönüş tavanını %43 oranında aşması
+    # zararlı bir ARTIK DEĞİL — doymuş bir sistemin en hızlı tepkisidir.
+    # Onu ileri beslemeyle kesmek de geri beslemeyle telafi etmek de aracı
+    # YAVAŞLATIR.
 
     # ══ T1b · DİKEY KANALDA ROLL/PITCH TELAFİSİ ══
     # NEDEN ŞİMDİ (2026-08-11 gece ölçümü): kesişim artık 10-40 cm'ye kadar
@@ -656,7 +621,6 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
-    "slew_kirp_deg", "aw_geri_deg",
 ]
 
 
@@ -710,8 +674,7 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0, yaw_hizi=0.0,
-          hiz_yonu_onceki=None, uygulanan_yon=None):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -801,34 +764,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
                        0.0, 1.0)
             eps_hiz = eps_yaw + _w * (_eps_eff - eps_yaw)
 
-    # S3 ANTI-WINDUP GERİ BESLEME (bkz. Cfg.AW_K): bir önceki karede
-    # İSTEDİĞİMİZ yön ile limit_acceleration'ın GERÇEKTEN gönderdiği yön
-    # arasındaki borç komuttan düşülür — kırpılan komut birikmesin.
-    aw_geri = 0.0
-    if (cfg.AW_K > 0.0 and hiz_yonu_onceki is not None
-            and uygulanan_yon is not None):
-        aw_geri = clamp(
-            cfg.AW_K * normalize_angle(hiz_yonu_onceki - uygulanan_yon),
-            -math.radians(cfg.AW_MAX_DEG), math.radians(cfg.AW_MAX_DEG))
-
     # SAF TAKİP: hız LOS yönünde — ama yönü eps_hiz belirler
-    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum
-                               + lead_az - aw_geri)
-
-    # S1 KOMUT DÖNÜŞ HIZI TAVANI (bkz. Cfg.SLEW_KAT): aracın yapabileceğinden
-    # hızlı dönüş EMRETME. Yalnız komut AÇISINI sınırlar — v_los, MAX_ACCEL
-    # ve jerk aynen kalır.
-    slew_kirp = 0.0
-    if (cfg.SLEW_KAT > 0.0 and hiz_yonu_onceki is not None
-            and dt > 1e-6 and v_los > cfg.SLEW_V_MIN):
-        _om = (9.81 * math.tan(math.radians(cfg.SLEW_ANGLE_MAX_DEG))) / v_los
-        _lim = cfg.SLEW_KAT * _om * dt
-        _d = normalize_angle(hiz_yonu - hiz_yonu_onceki)
-        if abs(_d) > _lim:
-            slew_kirp = abs(_d) - _lim
-            hiz_yonu = normalize_angle(hiz_yonu_onceki
-                                       + math.copysign(_lim, _d))
-
+    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum + lead_az)
     vx_ned = v_los * math.cos(hiz_yonu)
     vy_ned = v_los * math.sin(hiz_yonu)
 
@@ -900,8 +837,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
-            "eps_yaw_ham": eps_yaw_ham,
-            "hiz_yonu": hiz_yonu, "slew_kirp": slew_kirp, "aw_geri": aw_geri}
+            "eps_yaw_ham": eps_yaw_ham}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
@@ -974,8 +910,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
     iyaw_onceki = None        # Ö9 sönümlemesi için yaw türevi (bkz. Cfg.SONUM_T)
     yaw_hizi = 0.0            # rad/s; aracın KENDİ dönüş hızı, EMA'lı
-    hiz_yonu_onceki = None    # rad; S1/S3 — bir önceki karede İSTENEN yön
-    uygulanan_yon = None      # rad; S3 — ivme sınırının GÖNDERDİĞİ yön
 
     def _vuruldu():
         if get_temas is None:
@@ -1169,9 +1103,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
                                                        kapanma, iroll,
-                                                       yaw_hizi,
-                                                       hiz_yonu_onceki,
-                                                       uygulanan_yon)
+                                                       yaw_hizi)
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -1194,13 +1126,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,
                                             cfg.MAX_ACCEL, dt)
             vx_p, vy_p, vz_p = vx, vy, vz
-            # S1/S3 DURUM TAŞIMA: komut() saf fonksiyon, durumu çağıran tutar.
-            #   hiz_yonu_onceki = bu karede İSTENEN yön (kırpma sonrası)
-            #   uygulanan_yon   = limit_acceleration'ın GERÇEKTEN gönderdiği yön
-            # İkisi arasındaki fark = S3'ün geri beslediği windup borcu.
-            hiz_yonu_onceki = tani["hiz_yonu"]
-            if abs(vx) > 1e-6 or abs(vy) > 1e-6:
-                uygulanan_yon = math.atan2(vy, vx)
             son_v_cmd = (vx, vy, vz, yaw_cmd)
             send_velocity(conn, vx, vy, vz, yaw_cmd)
 
@@ -1235,8 +1160,6 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0,
-                "slew_kirp_deg": round(math.degrees(tani["slew_kirp"]), 2),
-                "aw_geri_deg": round(math.degrees(tani["aw_geri"]), 2),
             })
             f.flush()
 

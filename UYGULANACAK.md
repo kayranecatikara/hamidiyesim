@@ -16,6 +16,59 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## S — YATAY SALINIM · 40 UÇUŞ · 3 DALGA · 5 ADAY · **ÇÖZÜLMEDİ**
+
+**Tam rapor:** `docs/kampanya/S_SALINIM.md` (ölçütler her dalgada koşmadan
+önce ilan edildi) · kullanıcı isteği: *"bu ivme şeysini bozmadan salınımı
+azaltmamız lazım... şu salınımı kes ve aracın ivme şeysini kısma."*
+
+Kullanıcının 2. şartı bir **ELEME KAPISI** olarak kuruldu (gerçekleşen yanal
+ivme p90 < kontrolün %85'i → kol elenir), sonuca bakmadan.
+
+**TEŞHİS (D kampanyasının logundan, çevrimdışı):** hız vektörü komutunun
+istediği yanal ivme medyan **8.43** / p90 **26.3 m/s²**, aracın fiziksel
+tavanı **9.81**. Komut, dönüş tavanını **karelerin %43'ünde** aşıyor — ve
+bu oran **jerk 5/10/15'te birebir aynı.** Salınımın kaynağı ivme bütçesi
+değil, komutun kendisi.
+
+| dalga | aday | birincil | KISIT ivme | sonuç |
+|---|---|---|---|---|
+| 1 | **S1** komut dönüş tavanı (ω_max) | −%8 (p=0.484) | **%81** (p=0.024) | ⛔ **ELENDİ** |
+| 1 | **S3** anti-windup geri besleme | **+%24 kötü** | **%81** | ⛔ **ELENDİ** |
+| 1 | S2 D terimi `SONUM_T=0.30` | −%9 (p=0.524) | %104 ✓ | kaldı |
+| 2 | **W1** `PSC_VELXY_D` 0.5→1.2 | +%5 (p=0.563) | %109 | fayda YOK |
+| 2 | **W2** `PSC_VELXY_P` 2.0→1.2 | −%11 (p=0.304) | %97 | gürültüde |
+| 3 | **S2/A** doğru rejimde, n=8/kol | **−%19** (p=0.308) | **%102** ✓ | **KULLANICIYA** |
+
+**Dalga 3 (duz+kaçamak, birincil <30 m, n=8/kol):** ψ̇ 1.450 → **1.174**,
+kutu oranı %60.6 → **%69.9**, **isabet 4/8 → 7/8** (Fisher p=0.282),
+ivme p90 **%102** (çevikliği kısmıyor).
+
+**⛔ AMA:** hiçbiri istatistiksel olarak ayrışmıyor, **ilan edilen doz-tepki
+şartı DÜŞTÜ** (0.60, 0.30'dan daha az sönümledi) ve **n artırma kararını
+isabeti gördükten sonra, özelliğin lehine aldım** — bu kanıtı zayıflatır ve
+gizlenmiyor. `SONUM_T` varsayılan YAPILMADI, kapalı bırakıldı.
+
+**⚠ ÖLÇÜM TASARIMI HATAM (kendi hatam, kayda geçiyor):** dalga 1-2'nin
+tamamı p>0.30'da kaldı çünkü birincili "60 m içi" tanımlamıştım. Salınım
+menzile göre 3 kat değişiyor ve kullanıcının şikâyet ettiği bant (0-15 m)
+`square` koşusunun yalnız **8 saniyesi** — 200 saniyelik uzak menzil içinde
+eridi. İkinci kusur: `|roll| p90` ile `ivme p90` **aynı büyüklüktür**
+(`a = g·tan roll`); salınım genlik değil **işaret değiştirme** demektir.
+
+**⚠ KALICI BULGU:** komutun dönüş tavanını %43 aşması **zararlı bir artık
+değil** — doymuş bir sistemin en hızlı tepkisidir. İleri beslemeyle kesmek
+(S1) de geri beslemeyle telafi etmek (S3) de aracı YAVAŞLATTI. Salınımı
+komut tarafından çözme yolu kapandı; geriye tek yapısal kaldıraç
+**ω_max = g·tan(ANGLE_MAX)/V**, yani `ANGLE_MAX`. (Ö6 ölçümü geçersiz: o
+zaman araç 45°'e dayanmıyordu, bugün 36-43° yatışla dayanıyor.)
+
+S1 ve S3 §5.12 uyarınca koddan **tamamen çıkarıldı** — 960 kombinasyonda
+bit bit denklik doğrulandı (fark 0.00e+00), grep sıfır, bekçi testleri
+B65-B68 eklendi.
+
+---
+
 ## Ö5 KAREDE (`DONUS_A` 0 → 9.81) · 20 UÇUŞ · **KARAR KULLANICIDA**
 
 **Tam rapor:** `docs/kampanya/O5_KARE.md` · 8 kare + 8 düz + 4 daire,

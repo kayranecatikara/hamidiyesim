@@ -38,7 +38,7 @@ def kosu(ad):
     kok=f"logs/kacamak/{ad}"
     o=json.load(open(f"{kok}/olay.json"))
     kutulu=toplam=kurt=0
-    slew_n=sonum_n=aw_n=0
+    sonum_n=0
     ivme=[]; boyutlar=[]; cx_s=[]; slew=[]; komut_slew=[]
     for y in sorted(glob.glob(f"{kok}/bbox_ibvs_*.csv")):
         r=list(csv.DictReader(open(y)))
@@ -51,12 +51,8 @@ def kosu(ad):
             if rl is not None: ivme.append(abs(G*math.tan(math.radians(rl))))
             if x.get("durum") in ("KUTU_YOK","TERM_KOR"): onceki=None; continue
             kutulu+=1
-            for k,acc in (("slew_kirp_deg","s"),("sonum_deg","o"),("aw_geri_deg","a")):
-                v=f(x,k)
-                if v is not None and abs(v)>1e-9:
-                    if acc=="s": slew_n+=1
-                    elif acc=="o": sonum_n+=1
-                    else: aw_n+=1
+            v=f(x,"sonum_deg")
+            if v is not None and abs(v)>1e-9: sonum_n+=1
             b=f(x,"boyut"); cx=f(x,"cx")
             if b and b>0: boyutlar.append(b)
             if cx is not None and t is not None: cx_s.append((t,cx-320.0))
@@ -77,9 +73,7 @@ def kosu(ad):
         ivme_p90=p90(ivme), ivme_med=st.median(ivme) if ivme else None,
         psi_hz=ph, psi_p90=pp,
         cx_hz=hz(cx_s), cx_p90=p90([abs(v) for _,v in cx_s]),
-        mek_slew=100.0*slew_n/kutulu if kutulu else 0,
         mek_sonum=100.0*sonum_n/kutulu if kutulu else 0,
-        mek_aw=100.0*aw_n/kutulu if kutulu else 0,
         kslew_p90=p90(komut_slew))
 
 def med(v):
@@ -112,7 +106,7 @@ print(f"{'kosu':<12}{'kol':>5}{'isabet':>7}{'PSI dgs/s':>11}{'psi p90':>9}"
       f"{'kslew p90':>11}{'MEK%':>7}{'cx dgs':>8}{'KURT':>6}")
 for kol in sorted(KOL):
     for s in KOL[kol]:
-        mek=max(s['mek_slew'],s['mek_sonum'],s['mek_aw'])
+        mek=s['mek_sonum']
         print(f"{s['ad']:<12}{kol:>5}{'EVET' if s['imha'] else '-':>7}"
               f"{(s['psi_hz'] or float('nan')):>11.3f}{(s['psi_p90'] or float('nan')):>9.1f}"
               f"{(s['ivme_p90'] or float('nan')):>10.2f}{(s['ivme_med'] or float('nan')):>10.2f}"
@@ -123,7 +117,7 @@ print("-"*136)
 K=KOL.get("K",[])
 for kol in sorted(KOL):
     g=KOL[kol]
-    mek=med([max(s['mek_slew'],s['mek_sonum'],s['mek_aw']) for s in g])
+    mek=med([s['mek_sonum'] for s in g])
     ip=med([s['ivme_p90'] for s in g])
     oran=(100.0*ip/med([s['ivme_p90'] for s in K])) if K else float('nan')
     print(f"  {kol:<4} n={len(g)}  PSI {med([s['psi_hz'] for s in g]):6.3f}"

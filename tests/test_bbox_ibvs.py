@@ -800,109 +800,23 @@ def main():
                     _vz_enb = max(_vz_enb, abs(_a[2] - _k[2]))
                     _n64 += 1
     print("=" * 60)
-    # ── S1 · KOMUT DÖNÜŞ HIZI TAVANI  /  S3 · ANTI-WINDUP GERİ BESLEME ──
-    class _Slew(ib.Cfg):
-        SLEW_KAT = 1.0
-    class _AW(ib.Cfg):
-        AW_K = 1.0
-
-    _durum = dict(hiz_yonu_onceki=0.0, uygulanan_yon=0.0)
-
-    # B65: KAPALIYKEN BİT BİT AYNI — kill-switch yapısal olarak temiz
-    _enb65, _n65 = 0.0, 0
-    for _cxd in (240.0, 300.0, CX, 340.0, 420.0):
-        for _b in (8, 20, 40):
-            for _hy in (-1.0, 0.0, 0.7):
-                for _term in (False, True):
-                    _y = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                                  C, _term, (0.5, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0,
-                                  _hy, _hy)
-                    _n = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                                  C, _term, (0.5, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0,
-                                  None, None)
-                    for _i in range(4):
-                        _enb65 = max(_enb65, abs(_y[_i] - _n[_i]))
-                    _n65 += 1
-    kontrol("B65 S1/S3 KAPALIYKEN komut BİT BİT değişmez",
-            _enb65 < 1e-12,
-            f"{_n65} kombinasyonda en büyük fark {_enb65:.2e} "
-            "(durum girdisi verilse de verilmese de aynı)")
-
-    # B66: S1 komut dönüş hızını ω_max = g·tan(45°)/v ile sınırlar
-    _hy0 = 0.0
-    _s = ib.komut(CX + 300.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, _Slew,
-                  True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0, _hy0, _hy0)
-    _k = ib.komut(CX + 300.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, C,
-                  True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0, _hy0, _hy0)
-    _om = 9.81 * math.tan(math.radians(45.0)) / _s[5]["v_los"]
-    kontrol("B66 S1 komut dönüşünü ω_max·dt ile sınırlar",
-            abs(_s[5]["hiz_yonu"] - _hy0) <= _om * 0.05 + 1e-9
-            and abs(_k[5]["hiz_yonu"] - _hy0) > _om * 0.05,
-            f"sınırsız {math.degrees(abs(_k[5]['hiz_yonu']-_hy0))/0.05:.0f}°/s → "
-            f"sınırlı {math.degrees(abs(_s[5]['hiz_yonu']-_hy0))/0.05:.1f}°/s "
-            f"(tavan {math.degrees(_om):.1f}°/s, v={_s[5]['v_los']:.1f} m/s)")
-
-    # B67: ⭐ YAPISAL GARANTİ — S1 HIZI (v_los) DEĞİŞTİREMEZ.
-    # Kullanıcının şartı: "ivme şeysini kısma". S1 yalnız komut AÇISINI
-    # sınırlar; v_los, MAX_ACCEL ve PSC_JERK_XY yolundan GEÇMEZ.
-    _hiz_enb, _n67 = 0.0, 0
-    for _cxd in (200.0, 280.0, CX, 360.0, 460.0):
-        for _b in (8, 15, 25, 40):
-            for _hy in (-2.0, -0.5, 0.0, 0.5, 2.0):
-                for _term in (False, True):
-                    _a = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                                  _Slew, _term, (1.0, 0.0), 0.0, 0.0, 3.0,
-                                  0.0, 0.0, _hy, _hy)
-                    _n = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                                  C, _term, (1.0, 0.0), 0.0, 0.0, 3.0,
-                                  0.0, 0.0, _hy, _hy)
-                    _hiz_enb = max(_hiz_enb,
-                                   abs(_a[5]["v_los"] - _n[5]["v_los"]))
-                    _n67 += 1
-    kontrol("B67 ⭐ S1 HIZI (v_los) DEĞİŞTİREMEZ — 'ivmeyi kısma' şartı",
-            _hiz_enb < 1e-12,
-            f"{_n67} kombinasyonda en büyük v_los farkı {_hiz_enb:.2e} m/s "
-            "— S1 yalnız komut açısına dokunur, hız/ivme/jerk bütçesi TAM kalır")
-
-    # B68: S1 küçük hatada ETKİSİZ (sakin takibi bozmaz)
-    _y = ib.komut(CX + 6.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, _Slew,
-                  True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0, None, None)
-    _yy = ib.komut(CX + 6.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, _Slew,
-                   True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0,
-                   _y[5]["hiz_yonu"], _y[5]["hiz_yonu"])
-    kontrol("B68 S1 küçük hatada hiç kırpmaz (sakin takip korunur)",
-            _yy[5]["slew_kirp"] < 1e-12,
-            "cx merkeze 6 px uzakken kırpma 0.00° — sınır yalnız "
-            "İMKÂNSIZ dönüşte devreye girer")
-
-    # B69: S3 borcu komuttan düşer ve tavanı bağlar
-    _b1 = ib.komut(CX, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, _AW, True,
-                   (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0, 1.2, 0.0)
-    _b0 = ib.komut(CX, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05, C, True,
-                   (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0, 1.2, 0.0)
-    kontrol("B69 S3 windup borcunu komuttan düşer (tavanlı)",
-            _b1[5]["aw_geri"] > 0.0
-            and abs(_b1[5]["aw_geri"]) <= math.radians(_AW.AW_MAX_DEG) + 1e-9
-            and abs(_b0[5]["aw_geri"]) < 1e-12,
-            f"borç 1.2 rad → geri besleme {math.degrees(_b1[5]['aw_geri']):.1f}° "
-            f"(tavan {_AW.AW_MAX_DEG:.0f}°), kontrolde 0.0°")
-
-    # B70: S3 de HIZI değiştiremez
-    _h3, _n70 = 0.0, 0
-    for _cxd in (240.0, CX, 400.0):
-        for _b in (10, 25, 40):
-            for _borc in (-1.5, -0.4, 0.0, 0.4, 1.5):
-                _a = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05, _AW,
-                              True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0,
-                              _borc, 0.0)
-                _n = ib.komut(_cxd, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05, C,
-                              True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0,
-                              _borc, 0.0)
-                _h3 = max(_h3, abs(_a[5]["v_los"] - _n[5]["v_los"]))
-                _n70 += 1
-    kontrol("B70 S3 HIZI (v_los) DEĞİŞTİREMEZ",
-            _h3 < 1e-12,
-            f"{_n70} kombinasyonda en büyük v_los farkı {_h3:.2e} m/s")
+    # ── S1/S3 SİLİNDİ — bekçi testleri (§5.12: artık bırakma) ──
+    kontrol("B65 S1 tamamen silindi (Cfg'de slew alanı yok)",
+            not any(hasattr(C, _a) for _a in
+                    ("SLEW_KAT", "SLEW_ANGLE_MAX_DEG", "SLEW_V_MIN")),
+            "SLEW_* yok — komut dönüş hızı tavanı ölçüldü ve elendi "
+            "(ivme p90 kontrolün %81'i, p=0.024)")
+    kontrol("B66 S3 tamamen silindi (Cfg'de anti-windup alanı yok)",
+            not any(hasattr(C, _a) for _a in ("AW_K", "AW_MAX_DEG")),
+            "AW_* yok — anti-windup geri beslemesi ölçüldü ve elendi")
+    kontrol("B67 slew_kirp_deg / aw_geri_deg CSV sütunları kalmadı",
+            "slew_kirp_deg" not in ib._CSV_ALANLAR
+            and "aw_geri_deg" not in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, ikisi de yok")
+    kontrol("B68 komut() imzasında S1/S3 durum girdileri kalmadı",
+            not any(_a in inspect.signature(ib.komut).parameters
+                    for _a in ("hiz_yonu_onceki", "uygulanan_yon")),
+            "saf fonksiyon eski hâline döndü — çağıran ek durum taşımıyor")
 
     print("=" * 60)
     kontrol("B64 Ö5 DİKEY kanalı DEĞİŞTİREMEZ (yapısal, bit bit)",
