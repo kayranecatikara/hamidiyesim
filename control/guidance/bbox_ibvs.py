@@ -200,7 +200,13 @@ class Cfg:
     # 7 hücumun 7'si ıska (en yakın 1.5 m). 25 px ≈ 6.4 m'den taahhüt → düzeltmeye
     # ~20 kare kalır. Ölçüm: kutu ≈ 160/menzil (12 m'de 12-14 px, uçuş logu).
     # 25, BOYUT_REF ile aynı: "tutuş mesafesine varınca hücuma geç" demek.
-    TERMINAL_BOYUT = _env_f("AVCI_IBVS_TERM", 25.0)  # px; ≈6.4 m
+    # ⭐ 2026-08-17 KULLANICI TESTİ — "EN İYİ HAL": 25 → 18 px.
+    # Kullanıcı panelden ④'ü açıp uçtu (logs/kayit/ucus_20260817_205915) ve
+    # şunu bildirdi: "baş kısımlarda hedefin yaptığı manevralara verdiğimiz
+    # reaksiyon aşırı iyi, çok çok iyi, salınım falan da yok."
+    # 18 px → 8.9 m: terminale 2.5 m ERKEN girilir, hücuma daha uzun mesafe
+    # kalır. ⚠ Bitiriş hâlâ çözülmedi (bkz. docs/EN_IYI_HAL.md).
+    TERMINAL_BOYUT = _env_f("AVCI_IBVS_TERM", 18.0)  # px; ≈8.9 m
     # ⚠ KÖR HÜCUM SÜRE SINIRI (2026-08-08, pahalı hata): ilk sürümde kör
     # hücumun süresi YOKTU. Drone hedefi ıskalayıp geçti, kutu kayboldu ve
     # son komut 260 s boyunca basıldı — araç 1032 m uzağa düz uçtu, faz hiç
