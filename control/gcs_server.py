@@ -811,6 +811,22 @@ _OZELLIKLER = {
         "⚠ ① DİKEY KAPI açıkken bu eşik yalnız 'hazır' sinyali üretir; mandal "
         "ancak dikey ofset de 2 m'nin altına inince atılır.",
         "AVCI_IBVS_TERM", (25.0, 18.0)),
+    "term_roll": (
+        "TERM_ROLL", "bool",
+        "⑥ T1c · TERMİNAL fazında roll telafisi (AÇIK ← YENİ)",
+        "BULUNAN TUTARSIZLIK (kullanıcının 20:59 uçuşundan): roll telafisi "
+        "SEYİR fazında vardı, TERMİNAL fazında YOKTU — araç terminale girer "
+        "girmez dikey okuması bozuluyordu. "
+        "ÖLÇÜLDÜ (4234 terminal karesi): telafili/telafisiz fark medyan 0.64°, "
+        "p90 8.15°, MAKS 42.2° (terminal yatışı p90 42.4° olduğu için kuyruk "
+        "büyük). Kullanıcı: 'tüm paslar okey, bitiriş çok kötü.' "
+        "ÇÖZÜM: terminalde de los_seviye() kullanılır — seviye çerçevesindeki "
+        "GERÇEK yükseliş. "
+        "⭐ YAPISAL GARANTİ (B76): roll=0'da komut BİT BİT aynı — düz uçuş "
+        "HİÇ etkilenmez, telafi yalnız yatışta devreye girer. "
+        "B77: 10°→Δvz 0.52, 25°→1.19, 40°→1.89 m/s. B79: seyir fazına dokunmaz. "
+        "⚠ Kapatınca eski (bozuk) terminal yolu geri gelir — kıyas için.",
+        "AVCI_IBVS_TERM_ROLL", True),
     "dikey_roll": (
         "DIKEY_ROLL", "bool",
         "⑤ T1b · Dikey kanalda roll telafisi (AÇIK)",

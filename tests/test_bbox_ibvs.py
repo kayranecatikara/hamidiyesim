@@ -867,6 +867,69 @@ def main():
             "beklettiği loglardan ölçülebilir")
 
     print("=" * 60)
+    # ══ T1c · TERMİNAL FAZINDA ROLL TELAFİSİ (2026-08-17) ══
+    class _TermRollKapali(ib.Cfg):
+        TERM_ROLL = False
+
+    # B76: ⭐ YAPISAL GARANTİ — roll=0'da BİT BİT aynı (düz uçuş korunur)
+    _enb76, _n76 = 0.0, 0
+    for _cyd in (200.0, 260.0, 301.0, 340.0, 400.0):
+        for _ptd in (-25.0, -8.0, 0.0, 8.0):
+            for _b in (20, 30, 50):
+                _a = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05, C, True,
+                              (0.0, 0.0), math.radians(_ptd), 0.0, 3.0, 0.0)
+                _k = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05,
+                              _TermRollKapali, True, (0.0, 0.0),
+                              math.radians(_ptd), 0.0, 3.0, 0.0)
+                for _i in range(4):
+                    _enb76 = max(_enb76, abs(_a[_i] - _k[_i]))
+                _n76 += 1
+    kontrol("B76 ⭐ T1c roll=0'da komutu BİT BİT değiştirmez (düz uçuş korunur)",
+            _enb76 < 1e-12,
+            f"{_n76} kombinasyonda en büyük fark {_enb76:.2e} — terminal roll "
+            "telafisi YALNIZ yatışta devreye girer")
+
+    # B77: YATIŞTA gerçekten düzeltiyor ve etki yatışla büyüyor
+    _fark = []
+    for _rd in (10.0, 25.0, 40.0):
+        _a = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 12.0, 0.05, C, True,
+                      (0.0, 0.0), math.radians(-8.0), 0.0, 3.0,
+                      math.radians(_rd))
+        _k = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 12.0, 0.05,
+                      _TermRollKapali, True, (0.0, 0.0), math.radians(-8.0),
+                      0.0, 3.0, math.radians(_rd))
+        _fark.append((_rd, abs(_a[2] - _k[2])))
+    kontrol("B77 T1c yatışta dikey komutu düzeltir, etki yatışla BÜYÜR",
+            all(b > 0.01 for _, b in _fark)
+            and _fark[2][1] > _fark[0][1],
+            "  ".join(f"{r:.0f}°→Δvz {d:.2f} m/s" for r, d in _fark)
+            + "  (ölçülen terminal yatışı p90 42.4°)")
+
+    # B78: kapatılabilir + varsayılan AÇIK
+    kontrol("B78 T1c varsayılan AÇIK ve kapatılabilir",
+            C.TERM_ROLL and not _TermRollKapali.TERM_ROLL,
+            f"Cfg.TERM_ROLL={C.TERM_ROLL} (AVCI_IBVS_TERM_ROLL=0 ile eski "
+            "telafisiz terminal yolu geri gelir)")
+
+    # B79: SEYİR fazı DEĞİŞMEDİ (tek değişken — T1c yalnız terminale dokunur)
+    _enb79, _n79 = 0.0, 0
+    for _cyd in (220.0, 301.0, 380.0):
+        for _rd in (0.0, 20.0, 40.0):
+            _a = ib.komut(CX + 40.0, _cyd, 15, 15, 0.0, 12.0, 0.05, C, False,
+                          (0.0, 0.0), math.radians(-5.0), 0.0, 3.0,
+                          math.radians(_rd))
+            _k = ib.komut(CX + 40.0, _cyd, 15, 15, 0.0, 12.0, 0.05,
+                          _TermRollKapali, False, (0.0, 0.0),
+                          math.radians(-5.0), 0.0, 3.0, math.radians(_rd))
+            for _i in range(4):
+                _enb79 = max(_enb79, abs(_a[_i] - _k[_i]))
+            _n79 += 1
+    kontrol("B79 T1c SEYİR fazına DOKUNMAZ (tek değişken)",
+            _enb79 < 1e-12,
+            f"{_n79} kombinasyonda en büyük fark {_enb79:.2e} — terminal=False "
+            "iken iki kol birebir aynı")
+
+    print("=" * 60)
     # ── S1/S3 SİLİNDİ — bekçi testleri (§5.12: artık bırakma) ──
     kontrol("B65 S1 tamamen silindi (Cfg'de slew alanı yok)",
             not any(hasattr(C, _a) for _a in

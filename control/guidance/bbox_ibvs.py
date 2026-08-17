@@ -676,6 +676,28 @@ class Cfg:
     # B60 yatay kanala DOKUNMAZ, B61 kapatılabilir.
     DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 1.0) >= 0.5
 
+    # ══════════════════════════════════════════════════════════════════
+    # T1c · TERMİNAL FAZINDA DA ROLL TELAFİSİ
+    # ══════════════════════════════════════════════════════════════════
+    # BULUNAN TUTARSIZLIK (2026-08-17, kullanıcının 20:59 uçuşundan):
+    # roll telafisi SEYİR fazında vardı, TERMİNAL fazında YOKTU.
+    #     seyir    : eps_elev = eps_elev_ham − (el_roll − el_norm)   ✓ telafili
+    #     terminal : elev_atalet = piksel_elev(cy) + iris_pitch      ✗ TELAFİSİZ
+    # Yani araç terminale girer girmez dikey okuması bozuluyordu.
+    #
+    # ÖLÇÜLDÜ (4234 terminal karesi): telafili/telafisiz fark medyan 0.64°,
+    # p90 8.15°, maks 42.2° — terminal yatışı p90 42.4° olduğu için kuyruk
+    # büyük. Kullanıcı: "tüm paslar okey, bitiriş çok kötü."
+    #
+    # ÇÖZÜM: terminalde de los_seviye() kullanılır — o zaten SEVİYE
+    # çerçevesindeki gerçek LOS yükselişini verir (roll+pitch telafili).
+    # ⭐ YAPISAL GARANTİ: roll = 0'da los_seviye(cx,cy,0,pitch) ile
+    # piksel_elev(cy)+pitch BİT BİT AYNI (ölçüldü: en büyük fark 0.0000°).
+    # Yani bu değişiklik DÜZ UÇUŞU HİÇ ETKİLEMEZ; yalnız yatışta devreye
+    # girer. Birim testi B76.
+    # AVCI_IBVS_TERM_ROLL=0 → eski (telafisiz) terminal yolu geri gelir.
+    TERM_ROLL = _env_f("AVCI_IBVS_TERM_ROLL", 1.0) >= 0.5
+
 
     # ══ Ö12 · YAKIN MENZİLDE YAW SLEW TAVANI (KENDİ EKSENİNDE DÖNME ÇARESİ) ══
     # KULLANICI GÖZLEMİ (2026-08-12): "araç manevra limitleri zorlandığında ya
@@ -723,7 +745,7 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
-    "dikey_ofs_m",
+    "dikey_ofs_m", "elev_atalet_deg",
 ]
 
 
@@ -895,7 +917,12 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     if terminal:
         # KESİŞİM: hız vektörü hedefe DOĞRU baksın (tutuş ofseti değil).
         # elev_atalet = gövde LOS yükselişi + gövde pitch; lead ile öne alınır.
-        elev_atalet = piksel_elev(cy, cfg) + iris_pitch
+        # T1c (bkz. Cfg.TERM_ROLL): seviye çerçevesindeki GERÇEK yükseliş.
+        # roll=0'da piksel_elev(cy)+iris_pitch ile bit bit aynı (B76).
+        if cfg.TERM_ROLL:
+            _, elev_atalet = los_seviye(cx, cy, iris_roll, iris_pitch, cfg)
+        else:
+            elev_atalet = piksel_elev(cy, cfg) + iris_pitch
         lead_el = clamp(lead_sure * los_hiz[1],
                         -math.radians(cfg.LEAD_MAX_DEG),
                         math.radians(cfg.LEAD_MAX_DEG))
@@ -940,7 +967,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
-            "eps_yaw_ham": eps_yaw_ham}
+            "eps_yaw_ham": eps_yaw_ham,
+            "elev_atalet": (elev_atalet if terminal else None)}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
 
 
@@ -1286,6 +1314,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0,
                 "dikey_ofs_m": ("" if dikey_ofs is None else round(dikey_ofs, 2)),
+                "elev_atalet_deg": ("" if tani.get("elev_atalet") is None
+                                    else round(math.degrees(tani["elev_atalet"]), 2)),
             })
             f.flush()
 
