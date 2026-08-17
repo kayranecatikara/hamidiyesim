@@ -433,3 +433,66 @@ yer: **ω_max = g·tan(ANGLE_MAX)/V**. Salınımı komut tarafından değil ARA�
 tarafından çözmek gerekiyor — `ANGLE_MAX`'i açmak (Ö6 ölçümü artık geçersiz:
 o zaman araç 45°'e dayanmıyordu, bugün 36-43° yatışla dayanıyor) tavanı
 büyüten tek kanaldır ve henüz geçerli biçimde sınanmamıştır.
+
+
+---
+
+## 10 · EK KAMPANYA X — ARAÇ TARAFI: hangi kısıt gerçekten bağlıyor?
+
+Salınımı komut tarafından çözme yolu §9.8'de kapandı. Geriye araç tarafı
+kaldı: `ω_max = g·tan(ANGLE_MAX)/V`. Ama **uçmadan önce mekanizma kontrolü
+yapıldı (§5.1) ve fikri değiştirdi.**
+
+### 10.1 · ⛔ `ANGLE_MAX` bağlayıcı DEĞİL — uçmadan elendi
+
+Araç bugün 45° tavanına dayanıyor mu? (tüm son kampanyaların 20 Hz logu)
+
+| grup | kare | yatış p50 | p90 | p95 | p99 | **≥44.5° kare** |
+|---|---|---|---|---|---|---|
+| S kampanyası K (kare) | 4627 | 18.2 | 33.5 | 36.8 | 40.6 | **%0.0** |
+| S kampanyası K (duz) | 3798 | 3.5 | 34.3 | 37.9 | 43.6 | **%0.8** |
+| D kampanyası J10 (kare) | 3866 | 21.1 | 35.4 | 37.8 | 43.5 | **%0.5** |
+
+**Araç 45°'ye HİÇ dayanmıyor.** `ANGLE_MAX`'i 55'e çıkarmak Ö6'nın düştüğü
+tuzağın birebir tekrarı olurdu (§5.1: "deney kolunun 2 koşusunda araç
+38-40°'de kalmış, o koşular fiilen kontrol koşusuydu"). **8-16 uçuş
+uçulmadan elendi.**
+
+### 10.2 · ⛔ `WPNAV_ACCEL` de bağlayıcı DEĞİL — 4 uçuşta elendi
+
+Dağılım 39° civarında kesiliyor ve `atan(8.0/9.81) = 39.2°`. Kaynak
+doğrulandı: `mode_guided.cpp:229` → `pva_control_start()` →
+`set_max_speed_accel_NE_cm(..., wp_nav->get_wp_acceleration_cmss())` →
+`AC_WPNav AP_GROUPINFO("ACCEL")` = **`WPNAV_ACCEL`** (bizde 800 = 8.0 m/s²).
+Hipotez güçlüydü: güdüm komutunun istediği yanal ivme **medyanı 8.43 m/s²**,
+yani tavanın ÜSTÜNDE — sistem medyanda bile doymuş görünüyordu.
+
+`WPNAV_ACCEL` 800 → 1000 (= g·tan45° = 9.81 m/s²), `duz`+kaçamak, n=2/kol:
+
+| kol | kare | yatış p90 | p95 | p99 | ivme p95 | ≥40° |
+|---|---|---|---|---|---|---|
+| K (800) | 1187 | 33.0 | 36.2 | 38.9 | 7.18 | %0.3 |
+| X (1000) | 1271 | 31.3 | 35.4 | 39.9 | 6.97 | %0.9 |
+
+**Araç fazladan boşluğu HİÇ kullanmadı.** İlan edilen kapı (deney kolunda
+ivme p95 > 8.0) kapalı → **kampanya durduruldu, kalan 4 uçuş koşulmadı.**
+
+### 10.3 · ⭐ BAĞLAYICI KISIT `PSC_JERK_XY`'DİR — kanıtlandı
+
+| kol | `PSC_JERK_XY` | ölçülen jerk p50 | p90 | p95 | param×0.8 üstü kare |
+|---|---|---|---|---|---|
+| D J05 | 5 | 2.74 | 7.29 | 9.34 | **%32.5** |
+| D J10 | 10 | 3.96 | 11.37 | 14.39 | **%21.4** |
+| D J15 | 15 | 5.16 | 14.61 | 17.88 | **%16.5** |
+
+Ölçülen jerk parametreyle **neredeyse orantılı** ilerliyor ve karelerin
+%16-33'ünde tavana yapışıyor. `ANGLE_MAX` ve `WPNAV_ACCEL` değişiklikleri
+ise hiçbir şey değiştirmedi.
+
+> **Bu aracın yanal çevikliğini bağlayan tek şey `PSC_JERK_XY`'dir.**
+> Kullanıcının 5 → 15 değişikliğinin neden gözle görülür tek iyileşme
+> olduğunun açıklaması budur; ve çeviklik ↔ salınım takasının tek eksende
+> yaşandığını gösterir. Gövde kaynaklı sert tavan 19.41 m/s³ — bugünkü
+> 10'un üstünde hâlâ pay var.
+
+`WPNAV_ACCEL` değeri DEĞİŞTİRİLMEDİ (800'de kaldı), panel düğmesi silindi.

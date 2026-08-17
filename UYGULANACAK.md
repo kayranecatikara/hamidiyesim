@@ -56,12 +56,20 @@ menzile göre 3 kat değişiyor ve kullanıcının şikâyet ettiği bant (0-15 
 eridi. İkinci kusur: `|roll| p90` ile `ivme p90` **aynı büyüklüktür**
 (`a = g·tan roll`); salınım genlik değil **işaret değiştirme** demektir.
 
+**⭐ EN ÖNEMLİ BULGU — BAĞLAYICI KISIT `PSC_JERK_XY`'DİR:**
+Araç 45°'ye HİÇ dayanmıyor (≥44.5° kare oranı **%0.0-0.8**) → `ANGLE_MAX`
+bağlayıcı değil, uçmadan elendi (Ö6 tuzağının tekrarı olurdu).
+`WPNAV_ACCEL` 800 → 1000 denendi, araç fazladan boşluğu **hiç kullanmadı**
+(ivme p95 7.18 → 6.97) → 4 uçuşta elendi, kapı kapalı.
+Ölçülen jerk ise parametreyle **neredeyse orantılı**: p90 7.29 / 11.37 /
+14.61 ← 5 / 10 / 15, karelerin %16-33'ünde tavana yapışıyor.
+**Yanal çevikliği bağlayan TEK şey jerk'tir**; kullanıcının 5→15
+değişikliğinin neden gözle görülür tek iyileşme olduğunun açıklaması bu.
+Sert gövde tavanı 19.41 m/s³ — bugünkü 10'un üstünde hâlâ pay var.
+
 **⚠ KALICI BULGU:** komutun dönüş tavanını %43 aşması **zararlı bir artık
 değil** — doymuş bir sistemin en hızlı tepkisidir. İleri beslemeyle kesmek
-(S1) de geri beslemeyle telafi etmek (S3) de aracı YAVAŞLATTI. Salınımı
-komut tarafından çözme yolu kapandı; geriye tek yapısal kaldıraç
-**ω_max = g·tan(ANGLE_MAX)/V**, yani `ANGLE_MAX`. (Ö6 ölçümü geçersiz: o
-zaman araç 45°'e dayanmıyordu, bugün 36-43° yatışla dayanıyor.)
+(S1) de geri beslemeyle telafi etmek (S3) de aracı YAVAŞLATTI. Salınımı komut tarafından çözme yolu kapandı.
 
 S1 ve S3 §5.12 uyarınca koddan **tamamen çıkarıldı** — 960 kombinasyonda
 bit bit denklik doğrulandı (fark 0.00e+00), grep sıfır, bekçi testleri

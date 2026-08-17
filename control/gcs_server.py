@@ -751,19 +751,11 @@ _OZELLIKLER = {
     "s2_sonum": (
         "SONUM_T", "deger",
         "S2 · Yatay sönümleme, D terimi (kapalı → 0.30 s)",
-        "AÇIK KALAN TEK SORU. S kampanyası 40 uçuş, 3 dalga, 5 aday denedi; "
-        "ikisi (S1 komut dönüş tavanı, S3 anti-windup) kullanıcının 'ivmeyi "
-        "kısma' şartına takılıp ELENDİ, ikisi (W1/W2 ArduPilot hız "
-        "denetleyicisi P/D kazançları) hiçbir fark üretmedi. Geriye bu kaldı. "
-        "yaw_cmd −= SONUM_T·ω — saf-P olan yatay kanala türev terimi ekler. "
-        "ÖLÇÜLEN (duz+kaçamak, n=8/kol): yakın menzil salınımı (ψ̇ <30 m) "
-        "1.450 → 1.174 (−%19, p=0.308); kutu oranı %60.6 → %69.9 (+%15); "
-        "isabet 4/8 → 7/8 (Fisher p=0.282). MALİYETİ ÖLÇÜLMEDİ: yanal ivme "
-        "p90 kontrolün %102'si — çevikliği KISMIYOR. "
-        "⚠ AMA hiçbiri istatistiksel olarak ayrışmıyor ve ilan edilen "
-        "doz-tepki şartı DÜŞTÜ (0.60, 0.30'dan daha az sönümledi). Bu yüzden "
-        "varsayılan yapılmadı, karar kullanıcıda. "
-        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (güdüm döngüsü her karede okur).",
+        "S kampanyasından KULLANICIYA kalan aday. duz+kaçamak n=8/kol: "
+        "yakın menzil salınımı 1.450 → 1.174 (−%19, p=0.308), kutu oranı "
+        "%60.6 → %69.9, isabet 4/8 → 7/8 (Fisher p=0.282), yanal ivme "
+        "kontrolün %102'si (çevikliği KISMIYOR). Hiçbiri anlamlı değil ve "
+        "doz-tepki şartı düştü → varsayılan yapılmadı.",
         "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 
