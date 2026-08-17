@@ -751,24 +751,76 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
+    "dikey_kapi": (
+        "DIKEY_KAPI_M", "deger",
+        "① DİKEY HİZALAMA KAPISI — irtifa eşitlenmeden terminale geçme",
+        "KULLANICI İSTEĞİ: 'dikeyde hedef araç ile irtifamızı eşitleyelim, "
+        "irtifamız birbirine yaklaşmadan terminale geçilmesin.' "
+        "NE YAPAR: kutu TERMINAL_BOYUT'u aşsa bile hedefle aramızdaki DİKEY "
+        "OFSET 2 m'den büyükse hücum mandalı ATILMAZ — araç seyir yasasında "
+        "kalıp önce irtifayı eşitler, sonra taahhüt eder. Konsola '⏸ DİKEY "
+        "KAPI' satırı basılır. "
+        "⚠ YARIŞMA KURALI UYUMLU (§10): dikey ofset YALNIZ BBOX'tan kurulur — "
+        "R = 160/kutu_boyutu, el = seviye çerçevesinde yükseliş, "
+        "ofset = R·sin(el). Hedefin GPS'ine BAKILMAZ (birim testi B72). "
+        "NİYE: temas anındaki dikey ıska medyanı 2.7-4.7 m ölçüldü; isabet "
+        "zarfı dikeyde +0.29/−0.13 m — hata zarfın 10-30 katı. 25 uçuşluk "
+        "parametre taraması (Faz A/B/C) düzeltemedi: sorun ayar değil, "
+        "terminale YANLIŞ GEOMETRİDEN girilmesi. "
+        "⚠ HENÜZ ÖLÇÜLMEDİ — kullanıcı uçuracak. Log sütunu: dikey_ofs_m.",
+        "AVCI_IBVS_DIKEY_KAPI", (0.0, 2.0)),
+    "vz_max": (
+        "VZ_MAX", "deger",
+        "② DİKEY GÜÇ — dikey hız tavanı (3 → 8 m/s)",
+        "KULLANICI İSTEĞİ: 'aracın gücünü artırdın, bu hareket kabiliyetini "
+        "dikey için kullanalım.' İtki/ağırlık 2.56 → 7.08 çıkmışken dikey "
+        "bütçe 3 m/s'de kalmıştı; yatay 8 → 26 m/s² açılırken dikey aynı "
+        "kaldı — 10 kat asimetri. "
+        "Araç tarafındaki tavanlar da birlikte açıldı (avci_copter.parm): "
+        "WPNAV_SPEED_UP 600→1200, _DN 400→1000, WPNAV_ACCEL_Z 250→800; "
+        "terminal dikey tavanı VZ_MAX_TERM 5 → 10 m/s (birim testi B71). "
+        "⚠ ① DİKEY KAPI'nın irtifayı HIZLI kapatabilmesi için gerekli — "
+        "ikisi BİRLİKTE çalışır. Tek başına denendiğinde (Faz B) etkisizdi "
+        "(p=1.000), çünkü kapı yoktu; araç hizalanmaya zaten çalışmıyordu.",
+        "AVCI_IBVS_VZMAX", (3.0, 8.0)),
+    "v_terminal": (
+        "V_TERMINAL", "deger",
+        "③ TERMİNAL HIZI — hücum hızı (16 ↔ 20 m/s)",
+        "KULLANICI KARARI: 'terminal fazındaki hızı azaltmıştık bir ara hedef "
+        "araca daha dengeli şekilde yaklaşmak için, onu da bir geri getirsene.' "
+        "→ Varsayılan 20'den 16'ya GERİ ALINDI (KAPALI konum = 16). "
+        "⚠ ÖLÇÜM AKSİNİ SÖYLÜYORDU (V_TERMINAL kampanyası, 18 uçuş): 20 m/s "
+        "en yakın menzili 1.83 → 1.14 m indirmiş, temasın son 2 saniyesinde "
+        "nişan sapmasını 19 → 4 px düşürmüş, isabeti 1/4 → 2/4 yapmıştı. "
+        "Terminal faz son 6.4 m; hedef 15.1 m/s uçuyor — 16 m/s ile kalan "
+        "kapanma 0.9 m/s (o 6.4 metre ~7 saniye sürer), 20 m/s ile 4.9 m/s "
+        "(1.3 saniye). Düğme kıyas için duruyor: kendi uçuşunda hangisi daha "
+        "dengeli hissettiriyorsa onu bırak.",
+        "AVCI_IBVS_VTERM", (16.0, 20.0)),
+    "term_boyut": (
+        "TERMINAL_BOYUT", "deger",
+        "④ TERMİNALE GEÇİŞ ANI — kutu eşiği (25 px = 6.4 m ↔ 18 px = 8.9 m)",
+        "KULLANICI İSTEĞİ: 'terminal fazına daha önceden ve daha sonradan "
+        "geçiyorduk ya, ona da bir bakalım tam ayarlayalım.' "
+        "Kutu boyutu eşiği menzile çevrilir: R = 160/boyut. "
+        "KAPALI = 25 px → 6.4 m (bugünkü, GEÇ geçiş, kısa hamle). "
+        "AÇIK = 18 px → 8.9 m (2.5 m ERKEN geçiş, uzun hamle). "
+        "⚠ Terminalde FREN YOKTUR (hız sabit, PI devre dışı). Erken geçmek, "
+        "hedef hâlâ manevra yaparken taahhüt etmek demektir — ıska sonrası "
+        "dönüş maliyeti artabilir. Geç geçmek hücuma az mesafe bırakır. "
+        "⚠ ① DİKEY KAPI açıkken bu eşik yalnız 'hazır' sinyali üretir; mandal "
+        "ancak dikey ofset de 2 m'nin altına inince atılır.",
+        "AVCI_IBVS_TERM", (25.0, 18.0)),
     "dikey_roll": (
         "DIKEY_ROLL", "bool",
-        "T1b · Dikey kanalda roll telafisi (AÇIK ← yeni varsayılan)",
-        "⭐ GERİLEME DÜZELTMESİ — kullanıcının 2026-08-17 12:39 uçuşundan "
-        "teşhis edildi. Yatay kanalda roll telafisi vardı (ROLL_TELAFI), "
-        "DİKEYDE YOKTU. Araç yattığında gövdeye sabit kamera da yatıyor ve "
-        "cy pikseli gerçek yükselişi göstermiyor. "
-        "Bu eskiden önemsizdi çünkü araç yatamıyordu; ZARF BÜYÜTMESİ "
-        "(ANGLE_MAX 45°→70°) terminal yatış medyanını ~20°'den 36.9°'ye, "
-        "≥40° olan kare oranını %1'den %36.5'e çıkardı. "
-        "ÖLÇÜLDÜ (80 terminal karesi, |roll|>25°): telafisiz ile telafili "
-        "okuma farkı ORTALAMA 11.8°, MAKSİMUM 26.5° — saniyede 5 metreye "
-        "varan SAHTE TIRMANMA komutu. Araç hedefin üstünden geçip gidiyordu "
-        "(dz +5.6 → +15.6 m), üç yaklaşmanın üçünde de. "
-        "⚠ KAPATIRSAN eski bozuk davranış geri gelir — bu düğme kıyas için "
-        "duruyor, ölçümü kullanıcı yapacak. "
-        "✓ Uçuş sırasında ETKİ EDER. Düz uçuşta etkisizdir (B58: roll=0'da "
-        "komut bit bit aynı); yatay kanala dokunmaz (B60).",
+        "⑤ T1b · Dikey kanalda roll telafisi (AÇIK)",
+        "Yatışta cy pikselinin gerçek yükselişi göstermemesini düzeltir. "
+        "Kullanıcının 12:39 uçuşundan teşhis edildi: 80 terminal karesinde "
+        "telafisiz/telafili fark ORTALAMA 11.8°, MAKS 26.5° — saniyede 5 m'ye "
+        "varan SAHTE TIRMANMA üretiyordu. Zarf büyütmesi (ANGLE_MAX 45→70) "
+        "terminal yatış medyanını 20 → 36.9°'ye çıkardığı için görünür oldu. "
+        "⚠ ① DİKEY KAPI bu telafiye DAYANIR — kapalıyken dikey ofset ölçümü "
+        "de bozulur. Kıyas için duruyor. Düz uçuşta etkisiz (B58).",
         "AVCI_IBVS_DIKEY_ROLL", True),
 }
 

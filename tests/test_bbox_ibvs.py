@@ -313,22 +313,29 @@ def main():
         return geo.CY + geo.FY * math.tan(
             math.radians(geo_tilt := 25.0) - math.radians(elev_deg))
 
+    # ⚠ 2026-08-17: VZ_MAX_TERM varsayılanı 5 → 10 yapıldı (kullanıcı isteği:
+    # "aracın gücünü dikey için kullanalım"). B22/B23'ün İDDİASI değişmedi —
+    # dikey bütçe kısıtı hâlâ böyle çalışmalı — ama TABANI değişti. Testler
+    # kendi sabitleriyle koşuyor; yeni varsayılanın etkisi B71'de ölçülüyor.
+    class _VzT5(ib.Cfg):
+        VZ_MAX_TERM = 5.0
+
     # 20° — eski sürümün 15.5° tavanının ÜSTÜNDE, ama hız tabanının bağladığı
     # noktanın altında: vektör hedefe TAM bakabilmeli.
     cy20 = _cy_icin(20.0)
     vx_d, vy_d, vz_d, _, _, _ = ib.komut(CX, cy20, 30, 30, 0.0, 10.0, 0.05,
-                                         C, True, (0.0, 0.0), 0.0)
+                                         _VzT5, True, (0.0, 0.0), 0.0)
     vyatay = math.hypot(vx_d, vy_d)
     elev_vektor = math.degrees(math.atan2(-vz_d, vyatay)) if vyatay > 1e-6 else 0.0
     kontrol("B22 dik hedefte yatay kısılır, hız vektörü hedefe TAM bakar",
-            vyatay < C.V_TERMINAL - 1.0 and abs(elev_vektor - 20.0) < 2.0,
-            f"hedef 20° yukarıda → yatay {C.V_TERMINAL:.0f}→{vyatay:.1f} m/s, "
+            vyatay < _VzT5.V_TERMINAL - 1.0 and abs(elev_vektor - 20.0) < 2.0,
+            f"hedef 20° yukarıda → yatay {_VzT5.V_TERMINAL:.0f}→{vyatay:.1f} m/s, "
             f"vektör {elev_vektor:.1f}° (eski sürüm 15.5°'de takılırdı)")
 
     # 35° — taban bağlar; vektör hedefe tam bakamaz ama eski 15.5°'den DİK
     cy35 = _cy_icin(35.0)
     vx_e, vy_e, vz_e, _, _, _ = ib.komut(CX, cy35, 30, 30, 0.0, 10.0, 0.05,
-                                         C, True, (0.0, 0.0), 0.0)
+                                         _VzT5, True, (0.0, 0.0), 0.0)
     vyat_e = math.hypot(vx_e, vy_e)
     elev_e = math.degrees(math.atan2(-vz_e, vyat_e)) if vyat_e > 1e-6 else 0.0
     kontrol("B23 aşırı dikte hız tabanı bağlar (hedefi büsbütün kaçırmamak için)",
@@ -799,6 +806,66 @@ def main():
                                   C, True, (_lam, 0.0), 0.0, _vzz, 3.0, 0.0)
                     _vz_enb = max(_vz_enb, abs(_a[2] - _k[2]))
                     _n64 += 1
+    print("=" * 60)
+    # ══ DİKEY GÜÇ + DİKEY HİZALAMA KAPISI (2026-08-17, kullanıcı isteği) ══
+
+    # B71: dikey tavan AÇILDI — dik hedefte vektör artık daha dik bakabiliyor
+    _cy20 = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(20.0))
+    _a5 = ib.komut(CX, _cy20, 30, 30, 0.0, 10.0, 0.05, _VzT5, True,
+                   (0.0, 0.0), 0.0)
+    _a10 = ib.komut(CX, _cy20, 30, 30, 0.0, 10.0, 0.05, C, True,
+                    (0.0, 0.0), 0.0)
+    _yat5 = math.hypot(_a5[0], _a5[1]); _yat10 = math.hypot(_a10[0], _a10[1])
+    kontrol("B71 dikey tavan açıldı: dik hedefte yatay ARTIK KISILMIYOR",
+            C.VZ_MAX_TERM > _VzT5.VZ_MAX_TERM and _yat10 > _yat5 + 1.0
+            and abs(_a10[2]) > abs(_a5[2]),
+            f"VZ_MAX_TERM {_VzT5.VZ_MAX_TERM:.0f} → {C.VZ_MAX_TERM:.0f} m/s: "
+            f"yatay {_yat5:.1f} → {_yat10:.1f} m/s, "
+            f"dikey {abs(_a5[2]):.1f} → {abs(_a10[2]):.1f} m/s "
+            "(kullanıcı: 'aracın gücünü dikey için kullanalım')")
+
+    # B72: DİKEY OFSET yalnız BBOX + KENDİ DURUŞUMUZDAN kurulur (§10 kuralı).
+    # los_seviye'nin girdileri: cx, cy (kutu) + roll, pitch (kendi sensörümüz).
+    # Hedefin GPS'i, irtifası, hızı YOK. Bu yapısal bir güvencedir.
+    _sig = inspect.signature(ib.los_seviye).parameters
+    kontrol("B72 dikey ofset YARIŞMA KURALINA uygun (hedef GPS'i yok)",
+            set(_sig) == {"cx", "cy", "roll", "pitch", "cfg"},
+            f"los_seviye girdileri {tuple(_sig)} — yalnız kutu pikseli + "
+            "kendi duruşumuz; hedefin konumu/irtifası GİRMİYOR (§10)")
+
+    # B73: dikey ofset FORMÜLÜ doğru — R·sin(el), işaret + = hedef YUKARIDA
+    for _elev, _ad in ((12.0, "yukarıda"), (-12.0, "aşağıda")):
+        _cyt = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_elev))
+        _, _el = ib.los_seviye(CX, _cyt, 0.0, 0.0, C)
+        _R = C.MENZIL_PX_M / 25.0            # 25 px → 6.4 m
+        _ofs = _R * math.sin(_el)
+        _bek = _R * math.sin(math.radians(_elev))
+        if abs(_ofs - _bek) > 0.05:
+            kontrol(f"B73 dikey ofset formülü ({_ad})", False,
+                    f"beklenen {_bek:+.2f} m, çıkan {_ofs:+.2f} m")
+            break
+    else:
+        _cyU = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(12.0))
+        _, _elU = ib.los_seviye(CX, _cyU, 0.0, 0.0, C)
+        kontrol("B73 dikey ofset formülü: R·sin(el), + = hedef YUKARIDA",
+                True,
+                f"6.4 m'de 12° yükseliş → {6.4*math.sin(_elU):+.2f} m "
+                "(±12° simetrik, 0.05 m içinde)")
+
+    # B74: KAPI KAPATILABİLİR — 0 iken hiçbir şey değişmez
+    class _KapiKapali(ib.Cfg):
+        DIKEY_KAPI_M = 0.0
+    kontrol("B74 dikey kapı kapatılabilir (0 = eski davranış)",
+            C.DIKEY_KAPI_M > 0.0 and _KapiKapali.DIKEY_KAPI_M == 0.0,
+            f"varsayılan {C.DIKEY_KAPI_M:.1f} m (AÇIK, kullanıcı isteği); "
+            "0 yapılınca mandal yalnız kutu boyutuna bakar")
+
+    # B75: dikey_ofs_m CSV sütunu var (mekanizma kapısı ölçülebilsin)
+    kontrol("B75 dikey_ofs_m CSV sütunu eklendi (mekanizma kapısı)",
+            "dikey_ofs_m" in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun — kapının ne kadar "
+            "beklettiği loglardan ölçülebilir")
+
     print("=" * 60)
     # ── S1/S3 SİLİNDİ — bekçi testleri (§5.12: artık bırakma) ──
     kontrol("B65 S1 tamamen silindi (Cfg'de slew alanı yok)",

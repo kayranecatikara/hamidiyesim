@@ -129,7 +129,38 @@ class Cfg:
     # SİSTEMATİK olarak 1-3 m ALTINDA uçuyor (dz −1.05 / −1.75 / −2.84 m);
     # `duz`'da böyle bir sapma YOK (±1.3 m saçılma). Sürekli yatışta araç
     # alçalıyor ve 3 m/s tavanıyla toparlayamıyor.
-    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 3.0)      # m/s; dikey hız tavanı
+    # ⭐ 2026-08-17 KULLANICI İSTEĞİ: "aracın gücünü artırdın, bu hareket
+    # kabiliyetini DİKEY için kullanalım." İtki/ağırlık 2.56 → 7.08 çıktı ama
+    # dikey bütçe 3 m/s'de kalmıştı (yatay 3.3 katına çıkarken) — 10 kat
+    # asimetri. Varsayılan 3 → 8 m/s. Araç tarafındaki tavanlar da birlikte
+    # açıldı (avci_copter.parm: WPNAV_SPEED_UP/DN, WPNAV_ACCEL_Z).
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 8.0)      # m/s; dikey hız tavanı
+
+    # ══════════════════════════════════════════════════════════════════
+    # DİKEY HİZALAMA KAPISI — "irtifa eşitlenmeden terminale geçme"
+    # ══════════════════════════════════════════════════════════════════
+    # KULLANICI İSTEĞİ (2026-08-17): "dikeyde hedef araç ile irtifamızı
+    # eşitleyelim, hedef araç ile irtifamız birbirine yaklaşmadan terminale
+    # geçilmesin."
+    #
+    # ÖLÇÜLEN SORUN: temas anındaki dikey ıska |dz| medyanı `square`'de
+    # 2.7-4.7 m (hem ESKİ hem YENİ araçta — Faz C §3). İsabet zarfı dikeyde
+    # +0.29/−0.13 m; yani hata zarfın 10-30 katı. 25 uçuşluk parametre
+    # taraması (Faz A/B/C) bunu düzeltemedi — çünkü sorun ayar değil,
+    # terminale YANLIŞ GEOMETRİDEN girilmesi.
+    #
+    # ⚠ YARIŞMA KURALI (§10): görsel temas varken hedefin GPS'i YASAK.
+    # Bu yüzden dikey ofset YALNIZ BBOX'tan kurulur:
+    #     R  = MENZIL_PX_M / boyut               (kutu boyutundan menzil)
+    #     el = los_seviye(cx, cy, roll, pitch)   (seviye çerçevesinde yükseliş)
+    #     dikey_ofset = R · sin(el)              (m; + = hedef YUKARIDA)
+    # Canlı GPS erişimi yok; girdi kutu + kendi duruşumuz.
+    #
+    # NE YAPAR: kutu TERMINAL_BOYUT'u aşsa bile |dikey_ofset| bu eşiğin
+    # üstündeyse mandal ATILMAZ — araç seyir yasasında kalıp önce irtifayı
+    # eşitler (dikey bütçe artık 8 m/s, hızlı kapatır), sonra hücuma geçer.
+    # 0 = kapalı (eski davranış: yalnız kutu boyutu karar verir).
+    DIKEY_KAPI_M = _env_f("AVCI_IBVS_DIKEY_KAPI", 2.0)   # m; 0 = kapalı
     V_NOM = 12.0                   # m/s; dikey ölçekleme için nominal ileri hız
 
     # ── HIZ: PI kontrol, kutu boyutu hatası üzerinden (menzil vekili) ──
@@ -221,7 +252,14 @@ class Cfg:
     #   isabet (A daha yakın 0.91 vs 1.22 m) → GERİLEME YOK.
     # 20 seçildi çünkü 24 ile en yakın menzil BERABERE (1.14) ve ilan edilen
     # kural beraberlikte DÜŞÜK HIZI seçtiriyor (dönüş yarıçapı + dikey bağ riski).
-    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 20.0)   # m/s; hücum hızı
+    # ⚠ 2026-08-17 KULLANICI KARARI: "terminal fazındaki hızı azaltmıştık bir
+    # ara hedef araca daha dengeli şekilde yaklaşmak için, onu da bir geri
+    # getirsene." → 20 → 16'ya GERİ ALINDI.
+    # ⚠ ÖLÇÜM AKSİNİ SÖYLÜYORDU (V_TERMINAL kampanyası, 18 uçuş): 20 m/s
+    # en yakın menzili 1.83 → 1.14 m indirmiş, nişan sapmasını 19 → 4 px
+    # düşürmüş, isabeti 1/4 → 2/4 yapmıştı. Kullanıcı kararı ölçümün üstünde
+    # (dengeli yaklaşma tercihi); panelde düğmesi var, kıyas yapılabilir.
+    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 16.0)   # m/s; hücum hızı
     # ⇑ 2026-08-15: 18 → 16, Ö-M İLE BİRLİKTE ve YALNIZ onunla.
     # 16 tek başına ölçüldü ve KÖTÜ çıktı: düz uçuşta en yakın menzil
     # 0.47 → 1.18 m, dairede 2.87 → 6.18 m (dağılımlar örtüşmüyor).
@@ -335,7 +373,9 @@ class Cfg:
     # lead tavanı — ~8-10° — terminal tavanı 25°'de kalsın.
     # AVCI_IBVS_LEAD_ERKEN=1 → ölçülen bu davranış geri gelir.
     LEAD_ERKEN = _env_f("AVCI_IBVS_LEAD_ERKEN", 0.0) >= 0.5
-    VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 5.0)   # m/s; terminalde dikey tavan
+    # 5 → 10 (2026-08-17): itki 2.8 katına çıktı, terminal dikey tavanı da
+    # birlikte açıldı — son metrelerde dikey düzeltme yapabilmek için.
+    VZ_MAX_TERM = _env_f("AVCI_IBVS_VZT", 10.0)  # m/s; terminalde dikey tavan
 
     # ── TERMİNAL DİKEY SÖNÜMLEME (2026-08-09, kullanıcı: "son anda üstten
     # geçtik") ──
@@ -677,6 +717,7 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+    "dikey_ofs_m",
 ]
 
 
@@ -966,6 +1007,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
     iyaw_onceki = None        # Ö9 sönümlemesi için yaw türevi (bkz. Cfg.SONUM_T)
     yaw_hizi = 0.0            # rad/s; aracın KENDİ dönüş hızı, EMA'lı
+    dikey_bekleme = False     # dikey kapı ilanı bir kez basılsın (log kirlenmesin)
+    dikey_ofs = None          # m; bbox'tan kurulan dikey ofset (+ = hedef üstte)
 
     def _vuruldu():
         if get_temas is None:
@@ -1137,11 +1180,30 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                            cfg.KAPANMA_EMA * _rdot
                            + (1.0 - cfg.KAPANMA_EMA) * kapanma)
             boyut_onceki = boyut_simdi
+            # ── DİKEY OFSET, YALNIZ BBOX'TAN (bkz. Cfg.DIKEY_KAPI_M) ──
+            # R = MENZIL_PX_M/boyut ; el = seviye çerçevesinde yükseliş
+            # dikey_ofset = R·sin(el)   (+ = hedef YUKARIDA)
+            # ⚠ Canlı GPS YOK — girdi yalnız kutu + kendi duruşumuz (§10).
+            dikey_ofs = None
+            if boyut_simdi > 1e-6:
+                _, _el_sev = los_seviye(cx, cy, iroll, ipitch, cfg)
+                dikey_ofs = (cfg.MENZIL_PX_M / boyut_simdi) * math.sin(_el_sev)
             # TERMİNAL MANDALI: kutu eşiği aşınca hücuma taahhüt
             if not terminal_mandal and math.sqrt(bw * bh) >= cfg.TERMINAL_BOYUT:
-                terminal_mandal = True
-                print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
-                      f"≥ {cfg.TERMINAL_BOYUT:.0f}) — fren yok, tam taahhüt")
+                # DİKEY HİZALAMA KAPISI: irtifa eşitlenmeden geçme
+                _dik_ok = (cfg.DIKEY_KAPI_M <= 0.0 or dikey_ofs is None
+                           or abs(dikey_ofs) <= cfg.DIKEY_KAPI_M)
+                if _dik_ok:
+                    terminal_mandal = True
+                    print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
+                          f"≥ {cfg.TERMINAL_BOYUT:.0f}"
+                          + (f", dikey {dikey_ofs:+.1f} m" if dikey_ofs is not None else "")
+                          + ") — fren yok, tam taahhüt")
+                elif not dikey_bekleme:
+                    dikey_bekleme = True
+                    print(f"[IBVS] ⏸ DİKEY KAPI: kutu {math.sqrt(bw*bh):.0f}px hazır "
+                          f"ama dikey ofset {dikey_ofs:+.1f} m > "
+                          f"{cfg.DIKEY_KAPI_M:.1f} m — önce irtifa eşitleniyor")
             # Ö-M: menzil eşiği aşarsa mandalı BIRAK (bkz. Cfg.TERM_BIRAK_M).
             # Iskaladıktan sonra 200 m uzakta "terminal hücum" hızıyla
             # uçmanın anlamı yok; seyir yasası geri gelsin.
@@ -1149,6 +1211,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     and boyut_simdi > 1e-6
                     and cfg.MENZIL_PX_M / boyut_simdi > cfg.TERM_BIRAK_M):
                 terminal_mandal = False
+                dikey_bekleme = False     # dikey kapı ilanı yeniden yapılabilsin
                 kor_baslangic = None      # kör hücum penceresi de kapanır
                 print(f"[IBVS] ⚑ terminal mandalı BIRAKILDI "
                       f"(menzil {cfg.MENZIL_PX_M / boyut_simdi:.0f} m > "
@@ -1216,6 +1279,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0,
+                "dikey_ofs_m": ("" if dikey_ofs is None else round(dikey_ofs, 2)),
             })
             f.flush()
 

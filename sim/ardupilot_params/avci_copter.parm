@@ -100,13 +100,20 @@ WPNAV_ACCEL 2600
 
 # Dikey hız: güdüm zaten 6 m/s komut ediyordu, fiilen 2.5/1.5 ile kırpılıyordu.
 # İniş tırmanmadan muhafazakâr: yere yaklaşma riski asimetrik.
-WPNAV_SPEED_UP 600
-WPNAV_SPEED_DN 400
+#
+# ⭐ 2026-08-17 KULLANICI İSTEĞİ: "aracın gücünü artırdın, bu hareket
+# kabiliyetini DİKEY için kullanalım." İtki/ağırlık 2.56 → 7.08 çıkmışken
+# dikey bütçe yatayın onda birinde kalmıştı (yatay 8 → 26 m/s², dikey 6/4
+# m/s ve 2.5 m/s² aynı). Dikey hizalama kapısının (Cfg.DIKEY_KAPI_M) hızlı
+# kapatabilmesi için tavanlar birlikte açıldı.
+WPNAV_SPEED_UP 1200
+WPNAV_SPEED_DN 1000
 
 # Dikey ivme (B7 açık sorusu). Varsayılan 1.0 m/s² ile 6 m/s'den fren mesafesi
 # 18 m; hedefin dalıştan çıkışını takip etmeye yetmiyordu. 2.5 m/s² → 7.2 m.
-# Bu değer henüz uçuşta doğrulanmadı; karakterizasyon uçuşunda ölçülecek.
-WPNAV_ACCEL_Z 250
+# 2026-08-17: itki artışıyla birlikte 8.0 m/s² — yatay 26 m/s²'nin hâlâ
+# altında ama 3.2 kat açıldı.
+WPNAV_ACCEL_Z 800
 
 # Jerk (m/s³). Varsayılan 1.0 ile 8 m/s²'ye ulaşmak 8 saniye sürer — ivme
 # tavanını açmak tek başına işe yaramaz, jerk onu boğar. 4.0 → ~2 s.
