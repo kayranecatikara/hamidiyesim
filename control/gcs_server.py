@@ -751,18 +751,25 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
-    "term_boyut": (
-        "TERMINAL_BOYUT", "deger",
-        "TERMINAL_BOYUT · Terminali erken başlat (25 → 18 px)",
-        "SIRADAKİ AÇIK SORU. Terminal faz kutu 25 px olunca başlıyor = son "
-        "6.4 METRE. V_TERMINAL 20 m/s girdikten sonra bu mesafe ~1.7 saniyeye "
-        "indi — hücum hamlesine çok kısa bir koşu mesafesi kalıyor. 18 px = "
-        "8.9 m, yani hamle 2.5 m daha erken başlar. "
-        "⚠ RİSK: terminalde fren yoktur (v_los sabit 20 m/s, PI devre dışı). "
-        "Erken başlatmak, hedef hâlâ manevra yaparken taahhüt etmek demektir; "
-        "ıska sonrası dönüş maliyeti artabilir. HENÜZ ÖLÇÜLMEDİ. "
-        "✓ Bu düğme uçuş sırasında ETKİ EDER.",
-        "AVCI_IBVS_TERM", (25.0, 18.0)),
+    "dikey_roll": (
+        "DIKEY_ROLL", "bool",
+        "T1b · Dikey kanalda roll telafisi (AÇIK ← yeni varsayılan)",
+        "⭐ GERİLEME DÜZELTMESİ — kullanıcının 2026-08-17 12:39 uçuşundan "
+        "teşhis edildi. Yatay kanalda roll telafisi vardı (ROLL_TELAFI), "
+        "DİKEYDE YOKTU. Araç yattığında gövdeye sabit kamera da yatıyor ve "
+        "cy pikseli gerçek yükselişi göstermiyor. "
+        "Bu eskiden önemsizdi çünkü araç yatamıyordu; ZARF BÜYÜTMESİ "
+        "(ANGLE_MAX 45°→70°) terminal yatış medyanını ~20°'den 36.9°'ye, "
+        "≥40° olan kare oranını %1'den %36.5'e çıkardı. "
+        "ÖLÇÜLDÜ (80 terminal karesi, |roll|>25°): telafisiz ile telafili "
+        "okuma farkı ORTALAMA 11.8°, MAKSİMUM 26.5° — saniyede 5 metreye "
+        "varan SAHTE TIRMANMA komutu. Araç hedefin üstünden geçip gidiyordu "
+        "(dz +5.6 → +15.6 m), üç yaklaşmanın üçünde de. "
+        "⚠ KAPATIRSAN eski bozuk davranış geri gelir — bu düğme kıyas için "
+        "duruyor, ölçümü kullanıcı yapacak. "
+        "✓ Uçuş sırasında ETKİ EDER. Düz uçuşta etkisizdir (B58: roll=0'da "
+        "komut bit bit aynı); yatay kanala dokunmaz (B60).",
+        "AVCI_IBVS_DIKEY_ROLL", True),
 }
 
 

@@ -119,6 +119,50 @@ kestirme yapıyor.
 
 ---
 
+## 🔧 T1b `DIKEY_ROLL` AÇILDI — GERİLEME DÜZELTMESİ, ÖLÇÜMÜ KULLANICI YAPACAK
+
+**Kullanıcının 2026-08-17 12:39 uçuşundan teşhis edildi.** Kullanıcı
+*"araç çok dengesiz hareket etmeye başlamış, hedef manevra yaptığı sırada
+üstünden falan geçip gidiyoruz"* dedi ve kaydı verdi
+(`logs/kayit/ucus_20260817_123938`, 137 kare).
+
+**Kayıtta üç yaklaşmanın üçü de aynı bitti:** araç 6-19 m'ye kapatıyor,
+sonra hedefin ÜSTÜNE çıkıp geçiyor, mesafe 80-110 m'ye açılıyor.
+`dz = plane_z − iris_z` seyirde −3.3 m (hedef yukarıda, normal), temas
+anında **+5.6 → +15.6 m** (biz 15 metre yukarıda).
+
+**SEBEP:** yatay kanalda roll telafisi vardı (`ROLL_TELAFI=True`),
+**dikeyde YOKTU** (`DIKEY_ROLL=False`). Araç yattığında gövdeye sabit kamera
+da yatıyor ve `cy` pikseli gerçek yükselişi göstermiyor.
+
+**Bu eskiden önemsizdi çünkü araç yatamıyordu. ZARF BÜYÜTMESİ değiştirdi:**
+
+| terminal \|yatış\| | eski araç | zarf sonrası |
+|---|---|---|
+| medyan | ~20° | **36.9°** |
+| p90 | ~35° | **46.5°** |
+| ≥40° olan kare | ~%1 | **%36.5** |
+
+**Kullanıcının kendi karelerinde ölçüldü** (80 terminal karesi, \|roll\|>25°):
+telafisiz ile telafili okuma farkı **ortalama 11.8°, maksimum 26.5°** —
+saniyede **5 metreye** varan SAHTE TIRMANMA komutu:
+
+| t | roll | ham | telafili | vz hatası |
+|---|---|---|---|---|
+| 10.4 s | 36.6° | −16.4° | **−2.9°** | **−4.9 m/s (yukarı)** |
+| 11.4 s | 35.2° | +9.0° | +28.3° | −7.6 m/s |
+
+**§5.13 örneği:** T1b 2026-08-11'de ölçülüp *"terminalde gerçek düzeltme
+medyanı −0.06°, pratikte sıfır"* diye kapalı bırakılmıştı. O ölçüm ESKİ
+ARAÇTA, yatışlar küçükken yapılmıştı — yani özellik **tasarım zarfının
+dışında sınanmıştı.**
+
+`Cfg.DIKEY_ROLL` varsayılanı **AÇIK** yapıldı. Yapısal güvenceler duruyor:
+B58 (düz uçuşta bit bit aynı), B60 (yatay kanala dokunmaz), B61 (kapatılabilir).
+**⚠ ÖLÇÜM HENÜZ YAPILMADI — kullanıcı kendi uçuracak.**
+
+---
+
 ## ✅ V_TERMINAL 16 → 20 · 18 UÇUŞ · **GİRDİ** (2026-08-17)
 
 **Tam rapor:** `docs/kampanya/V_TERMINAL.md` (ölçütler koşmadan önce ilan

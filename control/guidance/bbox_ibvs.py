@@ -599,7 +599,30 @@ class Cfg:
     # değişmez — yalnız okuma düzelir.
     # ⚠ DÜZ UÇUŞTA ETKİSİZ: roll=pitch=0'da los_seviye = piksel_elev, fark 0.
     # AVCI_IBVS_DIKEY_ROLL=0 → eski (telafisiz) dikey yol aynen geri gelir.
-    DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 0.0) >= 0.5
+    #
+    # ⭐ 2026-08-17: VARSAYILAN AÇILDI. Gerekçe §5.13 — bu özellik daha önce
+    # KAPALI bırakılmıştı çünkü ESKİ ARAÇTA yatışlar küçüktü ve terminaldeki
+    # gerçek düzeltme medyanı −0.06° çıkıyordu. ZARF BÜYÜTMESİ (ANGLE_MAX
+    # 45°→70°, itki ×2.5) bunu tamamen değiştirdi:
+    #
+    #   terminal |yatış|      eski araç     zarf sonrası (kullanıcı uçuşu)
+    #     medyan                ~20°              36.9°
+    #     p90                   ~35°              46.5°
+    #     ≥40° olan kare         ~%1              %36.5
+    #
+    # Kullanıcının 2026-08-17 12:39 uçuşunda ÖLÇÜLDÜ (80 terminal karesi,
+    # |roll|>25°): telafisiz ile telafili okuma arasındaki fark
+    #     ORTALAMA 11.8°,  MAKSİMUM 26.5°
+    # ve bu, saniyede 5 metreye varan SAHTE TIRMANMA komutu üretiyordu:
+    #     t=10.4s  roll 36.6°  ham −16.4°  telafili −2.9°  → vz hatası −4.9 m/s
+    # Sonuç: araç hedefin üstünden geçip gidiyordu (dz +5.6 → +15.6 m),
+    # üç yaklaşmanın üçünde de. Kullanıcı bunu "araç dengesiz, hedefin
+    # üstünden geçiyoruz" diye bildirdi; teşhis onun kaydından çıkarıldı.
+    #
+    # ⚠ Bu bir GERİLEME DÜZELTMESİ: hatayı zarf büyütmesi görünür kıldı.
+    # Yapısal güvence: B58 düz uçuşta komutu BİT BİT değiştirmez,
+    # B60 yatay kanala DOKUNMAZ, B61 kapatılabilir.
+    DIKEY_ROLL = _env_f("AVCI_IBVS_DIKEY_ROLL", 1.0) >= 0.5
 
 
     # ══ Ö12 · YAKIN MENZİLDE YAW SLEW TAVANI (KENDİ EKSENİNDE DÖNME ÇARESİ) ══
