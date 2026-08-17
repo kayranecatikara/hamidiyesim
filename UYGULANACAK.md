@@ -119,6 +119,47 @@ kestirme yapıyor.
 
 ---
 
+## ✅ V_TERMINAL 16 → 20 · 18 UÇUŞ · **GİRDİ** (2026-08-17)
+
+**Tam rapor:** `docs/kampanya/V_TERMINAL.md` (ölçütler koşmadan önce ilan
+edildi) · 12 kazanım (düz+kaçamak, n=4/kol) + 6 regresyon.
+
+**Sebep:** terminal faz son 6.4 m; hedef 15.1 m/s uçarken V=16 ile kalan
+kapanma 0.9 m/s → o 6.4 m **on saniye** sürüyordu. ZARF kampanyası bunu ilk
+kez çözülebilir kıldı (yeni araç 24 m/s'de bile 21.4 m yarıçapla dönüyor —
+eski aracın 16 m/s'deki 26.1 m'sinden dar).
+
+| ölçüt | K · 16 | **A · 20** | B · 24 |
+|---|---|---|---|
+| BİRİNCİL en yakın menzil | 1.83 m | **1.14 m** | 1.14 m |
+| eş birincil isabet | 1/4 | **2/4** | 1/4 |
+| **geçerlilik eşi: nişan sapması** | **19 px** | **4 px** | 3 px |
+| terminal süre | 10.3 s | **1.7 s** | 3.3 s |
+| mekanizma `v_los` medyanı | 16.00 | 20.00 | 24.00 |
+
+**En güçlü sinyal geçerlilik eşinden geldi:** temasın son 2 saniyesinde
+nişan sapması **19 → 4 px**. Yani yakınlaşma şans değil KONTROLLÜ.
+(Kıyas: jerk 15'in bozuk terminali bu ölçütte 30 px'ti.)
+
+**Regresyon temiz:** kare medyan mesafe %101 (eşik %115), `dikey_asagi`
+kaçamağında ikisi de isabet (A daha yakın, 0.91 vs 1.22 m).
+
+**20 seçildi** çünkü 24 ile en yakın menzil berabere (1.14) ve ilan edilen
+kural beraberlikte düşük hızı seçtiriyor.
+
+⚠ **n=4/kol, p değerleri 0.14-0.54** — tek ölçüt anlamlı değil. Hüküm dört
+göstergenin aynı yöne bakmasına ve iki regresyon kapısının temiz geçilmesine
+dayanıyor.
+
+**⭐ Bu, oturumun İLK gerçek "bitiriş" kazanımı.** Ö5, S ve ZARF'ın hepsi
+takibi düzeltip terminali bozmuştu; V_TERMINAL ilk kez terminali düzeltti
+ve takibi bozmadı.
+
+**Açık kalanlar:** `TERMINAL_BOYUT = 25 px` (terminalin 6.4 m'de başlaması)
+hiç sınanmadı; `V_TOPLAM_MAX = 24` hâlâ eski araca göre.
+
+---
+
 ## ⭐ ZARF BÜYÜTMESİ — aracın manevra kısıtları kaldırıldı (2026-08-17)
 
 **Tam rapor:** `docs/kampanya/ZARF.md` · kullanıcı kararı: *"gerçek dronem

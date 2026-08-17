@@ -203,7 +203,19 @@ class Cfg:
     # penceresinden çok hızlı geçiliyor. 18 m/s'de kapanma 3.5 m/s (hedef
     # 14.5) → hem düzeltmeye daha çok kare, hem pencerede daha uzun süre.
     # Hedef 14.5 m/s olduğu için 18 hâlâ yeterli pay bırakır.
-    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 16.0)   # m/s; hücum hızı
+    # ⭐ 16 → 20 ÖLÇÜLDÜ VE GİRDİ (2026-08-17, 18 uçuş, docs/kampanya/V_TERMINAL.md)
+    # Terminal faz son 6.4 m (TERMINAL_BOYUT 25 px). Hedef 15.1 m/s; 16 m/s ile
+    # kalan kapanma 0.9 m/s → o 6.4 m ONBIR saniye sürüyordu.
+    #   düz+kaçamak n=4/kol:   V=16      V=20      V=24
+    #     en yakın menzil      1.83 m    1.14 m    1.14 m
+    #     NİŞAN SAPMASI        19 px     4 px      3 px    ← geçerlilik eşi
+    #     terminal süre        10.3 s    1.7 s     3.3 s
+    #     isabet               1/4       2/4       1/4
+    #   regresyon: kare medyan mesafe %101 (eşik %115), dikey kaçamak ikisi de
+    #   isabet (A daha yakın 0.91 vs 1.22 m) → GERİLEME YOK.
+    # 20 seçildi çünkü 24 ile en yakın menzil BERABERE (1.14) ve ilan edilen
+    # kural beraberlikte DÜŞÜK HIZI seçtiriyor (dönüş yarıçapı + dikey bağ riski).
+    V_TERMINAL = _env_f("AVCI_IBVS_VTERM", 20.0)   # m/s; hücum hızı
     # ⇑ 2026-08-15: 18 → 16, Ö-M İLE BİRLİKTE ve YALNIZ onunla.
     # 16 tek başına ölçüldü ve KÖTÜ çıktı: düz uçuşta en yakın menzil
     # 0.47 → 1.18 m, dairede 2.87 → 6.18 m (dağılımlar örtüşmüyor).
