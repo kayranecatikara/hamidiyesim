@@ -748,26 +748,41 @@ def _hedef_cfg(alan):
 
 
 _OZELLIKLER = {
-    "o5_donus": (
-        "DONUS_A", "deger",
-        "Ö5 · Dönüş-farkında hız tavanı (kapalı → 9.81 m/s²)",
-        "YASA: gereken yanal ivme V·λ̇ aracın tavanını aşıyorsa hızı kıs — "
-        "dönüş yarıçapı R = V²/(g·tanθ) hızın KARESİYLE düşer. YALNIZ KISAR; "
-        "hızı asla artırmaz, düz uçuşta λ̇≈0 → tavan sonsuz → etkisiz. "
-        "DEĞER 9.81 = g·tan(ANGLE_MAX 45°), yani 'üretemeyeceğin yanal ivmeyi "
-        "isteme' — ayarlanmış değil, FİZİKTEN türetilmiş. "
-        "NİYE YENİDEN: Ö5 2026-08-11'de düz senaryoda 10 uçuşla elenmişti; "
-        "D kampanyası tetiğin düzde karelerin yalnız %16'sında, KAREDE %57'sinde "
-        "sağlandığını ölçtü — yani Ö5 kendi tasarım zarfının dışında sınanmıştı "
-        "(CLAUDE.md §5.13). Kök neden ölçümü de bunu istiyor: karede LOS dönüş "
-        "hızı medyanı 42-57°/s, aracın tavanı 35°/s — kutulu karelerin %65-80'i "
-        "takip edilemez durumda ve tek kaldıraç V. "
-        "⚠ RİSK, peşinen ilan edilir: karede karelerin %24'ünde tavan DONUS_V_MIN "
-        "= 10 m/s tabanına dayanıyor; hedef 15.1 m/s uçuyor, o anlarda saniyede "
-        "5 m geri kalınır. Kampanyanın asıl sınadığı şey bu takas. "
-        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (araç parametresi değil, güdüm "
-        "döngüsü her karede cfg.DONUS_A okuyor).",
-        "AVCI_IBVS_DONUS", (0.0, 9.81)),
+    "w1_veld": (
+        "PSC_VELXY_D", "param",
+        "W1 · Hız döngüsü D kazancı (0.5 → 1.2)",
+        "SALINIM NEREDE — ÖLÇÜLDÜ: güdüm komutuna dokunan üç aday (S1 slew "
+        "tavanı, S2 sönümleme, S3 anti-windup) yatışı KIPIRDATAMADI — her "
+        "kolda |yatış| p90 30-35°, yatış değişim hızı p90 51-62 °/s. Demek ki "
+        "salınım güdüm komutunda değil, ALTINDAKİ katmanda: ArduPilot'un "
+        "yatay HIZ denetleyicisi. Bugüne kadar hiç dokunulmamış yer burası. "
+        "D terimi, hız hatasının TÜREVİNE karşılık verir: salınımı söndürür "
+        "ama P yetkisini, ivme tavanını ve PSC_JERK_XY'yi AZALTMAZ — "
+        "kullanıcının 'ivmeyi kısma' şartıyla uyumlu tek klasik kanal budur. "
+        "✓ Bu düğme UÇUŞ SIRASINDA ETKİ EDER (AC_PID kazancı her çevrimde "
+        "okur; PSC_JERK_XY gibi alt-mod geçişi beklemez).",
+        "PSC_VELXY_D", (0.5, 1.2)),
+    "w2_velp": (
+        "PSC_VELXY_P", "param",
+        "W2 · Hız döngüsü P kazancı (2.0 → 1.2)",
+        "Aynı katman, ters yaklaşım: D EKLEMEK yerine P'yi DÜŞÜRMEK. "
+        "Gecikmeli döngüde yüksek P salınımın klasik sebebidir (kamera→komut "
+        "73 ms, komut→yaw 300 ms ölçüldü). "
+        "⚠ RİSK PEŞİNEN İLAN EDİLİR: P'yi düşürmek tepkiyi de yavaşlatır ve "
+        "kullanıcının 'ivmeyi kısma' şartını dolaylı olarak ihlal edebilir. "
+        "Kampanyanın KISIT KAPISI (gerçekleşen yanal ivme p90 < kontrolün "
+        "%85'i → kol ELENİR) tam bunu yakalamak için var. W1 ile yan yana "
+        "koşulmasının sebebi bu: hangisi bedava sönümleme veriyor.",
+        "PSC_VELXY_P", (2.0, 1.2)),
+    "s2_sonum": (
+        "SONUM_T", "deger",
+        "S2 · Ö9 sönümleme, D terimi (kapalı → 0.30 s)",
+        "Güdüm katmanı D terimi. S kampanyası 1. dalgada n=4/kol ölçüldü: "
+        "hiçbir şeyi BOZMADI (ivme p90 kontrolün %101'i, 60 m süre 121 vs "
+        "120 s) ama salınımda kazancı da GÜRÜLTÜ seviyesinde kaldı "
+        "(ψ̇ 0.268 → 0.242, p=0.486). Bedava ama faydası kanıtlanmadı. "
+        "Panelde duruyor ki W1/W2 ile birlikte denenebilsin.",
+        "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 
 
