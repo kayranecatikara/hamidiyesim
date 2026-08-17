@@ -109,13 +109,26 @@ PSC_VELXY_P 2.0
 # ⚠ ArduPilot bunu yalnız GUIDED ALT MODU DEĞİŞİRKEN okur — uçuş sırasında
 # yazılan değer bir sonraki stop_chase/start_chase'e kadar rafta bekler.
 #
-# 10 ÖLÇÜLDÜ (D kampanyası, 24 uçuş, docs/kampanya/D_JERK_TARAMA.md):
-#   kare (manevra):  medyan mesafe 66.0 → 59.5 m, 60 m içinde süre 96 → 122 s
-#   düz  (terminal): nişan sapması son 2 s'de 7 → 8 px (15'te 30 px'e fırlıyor)
-#   isabet düzde:    5 → 4/4,  10 → 3/4,  15 → 2/4
-# 15 karede biraz daha yakın (54.5 m) ama düzdeki isabeti daha çok yiyor ve
-# yanlılıktan bağımsız salınım ölçütünde 10'dan AYRILMIYOR (p=0.571).
-PSC_JERK_XY 10
+# D KAMPANYASI ÖLÇÜMÜ (24 uçuş, docs/kampanya/D_JERK_TARAMA.md):
+#                        jerk 5    jerk 10   jerk 15
+#   kare medyan mesafe    66.0 m    59.5 m    54.5 m
+#   kare 60 m içi süre      96 s     122 s     134 s
+#   düz terminal nişan     7 px      8 px     30 px   ← 15'in bedeli burada
+#   düz isabet              4/4       3/4       2/4
+#
+# ⭐ S/X KAMPANYASI (44 uçuş, docs/kampanya/S_SALINIM.md §10) BUNU DEĞİŞTİRDİ:
+# jerk, bu aracın yanal çevikliğini bağlayan TEK kısıttır. Kanıt:
+#   - ANGLE_MAX bağlayıcı DEĞİL: ≥44.5° olan kare oranı %0.0-0.8 (hiç dayanmıyor)
+#   - WPNAV_ACCEL bağlayıcı DEĞİL: 800→1000 denendi, ivme p95 7.18→6.97 (fark yok)
+#   - ölçülen jerk parametreyle ORANTILI: p90 7.29 / 11.37 / 14.61 ← 5 / 10 / 15
+#     ve karelerin %16-33'ünde tavana yapışıyor
+# Ayrıca salınım jerk'ten GELMİYOR: hız vektörü komutunun istediği yanal ivme
+# jerk 5/10/15'te birebir aynı (medyan 8.36 / 8.43 / 8.38 m/s²).
+#
+# 12 = kullanıcı kararı (2026-08-17): 15'in çevikliğine yaklaşıp düzdeki
+# terminal nişan bozulmasından kaçınma denemesi. ⚠ HENÜZ ÖLÇÜLMEDİ —
+# 5/10/15 ölçüldü, 12 ARA DEĞERDİR ve kullanıcı kendi uçuşuyla sınıyor.
+PSC_JERK_XY 12
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun

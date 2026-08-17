@@ -119,7 +119,24 @@ kestirme yapıyor.
 
 ---
 
-## D — YATAY JERK TARAMASI (`PSC_JERK_XY` 5 / 10 / 15) · 24 UÇUŞ · **VARSAYILAN 10**
+## ⚑ ŞU AN SINANAN: `PSC_JERK_XY = 12` — kullanıcı uçuruyor (2026-08-17)
+
+Varsayılan **10 → 12** yapıldı (kullanıcı kararı). Gerekçe: S/X kampanyası
+jerk'in **tek bağlayıcı kısıt** olduğunu kanıtladı ve salınımın jerk'ten
+GELMEDİĞİNİ gösterdi (komutun istediği yanal ivme jerk 5/10/15'te birebir
+aynı: 8.36 / 8.43 / 8.38 m/s²). Dolayısıyla 15'in çeviklik kazanımına
+yaklaşıp 15'in terminal bedelinden (nişan sapması 30 px, düz isabet 2/4)
+kaçınmak mümkün olabilir.
+
+**⚠ 12 HENÜZ ÖLÇÜLMEDİ.** 5/10/15 ölçüldü; 12 ara değerdir ve kullanıcı
+kendi uçuşuyla sınıyor. Sonuç geldikçe bu maddenin altına yazılacak.
+
+Panel düğmesi **12 ↔ 15** — uçuş sırasında etki ETMEZ, `stop_chase →
+start_chase` gerekir.
+
+---
+
+## D — YATAY JERK TARAMASI (`PSC_JERK_XY` 5 / 10 / 15) · 24 UÇUŞ · varsayılan 10 → **12'ye çekildi**
 
 **Tam rapor:** `docs/kampanya/D_JERK_TARAMA.md` (ölçütler koşmadan önce ilan
 edildi) · 12 kare + 12 düz, n=4/seviye, dönüşümlü, tür-eşli.

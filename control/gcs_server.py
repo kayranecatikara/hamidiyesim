@@ -747,15 +747,41 @@ def _hedef_cfg(alan):
     return _ibvs_mod.Cfg, alan
 
 
+_JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
+_JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
+
 _OZELLIKLER = {
+    "jerk": (
+        "PSC_JERK_XY", "param",
+        f"Yatay jerk tavanı ({_JERK_TABAN:g} → {_JERK_DENEY:g} m/s³)",
+        "ŞU AN SINANAN ŞEY. Varsayılan 12'ye çekildi (kullanıcı kararı). "
+        "ÖLÇÜLMÜŞ OLANLAR — kare medyan mesafe 66.0 / 59.5 / 54.5 m ve düz "
+        "terminal nişan sapması 7 / 8 / 30 px, isabet 4/4 / 3/4 / 2/4 "
+        "(jerk 5 / 10 / 15). 15'in bedeli terminalde: son 2 saniyede nişan "
+        "30 px kayıyor ve düzdeki isabeti yiyor. 12 bu ikisinin arasını "
+        "arıyor ve HENÜZ ÖLÇÜLMEDİ. "
+        "⭐ NİYE JERK: S/X kampanyası (44 uçuş) bu aracın yanal çevikliğini "
+        "bağlayan TEK kısıtın jerk olduğunu kanıtladı — ANGLE_MAX'e araç hiç "
+        "dayanmıyor (≥44.5° kare %0.0-0.8), WPNAV_ACCEL 800→1000 hiçbir şey "
+        "değiştirmedi (ivme p95 7.18→6.97), ama ölçülen jerk parametreyle "
+        "orantılı ilerliyor (p90 7.29/11.37/14.61 ← 5/10/15). "
+        "⚠ SALINIM JERK'TEN GELMİYOR: hız vektörü komutunun istediği yanal "
+        "ivme jerk 5/10/15'te birebir aynı (medyan 8.36/8.43/8.38 m/s²). "
+        "Sert gövde tavanı 19.41 m/s³. "
+        "⚠⚠ BU DÜĞME UÇUŞ SIRASINDA ETKİ ETMEZ. ArduPilot jerk'i yalnız "
+        "GUIDED alt modu DEĞİŞİRKEN okur (mode_guided.cpp:564). Farkı görmek "
+        "için: düğmeyi çevir → takibi DURDUR → yeniden BAŞLAT.",
+        "PSC_JERK_XY", (_JERK_TABAN, _JERK_DENEY)),
     "s2_sonum": (
         "SONUM_T", "deger",
         "S2 · Yatay sönümleme, D terimi (kapalı → 0.30 s)",
-        "S kampanyasından KULLANICIYA kalan aday. duz+kaçamak n=8/kol: "
-        "yakın menzil salınımı 1.450 → 1.174 (−%19, p=0.308), kutu oranı "
-        "%60.6 → %69.9, isabet 4/8 → 7/8 (Fisher p=0.282), yanal ivme "
-        "kontrolün %102'si (çevikliği KISMIYOR). Hiçbiri anlamlı değil ve "
-        "doz-tepki şartı düştü → varsayılan yapılmadı.",
+        "S kampanyasından KULLANICIYA kalan, kararı verilmemiş aday. "
+        "duz+kaçamak n=8/kol: yakın menzil salınımı 1.450 → 1.174 (−%19, "
+        "p=0.308), kutu oranı %60.6 → %69.9, isabet 4/8 → 7/8 (Fisher "
+        "p=0.282), yanal ivme kontrolün %102'si (çevikliği KISMIYOR). "
+        "⚠ Hiçbiri istatistiksel olarak anlamlı değil ve ilan edilen "
+        "doz-tepki şartı düştü (0.60, 0.30'dan az sönümledi) → varsayılan "
+        "yapılmadı. ✓ Bu düğme uçuş sırasında ETKİ EDER.",
         "AVCI_IBVS_SONUM", (0.0, 0.30)),
 }
 
