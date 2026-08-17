@@ -59,16 +59,25 @@
 WP_YAW_BEHAVIOR 0
 
 # ── Eğim tavanı (centi-derece) ──
-#     eğim   gereken itki   gaz     yatay ivme tavanı
-#      30°       1.15x      %45       5.7 m/s²   (firmware varsayılanı — bugüne dek bu)
-#      45°       1.41x      %55       9.8 m/s²   ← SEÇİLEN
-#      60°       2.00x      %78      17.0 m/s²   (denendi, yalpalama arttı — GERİ ALINDI)
-# İtki/ağırlık 2.56x (MOT_THST_HOVER=0.39). Kara kutu: motorlar %0.0 oranında
-# tavanda — doygunluk YOK, itki rezervi var.
-# NOT: 45° daha önce SEÇİLMİŞTİ ama yanlış adla yazıldığı için hiç uygulanmadı.
-# Bu yüzden 45° pratikte HÂLÂ DOĞRULANMAMIŞ — ilk uçuş bir karakterizasyon
-# uçuşudur, görev uçuşu değil. Yalpalama görülürse 3500'e (35°) çekin.
-ANGLE_MAX 4500
+#     eğim   gereken itki   yatay ivme tavanı
+#      30°       1.15x         5.7 m/s²
+#      45°       1.41x         9.8 m/s²   ← 2026-08-16'ya kadar buradaydı
+#      60°       2.00x        17.0 m/s²   (ESKİ araçta denendi, yalpaladı —
+#                                          çünkü 2.56 itki/ağırlıkta %78 gaz
+#                                          gerekiyordu, doyuma yakındı)
+#      70°       2.92x        27.0 m/s²   ← ŞİMDİ (itki ×2.5 arttıktan sonra)
+# ⭐ 2026-08-17 ZARF BÜYÜTMESİ (kullanıcı kararı): "gerçek dronem simdekinden
+# çok daha hızlı ve manevra kabiliyeti yüksek... aracın manevra kısıtlarının
+# hepsini istediğin gibi değiştir."
+# Yeni değer TAHMİN DEĞİL, güdümün ÖLÇÜLEN talebinden türetildi:
+#   hız vektörü komutunun istediği yanal ivme p90 = 26.3 m/s² (D kampanyası)
+#   → atan(26.3/9.81) = 69.6° → ANGLE_MAX 70°, yani g·tan70° = 27.0 m/s².
+# İtki bütçesi: 70° için 1/cos70° = 2.92x hover itkisi gerekir. Rotor itkisi
+# ×2.5 arttığı için yeni itki/ağırlık ≈ 6.4 — rahat yeter (eski araçta 2.56'ydı
+# ve 60° bile %78 gaz istediği için yalpalıyordu).
+# Eski 45° yalnız 9.81 m/s² veriyordu; komut karelerin %43'ünde tavanı
+# aşıyordu ve S1/S3/Ö5 bu doygunluk yüzünden elendi.
+ANGLE_MAX 7000
 
 # ── GUIDED/WP hız ve ivme tavanları (cm/s, cm/s²) ──
 # Hedef uçak: AIRSPEED_CRUISE 15, AIRSPEED_MAX 22 m/s (avci_plane.parm).
@@ -81,7 +90,13 @@ WPNAV_SPEED 2500
 # Yatay ivme: 45° eğim 9.8 m/s² veriyor; 8.0 tavanı tutum denetleyicisine
 # rezerv bırakır. (Önceki fiili değer 2.5 m/s² idi — dönüşlerdeki hantallığın
 # ve dönen hedefte yakınsayamamanın doğrudan sebebi.)
-WPNAV_ACCEL 800
+# Yatay ivme tavanı — GUIDED hız modunun GERÇEK ivme anahtarı
+# (mode_guided.cpp:229 → wp_nav->get_wp_acceleration_cmss()).
+# 800 = 8.0 m/s² idi ve yatış dağılımını 39.2°'de kesiyordu (atan(8/9.81)).
+# 2600 = 26 m/s², yeni ANGLE_MAX 70°'nin verdiği g·tan70° = 27.0'ın hemen
+# altı — böylece açı değil bu ivme bütçesi bağlar ve duruş denetleyicisine
+# rezerv kalır. Ölçülen komut talebi p90'ı (26.3) tam karşılar.
+WPNAV_ACCEL 2600
 
 # Dikey hız: güdüm zaten 6 m/s komut ediyordu, fiilen 2.5/1.5 ile kırpılıyordu.
 # İniş tırmanmadan muhafazakâr: yere yaklaşma riski asimetrik.
@@ -100,6 +115,24 @@ WPNAV_JERK 4
 
 # Yatay hız denetleyici P kazancı (doğru ad; firmware varsayılanı da 2.0).
 PSC_VELXY_P 2.0
+
+# ── DURUŞ HIZ KAZANÇLARI — İTKİ ARTIŞINA GÖRE ÖLÇEKLENDİ ──
+# Rotor itkisi ×2.5 arttı (LiftDrag <area> 0.002 → 0.005). Atalet aynı
+# kaldığı için AYNI PID çıkışı artık 2.5 kat açısal ivme üretiyor — yani
+# duruş döngüsünün ETKİN KAZANCI 2.5 katına çıktı. Telafi edilmezse döngü
+# salınıma girer (tam da çözmeye çalıştığımız şeyi ÜRETİR).
+# P ve D, itki oranına bölünür; I aynı oranda düşürülür.
+ATC_RAT_RLL_P 0.054
+ATC_RAT_RLL_I 0.054
+ATC_RAT_RLL_D 0.00144
+ATC_RAT_PIT_P 0.054
+ATC_RAT_PIT_I 0.054
+ATC_RAT_PIT_D 0.00144
+
+# Duruş açısal ivme tavanları — 75° yatışa hızlı gitmek için açıldı
+# (110000 cdeg/s² = 1100 °/s² idi).
+ATC_ACCEL_R_MAX 250000
+ATC_ACCEL_P_MAX 250000
 
 # ── YATAY JERK TAVANI — GUIDED hız modunun GERÇEK anahtarı ──
 # ⚠ Yukarıdaki WPNAV_JERK bu modda OKUNMUYOR. GUIDED hız komutu
@@ -125,10 +158,12 @@ PSC_VELXY_P 2.0
 # Ayrıca salınım jerk'ten GELMİYOR: hız vektörü komutunun istediği yanal ivme
 # jerk 5/10/15'te birebir aynı (medyan 8.36 / 8.43 / 8.38 m/s²).
 #
-# 12 = kullanıcı kararı (2026-08-17): 15'in çevikliğine yaklaşıp düzdeki
-# terminal nişan bozulmasından kaçınma denemesi. ⚠ HENÜZ ÖLÇÜLMEDİ —
-# 5/10/15 ölçüldü, 12 ARA DEĞERDİR ve kullanıcı kendi uçuşuyla sınıyor.
-PSC_JERK_XY 12
+# ⭐ 2026-08-17: sert tavan 0.5·√(a_max·snap_max) idi ve a_max 8 m/s² iken
+# 19.41 çıkıyordu. a_max 34'e çıkınca tavan da yükseliyor. 40 istenir, araç
+# kabul ettiğini geri okutur (kosu scripti PARAM_VALUE ile teyit eder).
+# Ölçüldü: jerk BU ARACIN yanal çevikliğini bağlayan TEK kısıttı
+# (docs/kampanya/S_SALINIM.md §10) — zarf büyürken o da büyümeli.
+PSC_JERK_XY 40
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun

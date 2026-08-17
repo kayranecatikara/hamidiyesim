@@ -119,7 +119,51 @@ kestirme yapıyor.
 
 ---
 
-## ⚑ ŞU AN SINANAN: `PSC_JERK_XY = 12` — kullanıcı uçuruyor (2026-08-17)
+## ⭐ ZARF BÜYÜTMESİ — aracın manevra kısıtları kaldırıldı (2026-08-17)
+
+**Tam rapor:** `docs/kampanya/ZARF.md` · kullanıcı kararı: *"gerçek dronem
+simdekinden çok daha hızlı ve manevra kabiliyeti yüksek... aracın manevra
+kısıtlarının hepsini istediğin gibi değiştir."*
+
+**Üç kampanya boyunca yanlış şeyi kısmışız.** Ö5, S1, S3, W1/W2'nin hepsi
+"araç bunu yapamaz, güdümü kıs" mantığıyla kurulmuş ve hepsi aracı
+yavaşlattığı için elenmişti. O kısıtlar fizik değil, zayıf sim modelinin
+ayarlarıymış.
+
+| ne | eski | yeni | gerekçe (ölçülen talepten) |
+|---|---|---|---|
+| rotor itkisi `<area>` | 0.002 | **0.005 m²** | itki/ağırlık 2.56 → ~6.4 |
+| `ANGLE_MAX` | 45° | **70°** | atan(26.3/9.81) ← yanal ivme p90 talebi |
+| `WPNAV_ACCEL` | 8.0 | **26 m/s²** | g·tan70° = 27.0'ın altı |
+| `PSC_JERK_XY` | 12 | **40** | a_max büyüyünce sert tavan da büyür |
+| `ATC_RAT_RLL/PIT_P,I,D` | 0.135 / 0.0036 | **0.054 / 0.00144** | itki ×2.5 → etkin kazanç 2.5×; telafi ZORUNLU |
+
+**Mekanizma kapısı sonuna kadar açık:** yatış p90 33.5° → **50.1°**, p99
+40.6° → **62.7°**, maks 44.5° → **68.0°**; yanal ivme p90 6.5 → **11.7 m/s²**.
+Araç kararlı uçtu, görsel temas bozulmadı (%33.7 → %33.4), duruş döngüsü
+salınıma GİRMEDİ (kazanç ölçeklemesi tuttu).
+
+**⛔ KENDİ ÜRETTİĞİM GERİLEME:** zarf büyürken güdümün kırpıcısını da
+büyüttüm (`Cfg.MAX_ACCEL` 12 → 26). Düz+kaçamak n=4/kol: en yakın menzil
+**2.92 vs 1.79 m**, TAM AYRIŞMA p=0.057 — dördü de daha kötü.
+16 m/s'de 26 m/s², hız vektörünün 93 °/s savrulmasına izin veriyor;
+12'lik sınır terminalde yumuşatıcıymış. **12'ye geri alındı.**
+
+**SONUÇ — BÖLÜNMÜŞ:** zarf büyütmesi **takibi iyileştirdi** (kare medyan
+mesafe 58.9 → 53.5 m, 60 m içi süre 125 → 146 s) ama **bitirişi
+iyileştirmedi** (düz isabet 4/8 → 1/8). Aracın yeteneğini 3 katına çıkarmak
+tek başına isabeti getirmedi — oturumun tekrar eden bulgusu bir kez daha:
+**takip ile bitiriş ayrı problemler.**
+
+**SIRADAKİ TEK DEĞİŞKEN — `V_TERMINAL` (henüz DENENMEDİ, onay bekliyor):**
+`V_TERMINAL = 16 m/s`, hedef 15.1 → kalan kapanma **0.9 m/s**. Yeni zarf
+bunu ilk kez çözülebilir kılıyor: yeni araç **24 m/s'de bile** (yarıçap
+21.4 m) eski aracın 16 m/s'deki dönüşünden (26.1 m) DAHA DAR dönüyor.
+Kapanma 0.9 → 8.9 m/s olur.
+
+---
+
+## ⚑ `PSC_JERK_XY = 12` — zarf büyütmesiyle 40'a çıkarıldı (2026-08-17)
 
 Varsayılan **10 → 12** yapıldı (kullanıcı kararı). Gerekçe: S/X kampanyası
 jerk'in **tek bağlayıcı kısıt** olduğunu kanıtladı ve salınımın jerk'ten

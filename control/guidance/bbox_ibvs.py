@@ -365,7 +365,22 @@ class Cfg:
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
     MENZIL_PX_M = 160.0                                  # px·m
-    MAX_ACCEL = 12.0               # m/s²; komut hızı değişim sınırı
+    # ⭐ 2026-08-17 ZARF BÜYÜTMESİ: bu sayı ESKİ aracın 8 m/s²'lik ivme
+    # tavanına göre konmuştu ve komut, onu bile karelerin %35'inde aşıyordu.
+    # Araç zarfı büyütüldü (ANGLE_MAX 45°→70°, WPNAV_ACCEL 8→26 m/s²,
+    # rotor itkisi ×2.5). Bu tavan 12'de kalırsa zarf büyütmesi HİÇBİR İŞE
+    # YARAMAZ — güdüm kendi kendini 12'de kırpar. 26 = yeni araç tavanı.
+    # ⚠ Bu bir güdüm YASASI değişikliği DEĞİL; eski aracın yeteneğini
+    # yansıtan bir kırpıcının yeni araca göre ölçeklenmesidir.
+    #
+    # ⛔ 26 DENENDİ VE GERİ ALINDI (2026-08-17, 8 uçuş, düz+kaçamak, n=4/kol):
+    #   MAX_ACCEL 26 → en yakın menzil medyanı 2.92 m
+    #   MAX_ACCEL 12 → 1.79 m   (TAM AYRIŞMA, p=0.057 — dördü de daha yakın)
+    # Sebep: 16 m/s'de 26 m/s², hız vektörünün 93 °/s savrulmasına izin verir.
+    # 12'lik sınır terminalde fiilen YUMUŞATICI görevi görüyormuş. Araç zarfı
+    # büyüdü diye bu kırpıcıyı da büyütmek TERMİNALİ BOZUYOR — takip ile
+    # bitiriş ayrı problemler (bu oturumun tekrar eden bulgusu).
+    MAX_ACCEL = _env_f("AVCI_IBVS_MAXACC", 12.0)   # m/s²; komut değişim sınırı
 
     # ══ YATAY AÇI ROLL/PITCH TELAFİSİ — T1a (2026-08-09) ══
     # KULLANICI GÖZLEMİ: "düz uçuşta ıskalamıyor, hedef manevra yapınca görsel
