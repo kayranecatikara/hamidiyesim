@@ -9,40 +9,6 @@
     cd ~/projects/hamidiyesim
     GZ_HEADLESS=1 bash scripts/start_harmonic.sh
 
-Script zaten kendi başında eski süreçleri temizliyor; temizleyemezse **yenisini
-başlatmaz** ve neyin ayakta kaldığını PID'leriyle yazar.
-
-> **Beklemek zorunda mısınız? Hayır — script sizin yerinize bekliyor.**
-> Eskiden burada kör bir `sleep 25` vardı ve "SITL'lerin açılması bekleniyor
-> (25s)" yazıyordu. Ölçüldü (2026-08-02): araçların EKF+GPS kilidi ~50 s'de
-> geliyor, yani script 25 s'de "hazır" derken SITL **hâlâ açılıyordu**.
-> Artık aracın kendi çıktısındaki `EKF3 IMU0 is using GPS` satırı bekleniyor.
-> Script hazır olmadan dönmez, olamazsa **çıkış kodu 1** verir.
->
-**Bu kadar beklemek şart mı? Evet — ve kısaltılamaz.** Faz faz ölçüldü
-(2026-08-02, script bunu her koşuda kendi basıyor):
-
-| faz | süre |
-|---|---:|
-| Gazebo açılması + FDM portu | **~4 s** |
-| ArduPilot EKF + GPS kilidi | **~46 s** |
-| **Terminal A toplam** | **~50 s** |
-| Terminal B (`gcs_server`, iki kamera görüntüsü dahil) | **~5 s** |
-
-Sürenin %90'ı ArduPilot SITL'in kendi açılışı: 1421 parametrenin FTP ile
-inmesi, EKF ilklenmesi, tilt hizalaması, GPS origin. Bizim eklediğimiz bir
-gecikme değil ve **kalkış zaten bundan önce mümkün değil** — GPS kilidi
-olmadan arm edilmiyor. `SIM_GPS1_LCKTIME` ve `GPS1_DELAY_MS` zaten 0.
-
-> ⚠ **Terminaller AYNI ANDA başlatılamaz, sıra önemli.** Ölçüldü:
-> `gcs_server` Gazebo'dan **önce** başlatılırsa (1) `start_harmonic.sh`'ın
-> açılıştaki temizliği onu öldürür, (2) öldürmese bile Gazebo'dan önce açılan
-> gz kamera aboneliği geri gelmiyor — `✓ ... ilk görüntü` satırları hiç
-> çıkmıyor, arayüzde kamera kararıyor. Önce A, sonra B.
->
-> Zincirlemek (`A && B`) çalışır ama bir faydası yok: toplam süreyi ~5 s
-> uzatır ve `gcs_server` aynı terminalde ön planda çalıştığı için **komut
-> satırı geri gelmez, çıktı akmaya devam eder**. Ayrı terminaller daha iyi.
 
 **Terminal B** — GCS (Terminal A "Tam sistem hazır" yazdıktan sonra)
 

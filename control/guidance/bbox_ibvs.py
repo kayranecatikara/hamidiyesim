@@ -243,6 +243,48 @@ class Cfg:
     #
     # 0 = KAPALI → mandal eskisi gibi hiç açılmaz (bit bit eski davranış).
     TERM_BIRAK_M = _env_f("AVCI_IBVS_TERM_BIRAK", 20.0)  # m; 0 = kapalı
+
+    # ══ Ö-T · MANDALI SÜREYLE DE BIRAK — ölü bölge kapatması ══════════
+    #
+    # NEDEN (ölçüldü 2026-08-16, kullanıcı uçuşu 172454 + taze tekrar):
+    # Ö-M mandalı YALNIZ menzil 20 m'yi aşınca bırakıyor. Ama araç 7-12 m
+    # bandında sıkışırsa menzil 20'yi HİÇ aşmaz ve mandal sonsuza kadar
+    # kilitli kalır. Ölçüldü:
+    #     4626 karenin 4372'si (%94) TERMINAL, 232 saniye boyunca
+    #     menzil medyan 8.6 m (p10 7.1 / p90 10.7)
+    #     menzil 20 m'yi 4584 karede yalnız 20 kez aştı
+    #     KAPANMA HIZI MEDYANI 0.00 m/s  ← 232 saniyede sıfır ilerleme
+    #     v_los sabit 16.0 m/s, hedef 15.1 m/s → teorik kapanma 0.9 m/s
+    # Kara kutu doğruladı: t=185'ten itibaren 4.2-6.6 m'de sabit park,
+    # dikey ofset +0.06…+0.30 m (yani tam aynı seviyede, sorun boylamasına).
+    # Video: 6 s arayla iki karede ufuk TERS yönlere yatık ama kutu AYNI
+    # boyutta — araç savruluyor, mesafe kapanmıyor.
+    #
+    # ⚠ İLK TASARIM YANLIŞTI — kullanıcı uçuşu 181339 çürüttü (2026-08-16).
+    # Tetik "anlık kapanma < 0.5 m/s" idi. Ama kapanma, kutu boyutundan
+    # türetilen menzilin SAYISAL TÜREVİ ve fena hâlde gürültülü: ölçüldü
+    # p10 −16.8 / p90 +16.4 m/s, medyan 0.00. Karelerin %44.9'unda değer
+    # 0.5'i aşıyor ve sayacı sıfırlıyordu → sayaç 4 s'ye HİÇ ulaşamadı
+    # (en yüksek 3.96 s). Özellik açıktı, kilitlenme sürdü, mandal düşmedi.
+    #
+    # NE YAPAR (düzeltilmiş): mandal kilitlendiğinden beri görülen EN İYİ
+    # (en küçük) menzil saklanır. Menzil bunu TERM_BIRAK_EPS kadar
+    # iyileştirmediği sürece süre birikir; TERM_BIRAK_S'yi aşarsa mandal
+    # BIRAKILIR. Yeni bir en iyiye inince sayaç SIFIRLANIR.
+    # En iyi menzil MONOTONDUR — salınım onu bozamaz, gürültü de.
+    # Aynı uçuşta: en iyi menzil t=16 s'de 3.1 m oldu ve kalan 79 saniyede
+    # bir daha iyileşmedi. Bu ölçüt orada tetiklerdi.
+    #
+    # ⚠ ZİNCİRLEME YOK: bırakıldıktan sonra kutu 25 px'in ALTINDA olduğu
+    # için mandal hemen yeniden kurulmaz; ancak 6.4 m'ye tekrar inince
+    # kurulur — o da ilerleme demektir. Titreme koruması gerekmiyor.
+    # ⚠ Ö-M'yi DEĞİŞTİRMEZ, üstüne biner: menzil 20 m'yi aşarsa yine bırakır.
+    # 0 = KAPALI → yalnız Ö-M çalışır (bit bit eski davranış).
+    TERM_BIRAK_S = _env_f("AVCI_IBVS_TERM_BIRAK_S", 0.0)   # s; 0 = kapalı
+    # m; en iyi menzili bu kadar iyileştirmek "ilerleme" sayılır. Kutu
+    # boyutundan menzil çözünürlüğü ~8 m'de 1 px ≈ 0.4 m; 0.5 gürültünün
+    # hemen üstünde.
+    TERM_BIRAK_EPS = _env_f("AVCI_IBVS_TERM_EPS", 0.5)
     # ⇑ 2026-08-15: SİSTEME GİRDİ (21 uçuş, 3 kol, 3 senaryo).
     # duz+kaçamak (n=3/kol), mekanizma koşu başına 1-2 kez bıraktı:
     #     A TABAN (18, kilitli)    en yakın 0.47 m · temas %57
@@ -336,6 +378,28 @@ class Cfg:
     # Zaten gerekenden hızlı tırmanıyorsak komut azalır/ters döner.
     # Girdi drone'un KENDİ sensörü — yarışma kuralı serbest.
     K_VZ_D = _env_f("AVCI_IBVS_KVZD", 0.6)   # dikey sönümleme kazancı
+
+    # ══ D-S · TUTUŞ FAZINA DİKEY SÖNÜMLEME ════════════════════════════
+    #
+    # ÖLÇÜLDÜ (2026-08-16, 113 koşu): tutuş fazının dikey kanalı SAF P
+    # kontrolcü — `vz = K_VZ·V_NOM·eps_elev`, türev terimi YOK. Terminalde
+    # sönümleme var (K_VZ_D) ama tutuşta yok. Gecikmeli bir sistemde saf P
+    # salınır ve ölçüm bunu gösteriyor:
+    #     eps_elev salınımı  0.45 /s
+    #     eps_elev genliği   p90 12.7°
+    #     vz_cmd işaret değ. 0.29 /s
+    # Bu salınım, temas anındaki DİKEY SAÇILMANIN kaynağı: 0.5-1 m ıska
+    # bandında saçılma ±0.40 m ölçüldü, isabet zarfı ise +0.29/−0.13 m.
+    #
+    # ⚠ ÖNYARGIDAN AYRI BİR SORUN. Önyargı (+0.53 m, geçişlerin %74-81'i
+    # alttan) CY_NISAN'ın 5°'lik tasarımından geliyor ve D-N onu hedefliyor.
+    # D-S saçılmayı hedefliyor. İkisi TAMAMLAYICI, aynı şey değil.
+    #
+    # NE YAPAR: terminaldeki sönümlemenin AYNISI tutuşa da uygulanır —
+    #     vz = vz_istenen + TUTUS_SONUM · (vz_istenen − vz_gerçek)
+    # Araç istenenden hızlı iniyorsa/çıkıyorsa komut geri çekilir.
+    # 0 = KAPALI → tutuş yasası bit bit eski hâli.
+    TUTUS_SONUM = _env_f("AVCI_IBVS_TUTUS_SONUM", 0.0)   # 0 = kapalı, ~0.6
 
     # ══ DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR (2026-08-09) ══
     # KULLANICI GÖZLEMİ (uçuş kaydı): "tam vuracağı sırada yukarı manevra
@@ -610,6 +674,9 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+    # Ö-T mekanizma sütunu (§5.1): mandal kilitliyken kapanmasız geçen süre.
+    # Deney kolunda bu sütun hep 0 kalıyorsa özellik HİÇ çalışmamıştır.
+    "term_kapanmasiz",
 ]
 
 
@@ -816,8 +883,12 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
     else:
-        # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
-        vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)
+        # TUTUŞ: hedefi CY_NISAN'da tut
+        vz_ist = cfg.K_VZ * cfg.V_NOM * eps_elev
+        # D-S: türev sönümlemesi (bkz. Cfg.TUTUS_SONUM). 0 iken bit bit eski.
+        if cfg.TUTUS_SONUM > 0.0:
+            vz_ist = vz_ist + cfg.TUTUS_SONUM * (vz_ist - iris_vz)
+        vz = clamp(vz_ist, -cfg.VZ_MAX, cfg.VZ_MAX)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_elev": eps_elev,
             "eps_elev_ham": eps_elev_ham,
@@ -888,6 +959,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     vz_p = float(_i0.get("vz", 0.0) or 0.0)
     son_v_cmd = None       # kutu boşluğunda sürdürülecek son komut
     terminal_mandal = False   # terminal hücum kilidi (bir kez girilince kalır)
+    term_kapanmasiz = 0.0     # s; Ö-T — en iyi menzil iyileşmeden geçen süre
+    term_en_iyi = None        # m; Ö-T — mandal kilitlendiğinden beri en iyi menzil
     kor_baslangic = None      # kör hücumun başladığı duvar anı (süre sınırı)
     prev_time = None
     cmd_yaw = None
@@ -1083,9 +1156,33 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     and cfg.MENZIL_PX_M / boyut_simdi > cfg.TERM_BIRAK_M):
                 terminal_mandal = False
                 kor_baslangic = None      # kör hücum penceresi de kapanır
+                term_kapanmasiz = 0.0
+                term_en_iyi = None
                 print(f"[IBVS] ⚑ terminal mandalı BIRAKILDI "
                       f"(menzil {cfg.MENZIL_PX_M / boyut_simdi:.0f} m > "
                       f"{cfg.TERM_BIRAK_M:.0f} m) — seyir yasası geri geldi")
+
+            # Ö-T: mandal kilitliyken EN İYİ MENZİL İYİLEŞMİYORSA bırak.
+            # Ö-M'nin ölü bölgesini kapatır (bkz. Cfg.TERM_BIRAK_S).
+            if terminal_mandal and cfg.TERM_BIRAK_S > 0.0 and boyut_simdi > 1e-6:
+                _menzil_su = cfg.MENZIL_PX_M / boyut_simdi
+                if term_en_iyi is None or _menzil_su < term_en_iyi - cfg.TERM_BIRAK_EPS:
+                    term_en_iyi = _menzil_su       # yeni en iyi — ilerliyoruz
+                    term_kapanmasiz = 0.0
+                else:
+                    term_kapanmasiz += dt
+                    if term_kapanmasiz >= cfg.TERM_BIRAK_S:
+                        terminal_mandal = False
+                        kor_baslangic = None
+                        print(f"[IBVS] ⚑ terminal mandalı SÜREYLE bırakıldı "
+                              f"({term_kapanmasiz:.1f} s boyunca en iyi menzil "
+                              f"{term_en_iyi:.1f} m iyileşmedi, şu an "
+                              f"{_menzil_su:.1f} m) — seyir yasası geri geldi")
+                        term_kapanmasiz = 0.0
+                        term_en_iyi = None
+            elif not terminal_mandal:
+                term_kapanmasiz = 0.0
+                term_en_iyi = None                 # mandal düştü — sayfa temiz
             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(cx, cy, bw, bh, iyaw,
                                                        hiz_I, dt, cfg,
                                                        terminal_mandal,
@@ -1149,6 +1246,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "vz_cmd": round(vz, 2),
                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),
                 "kayip_sayac": 0,
+                "term_kapanmasiz": round(term_kapanmasiz, 2),
             })
             f.flush()
 

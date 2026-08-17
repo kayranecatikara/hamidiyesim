@@ -135,6 +135,55 @@ def main():
             'id="irtTutBtn"' in _html and "irtTutBtn" in _js
             and "/api/senaryo_ayar" in _js)
 
+
+    # ── İT8: MANUEL MODDA TUTUCU ────────────────────────────────────────
+    # ⚠ 2026-08-16: manuel mod senaryo sürecini SIGKILL ediyor, tutucu o
+    # süreçte yaşadığı için ölüyordu; panel düğmesi "AÇIK" derken hiçbir şey
+    # yapmıyordu (ölçüldü: devralmadan sonra +12 m/dk). Artık manuel modun
+    # kendi tutucusu var ve AYNI düğmeye bağlı.
+    import control.gcs_server as gcs2
+    eski_faz, eski_elv = gcs2._manual_faz, gcs2._manual_elevator
+    eski_tut = SenaryoCfg.IRTIFA_TUT
+    try:
+        gcs2._manual_faz = "ucus"
+        gcs2.telemetry_state["plane"]["z"] = -50.0
+        gcs2.telemetry_state["plane"]["vz"] = 0.0
+
+        SenaryoCfg.IRTIFA_TUT = False
+        gcs2._manual_elevator = 1500
+        a = gcs2._manuel_elevator_ver()
+        gcs2._manual_elevator = 1720
+        b = gcs2._manuel_elevator_ver()
+        kontrol("İT8 kapalıyken kullanıcı komutu AYNEN geçer",
+                a == 1500 and b == 1720, f"nötr={a}, çubuk={b}")
+
+        SenaryoCfg.IRTIFA_TUT = True
+        gcs2._manual_elevator = 1720
+        kontrol("İT8b açıkken bile ÇUBUK kullanıcınındır",
+                gcs2._manuel_elevator_ver() == 1720)
+
+        gcs2._manual_elevator = 1500
+        gcs2._manuel_irt_hedef = None
+        gcs2._manuel_elevator_ver()                  # kilitle (50 m)
+        gcs2.telemetry_state["plane"]["z"] = -40.0   # 10 m ALÇALDI
+        yukari = gcs2._manuel_elevator_ver()
+        gcs2.telemetry_state["plane"]["z"] = -60.0   # 10 m YÜKSELDİ
+        asagi = gcs2._manuel_elevator_ver()
+        kontrol("İT8c alçalınca burun YUKARI, yükselince AŞAĞI",
+                yukari > 1500 and asagi < 1500, f"{yukari} / {asagi}")
+
+        kontrol("İT8d düzeltme ±MANUEL_IRT_MAX ile sınırlı",
+                abs(yukari - 1500) <= gcs2.MANUEL_IRT_MAX
+                and abs(asagi - 1500) <= gcs2.MANUEL_IRT_MAX)
+
+        gcs2._manual_faz = "kalkis"
+        kontrol("İT8e KALKIŞ fazında tutucu devre dışı",
+                gcs2._manuel_elevator_ver() == 1500)
+    finally:
+        gcs2._manual_faz, gcs2._manual_elevator = eski_faz, eski_elv
+        gcs2._manuel_irt_hedef = None
+        SenaryoCfg.IRTIFA_TUT = eski_tut
+
     # ── İT7: ENV VARSAYILANI ────────────────────────────────────────────
     import importlib
     eski_env = os.environ.get("AVCI_SCN_IRTIFA_TUT")

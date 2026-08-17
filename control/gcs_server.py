@@ -349,6 +349,55 @@ def _plane_irtifa_m():
     return -float(telemetry_state["plane"].get("z", 0.0) or 0.0)
 
 
+# ── MANUEL MODDA İRTİFA TUTUCU ─────────────────────────────────────────────
+# ⚠ 2026-08-16 (kullanıcı isteği): panel düğmesi manuel modda da çalışsın.
+# YAŞANDI: manuel moda basınca start_manual_mode senaryo sürecini SIGKILL
+# ediyor; irtifa tutucu O SÜREÇTE yaşadığı için ölüyordu. Manuel mod nötr
+# elevator (1500) gönderiyor — FBWA'da bu "seviye BURUN" demek, "seviye UÇUŞ"
+# değil. Ölçüldü: manuel devralmadan sonra 27.8 → 46.0 m, +12 m/dk.
+# Panel düğmesi ise "AÇIK" göstermeye devam ediyordu, yani YALAN SÖYLÜYORDU.
+#
+# Aynı PD, aynı sınır — yalnız birim farkı: senaryo tarafı ±1000 "pitch
+# birimi" kullanıyor ve _rc() bunu 1500 + pitch/2 ile PWM'e çeviriyor.
+# Burada doğrudan PWM ürettiğimiz için kazançlar da yarısı.
+MANUEL_IRT_KP = 15.0      # PWM / m hata        (senaryo: 30 pitch birimi)
+MANUEL_IRT_KD = 30.0      # PWM / (m/s tırmanma)(senaryo: 60 pitch birimi)
+MANUEL_IRT_MAX = 150      # PWM; ±150 ≈ ±13.5°  (senaryo: ±300 pitch birimi)
+MANUEL_NOTR_BANT = 20     # PWM; bu bandın dışı = KULLANICI sürüyor demektir
+
+_manuel_irt_hedef = None  # kilitlenmiş irtifa (m); kullanıcı çubuğa dokununca None
+
+
+def _manuel_elevator_ver():
+    """Manuel modda gönderilecek elevator PWM'i.
+
+    Kullanıcı çubuğu NÖTRDE bırakmışsa irtifayı tutar; çubuğa dokunduğu anda
+    komut AYNEN geçer ve kilit bırakılır (bıraktığında yeni irtifa kilitlenir).
+    Yani tutucu kullanıcıyla YARIŞMAZ — yalnız boştaki sürüklenmeyi kapatır.
+    """
+    global _manuel_irt_hedef
+    from control import senaryo_cfg as _s
+
+    if _manual_faz != "ucus" or not _s.SenaryoCfg.IRTIFA_TUT:
+        _manuel_irt_hedef = None
+        return _manual_elevator
+
+    if abs(_manual_elevator - 1500) > MANUEL_NOTR_BANT:
+        _manuel_irt_hedef = None          # kullanıcı sürüyor — karışma
+        return _manual_elevator
+
+    irt = _plane_irtifa_m()
+    if _manuel_irt_hedef is None:
+        _manuel_irt_hedef = irt           # çubuk nötre döndü → burayı tut
+        print(f"[MANUAL] İrtifa tutucu kilitlendi: {irt:.1f} m")
+
+    hata = _manuel_irt_hedef - irt                       # +: yükselmemiz gerek
+    tirmanma = -float(telemetry_state["plane"].get("vz", 0.0) or 0.0)
+    duzeltme = MANUEL_IRT_KP * hata - MANUEL_IRT_KD * tirmanma
+    duzeltme = max(-MANUEL_IRT_MAX, min(MANUEL_IRT_MAX, duzeltme))
+    return int(1500 + duzeltme)
+
+
 def _manuel_kalkis(conn, send_mode):
     """Yerden otonom kalkış — manuel devralmadan ÖNCE.
 
@@ -505,10 +554,10 @@ def _manual_control_thread():
             conn.mav.rc_channels_override_send(
                 conn.target_system,
                 conn.target_component,
-                _manual_aileron,    # CH1: Roll/Aileron
-                _manual_elevator,   # CH2: Pitch/Elevator
-                _manual_throttle,   # CH3: Throttle
-                1500,               # CH4: Yaw nötr
+                _manual_aileron,       # CH1: Roll/Aileron
+                _manuel_elevator_ver(),  # CH2: Pitch/Elevator (irtifa tutuculu)
+                _manual_throttle,      # CH3: Throttle
+                1500,                  # CH4: Yaw nötr
                 0, 0, 0, 0
             )
             tick += 1
@@ -940,7 +989,89 @@ def _hedef_cfg(alan):
     return _ibvs_mod.Cfg, alan
 
 
-_OZELLIKLER = {}
+_OZELLIKLER = {
+    "ds_tutus_sonum": (
+        "TUTUS_SONUM", "deger", "D-S · Tutuş fazına dikey sönümleme",
+        "ÖLÇÜLDÜ (113 koşu): tutuş fazının dikey kanalı SAF P kontrolcü — "
+        "vz = K_VZ·V_NOM·eps_elev, türev terimi YOK. Terminalde sönümleme var "
+        "(K_VZ_D=0.6) ama tutuşta yok. Gecikmeli sistemde saf P salınır ve "
+        "ölçüm bunu gösteriyor: eps_elev salınımı 0.45/s, genlik p90 12.7°, "
+        "vz_cmd işaret değişimi 0.29/s. Bu salınım temas anındaki DİKEY "
+        "SAÇILMANIN kaynağı: 0.5-1 m ıska bandında saçılma ±0.40 m, isabet "
+        "zarfı ise dikeyde yalnız +0.29/−0.13 m. ⚠ ÖNYARGIDAN AYRI SORUN — "
+        "önyargı (+0.53 m, geçişlerin %74-81'i alttan) CY_NISAN'ın 5°'lik "
+        "tasarımından geliyor ve D-N onu hedefliyor; D-S saçılmayı hedefliyor. "
+        "İkisi TAMAMLAYICI. AÇIK: terminaldeki sönümlemenin aynısı tutuşa da "
+        "uygulanır (vz + 0.6·(vz_istenen − vz_gerçek)). ⚠ Terminal fazına "
+        "DOKUNMAZ — orada zaten K_VZ_D çalışıyor.",
+        "AVCI_IBVS_TUTUS_SONUM", (0.0, 0.6)),
+    "dv2_dikey_tavan": (
+        "VZ_MAX_TERM", "deger", "D-V2 · Terminal dikey tavanı 5 → 8 m/s",
+        "D-V (taban 1.5→6.0) dikey kanalın ölü olmasını çözdü ama darboğazı "
+        "TAVANA taşıdı. ÖLÇÜLDÜ: D-V açıkken terminal karelerinin %20-68'inde "
+        "|vz| tavana (5 m/s) dayanıyor — kapalı kolda %0-0.6. Tavan doyunca "
+        "kodun dikey bütçe kısıtı devreye girip yatay hızı kesiyor "
+        "(v_los = VZ_MAX_TERM/tan) ve bir koşuda 16 → 10 m/s'ye (V_TERM_MIN "
+        "tabanı) düştü; hedef 15.1 m/s uçarken geride kalıyoruz. Bu düğme "
+        "tavanı 8 m/s'ye çıkarır: dikey talep karşılanır, bütçe kısıtı "
+        "tetiklenmez, yatay hız 16'da kalır. ⚠ YALNIZ D-V ile birlikte "
+        "anlamlı — tek başına açmak dikey talebi büyütmez, sadece tavanı "
+        "gevşetir. ⚠ Aracın dikey hız kapasitesi WPNAV_SPEED_UP=600 (6 m/s) "
+        "olduğu için 8 komut edilse de araç 6'da doyar; asıl kazanç bütçe "
+        "kısıtının tetiklenmemesi.",
+        "AVCI_IBVS_VZT", (5.0, 8.0)),
+    "dn_nisan_seviye": (
+        "CY_NISAN", "deger", "D-N · Tutuş nişanı 5° yukarı → SEVİYE",
+        "ÖLÇÜLDÜ: CY_NISAN = CY + FY·tan(20°) = 301 px. Kamera gövdeye +25° "
+        "YUKARI sabit olduğu için 20°, ufkun 5° ÜSTÜ demek — yani tutuş fazı "
+        "hedefi kendi seviyemizin 5° YUKARISINDA tutuyor ve biz bilerek "
+        "ALTINDA uçuyoruz. Kodun kendi yorumu da bunu söylüyor: 'CY_NISAN'da "
+        "(≈5° yukarıda) tutmaya çalışıyor, yani ALTINDAN geçiyoruz'. "
+        "169 koşunun en yakın anında ölçüldü: cy medyanı 230 px, yani hedef "
+        "nişan noktasının 70 px ÜSTÜNDE; eps_elev medyanı −22.9°. Menzile "
+        "göre ima edilen fiziksel ofset: >8 m'de ~1.0 m altta, 1-2 m'de "
+        "~0.5 m altta. İsabet zarfı dikeyde yalnız +0.29/−0.13 m — ıska tam "
+        "burada. AÇIK: CY_NISAN = CY + FY·tan(25°) = 318 px, yani hedef TAM "
+        "KENDİ SEVİYEMİZDE tutulur. ⚠ Yalnız TUTUŞ fazını değiştirir; "
+        "terminal kesişim yasası cy'yi mutlak yükselişe çevirir ve CY_NISAN'ı "
+        "kullanmaz. ⚠ Kadraj bütçesi: hedef 17 px aşağı kayar, 480'lik "
+        "kadrajda rahat içeride.",
+        "AVCI_IBVS_CY", (301.0, 318.0)),
+    "dv_dikey_taban": (
+        "KAPANMA_MIN", "deger", "D-V · Dikey düzeltme tabanı 1.5 → 6.0",
+        "ÖLÇÜLDÜ: 248 uçuşluk kara kutu taramasında aynı seviyeden geçişlerin "
+        "%24.9'u temasla bitiyor, 2 m'den fazla alttan geçenlerin %0.4'ü — "
+        "60 kat fark, dikey ıska baskın kayıp ekseni. Terminal karelerinde "
+        "(n=52036) eps_elev medyanı 4-8 m'de −10.4°, 2 m altında −20.3°: hedef "
+        "sistematik olarak ÜSTÜMÜZDE. Araç suçlu DEĞİL (kara kutu PSCD.DVD vs "
+        "VD takip hatası medyan 0.00 m/s), dikey tavan da suçlu değil (%0.6 "
+        "doyum). Suçlu komutun kendisi: terminal dikey yasası vz = "
+        "−v_dikey·tan(elev) ve v_dikey kapanma hızıyla ölçekleniyor. Kapanma "
+        "durunca v_dikey 1.5 tabanına düşüyor, 9.5° hata için komut 0.26 m/s "
+        "kalıyor — oysa hız vektörünü hedefe doğrultmak 16·tan(9.5°)=2.7 m/s "
+        "ister. Terminal karelerinin %58.3'ünde bu taban BAĞLIYOR. AÇIK: taban "
+        "6.0 → o karelerde komut 1.06 m/s (4 kat). ⚠ Taban YALNIZ kapanma "
+        "yavaşken bağlar; hızlı kesişimde v_dikey=kapanma aynen kalır, yani "
+        "gerçek kesişimlere DOKUNMAZ. ⚠ Seyir (tutuş) fazı etkilenmez — taban "
+        "yalnız terminal dalında. Ölçüt ilanı: docs/kampanya/DV_OLCUTLER.md",
+        "AVCI_IBVS_KAPANMA_MIN", (1.5, 6.0)),
+    "ot_term_sure": (
+        "TERM_BIRAK_S", "deger", "Ö-T · Terminal mandalını SÜREYLE bırak",
+        "ÖLÇÜLDÜ (kullanıcı uçuşu 172454 + taze tekrar): araç 7-12 m bandında "
+        "SIKIŞIYOR ve çıkamıyor. 4626 karenin 4372'si (%94) TERMINAL'de, 232 "
+        "saniye boyunca; KAPANMA HIZI MEDYANI 0.00 m/s — yani 232 saniyede "
+        "sıfır ilerleme. Sebep: Ö-M mandalı yalnız menzil 20 m'yi aşınca "
+        "bırakıyor, menzil ise 4584 karede yalnız 20 kez 20 m'yi aştı. "
+        "Mandal kilitli kalınca hız 16.0 m/s'ye sabitleniyor, hedef 15.1 m/s "
+        "uçuyor → kapanma 0.9 m/s teorik, 0.00 ölçülen. Kara kutu doğruladı: "
+        "4.2-6.6 m'de sabit park, dikey ofset +0.06…+0.30 m (sorun boylamasına, "
+        "dikeyde değil). AÇIK: kapanma 0.5 m/s'nin altında 4 s geçerse mandal "
+        "bırakılır, seyir yasası (24 m/s tavan) geri gelir ve araç hızlanıp "
+        "yeniden kapatabilir. ⚠ Kapanma eşiği aşılınca sayaç SIFIRLANIR — "
+        "gerçekten ilerlerken asla müdahale etmez. ⚠ Ö-M'yi değiştirmez, "
+        "üstüne biner. ⚠ Mekanizma sütunu: bbox CSV'sinde `term_kapanmasiz`.",
+        "AVCI_IBVS_TERM_BIRAK_S", (0.0, 4.0)),
+}
 
 
 class OzellikCmd(BaseModel):
