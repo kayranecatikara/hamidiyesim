@@ -520,6 +520,35 @@ class Cfg:
     # ⚠ Kilit V_TOPLAM_MAX ile sınırlıdır. Mandal bırakılınca kilit düşer.
     # AVCI_IBVS_TERM_HIZ_KORU=1 → açık.
     TERM_HIZ_KORU = _env_f("AVCI_IBVS_TERM_HIZ_KORU", 0.0) >= 0.5
+
+    # ══════════════════════════════════════════════════════════════════
+    # D3 · KAÇIRACAKSAN YAVAŞLA — dikey bütçe yetmiyorsa hızı kıs
+    # ══════════════════════════════════════════════════════════════════
+    # KULLANICI FİKRİ (2026-08-18): "hedef aracı kaçıracak gibiysek eğer
+    # hızı azaltıp öyle dengeli yaklaşsak olmuyor mu?"  → OLUYOR, ve
+    # matematiği temiz.
+    #
+    # D1 hız vektörünü hedefe çeviriyor ama dikey tavan (VZ_MAX_TERM) bir
+    # yerde bağlıyor: asin(VZ_MAX_TERM/v_los) = asin(10/16) = 38.7°.
+    # Bunun ÜSTÜNDEKİ açılarda vektör hedefi GÖSTEREMİYOR — kesişim
+    # matematiksel olarak imkânsız, araç altından/üstünden geçiyor.
+    #
+    # D3: gereken dikey hız tavanı aşıyorsa YATAY HIZI KIS —
+    #     v_los = VZ_MAX_TERM / sin(|nişan_elev|)
+    # Böylece oran düzelir ve vektör HER AÇIDA hedefi gösterebilir.
+    #     elev   D1 vektörü   D3 v_los   D3 vektörü
+    #     38.7°    38.7°        16.0       38.7°
+    #     45°      38.7° ✗      14.1       45.0° ✓
+    #     55°      38.7° ✗      12.2       55.0° ✓
+    #     70°      38.7° ✗      10.6       70.0° ✓
+    # ⚠ V_TERM_MIN tabanı korunur (hedefi büsbütün kaçırmamak için).
+    # ⚠ Yavaşlamak yaklaşmayı geciktirir ama ıskalamaktan iyidir — bu takas
+    #   bilinçli ve kullanıcının kendi önerisi.
+    # ⚠ D3 yalnız D1 (TERM_SAF3B) AÇIKKEN anlamlıdır; eski yasada zaten
+    #   benzer bir kısıt var (tan tabanlı) ama v_dikey tabanı yüzünden hiç
+    #   tetiklenmiyordu.
+    # AVCI_IBVS_TERM_YAVASLA=1 → açık.
+    TERM_YAVASLA = _env_f("AVCI_IBVS_TERM_YAVASLA", 0.0) >= 0.5
     KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
@@ -1043,6 +1072,12 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # artık var olmayan bir dikey talep yüzünden kısar (yani boşuna
         # frene basar). İki yer tek kavram.
         if cfg.TERM_SAF3B:
+            # ── D3 (bkz. Cfg.TERM_YAVASLA): gereken dikey hız tavanı aşıyorsa
+            # YATAYI KIS — oran düzelsin, vektör hedefi gösterebilsin.
+            if cfg.TERM_YAVASLA:
+                _se = abs(math.sin(nisan_elev))
+                if _se > 1e-6 and v_los * _se > cfg.VZ_MAX_TERM:
+                    v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / _se)
             # ── D1 · SAF TAKİP 3B (bkz. Cfg.TERM_SAF3B) ──
             # Yatayın matematiği aynen dikeye: hız vektörünün YÖNÜ hedefe
             # döner, BÜYÜKLÜĞÜ v_los kalır. |vz| ≤ v_los yapısal olarak

@@ -743,6 +743,9 @@ def _hedef_cfg(alan):
     """
     if ":" in alan:
         modul, ad = alan.split(":", 1)
+        if modul == "sup":
+            from control.guidance import supervisor as _sup
+            return _sup.SupCfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
@@ -751,6 +754,45 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
+    "e1_faz_tutarli": (
+        "sup:POSE_CONF_MIN", "deger",
+        "⭐ E1 · FAZ ZIPLAMASI — giriş eşiğini güdümle EŞİTLE (0.0 → 0.35)",
+        "KULLANICI: 'GPS'ten görsele geçtiğinde araç bir fren gibi bir şey "
+        "yapıp iki faz arasında gidip geliyor, bazen orada takılıyor.' "
+        "KÖK NEDEN — İKİ KATMAN FARKLI EŞİK KULLANIYOR: supervisor girişe "
+        "POSE_CONF_MIN=0.0 (eşik YOK) ile karar veriyor, ama bbox güdümü "
+        "kutuyu CONF_MIN=0.35 ile kullanıyor. Senin 10:52 uçuşunda conf "
+        "0.276-0.394 arasındaydı — TAM ARADA. Supervisor 0.28'lik tespitle "
+        "görsele giriyor, bbox o kutuyu reddediyor, 20 kare sonra GPS'e "
+        "dönüyor, tekrar giriyor. "
+        "ÖLÇÜLDÜ: 20 saniyede 8 FAZ DEĞİŞİMİ; hız 18.1 → 8.5 m/s düştü ve "
+        "mesafe 28.9 → 51.0 m AÇILDI. Kullanıcının 'fren gibi takılıyor' "
+        "dediği şey bu. "
+        "AÇIK = giriş eşiği 0.35 (güdümün kullanabileceği eşik) → tutarlı. "
+        "⚠ 0.0 bilinçliydi (D0 kuralı: 'model gördüm dediğinde GPS'te kalma') "
+        "ama ters tarafa taşınmış: model GÖRMEDİ dediğinde bile geçiliyor. "
+        "0.35 ne katı ne gevşek — İKİ KATMAN AYNI ŞEYİ SÖYLER. "
+        "⚠ Yeni faz geçişinden itibaren etki eder.",
+        "AVCI_HYBRID_CONF", (0.0, 0.35)),
+    "d3_yavasla": (
+        "TERM_YAVASLA", "bool",
+        "⭐⭐ D3 · KAÇIRACAKSAN YAVAŞLA (senin fikrin) — D1 ile birlikte aç",
+        "KULLANICI FİKRİ: 'hedef aracı kaçıracak gibiysek eğer hızı azaltıp "
+        "öyle dengeli yaklaşsak olmuyor mu?' → OLUYOR, matematiği temiz. "
+        "D1 hız vektörünü hedefe çeviriyor ama dikey tavan bir yerde bağlıyor: "
+        "asin(VZ_MAX_TERM/v_los) = asin(10/16) = 38.7°. Bunun ÜSTÜNDEKİ "
+        "açılarda vektör hedefi GÖSTEREMİYOR — kesişim matematiksel olarak "
+        "imkânsız, araç altından/üstünden geçiyor. "
+        "D3: gereken dikey hız tavanı aşıyorsa YATAY HIZI KISAR — "
+        "v_los = VZ_MAX_TERM/sin(elev). Böylece vektör HER AÇIDA hedefi "
+        "gösterir: 45° → D1 38.7° (ıska) / D3 45.0° ✓ (v 14.1), "
+        "55° → D1 38.7° / D3 55.0° ✓ (v 12.2). "
+        "Birim testleri: B93 dik açılarda vektör tam, B94 hızı ASLA artırmaz, "
+        "B95 ≤38.7°'de ETKİSİZ (sakin yaklaşma bozulmaz), B96 V_TERM_MIN "
+        "tabanı korunur. "
+        "⚠ YALNIZ D1 AÇIKKEN anlamlı — ikisini birlikte aç. "
+        "✓ Uçuş sırasında ETKİ EDER.",
+        "AVCI_IBVS_TERM_YAVASLA", True),
     "d2_hiz_koru": (
         "TERM_HIZ_KORU", "bool",
         "⭐⭐⭐ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (KÖK NEDEN)",

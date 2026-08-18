@@ -867,6 +867,73 @@ def main():
             "beklettiği loglardan ölçülebilir")
 
     print("=" * 60)
+    # ══ D3 · KAÇIRACAKSAN YAVAŞLA (kullanıcı fikri, 2026-08-18) ══
+    class _D3(ib.Cfg):
+        TERM_SAF3B = True
+        TERM_YAVASLA = True
+        K_VZ_D = 0.0          # yasanın kendisi sınanıyor
+
+    class _D1saf2(ib.Cfg):
+        TERM_SAF3B = True
+        K_VZ_D = 0.0
+
+    def _cy_e(_e):
+        return geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_e))
+
+    # B93: ⭐ D3 dik açılarda vektörü hedefe ÇEVİREBİLİYOR (D1 takılıyor)
+    _sonuc = []
+    for _e in (45.0, 55.0, 70.0):
+        _d3 = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
+                       (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        _d1 = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
+                       (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        _v3 = math.degrees(math.atan2(-_d3[2], math.hypot(_d3[0], _d3[1])))
+        _v1 = math.degrees(math.atan2(-_d1[2], math.hypot(_d1[0], _d1[1])))
+        _sonuc.append((_e, _v1, _v3, _d3[5]["v_los"]))
+    # ⚠ nişan_elev'in kendi ±60° clamp'i var (mevcut yapısal sınır) —
+    # beklenti min(hedef, 60°).
+    kontrol("B93 ⭐ D3: dik açılarda vektör hedefi TAM gösterir (D1 takılır)",
+            all(abs(v3 - min(e, 60.0)) < 1.5 for e, _, v3, _ in _sonuc)
+            and all(v1 < e - 5.0 for e, v1, _, _ in _sonuc),
+            "  ".join(f"{e:.0f}°: D1 {v1:.1f}° → D3 {v3:.1f}° (v {v:.1f})"
+                      for e, v1, v3, v in _sonuc))
+
+    # B94: D3 YALNIZ KISAR — hızı asla artırmaz
+    _hizli = False
+    for _e in (5.0, 20.0, 38.0, 50.0, 70.0):
+        _a = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        _k = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
+            _hizli = True
+    kontrol("B94 D3 hızı ASLA artırmaz (yalnız kısan kısıt)",
+            not _hizli, "5 açıda hiçbirinde hızlanma yok")
+
+    # B95: küçük açılarda ETKİSİZ (sakin yaklaşma bozulmaz)
+    _kucuk = 0.0
+    for _e in (0.0, 10.0, 20.0, 30.0):
+        _a = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        _k = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        for _i in range(4):
+            _kucuk = max(_kucuk, abs(_a[_i] - _k[_i]))
+    kontrol("B95 D3 küçük açılarda ETKİSİZ (≤38.7° hiç kısmaz)",
+            _kucuk < 1e-12,
+            f"0-30° arası 4 açıda en büyük fark {_kucuk:.2e} — kısıt yalnız "
+            f"asin(VZ_MAX_TERM/v_los)={math.degrees(math.asin(min(1.0, C.VZ_MAX_TERM/C.V_TERMINAL))):.1f}° "
+            "üstünde devreye girer")
+
+    # B96: V_TERM_MIN tabanı korunur + varsayılan KAPALI
+    _dik = ib.komut(CX, _cy_e(85.0), 30, 30, 0.0, 12.0, 0.05, _D3, True,
+                    (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    kontrol("B96 D3 V_TERM_MIN tabanını korur, varsayılan KAPALI",
+            _dik[5]["v_los"] >= C.V_TERM_MIN - 1e-9 and not C.TERM_YAVASLA,
+            f"hedef 85° yukarıda → v_los {_dik[5]['v_los']:.1f} ≥ taban "
+            f"{C.V_TERM_MIN:.0f}; Cfg.TERM_YAVASLA={C.TERM_YAVASLA}")
+
+    print("=" * 60)
     # ══ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (2026-08-18) ══
     class _D2(ib.Cfg):
         TERM_HIZ_KORU = True
