@@ -286,19 +286,46 @@ Sürücü onarıldığında `MESA_LOADER_DRIVER_OVERRIDE` satırını kaldırın
 
 ---
 
-# ⭐ TEK KOMUTLA KURULUM — `~/.avci_sim/` scriptleri
+# ⭐ TEK KOMUTLA KURULUM — `scripts/mkur.sh` ve `scripts/kapat.sh`
 
-Bu scriptler **depo dışında**, `~/.avci_sim/` altında duruyor (makineye özel
-yollar içerdikleri için). Aşağıda tam içerikleri var — yeni bir makinede
-çalışmak için bu bölümdeki dosyaları oraya yazmak yeterli.
+Bu iki script **artık depoda** (2026-08-18'de `~/.avci_sim/` altından taşındı):
 
-`chmod +x` gerekmez; hepsi `bash <dosya>` ile çağrılıyor.
+| dosya | ne yapar |
+|---|---|
+| `scripts/mkur.sh` | Gazebo + ArduCopter SITL (avcı) + ArduPlane SITL (hedef) + `gcs_server` — hepsini kurar, hazır olmasını **bekler** |
+| `scripts/kapat.sh` | hepsini kapatır (önce TERM, sonra KILL) |
+
+Depoyu klonlamak yeterli; ayrıca bir yere dosya yazmak gerekmez.
+`chmod +x` de gerekmez, hepsi `bash <dosya>` ile çağrılıyor.
+
+**Makineye özel yollar env ile eziliyor.** Varsayılanlar bu makinenin düzeni;
+depo başka bir yere klonlanmışsa `mkur.sh` kendi konumundan depo kökünü
+kendisi bulur, elle bir şey değiştirmek gerekmez:
+
+| env | varsayılan | ne |
+|---|---|---|
+| `AVCI_REPO` | *(script'in bulunduğu dizinin üstü)* | depo kökü |
+| `ARDUPILOT_DIR` | `~/ardupilot` | ArduPilot kaynak ağacı (`sim_vehicle.py` burada) |
+| `ARDUPILOT_GAZEBO_DIR` | `~/ardupilot_gazebo` | `ardupilot_gazebo` eklentisi + modelleri |
+| `AVCI_LOG_DIR` | `~/.avci_sim/log` | kurulum logları (`gz_*.log`, `cop_*.log`, `pla_*.log`, `gcs_*.log`) |
+
+> ⚠ **İki kopya tutmayın.** Daha önce `~/.avci_sim/mkur.sh` / `kapat.sh`
+> kullanıyorduysanız, kanonik kopya artık depodakidir. Eski yol alışkanlığını
+> bozmadan tek kopyaya inmek için bağ kurun:
+>
+> ```bash
+> ln -sf ~/projects/avci_sim/scripts/mkur.sh  ~/.avci_sim/mkur.sh
+> ln -sf ~/projects/avci_sim/scripts/kapat.sh ~/.avci_sim/kapat.sh
+> ```
+>
+> `~/.avci_sim/kosu*.sh` kampanya scriptleri **depo dışında kalmaya devam
+> ediyor** — onlar o günün deneyine özeldir, kalıcı araç değildir.
 
 ## Günlük kullanım — üç komut
 
 ```bash
 # 1) simi kur (~90 sn; "sim hazır HH:MM:SS" yazınca hazır)
-bash ~/.avci_sim/mkur.sh <etiket>
+bash scripts/mkur.sh <etiket>          # depo kökünden
 
 # 2) panel:  http://127.0.0.1:8000
 #    hedefi kaldır + takibi başlat:
@@ -307,7 +334,7 @@ sleep 30
 curl -s -X POST http://127.0.0.1:8000/api/command/iris/start_chase
 
 # 3) bitince — aracı havada KONTROLSÜZ bırakma
-bash ~/.avci_sim/kapat.sh
+bash scripts/kapat.sh
 ```
 
 Senaryolar: `duz` · `square` · `elips_gorev` · `circle` · `circle_s/l/xl` · `aggressive`
@@ -348,53 +375,67 @@ Kaçamak türleri: `yok` · `yatay` · `dikey_yukari` · `dikey_asagi` · `capra
 
 ## `mkur.sh` — Gazebo + iki SITL + GCS
 
-⚠ **Boruya bağlama** (`| tail`, `| grep`): arka plandaki sim süreçleri
-yüzünden boru EOF almaz ve script asılı kalır. Çıktıyı dosyaya yaz.
+📄 **Dosya: [`scripts/mkur.sh`](../scripts/mkur.sh)** — buraya kopyasını
+yapıştırmıyoruz; iki kopya kaçınılmaz olarak birbirinden kayar. Okumak için:
 
 ```bash
-#!/bin/bash
-# Sim kurulumu. Kullanım: [AVCI_* env...] bash mkur.sh <etiket>
-# ⚠ BORUYA BAĞLAMA (CLAUDE.md §9) — çıktıyı dosyaya yaz.
-LOG=$HOME/.avci_sim/log
-mkdir -p $LOG
-T=${1:-m}
-cd $HOME/projects/avci_sim
-set +u; source /opt/ros/humble/setup.bash; set +u
-export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
-export DISPLAY=:1
-nohup gz sim -r -v2 sim/gazebo_harmonic/worlds/avci_harmonic.sdf > $LOG/gz_$T.log 2>&1 &
-sleep 6
-APT=$HOME/ardupilot/Tools/autotest
-( cd $HOME/ardupilot && nohup script -qfec "python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON -I0 --sysid 5 --no-rebuild -w --add-param-file=$APT/default_params/copter.parm --add-param-file=$APT/default_params/gazebo-iris.parm --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --mavproxy-args='--streamrate=25'" /dev/null > $LOG/cop_$T.log 2>&1 & )
-( cd $HOME/ardupilot && nohup script -qfec "python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --mavproxy-args='--streamrate=25'" /dev/null > $LOG/pla_$T.log 2>&1 & )
-for i in $(seq 1 90); do
-  grep -qa "EKF3 IMU0 is using GPS" $LOG/cop_$T.log 2>/dev/null && grep -qa "EKF3 IMU0 is using GPS" $LOG/pla_$T.log 2>/dev/null && break
-  sleep 3
-done
-export AVCI_GZ_CAMERA=1 AVCI_GORSEL=on
-nohup python3 -m control.gcs_server > $LOG/gcs_$T.log 2>&1 &
-for i in $(seq 1 60); do curl -sf -m 2 http://127.0.0.1:8000/api/guidance_mode >/dev/null 2>&1 && break; sleep 2; done
-curl -s -X POST http://127.0.0.1:8000/api/guidance_mode -H "Content-Type: application/json" -d '{"mode":"hybrid"}'
-curl -s -X POST http://127.0.0.1:8000/api/hasar/sifirla >/dev/null
-echo " | sim hazır $(date +%H:%M:%S)"
+cat scripts/mkur.sh
 ```
+
+**Ne yapıyor, hangi sırayla:**
+
+1. `gz sim -r` ile dünyayı açar (`sim/gazebo_harmonic/worlds/avci_harmonic.sdf`),
+   6 sn bekler — FDM portu bu sürede ayağa kalkıyor.
+2. **ArduCopter** SITL (avcı, `-I0`, sysid 5, `gazebo-iris`, UDP 14541/14550)
+   ve **ArduPlane** SITL (hedef, `-I1`, sysid 2, JSON:9012, UDP 14542/14550)
+   — ikisi de `script -qfec` ile sarmalı, çünkü **MAVProxy TTY'siz çıkar** (§9).
+3. **Kör `sleep` YOK.** İki aracın kendi çıktısında `EKF3 IMU0 is using GPS`
+   satırını bekler (~50 sn). Ölçüldü: 25 sn'de "hazır" demek yanlıştı, SITL
+   hâlâ açılıyordu.
+4. `AVCI_GZ_CAMERA=1 AVCI_GORSEL=on` ile `control.gcs_server` başlatır ve
+   `/api/guidance_mode` cevap verene kadar bekler.
+5. Güdüm kipini `hybrid` yapar, hasar sayacını sıfırlar,
+   `" | sim hazır HH:MM:SS"` yazar. **Bu satır çıkmadan uçuş komutu gönderme.**
+
+⚠ **Boruya bağlama** (`| tail`, `| grep`): arka plandaki sim süreçleri
+yüzünden boru EOF almaz ve script asılı kalır. Çıktıyı dosyaya yaz:
+
+```bash
+bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1
+tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+⚠ **`gcs_server`'ı tek başına yeniden başlatma** (Gazebo+SITL ayaktayken):
+chase/scenario bağlantısı kopar. Env değişikliği için TAM restart — yani
+`kapat.sh` + `mkur.sh` (§4).
 
 ## `kapat.sh` — her şeyi kapat
 
-⚠ `pkill -f` **kendi kabuğunu öldürebilir** (exit 144). Bu yüzden ayrı bir
-script dosyasında duruyor ve desenler köşeli parantezle kırılıyor.
+📄 **Dosya: [`scripts/kapat.sh`](../scripts/kapat.sh)**
 
 ```bash
-#!/bin/bash
-pkill -TERM -f 'gz sim|gz-sim-server|gz-sim-gui|sim_vehicle|mavproxy|arducopter|arduplane|model JSON|control.gcs_server|run_plane_scenario' 2>/dev/null
-sleep 3
-pkill -KILL -f 'gz sim|gz-sim-server|gz-sim-gui|sim_vehicle|mavproxy|arducopter|arduplane|model JSON|control.gcs_server|run_plane_scenario' 2>/dev/null
-sleep 2
-echo "kapatıldı"
+bash scripts/kapat.sh      # "kapatıldı" yazınca biter (~5 sn)
 ```
 
+Gazebo, iki SITL, MAVProxy, `gcs_server` ve senaryo sürecini kapatır: önce
+`TERM` (araçlara temiz kapanma şansı), 3 sn sonra `KILL` (takılan kalmışsa).
+
+⚠ `pkill -f` **kendi kabuğunu öldürebilir** (exit 144) — komut satırında
+yazdığın desen, çalışan kabuğun komut satırında da görünür ve kendini eşler.
+Bu yüzden ayrı bir script **dosyasında** duruyor; inline çalıştırma.
+
+⚠ Test bitince araçları havada **KONTROLSÜZ BIRAKMA** (§9) — simi komple kapat.
+
 ## Kampanya koşu scriptleri — ortak kalıp
+
+Bunlar (`kosuS.sh`, `kosuD.sh`, …) **depo dışında**, `~/.avci_sim/` altında
+kalmaya devam ediyor: her biri o günün deneyine özeldir, kalıcı araç değildir.
+
+> ⚠ **Bağımlılık:** hepsinin başında `SCR=$HOME/.avci_sim` var ve
+> `$SCR/mkur.sh` / `$SCR/kapat.sh` çağırıyorlar. Depoya taşıdıktan sonra
+> `~/.avci_sim/` altındaki kopyaları silerseniz bu scriptler kırılır —
+> ya yukarıdaki `ln -sf` bağlarını kurun ya da başlarını
+> `SCR=$HOME/projects/avci_sim/scripts` yapın.
 
 Hepsi aynı iskeleti kullanıyor:
 
