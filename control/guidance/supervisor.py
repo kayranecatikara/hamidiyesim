@@ -92,27 +92,6 @@ class SupCfg:
     # AVCI_HYBRID_ARDISIK=0 → eski kayan pencere davranışı geri gelir.
     # AVCI_HYBRID_CONF=0.5  → eski ekstra güven eşiği geri gelir.
     KILIT_ARDISIK = os.environ.get("AVCI_HYBRID_ARDISIK", "1") == "1"
-    # ⭐ E1 · FAZ TUTARLILIĞI (2026-08-18, kullanıcı şikâyeti)
-    # KULLANICI: "GPS'ten görsele geçtiğinde araç bir fren gibi bir şey yapıp
-    # iki faz arasında gidip geliyor, bazen orada takılıyor."
-    #
-    # KÖK NEDEN — İKİ KATMAN FARKLI EŞİK KULLANIYOR:
-    #   supervisor (girişe karar verir) : POSE_CONF_MIN = 0.0  → eşik YOK
-    #   bbox güdümü (kutuyu kullanır)   : Cfg.CONF_MIN  = 0.35
-    # Kullanıcının 10:52 uçuşunda conf 0.276-0.394 arasındaydı — TAM ARADA.
-    # Supervisor 0.28'lik tespitle görsele GİRİYOR, bbox o kutuyu REDDEDİYOR,
-    # KAYIP_M=20 kare sonra GPS'e DÖNÜYOR, sonra tekrar giriyor.
-    # ÖLÇÜLDÜ: 20 saniyede 8 faz değişimi; bu sırada hız 18.1 → 8.5 m/s'ye
-    # düştü ve mesafe 28.9 m'den 51.0 m'ye AÇILDI.
-    #
-    # ⚠ 0.0 BİLİNÇLİYDİ (D0 kuralı): "conf ≥ 0.5 şartı KATIYDI, model 'gördüm'
-    # dediği hâlde güdüm GPS'te kalıyordu — ihlal riski buydu." O tespit
-    # doğruydu ama 0.0'a çekmek TERS tarafa taşımış: artık model "görmedi"
-    # dediğinde bile (bbox reddediyor) görsele geçiliyor.
-    # DOĞRUSU: giriş eşiği = güdümün KULLANABİLECEĞİ eşik. Ne katı ne gevşek,
-    # TUTARLI. Yarışma kuralı açısından da temiz: bbox 0.35 altını zaten
-    # "tespit yok" sayıyor.
-    # AVCI_HYBRID_CONF ile değiştirilebilir; 0.0 = eski (tutarsız) davranış.
     POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.0))
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──

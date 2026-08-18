@@ -743,9 +743,6 @@ def _hedef_cfg(alan):
     """
     if ":" in alan:
         modul, ad = alan.split(":", 1)
-        if modul == "sup":
-            from control.guidance import supervisor as _sup
-            return _sup.SupCfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
@@ -754,109 +751,6 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
-    "e1_faz_tutarli": (
-        "sup:POSE_CONF_MIN", "deger",
-        "⭐ E1 · FAZ ZIPLAMASI — giriş eşiğini güdümle EŞİTLE (0.0 → 0.35)",
-        "KULLANICI: 'GPS'ten görsele geçtiğinde araç bir fren gibi bir şey "
-        "yapıp iki faz arasında gidip geliyor, bazen orada takılıyor.' "
-        "KÖK NEDEN — İKİ KATMAN FARKLI EŞİK KULLANIYOR: supervisor girişe "
-        "POSE_CONF_MIN=0.0 (eşik YOK) ile karar veriyor, ama bbox güdümü "
-        "kutuyu CONF_MIN=0.35 ile kullanıyor. Senin 10:52 uçuşunda conf "
-        "0.276-0.394 arasındaydı — TAM ARADA. Supervisor 0.28'lik tespitle "
-        "görsele giriyor, bbox o kutuyu reddediyor, 20 kare sonra GPS'e "
-        "dönüyor, tekrar giriyor. "
-        "ÖLÇÜLDÜ: 20 saniyede 8 FAZ DEĞİŞİMİ; hız 18.1 → 8.5 m/s düştü ve "
-        "mesafe 28.9 → 51.0 m AÇILDI. Kullanıcının 'fren gibi takılıyor' "
-        "dediği şey bu. "
-        "AÇIK = giriş eşiği 0.35 (güdümün kullanabileceği eşik) → tutarlı. "
-        "⚠ 0.0 bilinçliydi (D0 kuralı: 'model gördüm dediğinde GPS'te kalma') "
-        "ama ters tarafa taşınmış: model GÖRMEDİ dediğinde bile geçiliyor. "
-        "0.35 ne katı ne gevşek — İKİ KATMAN AYNI ŞEYİ SÖYLER. "
-        "⚠ Yeni faz geçişinden itibaren etki eder.",
-        "AVCI_HYBRID_CONF", (0.0, 0.35)),
-    "d3_yavasla": (
-        "TERM_YAVASLA", "bool",
-        "⭐⭐ D3 · KAÇIRACAKSAN YAVAŞLA (senin fikrin) — D1 ile birlikte aç",
-        "KULLANICI FİKRİ: 'hedef aracı kaçıracak gibiysek eğer hızı azaltıp "
-        "öyle dengeli yaklaşsak olmuyor mu?' → OLUYOR, matematiği temiz. "
-        "D1 hız vektörünü hedefe çeviriyor ama dikey tavan bir yerde bağlıyor: "
-        "asin(VZ_MAX_TERM/v_los) = asin(10/16) = 38.7°. Bunun ÜSTÜNDEKİ "
-        "açılarda vektör hedefi GÖSTEREMİYOR — kesişim matematiksel olarak "
-        "imkânsız, araç altından/üstünden geçiyor. "
-        "D3: gereken dikey hız tavanı aşıyorsa YATAY HIZI KISAR — "
-        "v_los = VZ_MAX_TERM/sin(elev). Böylece vektör HER AÇIDA hedefi "
-        "gösterir: 45° → D1 38.7° (ıska) / D3 45.0° ✓ (v 14.1), "
-        "55° → D1 38.7° / D3 55.0° ✓ (v 12.2). "
-        "Birim testleri: B93 dik açılarda vektör tam, B94 hızı ASLA artırmaz, "
-        "B95 ≤38.7°'de ETKİSİZ (sakin yaklaşma bozulmaz), B96 V_TERM_MIN "
-        "tabanı korunur. "
-        "⚠ YALNIZ D1 AÇIKKEN anlamlı — ikisini birlikte aç. "
-        "✓ Uçuş sırasında ETKİ EDER.",
-        "AVCI_IBVS_TERM_YAVASLA", True),
-    "d2_hiz_koru": (
-        "TERM_HIZ_KORU", "bool",
-        "⭐⭐⭐ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (KÖK NEDEN)",
-        "KÖK NEDEN BULUNDU (kullanıcının 09:53 uçuşu + 6 koşu, hepsinde aynı): "
-        "terminale girerken v_los seyir değerinden V_TERMINAL'e DÜŞÜYOR ve "
-        "araç FRENE BASIYOR. Quad frenlemek için BURNUNU KALDIRIR; kamera "
-        "gövdeye 25° yukarı vidalı olduğu için toplam bakış 50°'ye çıkıyor, "
-        "hedef kadrajın ALTINDAN çıkıp kayboluyor, araç kör kalıp tırmanmaya "
-        "devam ediyor. Kullanıcının 'üstünden geçiyoruz' dediği şey BU. "
-        "ÖLÇÜLDÜ (6/6 koşu, terminal girişi ±2 s): fren medyan 4.1 m/s "
-        "(22.6 → 16.0), burun medyan +24.8° (−15.7° → +7.8°), "
-        "cy 316 → 439 (kadraj 480 — hedef alta düşüyor). "
-        "⚠ SORUN V_TERMINAL'İN DEĞERİ DEĞİL, GEÇİŞİN KENDİSİ. Senin 16 "
-        "tercihin geçerli kalıyor; D2 o değeri değiştirmez, YALNIZ SIÇRAMAYI "
-        "kaldırır: terminale girerkenki hız kilitlenir. "
-        "Birim testleri: B89 giriş 21.0 → kilit 21.0 (taban 16.0'ya düşüyor), "
-        "B90 kilit V_TOPLAM_MAX/V_TERM_MIN ile sınırlı, B91 kilit yokken "
-        "taban davranışı bit bit, B92 seyir fazına dokunmaz. "
-        "✓ Uçuş sırasında ETKİ EDER (bir sonraki terminal girişinden itibaren).",
-        "AVCI_IBVS_TERM_HIZ_KORU", True),
-    "d1_saf3b": (
-        "TERM_SAF3B", "bool",
-        "⭐⭐ D1 · SAF TAKİP 3B — yatayın matematiği DİKEYE de (KAPALI=taban)",
-        "KULLANICI FİKRİ (2026-08-18): 'yataydaki hizalama iyi şu an; "
-        "yataydaki hizalamanın arkasındaki matematiğin aynısını dikey eksen "
-        "için de kullanamaz mıyız?' → EVET, ve bu yasanın DOĞRUSU. "
-        "YATAY: hız vektörünün YÖNÜ hedefe döner, BÜYÜKLÜĞÜ v_los. "
-        "DİKEY (bozuk): vz = −v_dikey·tan(elev) — ayrı bir çarpan, tan, ve "
-        "yatay bileşen cos(elev) ile küçültülmüyor. "
-        "D1 = yatayın 3B'ye birebir genişlemesi: vz = −v_los·sin(elev), "
-        "yatay = v_los·cos(elev) → |v| = v_los SABİT, vektör tam hedefe bakar. "
-        "ÖLÇÜLEN FARK (hedef 24° yukarıda, v_los 16): bugünkü 0.67 m/s, "
-        "A1 7.12 (ama |v| 17.5'e çıkıyor, hızlanıyor), D1 6.51 (|v| 16.0 SABİT). "
-        "⭐ YAPISAL ÜSTÜNLÜK: |vz| ≤ v_los her zaman (sin ≤ 1). tan ise 70°'de "
-        "44 m/s ister, tavan kırpar, vektör hedefi GÖSTEREMEZ. "
-        "Birim testleri: B84 |v| sabit (fark 0.0000), B85 dikey tavana kadar "
-        "(38.7°) vektör hedefi TAM gösterir — eski yasa 14.6°'de takılıyordu, "
-        "2.6 KAT. B87 seyir fazına dokunmaz. "
-        "⚠ D1 açıkken A1/kapanma ölçeği DEVRE DIŞI — ikisini birlikte açma, "
-        "D1 zaten onun yerine geçiyor. "
-        "✓ Uçuş sırasında ETKİ EDER.",
-        "AVCI_IBVS_SAF3B", True),
-    "a1_tam_hiz": (
-        "TERM_TAM_HIZ", "bool",
-        "⭐ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (KAPALI=taban)",
-        "ŞU AN SINANAN ŞEY. Kullanıcı: 'son terminal kısmında çok dengesiz "
-        "girip üstten alttan kaçırabiliyoruz.' "
-        "ÖLÇÜLDÜ (1784 terminal karesi): menzil 0-3 m'de hedef ortalama 23.8° "
-        "YUKARIDA ama araç saniyede yalnız 0.72 m tırmanıyor — dikey "
-        "bütçesinin %7'si. VZ_MAX_TERM (10 m/s) tavanına dayanma oranı %0.0. "
-        "SEBEP tek çarpan: v_dikey = clamp(kapanma, 1.5, v_los); kapanma ≈ "
-        "0.9 m/s olduğu için 1.5 TABANINA yapışıyor → 1.5·tan(23.8°) = "
-        "0.66 m/s (ölçülen 0.72 ile birebir). AÇIK konumda v_dikey = v_los = "
-        "16 → 16·tan(23.8°) = 7.06 m/s. Birim testi B80: 9.4 KAT. "
-        "⚠⚠ BU BİR GERİ ALMADIR: kapanma ölçeklemesi 2026-08-09'da tam da "
-        "'tam vuracağı sırada üstünden geçiyoruz' şikâyetini çözmek için "
-        "eklenmiş ve ölçülüp GİRMİŞTİ (o zaman komut 13.7 KAT FAZLAYDI). "
-        "O ölçüm v_dikey=18 iken yapıldı, bugün v_dikey=1.5. İki uç da "
-        "denenmiş oluyor: 18 → çok fazla (üstünden geçer), 1.5 → çok az "
-        "(yetişemez). Doğru değer muhtemelen ARADA. "
-        "⚠ AÇARSAN İZLE: üstten geçme geri gelirse aday budur. "
-        "✓ Uçuş sırasında ETKİ EDER. Seyir fazına DOKUNMAZ (B81). "
-        "Dikey tavan hâlâ bağlar, kontrolsüz büyüme yok (B82).",
-        "AVCI_IBVS_TERM_TAM_HIZ", True),
     "dikey_kapi": (
         "DIKEY_KAPI_M", "deger",
         "① DİKEY HİZALAMA KAPISI — irtifa eşitlenmeden terminale geçme",
@@ -917,22 +811,6 @@ _OZELLIKLER = {
         "⚠ ① DİKEY KAPI açıkken bu eşik yalnız 'hazır' sinyali üretir; mandal "
         "ancak dikey ofset de 2 m'nin altına inince atılır.",
         "AVCI_IBVS_TERM", (25.0, 18.0)),
-    "term_roll": (
-        "TERM_ROLL", "bool",
-        "⑥ T1c · TERMİNAL fazında roll telafisi (AÇIK ← YENİ)",
-        "BULUNAN TUTARSIZLIK (kullanıcının 20:59 uçuşundan): roll telafisi "
-        "SEYİR fazında vardı, TERMİNAL fazında YOKTU — araç terminale girer "
-        "girmez dikey okuması bozuluyordu. "
-        "ÖLÇÜLDÜ (4234 terminal karesi): telafili/telafisiz fark medyan 0.64°, "
-        "p90 8.15°, MAKS 42.2° (terminal yatışı p90 42.4° olduğu için kuyruk "
-        "büyük). Kullanıcı: 'tüm paslar okey, bitiriş çok kötü.' "
-        "ÇÖZÜM: terminalde de los_seviye() kullanılır — seviye çerçevesindeki "
-        "GERÇEK yükseliş. "
-        "⭐ YAPISAL GARANTİ (B76): roll=0'da komut BİT BİT aynı — düz uçuş "
-        "HİÇ etkilenmez, telafi yalnız yatışta devreye girer. "
-        "B77: 10°→Δvz 0.52, 25°→1.19, 40°→1.89 m/s. B79: seyir fazına dokunmaz. "
-        "⚠ Kapatınca eski (bozuk) terminal yolu geri gelir — kıyas için.",
-        "AVCI_IBVS_TERM_ROLL", True),
     "dikey_roll": (
         "DIKEY_ROLL", "bool",
         "⑤ T1b · Dikey kanalda roll telafisi (AÇIK)",
@@ -1432,14 +1310,9 @@ def _hasar_izleyici():
         time.sleep(0.2)
 
 
-# ── KAYIT ÖRNEKLEME ARALIĞI ────────────────────────────────────────────
 # Kullanıcı kuralı (2026-08-18): "saniyede bir foto çekiyoruz ya o az,
 # yarım saniyede bir kare çekip analizleri öyle yap."
-# NEDEN: terminal hücumu ~2 s sürüyor ve kapanma 5-20 m/s. 1 Hz'te temas
-# öncesi yalnız 2 kare oluyor; "hedef kadrajdan ne zaman çıktı" sorusu
-# cevaplanamıyor. 0.5 s bunu ikiye katlıyor (§5.3 örnekleme hızı kuralı).
-# ⚠ VİDEO: 0.5 s kare aralığında `ffmpeg -framerate 5` = 2.5× hızlandırma
-# (1 Hz'te 5× idi). Gerçek zamanlı izlemek için -framerate 2 kullan.
+# ⚠ VİDEO: 0.5 s kare aralığında `ffmpeg -framerate 5` = 2.5× hızlandırma.
 _KAYIT_ARALIK_S = float(os.environ.get("AVCI_KAYIT_ARALIK", "0.5"))
 
 
@@ -1475,7 +1348,7 @@ def _kayit_dongusu():
             m_ger = None
         w.writerow({
             "kare": n, "t": round(dongu_bas, 2),
-            "gecen_s": round(dongu_bas - t0, 2),
+            "gecen_s": round(dongu_bas - t0, 1),
             "gudum_modu": _guidance_mode,
             "faz": _supervisor_mod.status.get("faz"),
             "mesafe_telem": round(math.sqrt(
