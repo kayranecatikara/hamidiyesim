@@ -867,6 +867,95 @@ def main():
             "beklettiği loglardan ölçülebilir")
 
     print("=" * 60)
+    # ══ D1 · SAF TAKİP 3B — yatayın matematiği dikeye (2026-08-18) ══
+    class _D1(ib.Cfg):
+        TERM_SAF3B = True
+
+    def _cy_elev(_e):
+        return geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_e))
+
+    # B84: ⭐ |v| = v_los SABİT — vektörün BÜYÜKLÜĞÜ korunur (yatayın kuralı)
+    _enb84, _n84 = 0.0, 0
+    for _e in (0.0, 10.0, 24.0, 40.0, 60.0):
+        for _cxd in (CX, CX + 60.0, CX - 60.0):
+            _r = ib.komut(_cxd, _cy_elev(_e), 30, 30, 0.0, 12.0, 0.05, _D1,
+                          True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+            _mag = math.sqrt(_r[0]**2 + _r[1]**2 + _r[2]**2)
+            _enb84 = max(_enb84, abs(_mag - _r[5]["v_los"]))
+            _n84 += 1
+    kontrol("B84 ⭐ D1: |v| = v_los SABİT (yatayın kuralı dikeye taşındı)",
+            _enb84 < 0.02,
+            f"{_n84} kombinasyonda |v| ile v_los arasındaki en büyük fark "
+            f"{_enb84:.4f} m/s — vektör hedefe bakar, büyüklüğü değişmez")
+
+    # B85: ⭐ hız vektörü GERÇEKTEN hedefin yükselişini gösterir
+    # ⚠ YASANIN KENDİSİ sınanıyor → K_VZ_D=0. Sönümleme AYRI bir katmandır
+    # ve açıyı bilerek değiştirir (aracın kendi dikey hızını geri besler).
+    class _D1saf(ib.Cfg):
+        TERM_SAF3B = True
+        K_VZ_D = 0.0
+
+    _hata = []
+    for _e in (10.0, 24.0, 40.0, 60.0):
+        _r = ib.komut(CX, _cy_elev(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf, True,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+        _yat = math.hypot(_r[0], _r[1])
+        _vek = math.degrees(math.atan2(-_r[2], _yat)) if _yat > 1e-6 else 90.0
+        _hata.append((_e, _vek, abs(_vek - _e)))
+    # Dikey tavan (VZ_MAX_TERM) asin(VZ_MAX_TERM/v_los)'da bağlar — bunun
+    # ALTINDA vektör hedefi TAM gösterir, üstünde tavanın izin verdiği kadar.
+    _tavan_aci = math.degrees(math.asin(min(1.0,
+                    _D1saf.VZ_MAX_TERM / _D1saf.V_TERMINAL)))
+    kontrol("B85 ⭐ D1: dikey tavana kadar vektör hedefi TAM gösterir",
+            all(h < 1.0 for e, _, h in _hata if e < _tavan_aci - 1.0)
+            and all(abs(v - _tavan_aci) < 1.5
+                    for e, v, _ in _hata if e > _tavan_aci + 1.0),
+            "  ".join(f"{e:.0f}°→{v:.1f}°" for e, v, _ in _hata)
+            + f"  | tavan asin({_D1saf.VZ_MAX_TERM:.0f}/{_D1saf.V_TERMINAL:.0f})"
+            f" = {_tavan_aci:.1f}° (eski yasa 14.6°'de takılıyordu — 2.6 kat)")
+
+    # B86: eski yasa AYNI açılarda vektörü gösteremiyor (kıyas)
+    _e60 = _cy_elev(60.0)
+    _rD = ib.komut(CX, _e60, 30, 30, 0.0, 12.0, 0.05, _D1, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    _rE = ib.komut(CX, _e60, 30, 30, 0.0, 12.0, 0.05, C, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    _vD = math.degrees(math.atan2(-_rD[2], math.hypot(_rD[0], _rD[1])))
+    _vE = math.degrees(math.atan2(-_rE[2], math.hypot(_rE[0], _rE[1])))
+    kontrol("B86 D1 eski yasadan DAHA DİK bakabiliyor (60° hedefte)",
+            _vD > _vE + 20.0,
+            f"hedef 60° yukarıda → eski yasa vektörü {_vE:.1f}°, "
+            f"D1 {_vD:.1f}° (fark {_vD-_vE:.1f}°)")
+
+    # B87: SEYİR fazına DOKUNMAZ
+    _enb87, _n87 = 0.0, 0
+    for _cyd in (220.0, 301.0, 380.0):
+        for _b in (10, 25, 40):
+            _a = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, _D1, False,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+            _k = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, C, False,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+            for _i in range(4):
+                _enb87 = max(_enb87, abs(_a[_i] - _k[_i]))
+            _n87 += 1
+    kontrol("B87 D1 SEYİR fazına DOKUNMAZ (tek değişken)",
+            _enb87 < 1e-12,
+            f"{_n87} kombinasyonda en büyük fark {_enb87:.2e}")
+
+    # B88: varsayılan KAPALI + yatay YÖNÜ değişmez (yalnız büyüklük paylaşılır)
+    _rD2 = ib.komut(CX + 80.0, _cy_elev(30.0), 30, 30, 0.0, 12.0, 0.05, _D1,
+                    True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    _rE2 = ib.komut(CX + 80.0, _cy_elev(30.0), 30, 30, 0.0, 12.0, 0.05, C,
+                    True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    _yD = math.atan2(_rD2[1], _rD2[0]); _yE = math.atan2(_rE2[1], _rE2[0])
+    kontrol("B88 D1 varsayılan KAPALI ve YATAY YÖNÜ değiştirmez",
+            not C.TERM_SAF3B and _D1.TERM_SAF3B
+            and abs(ib.normalize_angle(_yD - _yE)) < 1e-9,
+            f"Cfg.TERM_SAF3B={C.TERM_SAF3B}; yatay yön "
+            f"{math.degrees(_yD):.3f}° = {math.degrees(_yE):.3f}° "
+            "(yalnız büyüklük cos(elev) ile paylaşılır)")
+
+    print("=" * 60)
     # ══ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (2026-08-18) ══
     class _A1(ib.Cfg):
         TERM_TAM_HIZ = True

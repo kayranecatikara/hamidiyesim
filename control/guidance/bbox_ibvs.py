@@ -457,6 +457,42 @@ class Cfg:
     # A1 üst ucu yeniden sınar; kıyas panelden yapılır.
     # AVCI_IBVS_TERM_TAM_HIZ=1 → v_dikey = v_los (kapanma ölçeği DEVRE DIŞI).
     TERM_TAM_HIZ = _env_f("AVCI_IBVS_TERM_TAM_HIZ", 0.0) >= 0.5
+
+    # ══════════════════════════════════════════════════════════════════
+    # D1 · SAF TAKİP 3B — yatayın matematiğini DİKEYE de uygula
+    # ══════════════════════════════════════════════════════════════════
+    # KULLANICI (2026-08-18): "yataydaki hizalama iyi şu an. Yataydaki
+    # hizalamanın arkasındaki matematiğin aynısını dikey eksen için de
+    # kullanamaz mıyız?"  → EVET, ve bu yasanın doğrusu.
+    #
+    # YATAY (çalışan): hız vektörünün YÖNÜ hedefe döner, BÜYÜKLÜĞÜ v_los.
+    #     vx = v_los·cos(hiz_yonu) ,  vy = v_los·sin(hiz_yonu)
+    # DİKEY (bozuk):  vz = −v_dikey·tan(nisan_elev)
+    # ÜÇ FARK:
+    #   1. `v_dikey` AYRI bir ölçek (kapanma ya da v_los) — yatayda böyle bir
+    #      çarpan YOK. Kapanma 0.9 m/s olunca taban 1.5'e yapışıyor ve dikey
+    #      komut ~10 kat küçülüyor (ölçüldü: 0.72 m/s, hedef 23.8° yukarıda).
+    #   2. `tan` kullanıyor; yatay `cos/sin` kullanıyor. tan 90°'de patlar,
+    #      70°'de 44 m/s ister → tavan kırpar → vektör hedefi GÖSTEREMEZ.
+    #   3. Yatay bileşen cos(elev) ile küçültülmüyor → |v| > v_los oluyor
+    #      (A1'de 17.5 m/s: araç hem yükseliyor hem HIZLANIYOR → aşıyor).
+    #
+    # D1 = yatayın 3B'ye birebir genişlemesi:
+    #     vz    = −v_los·sin(nisan_elev)
+    #     yatay =  v_los·cos(nisan_elev)
+    #     vx    =  yatay·cos(hiz_yonu) ,  vy = yatay·sin(hiz_yonu)
+    # ⇒ |v| = v_los SABİT, vektör tam hedefe bakar (saf takip tanımı).
+    #
+    #   nişan  BUGÜNKÜ    A1      D1     D1_yatay    |v|
+    #    24°    0.67     7.12    6.51     14.62     16.00
+    #    50°    1.79    10.00   12.26     10.28     16.00
+    #
+    # ⭐ YAPISAL ÜSTÜNLÜK: |vz| ≤ v_los her zaman (sin ≤ 1) — dikey bütçe
+    # kısıtına gerek kalmaz, komut asla kırpılmaz, vektör her açıda hedefi
+    # gösterebilir. Birim testleri B84-B88.
+    # ⚠ D1 açıkken A1/KAPANMA ölçeği DEVRE DIŞI (v_dikey hiç kullanılmaz).
+    # AVCI_IBVS_SAF3B=1 → açık.
+    TERM_SAF3B = _env_f("AVCI_IBVS_SAF3B", 0.0) >= 0.5
     KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
@@ -975,21 +1011,41 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # ⚠ Dikey bütçe kısıtı da AYNI ölçeği kullanmalı — yoksa yatayı,
         # artık var olmayan bir dikey talep yüzünden kısar (yani boşuna
         # frene basar). İki yer tek kavram.
-        v_dikey = v_los
-        # A1 (bkz. Cfg.TERM_TAM_HIZ): açıkken kapanma ölçeği ATLANIR,
-        # v_dikey = v_los kalır — dikey komut ~10 kat büyür.
-        if cfg.KAPANMA and kapanma is not None and not cfg.TERM_TAM_HIZ:
-            v_dikey = clamp(kapanma, cfg.KAPANMA_MIN, max(cfg.KAPANMA_MIN, v_los))
-        t_ = abs(math.tan(nisan_elev))
-        if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:
-            v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
-            vx_ned = v_los * math.cos(hiz_yonu)
-            vy_ned = v_los * math.sin(hiz_yonu)
-        vz_nisan = -v_dikey * math.tan(nisan_elev)
+        if cfg.TERM_SAF3B:
+            # ── D1 · SAF TAKİP 3B (bkz. Cfg.TERM_SAF3B) ──
+            # Yatayın matematiği aynen dikeye: hız vektörünün YÖNÜ hedefe
+            # döner, BÜYÜKLÜĞÜ v_los kalır. |vz| ≤ v_los yapısal olarak
+            # garanti (sin ≤ 1) — dikey bütçe kısıtına gerek YOK, komut
+            # kırpılmaz, vektör her açıda hedefi gösterebilir.
+            v_dikey = v_los                      # yalnız tanı sütunu için
+            _ce = math.cos(nisan_elev)
+            vz_nisan = -v_los * math.sin(nisan_elev)
+            vx_ned = v_los * _ce * math.cos(hiz_yonu)
+            vy_ned = v_los * _ce * math.sin(hiz_yonu)
+        else:
+            v_dikey = v_los
+            # A1 (bkz. Cfg.TERM_TAM_HIZ): açıkken kapanma ölçeği ATLANIR,
+            # v_dikey = v_los kalır — dikey komut ~10 kat büyür.
+            if cfg.KAPANMA and kapanma is not None and not cfg.TERM_TAM_HIZ:
+                v_dikey = clamp(kapanma, cfg.KAPANMA_MIN,
+                                max(cfg.KAPANMA_MIN, v_los))
+            t_ = abs(math.tan(nisan_elev))
+            if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:
+                v_los = max(cfg.V_TERM_MIN, cfg.VZ_MAX_TERM / t_)
+                vx_ned = v_los * math.cos(hiz_yonu)
+                vy_ned = v_los * math.sin(hiz_yonu)
+            vz_nisan = -v_dikey * math.tan(nisan_elev)
         # TÜREV SÖNÜMLEMESİ: aracın kendi dikey hızı nişanın ötesine geçtiyse
         # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
         vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
                    -cfg.VZ_MAX_TERM, cfg.VZ_MAX_TERM)
+        if cfg.TERM_SAF3B:
+            # D1: sönümleme ve tavan vz'yi değiştirdiyse YATAY yeniden kurulur
+            # ki |v| = v_los KORUNSUN. Yatayın kuralı buydu: yön değişir,
+            # büyüklük sabit. Dikey tavan bağlarsa artan bütçe yataya döner.
+            _yat = math.sqrt(max(v_los * v_los - vz * vz, 0.0))
+            vx_ned = _yat * math.cos(hiz_yonu)
+            vy_ned = _yat * math.sin(hiz_yonu)
     else:
         # TUTUŞ (değişmedi): hedefi CY_NISAN'da tut
         vz = clamp(cfg.K_VZ * cfg.V_NOM * eps_elev, -cfg.VZ_MAX, cfg.VZ_MAX)

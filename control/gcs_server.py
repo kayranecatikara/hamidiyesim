@@ -751,6 +751,28 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
+    "d1_saf3b": (
+        "TERM_SAF3B", "bool",
+        "⭐⭐ D1 · SAF TAKİP 3B — yatayın matematiği DİKEYE de (KAPALI=taban)",
+        "KULLANICI FİKRİ (2026-08-18): 'yataydaki hizalama iyi şu an; "
+        "yataydaki hizalamanın arkasındaki matematiğin aynısını dikey eksen "
+        "için de kullanamaz mıyız?' → EVET, ve bu yasanın DOĞRUSU. "
+        "YATAY: hız vektörünün YÖNÜ hedefe döner, BÜYÜKLÜĞÜ v_los. "
+        "DİKEY (bozuk): vz = −v_dikey·tan(elev) — ayrı bir çarpan, tan, ve "
+        "yatay bileşen cos(elev) ile küçültülmüyor. "
+        "D1 = yatayın 3B'ye birebir genişlemesi: vz = −v_los·sin(elev), "
+        "yatay = v_los·cos(elev) → |v| = v_los SABİT, vektör tam hedefe bakar. "
+        "ÖLÇÜLEN FARK (hedef 24° yukarıda, v_los 16): bugünkü 0.67 m/s, "
+        "A1 7.12 (ama |v| 17.5'e çıkıyor, hızlanıyor), D1 6.51 (|v| 16.0 SABİT). "
+        "⭐ YAPISAL ÜSTÜNLÜK: |vz| ≤ v_los her zaman (sin ≤ 1). tan ise 70°'de "
+        "44 m/s ister, tavan kırpar, vektör hedefi GÖSTEREMEZ. "
+        "Birim testleri: B84 |v| sabit (fark 0.0000), B85 dikey tavana kadar "
+        "(38.7°) vektör hedefi TAM gösterir — eski yasa 14.6°'de takılıyordu, "
+        "2.6 KAT. B87 seyir fazına dokunmaz. "
+        "⚠ D1 açıkken A1/kapanma ölçeği DEVRE DIŞI — ikisini birlikte açma, "
+        "D1 zaten onun yerine geçiyor. "
+        "✓ Uçuş sırasında ETKİ EDER.",
+        "AVCI_IBVS_SAF3B", True),
     "a1_tam_hiz": (
         "TERM_TAM_HIZ", "bool",
         "⭐ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (KAPALI=taban)",
