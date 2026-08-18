@@ -493,6 +493,33 @@ class Cfg:
     # ⚠ D1 açıkken A1/KAPANMA ölçeği DEVRE DIŞI (v_dikey hiç kullanılmaz).
     # AVCI_IBVS_SAF3B=1 → açık.
     TERM_SAF3B = _env_f("AVCI_IBVS_SAF3B", 0.0) >= 0.5
+
+    # ══════════════════════════════════════════════════════════════════
+    # D2 · TERMİNALDE FREN YOK — giriş hızı KİLİTLENİR
+    # ══════════════════════════════════════════════════════════════════
+    # KÖK NEDEN BULUNDU (2026-08-18, kullanıcının 09:53 uçuşu + 6 koşu):
+    # Terminale girerken v_los seyir değerinden V_TERMINAL'e DÜŞÜYOR ve araç
+    # frene basıyor. Quad frenlemek için BURNUNU KALDIRIR; kamera gövdeye
+    # 25° yukarı vidalı olduğu için toplam bakış 50°'ye çıkıyor ve hedef
+    # kadrajın ALTINDAN çıkıp kayboluyor. Araç kör kalıp tırmanmaya devam
+    # ediyor — kullanıcının "üstünden geçiyoruz" dediği şey bu.
+    #
+    # ÖLÇÜLDÜ (6 koşunun 6'sında da aynı desen, terminal girişi ±2 s):
+    #     fren       medyan 4.1 m/s   (22.6 → 16.0)
+    #     burun      medyan +24.8°    (−15.7° → +7.8°)
+    #     cy         316 → 439        (kadraj 480 — hedef alta düşüyor)
+    #     kamera     25° + 25° = 50° yukarı
+    #
+    # ⚠ SORUN V_TERMINAL'İN DEĞERİ DEĞİL, GEÇİŞİN KENDİSİ. Kullanıcı
+    # V_TERMINAL=16'yı "daha dengeli yaklaşma" için seçmişti ve o karar
+    # geçerli; D2 o değeri değiştirmez, YALNIZ SIÇRAMAYI kaldırır.
+    #
+    # NE YAPAR: terminal mandalı atıldığı anda o andaki v_los KİLİTLENİR ve
+    # terminal boyunca o hız kullanılır. Fren yok → burun kalkmıyor → kamera
+    # düz kalıyor → hedef kadrajda kalıyor.
+    # ⚠ Kilit V_TOPLAM_MAX ile sınırlıdır. Mandal bırakılınca kilit düşer.
+    # AVCI_IBVS_TERM_HIZ_KORU=1 → açık.
+    TERM_HIZ_KORU = _env_f("AVCI_IBVS_TERM_HIZ_KORU", 0.0) >= 0.5
     KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
@@ -867,7 +894,7 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0, v_term_kilit=None):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -918,6 +945,10 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
     kacis_ek = 0.0
     if terminal:
         v_los = cfg.V_TERMINAL                 # hücum: fren yok, sabit hız
+        # D2 (bkz. Cfg.TERM_HIZ_KORU): terminale GİRERKENKİ hız kilitlenir —
+        # sıçrama olmaz, araç frene basmaz, burun kalkmaz, kamera düz kalır.
+        if cfg.TERM_HIZ_KORU and v_term_kilit is not None:
+            v_los = clamp(v_term_kilit, cfg.V_TERM_MIN, cfg.V_TOPLAM_MAX)
     else:
         # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
         # hızı ANINDA artır — integralin 5 saniyesini bekleme.
@@ -1132,6 +1163,8 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     iyaw_onceki = None        # Ö9 sönümlemesi için yaw türevi (bkz. Cfg.SONUM_T)
     yaw_hizi = 0.0            # rad/s; aracın KENDİ dönüş hızı, EMA'lı
     dikey_bekleme = False     # dikey kapı ilanı bir kez basılsın (log kirlenmesin)
+    v_term_kilit = None       # D2: terminale girerkenki v_los (fren olmasın)
+    son_v_los = None          # seyir fazındaki son hız komutu (kilit kaynağı)
     dikey_ofs = None          # m; bbox'tan kurulan dikey ofset (+ = hedef üstte)
 
     def _vuruldu():
@@ -1319,6 +1352,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                            or abs(dikey_ofs) <= cfg.DIKEY_KAPI_M)
                 if _dik_ok:
                     terminal_mandal = True
+                    v_term_kilit = son_v_los      # D2: giriş hızını dondur
                     print(f"[IBVS] ⚡ TERMİNAL HÜCUM (kutu {math.sqrt(bw*bh):.0f}px "
                           f"≥ {cfg.TERMINAL_BOYUT:.0f}"
                           + (f", dikey {dikey_ofs:+.1f} m" if dikey_ofs is not None else "")
@@ -1335,6 +1369,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     and boyut_simdi > 1e-6
                     and cfg.MENZIL_PX_M / boyut_simdi > cfg.TERM_BIRAK_M):
                 terminal_mandal = False
+                v_term_kilit = None       # D2: kilit düşer, seyir yasası döner
                 dikey_bekleme = False     # dikey kapı ilanı yeniden yapılabilsin
                 kor_baslangic = None      # kör hücum penceresi de kapanır
                 print(f"[IBVS] ⚑ terminal mandalı BIRAKILDI "
@@ -1346,7 +1381,9 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                                                        tuple(los_hiz), ipitch,
                                                        float(iris.get("vz", 0.0) or 0.0),
                                                        kapanma, iroll,
-                                                       yaw_hizi)
+                                                       yaw_hizi, v_term_kilit)
+            if not terminal_mandal:
+                son_v_los = tani["v_los"]     # D2 kilidinin kaynağı
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.

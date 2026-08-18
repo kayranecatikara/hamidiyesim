@@ -867,6 +867,62 @@ def main():
             "beklettiği loglardan ölçülebilir")
 
     print("=" * 60)
+    # ══ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (2026-08-18) ══
+    class _D2(ib.Cfg):
+        TERM_HIZ_KORU = True
+
+    # B89: ⭐ kilit varken v_los SIÇRAMAZ (fren yok)
+    _r89 = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
+                    (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
+    _rK = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, C, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
+    kontrol("B89 ⭐ D2: terminale giriş hızı KİLİTLENİR (fren yok)",
+            abs(_r89[5]["v_los"] - 21.0) < 1e-9
+            and abs(_rK[5]["v_los"] - C.V_TERMINAL) < 1e-9,
+            f"giriş 21.0 m/s → D2 {_r89[5]['v_los']:.1f} (sıçrama YOK), "
+            f"taban {_rK[5]['v_los']:.1f} (4.1 m/s fren → burun +24.8° → "
+            "kamera 50° yukarı → hedef kadrajdan çıkıyor)")
+
+    # B90: kilit V_TOPLAM_MAX ve V_TERM_MIN ile SINIRLI
+    _hi = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=99.0)
+    _lo = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=1.0)
+    kontrol("B90 D2 kilidi V_TOPLAM_MAX / V_TERM_MIN ile sınırlı",
+            abs(_hi[5]["v_los"] - C.V_TOPLAM_MAX) < 1e-9
+            and abs(_lo[5]["v_los"] - C.V_TERM_MIN) < 1e-9,
+            f"kilit 99 → {_hi[5]['v_los']:.0f} (tavan {C.V_TOPLAM_MAX:.0f}), "
+            f"kilit 1 → {_lo[5]['v_los']:.0f} (taban {C.V_TERM_MIN:.0f})")
+
+    # B91: kilit YOKKEN (mandal atılmamış) davranış TABANLA aynı
+    _n91 = 0.0
+    for _cyd in (240.0, 301.0, 360.0):
+        for _b in (20, 30, 45):
+            _a = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05, _D2, True,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=None)
+            _k = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05, C, True,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=None)
+            for _i in range(4):
+                _n91 = max(_n91, abs(_a[_i] - _k[_i]))
+    kontrol("B91 D2 kilit YOKKEN taban davranışı (bit bit)",
+            _n91 < 1e-12,
+            f"9 kombinasyonda en büyük fark {_n91:.2e} — kilit yalnız mandal "
+            "atıldığında dolar")
+
+    # B92: SEYİR fazına DOKUNMAZ + varsayılan KAPALI
+    _n92 = 0.0
+    for _cyd in (240.0, 301.0, 380.0):
+        _a = ib.komut(CX + 30.0, _cyd, 15, 15, 0.0, 12.0, 0.05, _D2, False,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
+        _k = ib.komut(CX + 30.0, _cyd, 15, 15, 0.0, 12.0, 0.05, C, False,
+                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
+        for _i in range(4):
+            _n92 = max(_n92, abs(_a[_i] - _k[_i]))
+    kontrol("B92 D2 SEYİR fazına DOKUNMAZ, varsayılan KAPALI",
+            _n92 < 1e-12 and not C.TERM_HIZ_KORU and _D2.TERM_HIZ_KORU,
+            f"seyirde fark {_n92:.2e}; Cfg.TERM_HIZ_KORU={C.TERM_HIZ_KORU}")
+
+    print("=" * 60)
     # ══ D1 · SAF TAKİP 3B — yatayın matematiği dikeye (2026-08-18) ══
     class _D1(ib.Cfg):
         TERM_SAF3B = True

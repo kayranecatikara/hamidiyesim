@@ -751,6 +751,26 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
+    "d2_hiz_koru": (
+        "TERM_HIZ_KORU", "bool",
+        "⭐⭐⭐ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (KÖK NEDEN)",
+        "KÖK NEDEN BULUNDU (kullanıcının 09:53 uçuşu + 6 koşu, hepsinde aynı): "
+        "terminale girerken v_los seyir değerinden V_TERMINAL'e DÜŞÜYOR ve "
+        "araç FRENE BASIYOR. Quad frenlemek için BURNUNU KALDIRIR; kamera "
+        "gövdeye 25° yukarı vidalı olduğu için toplam bakış 50°'ye çıkıyor, "
+        "hedef kadrajın ALTINDAN çıkıp kayboluyor, araç kör kalıp tırmanmaya "
+        "devam ediyor. Kullanıcının 'üstünden geçiyoruz' dediği şey BU. "
+        "ÖLÇÜLDÜ (6/6 koşu, terminal girişi ±2 s): fren medyan 4.1 m/s "
+        "(22.6 → 16.0), burun medyan +24.8° (−15.7° → +7.8°), "
+        "cy 316 → 439 (kadraj 480 — hedef alta düşüyor). "
+        "⚠ SORUN V_TERMINAL'İN DEĞERİ DEĞİL, GEÇİŞİN KENDİSİ. Senin 16 "
+        "tercihin geçerli kalıyor; D2 o değeri değiştirmez, YALNIZ SIÇRAMAYI "
+        "kaldırır: terminale girerkenki hız kilitlenir. "
+        "Birim testleri: B89 giriş 21.0 → kilit 21.0 (taban 16.0'ya düşüyor), "
+        "B90 kilit V_TOPLAM_MAX/V_TERM_MIN ile sınırlı, B91 kilit yokken "
+        "taban davranışı bit bit, B92 seyir fazına dokunmaz. "
+        "✓ Uçuş sırasında ETKİ EDER (bir sonraki terminal girişinden itibaren).",
+        "AVCI_IBVS_TERM_HIZ_KORU", True),
     "d1_saf3b": (
         "TERM_SAF3B", "bool",
         "⭐⭐ D1 · SAF TAKİP 3B — yatayın matematiği DİKEYE de (KAPALI=taban)",
