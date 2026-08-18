@@ -1100,3 +1100,193 @@ body {
 .kacamak-sonuc .kac-sans { color: #eab308; font-weight: 700; }
 .kac-olcut { font-size: 10px; opacity: .75; margin-left: 8px; }
 .kacamak-gecmis { font-size: 10px; opacity: .65; line-height: 1.5; }
+
+/* ══ AYAR KONSOLU (2026-08-18) ═══════════════════════════════════════════
+   Kullanıcı isteği: sistemdeki tüm katsayılar kayan çubuklarla, her birinin
+   ne işe yaradığı / neyi artırıp azalttığı yazılı olarak. Deney panelinden
+   (🎛 GÜDÜM ÖZELLİKLERİ) ayrı yüzey. */
+
+.ayar-ac-btn {
+    background: linear-gradient(180deg, #1e293b, #0f172a);
+    color: var(--warning-yellow);
+    border: 1px solid #3f4a5c;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .4px;
+    cursor: pointer;
+    margin-left: 10px;
+}
+.ayar-ac-btn:hover { border-color: var(--warning-yellow); color: #fde68a; }
+
+.ayar-katman {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    background: rgba(3, 5, 8, 0.86);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding: 22px;
+}
+.ayar-katman.gizli { display: none; }
+
+.ayar-kutu {
+    width: min(1180px, 100%);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-hightlight);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.ayar-baslik {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-panel-light);
+    flex-wrap: wrap;
+}
+.ayar-baslik-ad {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--warning-yellow);
+    letter-spacing: .5px;
+}
+.ayar-baslik-not { font-size: 10.5px; color: var(--text-dim); flex: 1; min-width: 200px; }
+.ayar-baslik-not b { color: #fca5a5; }
+.ayar-ara {
+    width: 230px;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-main);
+    background: #0b1220;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+}
+.ayar-ara:focus { outline: none; border-color: var(--accent-blue); }
+.ayar-sifirla-btn { font-size: 10.5px; padding: 4px 8px; color: #fca5a5; }
+.ayar-kapat-btn { font-size: 11px; padding: 4px 10px; }
+
+.ayar-govde { flex: 1; overflow-y: auto; padding: 12px 14px 20px; }
+
+.ayar-grup { margin-bottom: 18px; }
+.ayar-grup-bas {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-main);
+    padding: 6px 8px;
+    background: rgba(59, 130, 246, 0.09);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 3px;
+}
+.ayar-grup-not {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    line-height: 1.45;
+    padding: 5px 8px 8px 11px;
+}
+
+.ayar-satir {
+    display: grid;
+    grid-template-columns: 210px 1fr 118px 34px;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px;
+    border-bottom: 1px solid #1a1f27;
+}
+.ayar-satir:hover { background: rgba(255, 255, 255, 0.022); }
+.ayar-satir.degisti { background: rgba(245, 158, 11, 0.07); }
+
+.ayar-etiket { min-width: 0; }
+.ayar-etiket-ad { font-size: 12px; color: #cdd; line-height: 1.2; }
+.ayar-satir.degisti .ayar-etiket-ad { color: var(--warning-yellow); }
+.ayar-etiket-alan {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-dark);
+    margin-top: 1px;
+}
+
+.ayar-kaydir { width: 100%; accent-color: var(--accent-blue); cursor: pointer; }
+.ayar-satir.degisti .ayar-kaydir { accent-color: var(--warning-yellow); }
+
+.ayar-sag { display: flex; align-items: center; gap: 5px; }
+.ayar-sayi {
+    width: 74px;
+    padding: 3px 5px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-align: right;
+    color: var(--text-main);
+    background: #0b1220;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+.ayar-sayi:focus { outline: none; border-color: var(--accent-blue); }
+.ayar-birim { font-size: 10px; color: var(--text-dim); min-width: 34px; }
+
+.ayar-bool {
+    min-width: 74px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #94a3b8;
+}
+.ayar-bool.acik { border-color: #22c55e; background: #22c55e; color: #052e16; }
+
+.ayar-bilgi-btn {
+    width: 26px; height: 24px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: #0b1220;
+    color: var(--text-dim);
+}
+.ayar-bilgi-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+.ayar-bilgi {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    padding: 8px 10px;
+    margin-top: 5px;
+    background: rgba(255, 255, 255, 0.025);
+    border-left: 2px solid var(--border-hightlight);
+    border-radius: 3px;
+}
+.ayar-bilgi.gizli { display: none; }
+.ayar-bilgi p { margin: 0 0 5px; }
+.ayar-bilgi .yon { display: block; margin-top: 4px; }
+.ayar-bilgi .yon.artar { color: #86efac; }
+.ayar-bilgi .yon.azalir { color: #fca5a5; }
+.ayar-bilgi .vars { color: var(--text-dark); font-family: var(--font-mono); font-size: 10px; }
+.ayar-suz {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10.5px; color: var(--text-dim); cursor: pointer;
+    user-select: none; white-space: nowrap;
+}
+.ayar-suz input { cursor: pointer; accent-color: var(--warning-yellow); }
+.ayar-rozet {
+    min-width: 18px; text-align: center;
+    padding: 1px 5px; border-radius: 9px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    background: #1f2937; color: var(--text-dim);
+}
+.ayar-rozet.dolu { background: var(--warning-yellow); color: #1c1917; }
+.ayar-kopyala-btn { font-size: 10.5px; padding: 4px 8px; color: #93c5fd; }

@@ -29,6 +29,11 @@
                 <!-- Uçuş log paneli: her GPS uçuşu bitince otomatik tazelenir -->
                 <a href="/panel" target="_blank" class="log-panel-link"
                    title="Uçuş loglarının görsel analizi (her uçuş sonrası güncellenir)">📊 UÇUŞ LOGLARI</a>
+                <!-- AYAR KONSOLU — sistemdeki TÜM katsayılar (2026-08-18).
+                     Deney panelinden (🎛 GÜDÜM ÖZELLİKLERİ) AYRI yüzey:
+                     orası karar defteri, burası keşif/tarama konsolu. -->
+                <button id="ayar-ac" class="ayar-ac-btn"
+                        title="Sistemdeki tüm parametreleri kayan çubuklarla ayarla">🎚 AYAR KONSOLU</button>
             </div>
         </header>
 
@@ -334,6 +339,38 @@
         </footer>
     </div>
 
-    <script src="script.js?v=10"></script>
+    <!-- ═══ AYAR KONSOLU KATMANI ═══════════════════════════════════════
+         Sistemdeki tüm ayarlanabilir büyüklükler, gruplanmış kayan
+         çubuklarla. Her satır: ne yaptığı + ARTARSA ne olur + AZALIRSA ne
+         olur. Liste sunucudan gelir (/api/ayarlar) — control/ayar_konsolu.py
+         AYARLAR listesine satır eklemek yeterli, burası kendiliğinden büyür.
+         Değişiklikler CANLI: Cfg bir sınıf, güdüm her karede okuyor. -->
+    <div id="ayar-katman" class="ayar-katman gizli">
+        <div class="ayar-kutu">
+            <div class="ayar-baslik">
+                <span class="ayar-baslik-ad">🎚 AYAR KONSOLU</span>
+                <span class="ayar-baslik-not">
+                    değişiklikler CANLI — sim yeniden başlatmak gerekmez ·
+                    <b>karar defteri değildir</b>, keşif içindir
+                </span>
+                <input id="ayar-ara" class="ayar-ara" type="search"
+                       placeholder="ara: yaw, dikey, terminal, VZ_MAX…">
+                <label class="ayar-suz" title="Yalnız açılış değerinden farklı olanları göster">
+                    <input id="ayar-suz-degisen" type="checkbox"> sadece değişenler
+                    <span id="ayar-degisen-sayi" class="ayar-rozet">0</span>
+                </label>
+                <button id="ayar-kopyala" class="t-btn ayar-kopyala-btn"
+                        title="Değiştirdiklerini panoya kopyala — bana yapıştırıp ne denediğini anlatabilirsin">📋 DEĞİŞENLERİ KOPYALA</button>
+                <button id="ayar-sifirla" class="t-btn ayar-sifirla-btn"
+                        title="Tüm güdüm ayarlarını açılış değerlerine döndür (araç parametreleri hariç)">↺ VARSAYILANA DÖN</button>
+                <button id="ayar-kapat" class="t-btn ayar-kapat-btn">✕ KAPAT</button>
+            </div>
+            <div id="ayar-govde" class="ayar-govde">
+                <div class="ozellik-bos">yükleniyor…</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js?v=11"></script>
 </body>
 </html>

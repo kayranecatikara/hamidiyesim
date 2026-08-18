@@ -1343,3 +1343,267 @@ function kacDurumYenile() {
     kacDurumYenile();
     setInterval(kacDurumYenile, 2000);
 })();
+
+/* ══ AYAR KONSOLU (2026-08-18) ═══════════════════════════════════════════
+   Kullanıcı isteği: "arayüze bir buton koy, bu butona basınca bir panel
+   açılsın ve bu panelden sistemdeki tüm tune edilmesi gereken şeylerin
+   parametrelerin katsayılarını slidebarlardan ayarlayabileyim... her şeyin
+   de ne işe yaradığı, neyi kontrol ettiği, neyi artırıp neyi azalttığı
+   bilinsin."
+
+   Liste sunucudan gelir (/api/ayarlar); control/ayar_konsolu.py AYARLAR
+   listesine satır eklemek yeterli — burası kendiliğinden büyür.
+
+   ⚠ Kaydırırken HER piksel için istek atmıyoruz: 'input' olayında yalnız
+   ekran güncellenir, sunucuya 'change' olayında (fare bırakılınca) yazılır.
+   Sayı kutusuna elle yazarken de Enter/blur beklenir. Sebep: güdüm 20 Hz
+   koşuyor, saniyede 60 POST paneli de güdümü de boğar. */
+
+let _ayarVeri = null;
+let _ayarAcikBilgi = new Set();
+
+function ayarKatman() { return document.getElementById('ayar-katman'); }
+
+function ayarAc() {
+    ayarKatman().classList.remove('gizli');
+    ayarYenile();
+}
+function ayarKapat() { ayarKatman().classList.add('gizli'); }
+
+function ayarYenile() {
+    fetch('/api/ayarlar')
+        .then(r => r.json())
+        .then(d => { _ayarVeri = d; ayarCiz(); })
+        .catch(() => {
+            document.getElementById('ayar-govde').innerHTML =
+                '<div class="ozellik-bos">sunucuya ulaşılamadı</div>';
+        });
+}
+
+function ayarCiz() {
+    const govde = document.getElementById('ayar-govde');
+    if (!_ayarVeri) return;
+    const ara = (document.getElementById('ayar-ara').value || '')
+        .trim().toLowerCase();
+    const yalnizDegisen = document.getElementById('ayar-suz-degisen').checked;
+    govde.innerHTML = '';
+    let gosterilen = 0;
+
+    // "kaç tanesini oynattım" rozeti — tuning sırasında en çok gereken bilgi
+    const degisenSayi = _ayarVeri.ayarlar.filter(a => a.degisti).length;
+    const rozet = document.getElementById('ayar-degisen-sayi');
+    rozet.textContent = degisenSayi;
+    rozet.classList.toggle('dolu', degisenSayi > 0);
+
+    _ayarVeri.gruplar.forEach(g => {
+        const uyan = _ayarVeri.ayarlar.filter(a => a.grup === g.kod &&
+            (!yalnizDegisen || a.degisti) &&
+            (!ara || (a.etiket + ' ' + a.alan + ' ' + (a.ne_yapar || ''))
+                .toLowerCase().includes(ara)));
+        if (!uyan.length) return;
+
+        const kutu = document.createElement('div');
+        kutu.className = 'ayar-grup';
+        const bas = document.createElement('div');
+        bas.className = 'ayar-grup-bas';
+        bas.textContent = g.baslik;
+        kutu.appendChild(bas);
+        if (g.aciklama) {
+            const not = document.createElement('div');
+            not.className = 'ayar-grup-not';
+            not.textContent = g.aciklama;
+            kutu.appendChild(not);
+        }
+        uyan.forEach(a => { kutu.appendChild(ayarSatir(a)); gosterilen++; });
+        govde.appendChild(kutu);
+    });
+
+    if (!gosterilen) {
+        govde.innerHTML = '<div class="ozellik-bos">' +
+            (yalnizDegisen && !degisenSayi
+                ? 'hiçbir ayar açılış değerinden farklı değil'
+                : 'eşleşen ayar yok') + '</div>';
+    }
+}
+
+function ayarSatir(a) {
+    const s = document.createElement('div');
+    s.className = 'ayar-satir' + (a.degisti ? ' degisti' : '');
+
+    // ── sol: etiket + alan adı ──
+    const et = document.createElement('div');
+    et.className = 'ayar-etiket';
+    const ad = document.createElement('div');
+    ad.className = 'ayar-etiket-ad';
+    ad.textContent = a.etiket;
+    const alan = document.createElement('div');
+    alan.className = 'ayar-etiket-alan';
+    alan.textContent = a.alan + (a.tip === 'param' ? '  (ARAÇ)' : '');
+    et.appendChild(ad); et.appendChild(alan);
+    s.appendChild(et);
+
+    if (a.tip === 'bool') {
+        // orta sütun boş kalsın ki ızgara bozulmasın
+        s.appendChild(document.createElement('div'));
+        const sag = document.createElement('div');
+        sag.className = 'ayar-sag';
+        const b = document.createElement('button');
+        b.className = 'ayar-bool' + (a.deger ? ' acik' : '');
+        b.textContent = a.deger ? 'AÇIK' : 'KAPALI';
+        b.addEventListener('click', () => ayarYaz(a.ad, !a.deger));
+        sag.appendChild(b);
+        s.appendChild(sag);
+    } else if (a.deger === null) {
+        const bos = document.createElement('div');
+        bos.className = 'ayar-etiket-alan';
+        bos.textContent = 'araç henüz cevap vermedi';
+        s.appendChild(bos);
+        s.appendChild(document.createElement('div'));
+    } else {
+        // ── orta: kayan çubuk ──
+        const r = document.createElement('input');
+        r.type = 'range'; r.className = 'ayar-kaydir';
+        r.min = a.min; r.max = a.maks; r.step = a.adim; r.value = a.deger;
+        // ── sağ: sayı kutusu + birim ──
+        const sag = document.createElement('div');
+        sag.className = 'ayar-sag';
+        const n = document.createElement('input');
+        n.type = 'number'; n.className = 'ayar-sayi';
+        n.min = a.min; n.max = a.maks; n.step = a.adim; n.value = a.deger;
+        const br = document.createElement('span');
+        br.className = 'ayar-birim';
+        br.textContent = a.birim || '';
+        sag.appendChild(n); sag.appendChild(br);
+
+        // sürüklerken YALNIZ ekran; sunucuya bırakınca yazılır
+        r.addEventListener('input', () => { n.value = r.value; });
+        r.addEventListener('change', () => ayarYaz(a.ad, parseFloat(r.value)));
+        n.addEventListener('change', () => {
+            r.value = n.value;
+            ayarYaz(a.ad, parseFloat(n.value));
+        });
+        s.appendChild(r);
+        s.appendChild(sag);
+    }
+
+    // ── bilgi düğmesi ──
+    const ib = document.createElement('button');
+    ib.className = 'ayar-bilgi-btn';
+    ib.textContent = '?';
+    ib.title = 'ne işe yarar / neyi artırır-azaltır';
+    s.appendChild(ib);
+
+    const bilgi = document.createElement('div');
+    bilgi.className = 'ayar-bilgi' +
+        (_ayarAcikBilgi.has(a.ad) ? '' : ' gizli');
+    const p1 = document.createElement('p');
+    p1.textContent = a.ne_yapar || '';
+    bilgi.appendChild(p1);
+    if (a.artarsa) {
+        const y = document.createElement('span');
+        y.className = 'yon artar';
+        y.textContent = (a.tip === 'bool' ? '▲ AÇIK: ' : '▲ ARTARSA: ')
+            + a.artarsa;
+        bilgi.appendChild(y);
+    }
+    if (a.azalirsa) {
+        const y = document.createElement('span');
+        y.className = 'yon azalir';
+        y.textContent = (a.tip === 'bool' ? '▼ KAPALI: ' : '▼ AZALIRSA: ')
+            + a.azalirsa;
+        bilgi.appendChild(y);
+    }
+    if (a.varsayilan !== null && a.varsayilan !== undefined) {
+        const v = document.createElement('span');
+        v.className = 'yon vars';
+        v.textContent = 'açılış değeri: ' + a.varsayilan +
+            (a.tip !== 'bool' ? `   ·   aralık ${a.min} … ${a.maks}` : '');
+        bilgi.appendChild(v);
+    }
+    ib.addEventListener('click', () => {
+        const kapali = bilgi.classList.toggle('gizli');
+        if (kapali) _ayarAcikBilgi.delete(a.ad);
+        else _ayarAcikBilgi.add(a.ad);
+    });
+    s.appendChild(bilgi);
+    return s;
+}
+
+function ayarYaz(ad, deger) {
+    fetch('/api/ayarlar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ad: ad, deger: deger })
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'error') { alert('Ayar yazılamadı: ' + d.message); }
+            if (d.ayarlar) { _ayarVeri.ayarlar = d.ayarlar; ayarCiz(); }
+        })
+        .catch(() => alert('Sunucuya ulaşılamadı'));
+}
+
+function ayarSifirla() {
+    if (!confirm('Tüm güdüm ayarları açılış değerlerine dönecek.\n' +
+        'ARAÇ parametreleri (ANGLE_MAX, PSC_JERK_XY…) etkilenmez.\nDevam?')) return;
+    fetch('/api/ayarlar/sifirla', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grup: null })
+    })
+        .then(r => r.json())
+        .then(d => { if (d.ayarlar) { _ayarVeri.ayarlar = d.ayarlar; ayarCiz(); } });
+}
+
+/* Değiştirdiklerini panoya al — kullanıcının "belki ben bir şeyler
+   çıkartırım" akışı için: ne denediğini bana yapıştırabilsin, ve aynı
+   ayarı sonra tek komutla geri getirebilsin. */
+function ayarKopyala() {
+    if (!_ayarVeri) return;
+    const d = _ayarVeri.ayarlar.filter(a => a.degisti);
+    if (!d.length) { alert('Hiçbir ayar açılış değerinden farklı değil.'); return; }
+    const grupAd = {};
+    _ayarVeri.gruplar.forEach(g => { grupAd[g.kod] = g.baslik; });
+    let t = '# AYAR KONSOLU — değiştirilenler (' +
+        new Date().toLocaleString('tr-TR') + ')\n';
+    t += '# ' + d.length + ' ayar açılış değerinden farklı\n\n';
+    let sonGrup = null;
+    d.forEach(a => {
+        if (a.grup !== sonGrup) { t += '## ' + grupAd[a.grup] + '\n'; sonGrup = a.grup; }
+        t += `${a.alan.padEnd(22)} ${String(a.varsayilan).padStart(8)} -> ` +
+             `${String(a.deger).padStart(8)}   ${a.birim || ''}  (${a.etiket})\n`;
+    });
+    t += '\n# AYNI AYARI GERİ GETİRMEK İÇİN (sim ayaktayken yapıştır):\n';
+    d.forEach(a => {
+        const v = (a.tip === 'bool') ? String(!!a.deger) : a.deger;
+        t += `curl -s -X POST localhost:8000/api/ayarlar -H 'Content-Type: application/json' ` +
+             `-d '{"ad":"${a.ad}","deger":${v}}' >/dev/null\n`;
+    });
+    const bitir = (ok) => alert(ok
+        ? d.length + ' ayar panoya kopyalandı.'
+        : 'Pano kullanılamadı — metin konsola yazıldı (F12 → Console).');
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(() => bitir(true),
+            () => { console.log(t); bitir(false); });
+    } else { console.log(t); bitir(false); }
+}
+
+(function ayarKonsoluBagla() {
+    const ac = document.getElementById('ayar-ac');
+    if (!ac) return;
+    ac.addEventListener('click', ayarAc);
+    document.getElementById('ayar-kapat').addEventListener('click', ayarKapat);
+    document.getElementById('ayar-sifirla').addEventListener('click', ayarSifirla);
+    document.getElementById('ayar-ara').addEventListener('input', ayarCiz);
+    document.getElementById('ayar-suz-degisen').addEventListener('change', ayarCiz);
+    document.getElementById('ayar-kopyala').addEventListener('click', ayarKopyala);
+    // katmanın boşluğuna tıklayınca kapan (kutunun içine tıklayınca DEĞİL)
+    ayarKatman().addEventListener('click', (e) => {
+        if (e.target === ayarKatman()) ayarKapat();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !ayarKatman().classList.contains('gizli')) {
+            ayarKapat();
+        }
+    });
+})();

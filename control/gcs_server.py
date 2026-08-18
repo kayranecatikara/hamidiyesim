@@ -743,6 +743,9 @@ def _hedef_cfg(alan):
     """
     if ":" in alan:
         modul, ad = alan.split(":", 1)
+        if modul == "sup":
+            from control.guidance import supervisor as _sup
+            return _sup.SupCfg, ad
         raise KeyError(f"bilinmeyen modül: {modul}")
     return _ibvs_mod.Cfg, alan
 
@@ -888,6 +891,138 @@ def set_gudum_ozellik(cmd: OzellikCmd):
     print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
           f"({_cfg_sinif.__name__}.{_cfg_alan} = {yeni})")
     return {"status": "success", "ozellikler": _ozellik_durumu()}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# AYAR KONSOLU — sistemdeki TÜM katsayılar tek panelde (2026-08-18)
+# ═══════════════════════════════════════════════════════════════════════
+# Kullanıcı isteği: "arayüze bir buton koy, bu butona basınca bir panel
+# açılsın ve bu panelden sistemdeki tüm tune edilmesi gereken şeylerin
+# parametrelerin katsayılarını slidebarlardan ayarlayabileyim... her şeyin
+# de ne işe yaradığı, neyi kontrol ettiği, neyi artırıp neyi azalttığı
+# bilinsin."
+#
+# ⚠ DENEY PANELİ (_OZELLIKLER) İLE AYRI YÜZEY. Orası §0.2 gereği aynı anda
+# tek özellik taşır ve KARAR DEFTERİDİR; burası keşif/tarama konsoludur.
+# Buradan bir değeri oynatmak onu "sisteme girdi" yapmaz.
+#
+# Kayıt: control/ayar_konsolu.py (56 ayar, 8 grup).
+from control import ayar_konsolu as _ayar_mod
+
+# Açılış değerleri — "varsayılana dön" ve panelde "▏varsayılan" işareti için
+# import anında bir kez alınır. Env ile başlatılan değer de budur.
+_AYAR_VARSAYILAN = {}
+
+
+def _ayar_oku(a):
+    """Bir ayarın ŞU ANKİ değerini kaynağından oku."""
+    ad, alan, _et, _g, tip = a[0], a[1], a[2], a[3], a[4]
+    if tip == "param":
+        return _param_cache.get((_IRIS_SYSID, alan))
+    try:
+        _c, _a = _hedef_cfg(alan)
+        return getattr(_c, _a)
+    except Exception:
+        return None
+
+
+def _ayar_varsayilanlari_doldur():
+    for a in _ayar_mod.ayarlar():
+        if a[4] == "param":
+            continue          # araç değeri .parm'dan gelir, geç okunur
+        _AYAR_VARSAYILAN[a[0]] = _ayar_oku(a)
+
+
+_ayar_varsayilanlari_doldur()
+
+
+def _ayar_durumu():
+    out = []
+    for a in _ayar_mod.ayarlar():
+        d = _ayar_mod.sozluk(a)
+        v = _ayar_oku(a)
+        if d["tip"] == "bool":
+            d["deger"] = bool(v) if v is not None else None
+        elif v is None:
+            d["deger"] = None       # araç henüz cevap vermedi
+        else:
+            d["deger"] = float(v)
+        d["varsayilan"] = _AYAR_VARSAYILAN.get(d["ad"])
+        d["degisti"] = (d["varsayilan"] is not None and d["deger"] is not None
+                        and abs(float(d["deger"]) - float(d["varsayilan"]))
+                        > 1e-9)
+        out.append(d)
+    return out
+
+
+class AyarCmd(BaseModel):
+    ad: str
+    deger: float | bool | None = None
+
+
+@app.get("/api/ayarlar")
+def get_ayarlar():
+    return {"gruplar": [{"kod": k, "baslik": b, "aciklama": c}
+                        for k, b, c in _ayar_mod.gruplar()],
+            "ayarlar": _ayar_durumu()}
+
+
+@app.post("/api/ayarlar")
+def set_ayar(cmd: AyarCmd):
+    a = _ayar_mod.bul(cmd.ad)
+    if a is None:
+        return {"status": "error", "message": f"Bilinmeyen ayar: {cmd.ad}"}
+    ad, alan, etiket, _grup, tip, _br, mn, mx, _ad2 = a[:9]
+    if tip == "bool":
+        yeni = bool(cmd.deger)
+    else:
+        try:
+            yeni = float(cmd.deger)
+        except (TypeError, ValueError):
+            return {"status": "error", "message": "sayısal değer bekleniyor"}
+        # Kayan çubuk sınırlarına KIRP — elle girilen uçuk değer aracı
+        # devirmesin (§9: "test bitince araçları havada kontrolsüz bırakma").
+        if mn is not None and mx is not None:
+            kirpik = max(float(mn), min(float(mx), yeni))
+            if abs(kirpik - yeni) > 1e-12:
+                print(f"[AYAR] {etiket}: {yeni} → {kirpik} (sınıra kırpıldı)")
+            yeni = kirpik
+    if tip == "param":
+        ok, hata = _arac_param_yaz(alan, yeni)
+        if not ok:
+            return {"status": "error", "message": f"{alan} yazılamadı: {hata}",
+                    "ayarlar": _ayar_durumu()}
+        print(f"[AYAR] ARAÇ {alan} = {yeni}  ({etiket})")
+        return {"status": "success", "ayarlar": _ayar_durumu()}
+    _c, _a = _hedef_cfg(alan)
+    eski = getattr(_c, _a)
+    setattr(_c, _a, yeni)
+    print(f"[AYAR] {_c.__name__}.{_a}: {eski} → {yeni}  ({etiket})")
+    return {"status": "success", "ayarlar": _ayar_durumu()}
+
+
+class AyarSifirlaCmd(BaseModel):
+    grup: str | None = None       # None = hepsi
+
+
+@app.post("/api/ayarlar/sifirla")
+def sifirla_ayarlar(cmd: AyarSifirlaCmd):
+    n = 0
+    for a in _ayar_mod.ayarlar():
+        if cmd.grup and a[3] != cmd.grup:
+            continue
+        if a[4] == "param":
+            continue              # araç parametresi elle geri alınır
+        v = _AYAR_VARSAYILAN.get(a[0])
+        if v is None:
+            continue
+        _c, _a = _hedef_cfg(a[1])
+        if getattr(_c, _a) != v:
+            setattr(_c, _a, v)
+            n += 1
+    print(f"[AYAR] varsayılana dönüldü — {n} alan"
+          + (f" (grup {cmd.grup})" if cmd.grup else " (hepsi)"))
+    return {"status": "success", "geri_alinan": n, "ayarlar": _ayar_durumu()}
 
 
 # ═══════════════════════════════════════════════════════════════════════
