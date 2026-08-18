@@ -1432,8 +1432,19 @@ def _hasar_izleyici():
         time.sleep(0.2)
 
 
+# ── KAYIT ÖRNEKLEME ARALIĞI ────────────────────────────────────────────
+# Kullanıcı kuralı (2026-08-18): "saniyede bir foto çekiyoruz ya o az,
+# yarım saniyede bir kare çekip analizleri öyle yap."
+# NEDEN: terminal hücumu ~2 s sürüyor ve kapanma 5-20 m/s. 1 Hz'te temas
+# öncesi yalnız 2 kare oluyor; "hedef kadrajdan ne zaman çıktı" sorusu
+# cevaplanamıyor. 0.5 s bunu ikiye katlıyor (§5.3 örnekleme hızı kuralı).
+# ⚠ VİDEO: 0.5 s kare aralığında `ffmpeg -framerate 5` = 2.5× hızlandırma
+# (1 Hz'te 5× idi). Gerçek zamanlı izlemek için -framerate 2 kullan.
+_KAYIT_ARALIK_S = float(os.environ.get("AVCI_KAYIT_ARALIK", "0.5"))
+
+
 def _kayit_dongusu():
-    """Saniyede 1: kamera karesi + tam durum satırı. Kayıt durana dek sürer."""
+    """Her _KAYIT_ARALIK_S: kamera karesi + tam durum satırı."""
     import csv as _csv
     d = _kayit["dizin"]
     kare_dizin = os.path.join(d, "frames")
@@ -1464,7 +1475,7 @@ def _kayit_dongusu():
             m_ger = None
         w.writerow({
             "kare": n, "t": round(dongu_bas, 2),
-            "gecen_s": round(dongu_bas - t0, 1),
+            "gecen_s": round(dongu_bas - t0, 2),
             "gudum_modu": _guidance_mode,
             "faz": _supervisor_mod.status.get("faz"),
             "mesafe_telem": round(math.sqrt(
@@ -1488,7 +1499,7 @@ def _kayit_dongusu():
         })
         f.flush()
         _kayit["kare"] = n
-        kalan = 1.0 - (time.time() - dongu_bas)
+        kalan = _KAYIT_ARALIK_S - (time.time() - dongu_bas)
         if kalan > 0:
             time.sleep(kalan)
     f.close()

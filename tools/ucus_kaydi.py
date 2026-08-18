@@ -12,10 +12,10 @@ Kullanım:
     python3 tools/ucus_kaydi.py <cikti_dizini> <sure_s>
 
 Çıktı:
-    <dir>/frames/f0001.jpg, f0002.jpg, ...   (kare numarası = saniye)
+    <dir>/frames/f0001.jpg, f0002.jpg, ...   (kare aralığı 0.5 s)
     <dir>/meta.csv                            (kare ↔ telemetri eşleşmesi)
 
-Video üretmek için (5 fps ≈ 5× hızlandırılmış):
+Video üretmek için (0.5 s kare → 5 fps ≈ 2.5× hızlandırılmış):
     ffmpeg -framerate 5 -i <dir>/frames/f%04d.jpg -c:v libx264 \
            -pix_fmt yuv420p ucus.mp4
 """
@@ -83,6 +83,8 @@ def main():
         raise SystemExit(1)
     cikti = sys.argv[1]
     sure = float(sys.argv[2])
+    # Kullanıcı kuralı (2026-08-18): kare aralığı 1.0 → 0.5 s.
+    aralik = float(os.environ.get("AVCI_KAYIT_ARALIK", "0.5"))
     os.makedirs(os.path.join(cikti, "frames"), exist_ok=True)
 
     threading.Thread(target=akis_okuyucu, daemon=True).start()
@@ -132,7 +134,7 @@ def main():
     t0 = time.time()
     n = 0
     while time.time() - t0 < sure:
-        hedef_t = t0 + n * 1.0
+        hedef_t = t0 + n * aralik
         bekle = hedef_t - time.time()
         if bekle > 0:
             time.sleep(bekle)

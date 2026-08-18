@@ -989,6 +989,37 @@ def main():
             _n92 < 1e-12 and not C.TERM_HIZ_KORU and _D2.TERM_HIZ_KORU,
             f"seyirde fark {_n92:.2e}; Cfg.TERM_HIZ_KORU={C.TERM_HIZ_KORU}")
 
+    # B97: ⭐ YAPISAL GARANTİ — SEYİR fazı D2'den ETKİLENEMEZ (§5.10)
+    # NEDEN: kampanya H blok C'de (circle_l) deney kolu kontrolden kötü
+    # çıktı (en yakın 10.4/12.9 m vs 4.7/2.8 m). Ama mekanizma kapısı
+    # (§5.1) o koşularda terminal karesi 0 ve 23 gösterdi — yani D2 uçuşun
+    # %0-0.5'inde aktifti. Fark D2'den GELEMEZ; bunu ölçümle değil
+    # MATEMATİKSEL OLARAK kanıtlıyoruz: TERM_HIZ_KORU yalnız `if terminal:`
+    # dalında okunur (bbox_ibvs.py:979), dolayısıyla terminal=False iken
+    # komut() çıktısı bit bit aynıdır — kilit DOLU olsa bile.
+    _n97 = 0.0
+    _k97 = 0
+    for _cxd in (CX - 60.0, CX, CX + 60.0):
+        for _cyd in (240.0, 301.0, 380.0):
+            for _b in (10, 25, 45):
+                for _rl in (0.0, 0.4):
+                    for _kil in (None, 21.0, 99.0):
+                        _a = ib.komut(_cxd, _cyd, _b, _b, 0.3, 12.0, 0.05,
+                                      _D2, False, (0.02, 0.01), 0.1, 1.0,
+                                      0.9, _rl, v_term_kilit=_kil)
+                        _k = ib.komut(_cxd, _cyd, _b, _b, 0.3, 12.0, 0.05,
+                                      C, False, (0.02, 0.01), 0.1, 1.0,
+                                      0.9, _rl, v_term_kilit=_kil)
+                        _k97 += 1
+                        for _i in range(4):
+                            _n97 = max(_n97, abs(_a[_i] - _k[_i]))
+    kontrol("B97 ⭐ YAPISAL: seyirde D2 komutu DEĞİŞTİREMEZ (bit bit)",
+            _n97 < 1e-12,
+            f"{_k97} girdi kombinasyonunda (cx/cy/boyut/roll/kilit) en büyük "
+            f"fark {_n97:.2e} — TERM_HIZ_KORU yalnız `if terminal:` içinde "
+            "okunur; terminale girilmeyen senaryoda (circle) uçuş yolu "
+            "DEĞİŞEMEZ, oradaki fark koşu değişkenliğidir")
+
     print("=" * 60)
     # ══ D1 · SAF TAKİP 3B — yatayın matematiği dikeye (2026-08-18) ══
     class _D1(ib.Cfg):
