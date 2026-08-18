@@ -371,6 +371,81 @@ AYARLAR = [
      "aynı (B76)."),
 
     # ═════════════════════════════════════════════════════════════════════
+    ("G0", None, "⭐ TEK FAZ — terminal fazını tamamen kaldır", None,
+     "grup", None, None, None, None,
+     "KULLANICI FİKRİ (2026-08-18): 'terminal fazı diye bir şey neden var ki? "
+     "Sistem iki fazdan oluşsa: GPS ve görsel. Görsel güdümün amacı her "
+     "saniye mesafeyi kapatıp hedefi kadrajda ortalamak olmalı. Kapata "
+     "kapata en sonunda çarpar zaten.' — Terminal mandalı atıldığı anda "
+     "DOKUZ şey birden değişiyor ve ölçülen bütün bitiriş sorunları oradan "
+     "çıkıyor. AÇIKKEN terminal dalı ÖLÜ KOD olur (birim testi B98: 14 "
+     "terminal ayarı saçma değerlere çekildi, komut farkı 0.00e+00).",
+     None, None),
+
+    ("TEK_FAZ", "TEK_FAZ", "⭐ TEK FAZ AÇIK", "G0", "bool",
+     None, None, None, None,
+     "Terminal mandalı hiç atılmaz; görsel güdüm baştan sona TEK yasadır: "
+     "yatayda hedefi ortala, dikeyde hedefi ortala (aynı matematik), "
+     "mesafeyi kapat. Dikey kapı da anlamsızlaştığı için devre dışı kalır.",
+     "AÇIK = tek yasa. Dokuz süreksizlik sıfıra iner; roll telafisi her "
+     "karede olur (seyir açık / terminal kapalı tutarsızlığı biter); "
+     "'6.4 m'de park et' ve 'ufkun 5° yukarısında dur' ofsetleri kalkar.",
+     "KAPALI = bugünkü iki parçalı görsel faz (seyir + terminal)."),
+
+    ("V_TEK", "V_TEK", "Tek faz hız tavanı", "G0", "sayi", "m/s",
+     8.0, 30.0, 0.5,
+     "Tek fazda hız burada oturur (PI hep 'kapat' dediği için tavana "
+     "dayanır). Hedef 15.1 m/s uçuyor → kapanma = V_TEK − 15.1.",
+     "Kapanma hızlanır, temas daha erken olur. ⚠ Dikey kanala oturma "
+     "süresi azalır: D2 ölçümünde hızlanınca 3 m içinde |dikey| "
+     "0.21 → 1.06 m olmuştu.",
+     "Kapanma yavaşlar; dikey daha iyi oturur ama hedefle daha uzun süre "
+     "yan yana uçulur. 15.1'in altına inersen hiç yaklaşamazsın."),
+
+    ("TEK_BOYUT_REF", "TEK_BOYUT_REF", "Tek faz denge kutusu", "G0", "sayi",
+     "px", 30.0, 400.0, 5.0,
+     "PI'nın 'ulaşınca dur' kutusu. R = 160/boyut → 160 px ≈ 1.0 m, yani "
+     "TEMAS. Taban sistemde bu 25 px (6.4 m) olduğu için araç orada PARK "
+     "ediyordu; terminal fazı tam da bunu ezmek için vardı.",
+     "Daha büyük = daha yakında dur = hep kapat (istenen).",
+     "Küçültürsen park davranışı geri gelir — 160/değer metrede durur."),
+
+    ("TEK_K_ELEV", "TEK_K_ELEV", "Dikey saf takip kazancı", "G0", "sayi", "",
+     0.0, 2.5, 0.05,
+     "Dikeyin yatayla AYNI matematiği: hız vektörünün YÖNÜ hedefe döner, "
+     "BÜYÜKLÜĞÜ korunur. 1.0 = saf takip (yataydaki K_YAW da 1.0).",
+     "Dikey hataya daha sert tepki; 1'in üstü aşım ve salınım üretir.",
+     "Dikeyde tembelleşir; 0 = dikey komut hiç verilmez."),
+
+    ("TEK_K_VZ_D", "TEK_K_VZ_D", "Dikey sönümleme (tek faz)", "G0", "sayi",
+     "", 0.0, 3.0, 0.05,
+     "Türev sönümlemesi: aracın KENDİ dikey hızı nişanın ötesine geçtiyse "
+     "komut geri çekilir. Terminalin K_VZ_D'sini ödünç ALMAZ — kendi "
+     "kazancı (§5.12: iki özellik aynı alanı paylaşmasın).",
+     "Aşım azalır, hedefin üstünden geçme biter. Çok artarsa gürültüyü "
+     "büyütür ve vz tavana çarpar.",
+     "0 = sönümleme yok; dikey salınabilir."),
+
+    ("TEK_YAVASLA", "TEK_YAVASLA", "Kaçıracaksan YAVAŞLA", "G0", "bool",
+     None, None, None, None,
+     "⚠ SAF TAKİBİN SESSİZ DELİĞİNİ KAPATIR. Vektörün eğilebileceği en dik "
+     "açı asin(VZ_MAX/V_TEK) — 8 ve 20 ile yalnız 23.6°. Hedef daha "
+     "dikteyse kesişim imkânsız, komut kırpılır, altından geçilir. Bu, "
+     "tavan yetmediğinde YATAYI kısar.",
+     "AÇIK — kullanıcının kendi fikri ('kaçıracak gibiysek hızı azaltıp "
+     "dengeli yaklaşsak'). Ölçüldü (B106): hedef 30°'de vektör 23.6° yerine "
+     "30.0°'ye (v=16.0), 45°'de 41.8°'ye (v=12.0) ulaşıyor. Hızı ASLA "
+     "artırmaz (B107), 23.6° altında hiç kısmaz (B108).",
+     "KAPALI = dik hedefte komut kırpılır ve altından/üstünden geçilir."),
+
+    ("TEK_V_MIN", "TEK_V_MIN", "Yavaşlama hız tabanı", "G0", "sayi", "m/s",
+     6.0, 20.0, 0.5,
+     "Yukarıdaki yavaşlamanın inebileceği en düşük hız.",
+     "Dik hedefte az yavaşlar; geometri düzelmez ama hedefi kaçırmazsın.",
+     "Daha çok yavaşlayıp daha dik girebilir. ⚠ 15.1'in altında hedef "
+     "senden uzaklaşır — yalnız geometriyi düzeltmelik kısa süre için."),
+
+    # ═════════════════════════════════════════════════════════════════════
     ("G6", None, "⑥ LEAD — hedefi öne alma", None,
      "grup", None, None, None, None,
      "Hedefin kadrajdaki KAYMA HIZINDAN nereye gideceği kestirilir ve "

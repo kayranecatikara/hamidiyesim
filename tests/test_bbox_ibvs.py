@@ -1333,6 +1333,204 @@ def main():
             "kor_don_deg" not in ib._CSV_ALANLAR,
             f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, kor_don_deg yok")
 
+    print("=" * 60)
+    # ══ TEK FAZ · terminal fazı kaldırıldı (2026-08-18, kullanıcı fikri) ══
+    class _Tek(ib.Cfg):
+        TEK_FAZ = True
+
+    # B98: ⭐⭐ YAPISAL GARANTİ — tek fazda TERMİNAL PARAMETRELERİ OKUNMAZ.
+    # §5.10'un "yapısal garanti" biçimi: ölçmek yerine KANITLAMAK. Terminal
+    # ayarlarının hepsini saçma değerlere çekiyoruz; çıktı DEĞİŞMEZSE o
+    # değerler güdüm yoluna hiç girmiyor demektir.
+    class _TekBozuk(_Tek):
+        V_TERMINAL = 99.0
+        V_TERM_MIN = 77.0
+        VZ_MAX_TERM = 88.0
+        K_VZ_D = 55.0
+        TERMINAL_BOYUT = 1.0      # her kutu "terminal" sayılacak kadar düşük
+        TERMINAL_SURE = 99.0
+        TERM_BIRAK_M = 1.0
+        TERM_ROLL = True
+        TERM_SAF3B = True
+        TERM_YAVASLA = True
+        TERM_HIZ_KORU = True
+        TERM_TAM_HIZ = True
+        KAPANMA_MIN = 66.0
+        DIKEY_KAPI_M = 99.0
+
+    _n98, _enb98 = 0, 0.0
+    for _cxd in (CX - 90.0, CX, CX + 90.0):
+        for _cyd in (200.0, 301.0, 318.0, 420.0):
+            for _b in (8, 20, 45, 90):
+                for _rl in (0.0, 0.35):
+                    for _pt in (-0.35, 0.0, 0.4):
+                        _a = ib.komut(_cxd, _cyd, _b, _b, 0.2, 13.0, 0.05,
+                                      _Tek, False, (0.03, 0.02), _pt, 1.5,
+                                      4.0, _rl, 0.3)
+                        _k = ib.komut(_cxd, _cyd, _b, _b, 0.2, 13.0, 0.05,
+                                      _TekBozuk, False, (0.03, 0.02), _pt,
+                                      1.5, 4.0, _rl, 0.3)
+                        _n98 += 1
+                        for _i in range(4):
+                            _enb98 = max(_enb98, abs(_a[_i] - _k[_i]))
+    kontrol("B98 ⭐⭐ YAPISAL: tek fazda TERMİNAL ayarları güdümü ETKİLEYEMEZ",
+            _enb98 < 1e-12,
+            f"{_n98} kombinasyonda 14 terminal ayarı saçma değerlere çekildi "
+            f"(V_TERMINAL=99, VZ_MAX_TERM=88, K_VZ_D=55, TERM_* hepsi açık…) "
+            f"→ komut farkı {_enb98:.2e}. Terminal dalı ÖLÜ KOD.")
+
+    # B99: ⭐ VARSAYILAN KAPALI — taban davranış bit bit korunur
+    _n99, _enb99 = 0, 0.0
+    for _cyd in (240.0, 301.0, 380.0):
+        for _b in (12, 25, 40):
+            for _term in (False, True):
+                _a = ib.komut(CX + 25.0, _cyd, _b, _b, 0.1, 12.0, 0.05,
+                              C, _term, (0.02, 0.01), 0.2, 1.0, 3.0, 0.2, 0.4)
+                _k = ib.komut(CX + 25.0, _cyd, _b, _b, 0.1, 12.0, 0.05,
+                              ib.Cfg, _term, (0.02, 0.01), 0.2, 1.0, 3.0,
+                              0.2, 0.4)
+                _n99 += 1
+                for _i in range(4):
+                    _enb99 = max(_enb99, abs(_a[_i] - _k[_i]))
+    kontrol("B99 ⭐ TEK FAZ varsayılan KAPALI (taban davranış korunur)",
+            (not C.TEK_FAZ) and _Tek.TEK_FAZ and _enb99 < 1e-12,
+            f"Cfg.TEK_FAZ={C.TEK_FAZ}; {_n99} kombinasyonda fark "
+            f"{_enb99:.2e} — `manevrada-iyi-terminalde-kotu` aynen duruyor")
+
+    # B100: PARK YOK — kutu BOYUT_REF'i geçse bile hız düşmez
+    # Taban yasada boyut=25 (=BOYUT_REF) iken hata=0 → PI dengeye oturur
+    # (6.4 m'de park). Tek fazda denge kutusu TEK_BOYUT_REF=160 olduğu için
+    # hata hâlâ +135 → "kapat" der.
+    _park_taban = ib.komut(CX, C.CY_NISAN, 25, 25, 0.0, 5.0, 0.05, C, False,
+                           (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+    _park_tek = ib.komut(CX, C.CY_NISAN, 25, 25, 0.0, 5.0, 0.05, _Tek, False,
+                         (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+    kontrol("B100 TEK FAZ: 'uzakta park et' setpoint'i KALKTI",
+            _park_tek[5]["hata"] > 100.0 and abs(_park_taban[5]["hata"]) < 1e-9
+            and _park_tek[5]["v_los"] > _park_taban[5]["v_los"],
+            f"kutu 25 px'te taban hata={_park_taban[5]['hata']:.0f} px "
+            f"(denge → 6.4 m'de park, v={_park_taban[5]['v_los']:.1f}); "
+            f"tek faz hata={_park_tek[5]['hata']:.0f} px "
+            f"(v={_park_tek[5]['v_los']:.1f} — hep kapat)")
+
+    # B101: hız V_TEK tavanında oturur, aşmaz
+    _hizlar = [ib.komut(CX, C.CY_NISAN, _b, _b, 0.0, 24.0, 0.05, _Tek, False,
+                        (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)[5]["v_los"]
+               for _b in (6, 15, 30, 60, 120)]
+    kontrol("B101 TEK FAZ hızı V_TEK tavanını AŞMAZ",
+            all(v <= _Tek.V_TEK + 1e-9 for v in _hizlar),
+            f"kutu 6…120 px → v_los " +
+            " ".join(f"{v:.1f}" for v in _hizlar) +
+            f"  (tavan V_TEK={_Tek.V_TEK:.0f})")
+
+    # B102: ⭐ DİKEY = YATAYIN AYNI MATEMATİĞİ — |v| KORUNUR
+    # Yatayın kuralı: yön döner, büyüklük sabit. Dikey de aynı olmalı.
+    class _TekSonumsuz(_Tek):
+        TEK_K_VZ_D = 0.0          # sönümleme |v| değişmezliğini bozar
+        VZ_MAX = 99.0             # tavan da kırpmasın
+    _n102, _enb102 = 0, 0.0
+    for _cyd in (180.0, 260.0, 318.0, 400.0, 460.0):
+        for _b in (10, 25, 50):
+            _r = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _TekSonumsuz,
+                          False, (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+            _hiz = math.sqrt(_r[0] ** 2 + _r[1] ** 2 + _r[2] ** 2)
+            _enb102 = max(_enb102, abs(_hiz - _r[5]["v_los"]))
+            _n102 += 1
+    kontrol("B102 ⭐ TEK FAZ dikey: yön döner, |v| KORUNUR (yatayla aynı)",
+            _enb102 < 1e-9,
+            f"{_n102} kombinasyonda |(vx,vy,vz)| ile v_los farkı "
+            f"{_enb102:.2e} — dikey ayrı bir ÖLÇEK değil, aynı vektörün YÖNÜ")
+
+    # B103: hedef yukarıdaysa TIRMAN, aşağıdaysa ALÇAL (işaret doğruluğu)
+    # cy küçük = kadrajda YUKARI = hedef yukarıda → vz NEGATİF (NED: yukarı)
+    _yuk = ib.komut(CX, 200.0, 25, 25, 0.0, 15.0, 0.05, _Tek, False,
+                    (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+    _asa = ib.komut(CX, 440.0, 25, 25, 0.0, 15.0, 0.05, _Tek, False,
+                    (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+    kontrol("B103 TEK FAZ dikey işareti doğru (yukarı→tırman, aşağı→alçal)",
+            _yuk[2] < -0.5 and _asa[2] > 0.5,
+            f"cy=200 (hedef yukarıda) → vz={_yuk[2]:+.2f} (negatif=tırman); "
+            f"cy=440 (aşağıda) → vz={_asa[2]:+.2f}")
+
+    # B104: ROLL TELAFİSİ HER KAREDE — seyir/terminal tutarsızlığı bitti
+    # Taban sistemde DIKEY_ROLL açık ama TERM_ROLL kapalı → terminale
+    # girer girmez dikey okuma telafisiz kalıyordu. Tek fazda tek yol var.
+    _r0 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, _Tek, False,
+                   (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
+    _r40 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, _Tek, False,
+                    (0.0, 0.0), 0.0, 0.0, 3.0, math.radians(40.0))
+    kontrol("B104 TEK FAZ: dikey roll telafisi HER KAREDE (tek yol)",
+            abs(_r40[2] - _r0[2]) > 0.05,
+            f"yatış 0° → vz={_r0[2]:+.2f}; 40° → vz={_r40[2]:+.2f} "
+            f"(Δ={abs(_r40[2]-_r0[2]):.2f} m/s) — los_seviye her karede")
+
+    # B106: ⭐ "KAÇIRACAKSAN YAVAŞLA" — dik hedefte vektör gerçekten dönüyor
+    # Tavan tek başına asin(VZ_MAX/V_TEK)=asin(8/20)=23.6°'de bağlar.
+    class _TekHizli(_Tek):
+        TEK_YAVASLA = False
+    _ulasilan = []
+    for _hedef_deg in (15.0, 30.0, 45.0):
+        # hedefi o açıda gösteren cy'yi kur (roll=pitch=0 → piksel_elev)
+        _cy = geo.CY + geo.FY * math.tan(
+            math.radians(ib.GeoCfg.KAMERA_TILT_DEG - _hedef_deg))
+        _y = ib.komut(CX, _cy, 25, 25, 0.0, 20.0, 0.05, _Tek, False,
+                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+        _h = ib.komut(CX, _cy, 25, 25, 0.0, 20.0, 0.05, _TekHizli, False,
+                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+        _ay = math.degrees(math.asin(min(1.0, abs(_y[2]) /
+                                         max(1e-6, math.hypot(math.hypot(_y[0], _y[1]), _y[2])))))
+        _ah = math.degrees(math.asin(min(1.0, abs(_h[2]) /
+                                         max(1e-6, math.hypot(math.hypot(_h[0], _h[1]), _h[2])))))
+        _ulasilan.append((_hedef_deg, _ah, _ay, _y[5]["v_los"]))
+    _tavan = math.degrees(math.asin(min(1.0, _Tek.VZ_MAX / _Tek.V_TEK)))
+    kontrol("B106 ⭐ TEK FAZ: dik hedefte YAVAŞLAR, vektör hedefe döner",
+            all(a_y > a_h + 1.0 for d, a_h, a_y, v in _ulasilan if d > _tavan)
+            and all(v <= _Tek.V_TEK + 1e-9 for _, _, _, v in _ulasilan),
+            f"tavan asin({_Tek.VZ_MAX:.0f}/{_Tek.V_TEK:.0f})={_tavan:.1f}°  |  "
+            + "  ".join(f"hedef {d:.0f}°→ yavaşlamasız {a_h:.1f}°, "
+                        f"yavaşlamalı {a_y:.1f}° (v={v:.1f})"
+                        for d, a_h, a_y, v in _ulasilan))
+
+    # B107: yavaşlama hızı ASLA ARTIRMAZ ve TEK_V_MIN altına inmez
+    _vler = []
+    for _cyd in (140.0, 200.0, 260.0, 318.0, 380.0, 460.0):
+        _r = ib.komut(CX, _cyd, 25, 25, 0.0, 20.0, 0.05, _Tek, False,
+                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+        _vler.append(_r[5]["v_los"])
+    kontrol("B107 yavaşlama hızı ARTIRMAZ, tabanın altına İNMEZ",
+            all(_Tek.TEK_V_MIN - 1e-9 <= v <= _Tek.V_TEK + 1e-9 for v in _vler),
+            f"cy 140…460 → v_los " + " ".join(f"{v:.1f}" for v in _vler)
+            + f"  (taban {_Tek.TEK_V_MIN:.0f}, tavan {_Tek.V_TEK:.0f})")
+
+    # B108: hedef hizalıyken yavaşlama HİÇ devreye girmez (sakin yaklaşma
+    # bozulmasın) — tavan açısının altında iki kol BİT BİT aynı olmalı
+    _n108, _enb108 = 0, 0.0
+    for _cyd in (300.0, 318.0, 336.0):     # ±3° civarı
+        for _b in (15, 30, 60):
+            _y = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _Tek, False,
+                          (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+            _h = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _TekHizli, False,
+                          (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
+            _n108 += 1
+            for _i in range(4):
+                _enb108 = max(_enb108, abs(_y[_i] - _h[_i]))
+    kontrol("B108 hedef hizalıyken yavaşlama DEVREYE GİRMEZ (bit bit)",
+            _enb108 < 1e-12,
+            f"{_n108} kombinasyonda fark {_enb108:.2e} — yalnız "
+            f"{_tavan:.1f}° üstünde kısar")
+
+    # B105: YARIŞMA KURALI (§10) — tek faz yolu da GPS'e bakmıyor
+    # komut() imzasında hedefin konumu/hızı YOK; girdi yalnız kutu + kendi
+    # duruşumuz. B5'in tek faz için tekrarı.
+    import inspect as _insp
+    _imza = set(_insp.signature(ib.komut).parameters)
+    _yasak = {"plane", "hedef", "target", "gps", "hedef_pos", "plane_pos",
+              "hedef_hiz", "plane_hiz", "menzil", "mesafe"}
+    kontrol("B105 TEK FAZ §10 uyumlu: komut() hedefin GPS'ini ALMIYOR",
+            not (_imza & _yasak),
+            f"komut() parametreleri: {sorted(_imza)} — hedefe dair tek veri "
+            "kutu (cx, cy, w, h); yasak ad yok")
+
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))
