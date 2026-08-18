@@ -425,6 +425,38 @@ class Cfg:
     # durduğunda dikey düzeltme büsbütün ölmesin.
     # AVCI_IBVS_KAPANMA=0 → eski davranış (v_los ile ölçekleme) aynen geri.
     KAPANMA = _env_f("AVCI_IBVS_KAPANMA", 1.0) >= 0.5
+
+    # ══════════════════════════════════════════════════════════════════
+    # A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ
+    # ══════════════════════════════════════════════════════════════════
+    # KULLANICI (2026-08-17): "son terminal kısmında çok dengesiz girip
+    # üstten alttan kaçırabiliyoruz, o kısmın üzerine düşülmeli."
+    #
+    # ÖLÇÜLDÜ (1784 terminal karesi, 4 koşu, 2026-08-18):
+    #   menzil 0-3 m : |vz_cmd| medyan 0.72 m/s, |nişan_elev| medyan 23.8°
+    #   menzil 3-6 m : |vz_cmd| medyan 0.75 m/s, |nişan_elev| medyan 17.7°
+    #   VZ_MAX_TERM (10 m/s) tavanına dayanma oranı: %0.0
+    # Yani hedef 24° YUKARIDA ama araç saniyede yalnız 0.7 m tırmanıyor —
+    # dikey bütçesinin %7'sini kullanıyor. Sebep tek çarpan:
+    #     v_dikey = clamp(kapanma, KAPANMA_MIN=1.5, v_los)
+    # kapanma ≈ 0.9 m/s olduğu için TABANA yapışıyor:
+    #     1.5 · tan(23.8°) = 0.66 m/s   ← ölçülen 0.72 ile birebir
+    # KAPANMA kapalı olsaydı: 16 · tan(23.8°) = 7.06 m/s (ON KAT).
+    # Dikey tavanı 5 → 10 açmanın hiçbir işe yaramamasının sebebi de bu:
+    # komut zaten tavana dayanmıyordu.
+    #
+    # ⚠⚠ TARİHSEL UYARI — BU BİR GERİ ALMADIR. KAPANMA ölçeklemesi
+    # 2026-08-09'da tam da "tam vuracağı sırada üstünden geçiyoruz"
+    # şikâyetini çözmek için eklenmişti ve ölçülüp GİRMİŞTİ (o zaman komut
+    # 13.7 KAT FAZLAYDI: −5.00 m/s verilirken −0.37 gerekiyordu).
+    # O ölçüm V_TERMINAL=18 ve v_dikey=v_los=18 iken yapıldı; bugün
+    # v_dikey=1.5. Yani iki uç da denenmiş oluyor:
+    #     v_dikey = 18.0  → 13.7 kat FAZLA (üstünden geçiyordu)
+    #     v_dikey =  1.5  → ~10 kat AZ     (yetişemiyor)   ← bugünkü
+    # Doğru değer muhtemelen ARADA (bkz. KAPANMA_MIN, A2 adayı).
+    # A1 üst ucu yeniden sınar; kıyas panelden yapılır.
+    # AVCI_IBVS_TERM_TAM_HIZ=1 → v_dikey = v_los (kapanma ölçeği DEVRE DIŞI).
+    TERM_TAM_HIZ = _env_f("AVCI_IBVS_TERM_TAM_HIZ", 0.0) >= 0.5
     KAPANMA_MIN = _env_f("AVCI_IBVS_KAPANMA_MIN", 1.5)   # m/s; ölçek tabanı
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
     # Kutu boyutu → menzil ölçeği: TERMINAL_BOYUT 25 px ≈ 6.4 m (Cfg yorumu)
@@ -944,7 +976,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg, terminal=False,
         # artık var olmayan bir dikey talep yüzünden kısar (yani boşuna
         # frene basar). İki yer tek kavram.
         v_dikey = v_los
-        if cfg.KAPANMA and kapanma is not None:
+        # A1 (bkz. Cfg.TERM_TAM_HIZ): açıkken kapanma ölçeği ATLANIR,
+        # v_dikey = v_los kalır — dikey komut ~10 kat büyür.
+        if cfg.KAPANMA and kapanma is not None and not cfg.TERM_TAM_HIZ:
             v_dikey = clamp(kapanma, cfg.KAPANMA_MIN, max(cfg.KAPANMA_MIN, v_los))
         t_ = abs(math.tan(nisan_elev))
         if t_ > 1e-6 and v_dikey * t_ > cfg.VZ_MAX_TERM:

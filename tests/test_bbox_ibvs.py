@@ -867,6 +867,51 @@ def main():
             "beklettiği loglardan ölçülebilir")
 
     print("=" * 60)
+    # ══ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (2026-08-18) ══
+    class _A1(ib.Cfg):
+        TERM_TAM_HIZ = True
+
+    # B80: A1 dikey komutu BÜYÜTÜR (kapanma tabanına yapışma kalkar)
+    _cyU = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(24.0))
+    _a1 = ib.komut(CX, _cyU, 30, 30, 0.0, 12.0, 0.05, _A1, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    _k1 = ib.komut(CX, _cyU, 30, 30, 0.0, 12.0, 0.05, C, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    kontrol("B80 A1 terminal dikey komutunu BÜYÜTÜR (kapanma tabanı kalkar)",
+            abs(_a1[2]) > abs(_k1[2]) * 3.0,
+            f"hedef 24° yukarıda, kapanma 0.9 m/s: vz {abs(_k1[2]):.2f} → "
+            f"{abs(_a1[2]):.2f} m/s ({abs(_a1[2])/max(abs(_k1[2]),1e-9):.1f} kat)")
+
+    # B81: SEYİR fazına DOKUNMAZ (yalnız terminal dikey yasası)
+    _enb81, _n81 = 0.0, 0
+    for _cyd in (220.0, 301.0, 380.0):
+        for _b in (10, 25, 40):
+            _a = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, _A1, False,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+            _k = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, C, False,
+                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+            for _i in range(4):
+                _enb81 = max(_enb81, abs(_a[_i] - _k[_i]))
+            _n81 += 1
+    kontrol("B81 A1 SEYİR fazına DOKUNMAZ (tek değişken)",
+            _enb81 < 1e-12,
+            f"{_n81} kombinasyonda en büyük fark {_enb81:.2e}")
+
+    # B82: VZ_MAX_TERM tavanı A1'de de BAĞLAR (kontrolsüz büyümesin)
+    _cyX = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(50.0))
+    _aX = ib.komut(CX, _cyX, 30, 30, 0.0, 12.0, 0.05, _A1, True,
+                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
+    kontrol("B82 A1'de dikey tavan hâlâ BAĞLAR (kontrolsüz büyüme yok)",
+            abs(_aX[2]) <= C.VZ_MAX_TERM + 1e-9,
+            f"hedef 50° yukarıda → vz {abs(_aX[2]):.2f} m/s ≤ "
+            f"VZ_MAX_TERM {C.VZ_MAX_TERM:.0f}")
+
+    # B83: kapatılabilir + varsayılan KAPALI (taban EN İYİ HAL'de kalır)
+    kontrol("B83 A1 varsayılan KAPALI (EN İYİ HAL bozulmaz)",
+            not C.TERM_TAM_HIZ and _A1.TERM_TAM_HIZ,
+            f"Cfg.TERM_TAM_HIZ={C.TERM_TAM_HIZ} — panelden/env ile açılır")
+
+    print("=" * 60)
     # ══ T1c · TERMİNAL FAZINDA ROLL TELAFİSİ (2026-08-17) ══
     class _TermRollKapali(ib.Cfg):
         TERM_ROLL = False

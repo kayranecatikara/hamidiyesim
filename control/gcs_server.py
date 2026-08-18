@@ -751,6 +751,28 @@ _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
 _OZELLIKLER = {
+    "a1_tam_hiz": (
+        "TERM_TAM_HIZ", "bool",
+        "⭐ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (KAPALI=taban)",
+        "ŞU AN SINANAN ŞEY. Kullanıcı: 'son terminal kısmında çok dengesiz "
+        "girip üstten alttan kaçırabiliyoruz.' "
+        "ÖLÇÜLDÜ (1784 terminal karesi): menzil 0-3 m'de hedef ortalama 23.8° "
+        "YUKARIDA ama araç saniyede yalnız 0.72 m tırmanıyor — dikey "
+        "bütçesinin %7'si. VZ_MAX_TERM (10 m/s) tavanına dayanma oranı %0.0. "
+        "SEBEP tek çarpan: v_dikey = clamp(kapanma, 1.5, v_los); kapanma ≈ "
+        "0.9 m/s olduğu için 1.5 TABANINA yapışıyor → 1.5·tan(23.8°) = "
+        "0.66 m/s (ölçülen 0.72 ile birebir). AÇIK konumda v_dikey = v_los = "
+        "16 → 16·tan(23.8°) = 7.06 m/s. Birim testi B80: 9.4 KAT. "
+        "⚠⚠ BU BİR GERİ ALMADIR: kapanma ölçeklemesi 2026-08-09'da tam da "
+        "'tam vuracağı sırada üstünden geçiyoruz' şikâyetini çözmek için "
+        "eklenmiş ve ölçülüp GİRMİŞTİ (o zaman komut 13.7 KAT FAZLAYDI). "
+        "O ölçüm v_dikey=18 iken yapıldı, bugün v_dikey=1.5. İki uç da "
+        "denenmiş oluyor: 18 → çok fazla (üstünden geçer), 1.5 → çok az "
+        "(yetişemez). Doğru değer muhtemelen ARADA. "
+        "⚠ AÇARSAN İZLE: üstten geçme geri gelirse aday budur. "
+        "✓ Uçuş sırasında ETKİ EDER. Seyir fazına DOKUNMAZ (B81). "
+        "Dikey tavan hâlâ bağlar, kontrolsüz büyüme yok (B82).",
+        "AVCI_IBVS_TERM_TAM_HIZ", True),
     "dikey_kapi": (
         "DIKEY_KAPI_M", "deger",
         "① DİKEY HİZALAMA KAPISI — irtifa eşitlenmeden terminale geçme",
