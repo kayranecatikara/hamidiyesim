@@ -33,6 +33,13 @@
     <plugin filename="gz-sim-contact-system"
       name="gz::sim::systems::Contact">
     </plugin>
+    <!-- ELLE FIRLATMA SİMÜLASYONU (2026-08-19): mini_talon gerçekte elle
+         fırlatılıyor (TKOFF_THR_MINACC=12). Bu eklenti /world/avci/wrench
+         topic'iyle uçağın gövdesine kısa bir ileri itiş uygulamayı sağlar
+         = fırlatma. Uçuşu/güdümü etkilemez; yalnız kalkış anında kullanılır. -->
+    <plugin filename="gz-sim-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench">
+    </plugin>
 
     <scene>
       <ambient>1.0 1.0 1.0</ambient>

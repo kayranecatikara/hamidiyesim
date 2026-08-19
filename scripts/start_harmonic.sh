@@ -198,7 +198,11 @@ echo "[HARMONIC] ArduPlane (gazebo mini_talon --model JSON:9012) başlatılıyor
     --model JSON:127.0.0.1:9012 \
     -I1 --sysid 2 --no-rebuild --add-param-file="$PROJ/sim/ardupilot_params/avci_plane.parm" \
     --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
+    --out udp:127.0.0.1:14555 \
     --mavproxy-args="--daemon --streamrate=25" ) > "$LOG/plane_harmonic.log" 2>&1 < /dev/null &
+    # ↑ mission-planner: --out udp:127.0.0.1:14555 EKLENDİ — Mission Planner'ın
+    #   YALNIZ hedef drone'u (sysid 2) gördüğü AYRI çıkış. 14542/14550/14551
+    #   (GCS + IBVS) DEĞİŞMEDİ. MP bu 14555 portuna bağlanır.
 
 # SITL'ler GERÇEKTEN hazır olana kadar bekle.
 #
@@ -211,14 +215,16 @@ echo "[HARMONIC] ArduPlane (gazebo mini_talon --model JSON:9012) başlatılıyor
 # hazır olmadan dönmez ve hazır olamazsa çıkış kodu 1 verir.
 _bekle_hazir() {
     local log="$1" ad="$2" i
-    for i in $(seq 1 90); do
+    # mission-planner: 90 → 150 s. Copter bazen ~94 s'de GPS kilitliyordu ve
+    # script exit 1 veriyordu. Sadece süre uzatıldı.
+    for i in $(seq 1 150); do
         if grep -q 'EKF3 IMU0 is using GPS' "$log" 2>/dev/null; then
             echo "[HARMONIC]   ✓ $ad EKF+GPS kilidi (+$((SECONDS-_T0)) s)"
             return 0
         fi
         sleep 1
     done
-    echo "[HARMONIC]   ✗ $ad 90 s içinde hazır olmadı — bak: tail -30 $log"
+    echo "[HARMONIC]   ✗ $ad 150 s içinde hazır olmadı — bak: tail -30 $log"
     return 1
 }
 

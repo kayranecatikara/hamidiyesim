@@ -3,8 +3,9 @@
 #  Mission Planner başlatıcı (QGroundControl'ün yerini alır)
 # =============================================================
 # Mission Planner bir GUI uygulamasıdır ve mono runtime gerektirir.
-# ArduPilot SITL'e UDP 14551 portundan bağlanır (gcs_server 14550'yi kullanır,
-# çakışmayı önlemek için MP'ye ayrı port verildi).
+# ArduPilot SITL'e UDP 14555 portundan bağlanır (gcs_server 14550'yi kullanır,
+# çakışmayı önlemek için MP'ye ayrı port verildi). 14555 = YALNIZ hedef drone
+# (sysid 2) çıkışı; 14542/14550/14551 (GCS + IBVS) değişmedi.
 #
 # Kullanım:  bash scripts/start_mission_planner.sh
 
@@ -32,7 +33,7 @@ if [ ! -f "$MP_DIR/MissionPlanner.exe" ]; then
 fi
 
 echo "[MP] Mission Planner başlatılıyor (mono)..."
-echo "[MP] Bağlantı için: sağ üstte UDP seç → port 14551 → Connect"
+echo "[MP] Bağlantı için: sağ üstte UDP seç → port 14555 → Connect"
 echo "[MP] Her iki araç (Copter sysid 5, Plane sysid 2) üst menüden seçilebilir."
 cd "$MP_DIR" || exit 1
 

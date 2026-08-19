@@ -31,3 +31,12 @@ SERVO1_FUNCTION 4
 SERVO2_FUNCTION 79
 SERVO3_FUNCTION 70
 SERVO4_FUNCTION 80
+
+# --- AUTO'da irtifa tutma (2026-08-19) ---
+# mini_talon'un Gazebo motorsuz süzülme oranı ~1.4:1 (çok kötü); gaz %60'ın
+# altına düşünce uçak süzülemeyip batıyor ve AUTO'da 80 m'den yere iniyordu.
+# Gazın tabanını cruise'a (%60 = THROTTLE_CRUISE 600) sabitleyince AUTO görev
+# irtifasını KORUYOR (canlı doğrulandı: 73-82 m'de stabil, döngüyü uçtu).
+# NOT: THR_MIN yalnız auto-throttle modlarında (AUTO/CRUISE/FBWB) geçerlidir;
+# MANUAL/FBWA ile RC-override uçuran mevcut senaryoları ETKİLEMEZ.
+THR_MIN 60
