@@ -97,7 +97,7 @@ def olc(d):
             continue
         dyaw = (yb - ya + 180) % 360 - 180
         yaw_hiz.append(abs(dyaw) / dt)
-    kesinti = sum(1 for x in r if x.get("durum") in ("KUTU_YOK", "TERM_KOR"))
+    kesinti = sum(1 for x in r if x.get("durum") == "KUTU_YOK")
 
     # ⚠ TEMAS ORANI — salınım ölçütünün geçerlilik şartı (yukarıdaki nota bak)
     temas_oran = 100.0 * len(kutulu) / max(len(r), 1)
@@ -131,7 +131,7 @@ def olc(d):
         o["gerekce"] = f"temas öncesi {PENCERE:.0f} s'de yalnız {len(pen)} kutulu kare"
         return o
 
-    kopuk = sum(1 for x in ham_pen if x.get("durum") in ("KUTU_YOK", "TERM_KOR"))
+    kopuk = sum(1 for x in ham_pen if x.get("durum") == "KUTU_YOK")
     pcx = [abs(f(x, "cx") - CX) for x in pen if f(x, "cx") is not None]
     pboyut = [f(x, "boyut") for x in pen if f(x, "boyut")]
     proll = [f(x, "iris_roll_deg") or 0.0 for x in pen]

@@ -11,35 +11,34 @@
 
 ---
 
-## 1 · ⛔ İKİ PANEL, İKİ AYRI İŞ — karıştırma
+## 1 · TEK AYAR YÜZEYİ
 
-| | 🎛 GÜDÜM ÖZELLİKLERİ (sol panel) | 🎚 AYAR KONSOLU (bu) |
-|---|---|---|
-| ne için | **karar bekleyen** özellik | **keşif / tarama** |
-| kaç şey | CLAUDE.md §0.2: aynı anda **en fazla bir** yeni özellik | sistemin **tamamı** (56 ayar) |
-| anlamı | buradan geçen şey sisteme **girer ya da elenir** | buradan oynatmak **kayda geçmez** |
+⚠ **2026-08-19:** sol paneldeki **🎛 GÜDÜM ÖZELLİKLERİ** kutusu KALDIRILDI.
+Kullanıcı: *"şu sol paneldeki ayar şeylerini de kaldır, bu şekilde default
+yaparak; zaten bunlar da o diğer büyük ayar panelinde var."* Beş düğmenin
+değerleri `Cfg` varsayılanı oldu; ayarlanabilir olanlar bu konsolda duruyor,
+terminale ait olanlar zaten silindi.
 
-Konsoldan bir değeri değiştirmek onu "sisteme girdi" yapmaz. Kalıcı olması
-için §1'in beş adımı gerekir: öner → ölç → raporla → göster → doğrula.
-
-⚠ Bazı alanlar **iki yerde birden** görünür (ör. `V_TERMINAL` hem ③ düğmesi
-hem G4'te). İkisi **aynı** `Cfg` alanına yazar — çelişki yok, birinden
-değiştirince diğeri de o değeri gösterir.
+Konsoldan bir değeri değiştirmek onu "sisteme girdi" YAPMAZ — burası
+keşif/tarama içindir, karar defteri değil. Kalıcı olması için §1'in beş
+adımı gerekir: öner → ölç → raporla → göster → doğrula.
 
 ## 2 · Neler var
 
-**56 ayar, 8 grup:**
+**42 ayar, 7 grup:**
 
 | grup | n | ne hakkında |
 |---|---|---|
-| ① YATAY KANAL (yaw) | 10 | nişanlama, yaw kazancı/tavanı, sönümleme, PN |
-| ② DİKEY KANAL | 7 | nişan noktası, dikey kazanç/tavan/sönümleme, dikey kapı |
-| ③ HIZ (kutu boyutundan PI) | 7 | BOYUT_REF, K_FWD, K_I, hız tavanı, ivme sınırı |
-| ④ TERMİNAL (hücum) | 8 | geçiş eşiği, hücum hızı, kör hücum süresi, kapanma ölçeği |
-| ⑤ TERMİNAL ADAYLARI | 5 | **D2, D1, D3, A1, T1c** — ölçüldü, kararı verilmedi |
-| ⑥ LEAD | 5 | hedefi öne alma süresi/tavanı/sönümü |
-| ⑦ ALGI ve FAZ GEÇİŞİ | 7 | güven eşikleri, **E1**, kilit/kayıp kare sayıları |
-| ⑧ ARAÇ (ArduPilot) | 7 | ANGLE_MAX, WPNAV_*, PSC_JERK_XY — canlı `PARAM_SET` |
+| ① **HÜCUM** | 6 | `V_HUCUM`, denge kutusu, `K_ELEV`, `K_VZ_D`, yavaşlama |
+| ② YATAY KANAL (yaw) | 10 | nişanlama, yaw kazancı/tavanı, sönümleme, PN |
+| ③ DİKEY KANAL | 2 | `VZ_MAX` tavanı ve bütçesi |
+| ④ HIZ (PI kazançları) | 6 | `K_FWD`, `K_I`, ivme sınırı, kaçış telafisi |
+| ⑤ LEAD | 4 | hedefi öne alma süresi/tavanı/sönümü |
+| ⑥ ALGI ve FAZ GEÇİŞİ | 7 | güven eşikleri, kilit/kayıp kare sayıları |
+| ⑦ ARAÇ (ArduPilot) | 7 | ANGLE_MAX, WPNAV_*, PSC_JERK_XY — canlı `PARAM_SET` |
+
+⚠ **Terminal fazına ait iki grup (8+5 = 13 ayar) SİLİNDİ** — terminal fazı
+2026-08-19'da koddan tamamen çıkarıldı.
 
 Her satırın **?** düğmesi şunları açar:
 - **ne yapar** — hangi denklemde, neyi kontrol ediyor
@@ -70,33 +69,27 @@ yeniden başlatmadan.
 Kalıcı istiyorsan kopyaladığın `curl` satırlarını kullan ya da `AVCI_*`
 env ile başlat.
 
-## 4 · ⑤ TERMİNAL ADAYLARI — neden buradalar
+## 4 · TEK GÖRSEL YASA
 
-Bunlar sistemin parçası **değil**. Hepsi varsayılan **KAPALI** ve kapalı
-hâlde davranış `manevrada-iyi-terminalde-kotu` etiketiyle **BİT BİT AYNI** —
-972 girdi kombinasyonunda (cx/cy/boyut/terminal/roll/pitch/kapanma) `komut()`
-çıktısının vx, vy, vz, yaw farkı **0.000e+00**.
+Görsel güdüm **tek parçadır** — ayrı bir "terminal" fazı yoktur:
 
-| ayar | ne | ölçüm |
-|---|---|---|
-| `TERM_HIZ_KORU` | **D2** — terminalde fren yok | 16 uçuş: kadraj dışı %73→%0 (p=0.039), en yakın 1.75→1.20 m (p=0.030), isabet 3/6→5/6. **Bedeli:** 3 m içinde \|dikey\| 0.21→1.06 m |
-| `TERM_SAF3B` | **D1** — saf takip 3B | dikey tavan 38.7°'de bağlar |
-| `TERM_YAVASLA` | **D3** — kaçıracaksan yavaşla (kullanıcının fikri) | 45°'de D1 tek başına takılıyor, D3 ile 45.0° (v=14.1) |
-| `TERM_TAM_HIZ` | **A1** — dikeyde tam hız ölçeği | — |
-| `TERM_ROLL` | **T1c** — terminalde roll telafisi | 4 uçuş, kollar AYIRT EDİLEMEDİ |
-| `sup:POSE_CONF_MIN` | **E1** — faz geçişi güven eşiği (⑦'de) | faz zıplamasının kök nedeni: iki katman 0.0 vs 0.35 |
+```
+YATAY : hız vektörünün YÖNÜ hedefe döner   (yaw + K_YAW·eps_yaw)
+DİKEY : AYNI matematik, aynı eksen için    (K_ELEV·elev_los)
+HIZ   : denge kutusu = TEMAS kutusu → hep kapat, V_HUCUM'da otur
+```
 
-⚠ **D3 yalnız D1 açıkken anlamlıdır.**
-
-Ölçümlerin tamamı: `docs/kampanya/H_TERMINAL_HIZ.md`,
-`docs/kampanya/SORUN_ENVANTERI.md`.
+Kaldırılmadan önce mandal atıldığı an dokuz şey birden değişiyordu ve
+ölçülen bütün bitiriş sorunları oradan çıkıyordu. 8 uçuşta **isabet
+2/4 → 4/4**, dikey ıska **1.77 → 0.66 m**, kör hücum **376 → 0 kare**.
+Ölçümler: `docs/kampanya/TF_TEK_FAZ.md`.
 
 ## 5 · Yeni ayar eklemek
 
 `control/ayar_konsolu.py` içindeki `AYARLAR` listesine bir satır:
 
 ```python
-("ad", "ALAN", "Etiket", "G4", "sayi", "m/s", 0.0, 30.0, 0.5,
+("ad", "ALAN", "Etiket", "G0", "sayi", "m/s", 0.0, 30.0, 0.5,
  "ne yapar", "artarsa ne olur", "azalırsa ne olur"),
 ```
 
@@ -108,7 +101,7 @@ Tip: `"sayi"` | `"bool"` | `"param"` (araç, MAVLink `PARAM_SET`).
 
 | dosya | ne |
 |---|---|
-| `control/ayar_konsolu.py` | 56 ayarın kaydı (etiket, aralık, açıklama) |
+| `control/ayar_konsolu.py` | 42 ayarın kaydı (etiket, aralık, açıklama) |
 | `control/gcs_server.py` | `/api/ayarlar` GET/POST + `/api/ayarlar/sifirla` |
 | `control/gcs_ui/index.html` | düğme + katman iskeleti |
 | `control/gcs_ui/script.js` | `ayarCiz` / `ayarYaz` / `ayarKopyala` |

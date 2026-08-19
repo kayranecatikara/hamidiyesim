@@ -1,21 +1,31 @@
 """
-tests/test_bbox_ibvs.py — SAF bbox IBVS görsel güdüm kabul kriterleri.
+tests/test_bbox_ibvs.py — GÖRSEL GÜDÜM kabul kriterleri (TEK YASA).
 
-Gazebo'suz, saf mantık. Kullanım: python3 -m tests.test_bbox_ibvs
+Gazebo'suz, saf mantık. Kullanım: PYTHONPATH=. python3 tests/test_bbox_ibvs.py
+
+⚠ 2026-08-19 · TERMİNAL FAZI KODDAN TAMAMEN SİLİNDİ (§5.12).
+Kullanıcı: *"terminal fazı diye bir şey neden var ki? Sistem iki fazdan
+oluşsa: GPS ve görsel. Görsel faz ikiye falan bölünmesin, tek parça kalsın."*
+Eski dosya, silinen iki parçalı tasarımı (seyir TUTUŞ + terminal KESİŞİM)
+koruyordu; o bekçiler artık olmayan kodu sınıyordu. Bu dosya YENİ tek yasayı
+korur. Silinen tasarımın ölçümleri `docs/kampanya/TF_TEK_FAZ.md`'de,
+kodu git tarihçesinde (`6c20b2b` ve öncesi).
+
+YASA — üç cümle:
+  YATAY : hız vektörünün YÖNÜ hedefe döner   (yaw + K_YAW·eps_yaw)
+  DİKEY : AYNI matematik, aynı eksen için    (K_ELEV·elev_los)
+  HIZ   : denge kutusu = TEMAS kutusu → hep kapat, V_HUCUM'da otur
 
 Kapsam:
-  B1-B4  komut yasası: merkez, sağ/sol yaw, yakın/uzak kapanma, alt/üst dikey
-  B5     ⚠ D0 KURAL UYUMU (yapısal): görsel döngünün CANLI GPS'e erişimi YOK —
-         taşıyıcı sayı üçlüsü olarak geçilir, callback değil
-  B6-B7  kutu geçerliliği: düşük conf / küçük kutu elenir
-  B8     döngü duman testi (fake conn): kutu akışında komut üretir
-  B9     kayıp: kayip_kare_esik ardışık kutusuz → 'kayip'
-  B10    DONDURULMUŞ TAŞIYICI: hedefin seyir hızını üstlenir (uçuş dersi:
-         taşıyıcısız 8 m/s üretiyordu, hedef 15 → kutu kaybı)
-  B11    toplam hız tavanı bağlar
-  B12    kutu yokken taşıyıcı SÜRER (kısa boşluk kalıcı kayba dönmesin)
+  A1-A6   temel yasa: nişan, sağ/sol, dikey işaret, |v| korunumu, hız tavanı
+  B1-B4   ⚠ YAPISAL: silinen terminal fazı geri sızmasın (§5.12 bekçisi)
+  C1-C5   yarışma kuralı §10, kutu geçerliliği, kayıp davranışı
+  D1-D6   yavaşlama (kaçıracaksan yavaşla)
+  E1-E9   yan özellikler: roll telafisi, lead, kaçış, Ö5/Ö8/Ö9, yaw slew
+  F1-F3   döngü duman testi
 """
 
+import inspect
 import math
 import threading
 import time
@@ -32,1505 +42,378 @@ def kontrol(ad, kosul, detay=""):
     print(f"  {'PASS' if kosul else 'FAIL'}  {ad}  {detay}")
 
 
-def main():
-    print("SAF bbox IBVS kabul kriterleri")
+def _cy_icin(elev_deg, cfg=None):
+    """Hedefi SEVİYE çerçevesinde `elev_deg` yükselişte gösteren cy (roll=pitch=0)."""
+    return geo.CY + geo.FY * math.tan(
+        math.radians(GeoCfg.KAMERA_TILT_DEG - elev_deg))
 
+
+def _hiz(r):
+    return math.sqrt(r[0] ** 2 + r[1] ** 2 + r[2] ** 2)
+
+
+def main():
+    print("GÖRSEL GÜDÜM — TEK YASA · kabul kriterleri")
     C = ib.Cfg
     CX, CY, FX, FY = geo.CX, geo.CY, geo.FX, geo.FY
 
-    # ── B1: MERKEZDE nişan — yaw ≈ mevcut, dikey ≈ 0 ──
-    # cx=CX (yatay merkez), cy=CY_NISAN (dikey nişan) → sapma yok.
-    vx, vy, vz, yaw, _I, t = ib.komut(CX, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
-    kontrol("B1  nişan noktasında: yaw≈0, vz≈0",
-            abs(math.degrees(yaw)) < 0.5 and abs(vz) < 0.05,
-            f"yaw={math.degrees(yaw):.2f}° vz={vz:.3f}")
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("A · TEMEL YASA")
 
-    # ── B2: hedef SAĞDA (cx>CX) → yaw komutu POZİTİF (sağa dön) ──
-    vx, vy, vz, yaw_sag, _I, t = ib.komut(CX + 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
-    _, _, _, yaw_sol, _, _ = ib.komut(CX - 100, C.CY_NISAN, 40, 40, 0.0, 0.0, 0.05, C)
-    kontrol("B2  hedef sağda → yaw>0, solda → yaw<0",
-            yaw_sag > 0.05 and yaw_sol < -0.05,
-            f"sağ yaw={math.degrees(yaw_sag):+.1f}° sol yaw={math.degrees(yaw_sol):+.1f}°")
+    # A1: hedef tam ileride (seviye) → yaw sapmaz, dikey komut ~0
+    _r = ib.komut(CX, _cy_icin(0.0), 30, 30, 0.0, 15.0, 0.05, C)
+    kontrol("A1 hedef ileride: yaw≈0, dikey≈0",
+            abs(_r[3]) < 1e-6 and abs(_r[2]) < 0.05,
+            f"yaw={math.degrees(_r[3]):.3f}°  vz={_r[2]:+.4f} m/s")
 
-    # ── B3: HIZ — küçük kutu (uzak) hızlı, REF'te integral kadar, yakın geri ──
-    _, _, _, _, _, t_uzak = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 0.0, 0.05, C)
-    _, _, _, _, _, t_yakin = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05, C)
-    _, _, _, _, _, t_denge = ib.komut(CX, C.CY_NISAN, C.BOYUT_REF, C.BOYUT_REF,
-                                      0.0, 0.0, 0.05, C)
-    # Yakın kutuda hız 0'a iner ama NEGATİF OLMAZ (V_MIN=0, geri gitme yok —
-    # 2026-08-08 kullanıcı kararı: fren vuruşu engelliyordu).
-    kontrol("B3  uzak kutu hızlı, REF'te integral kadar, yakında 0 (geri YOK)",
-            t_uzak["v_los"] > 4.0 and abs(t_denge["v_los"]) < 1e-6
-            and t_yakin["v_los"] == 0.0,
-            f"5px→{t_uzak['v_los']:+.1f}  REF({C.BOYUT_REF:.0f}px, I=0)→"
-            f"{t_denge['v_los']:+.1f}  60px→{t_yakin['v_los']:+.1f} m/s")
+    # A2: hedef SAĞDA → yaw komutu SAĞA (pozitif)
+    _sag = ib.komut(CX + 100.0, _cy_icin(0.0), 30, 30, 0.0, 15.0, 0.05, C)
+    _sol = ib.komut(CX - 100.0, _cy_icin(0.0), 30, 30, 0.0, 15.0, 0.05, C)
+    kontrol("A2 yatay işaret: sağdaki hedef → sağa yaw, soldaki → sola",
+            _sag[3] > 0.05 and _sol[3] < -0.05,
+            f"sağ→{math.degrees(_sag[3]):+.1f}°  sol→{math.degrees(_sol[3]):+.1f}°")
 
-    # ── B4: DİKEY — hedef kadrajda AŞAĞIDA (cy>nişan) → ALÇAL (vz>0, NED down+) ──
-    _, _, vz_asa, _, _, _ = ib.komut(CX, C.CY_NISAN + 120, 40, 40, 0.0, 0.0, 0.05, C)
-    _, _, vz_yuk, _, _, _ = ib.komut(CX, C.CY_NISAN - 120, 40, 40, 0.0, 0.0, 0.05, C)
-    kontrol("B4  hedef altta → vz>0 (alçal), üstte → vz<0 (tırman)",
-            vz_asa > 0.1 and vz_yuk < -0.1,
-            f"altta vz={vz_asa:+.2f}  üstte vz={vz_yuk:+.2f}")
+    # A3: hedef YUKARIDA → TIRMAN (NED'de vz negatif), aşağıda → alçal
+    _yuk = ib.komut(CX, _cy_icin(20.0), 30, 30, 0.0, 15.0, 0.05, C)
+    _asa = ib.komut(CX, _cy_icin(-20.0), 30, 30, 0.0, 15.0, 0.05, C)
+    kontrol("A3 dikey işaret: yukarıdaki hedef → tırman, aşağıdaki → alçal",
+            _yuk[2] < -0.5 and _asa[2] > 0.5,
+            f"+20°→vz={_yuk[2]:+.2f} (negatif=tırman)  −20°→vz={_asa[2]:+.2f}")
 
-    # ── B5: ⚠ D0 KURAL UYUMU — YAPISAL GARANTİ ──
-    # Kural: görsel temas varken CANLI GPS güdümde kullanılamaz. Bu testin
-    # iddiası "kullanmıyoruz" değil, "KULLANAMAYIZ": görsel döngü hedefe dair
-    # tek bilgiyi devirde bir kez, SAYI olarak alır. Callable (canlı kaynak)
-    # geçilirse burada patlar.
-    import inspect
-    kp = list(inspect.signature(ib.komut).parameters)
-    dp = inspect.signature(ib.run_bbox_ibvs).parameters
-    # döngüde hedef verisi taşıyabilecek tek parametre ff_hiz; o da sayı üçlüsü
-    hedef_param = [p for p in dp if any(
-        k in p.lower() for k in ("plane", "truth", "menzil", "gercek", "tgt", "gps"))]
-    ff_default = dp["ff_hiz"].default
-    ff_sayi = (isinstance(ff_default, tuple) and len(ff_default) == 3
-               and all(isinstance(v, (int, float)) for v in ff_default))
-    r1 = ib.komut(CX + 50, CY, 60, 40, 1.2, 8.0, 0.05, C)
-    r2 = ib.komut(CX + 50, CY, 60, 40, 1.2, 8.0, 0.05, C)
-    kontrol("B5  D0: döngüde canlı hedef kaynağı YOK, taşıyıcı sayı üçlüsü",
-            not hedef_param and ff_sayi and r1[:4] == r2[:4],
-            f"run parametreleri={list(dp)}  ff varsayılan={ff_default}")
+    # A4: ⭐ DİKEY = YATAYIN AYNI MATEMATİĞİ — |v| KORUNUR
+    # Yatayın kuralı: yön döner, büyüklük sabit. Dikey de öyle olmalı.
+    class _Sonumsuz(ib.Cfg):
+        K_VZ_D = 0.0          # sönümleme |v| değişmezliğini bozar
+        VZ_MAX = 99.0         # tavan da kırpmasın
+        YAVASLA = False       # yavaşlama v_los'u değiştirmesin
+    _n, _enb = 0, 0.0
+    for _e in (-25.0, -10.0, 0.0, 10.0, 22.0):
+        for _b in (10, 25, 50):
+            _r = ib.komut(CX, _cy_icin(_e), _b, _b, 0.0, 20.0, 0.05, _Sonumsuz)
+            _enb = max(_enb, abs(_hiz(_r) - _r[5]["v_los"]))
+            _n += 1
+    kontrol("A4 ⭐ dikey yatayla AYNI: yön döner, |v| KORUNUR",
+            _enb < 1e-9,
+            f"{_n} kombinasyonda |(vx,vy,vz)| ile v_los farkı {_enb:.2e} — "
+            "dikey ayrı bir ÖLÇEK değil, aynı vektörün YÖNÜ")
 
-    # ── B6: düşük conf kutusu elenir ──
-    dusuk = ib._kutu_gecerli({"bbox": (300, 220, 340, 260), "conf": 0.1}, C)
-    yuksek = ib._kutu_gecerli({"bbox": (300, 220, 340, 260), "conf": 0.9}, C)
-    kontrol("B6  conf < CONF_MIN kutusu None, üstü geçerli",
-            dusuk is None and yuksek is not None,
-            f"conf 0.1 → {dusuk}, conf 0.9 → geçerli")
+    # A5: ⭐ PARK YOK — denge kutusu TEMAS kutusudur
+    # Eski tasarımda BOYUT_REF=25 px idi → 160/25 = 6.4 m'de dururdu ve
+    # terminal fazı tam da o parkı ezmek için vardı.
+    _hatalar = [ib.komut(CX, _cy_icin(0.0), _b, _b, 0.0, 15.0, 0.05, C)[5]["hata"]
+                for _b in (10, 25, 60, 120)]
+    kontrol("A5 ⭐ 'uzakta park et' setpoint'i YOK — hep kapat",
+            all(h > 0.0 for h in _hatalar)
+            and abs(C.HUCUM_BOYUT_REF - 160.0) < 1e-9,
+            f"kutu 10/25/60/120 px → hata " +
+            " ".join(f"{h:+.0f}" for h in _hatalar) +
+            f" px (hepsi + = 'kapat'); denge kutusu {C.HUCUM_BOYUT_REF:.0f} px "
+            f"= {ib.Cfg.MENZIL_PX_M / C.HUCUM_BOYUT_REF:.1f} m")
 
-    # ── B7: çok küçük kutu (gürültü) elenir ──
-    minik = ib._kutu_gecerli({"bbox": (320, 240, 323, 243), "conf": 0.9}, C)
-    kontrol("B7  boyut < BOYUT_MIN kutusu elenir",
-            minik is None, f"3×3 px kutu → {minik}")
+    # A6: hız V_HUCUM tavanını aşmaz, V_MIN altına inmez
+    _v = [ib.komut(CX, _cy_icin(0.0), _b, _b, 0.0, _I, 0.05, C)[5]["v_los"]
+          for _b in (6, 20, 60) for _I in (0.0, 12.0, 24.0)]
+    kontrol("A6 hız V_HUCUM tavanında oturur, taşmaz",
+            all(C.V_MIN - 1e-9 <= x <= C.V_HUCUM + 1e-9 for x in _v),
+            f"9 kombinasyon → {min(_v):.1f} … {max(_v):.1f} m/s "
+            f"(taban {C.V_MIN:.0f}, tavan {C.V_HUCUM:.0f})")
 
-    # ── B8: DÖNGÜ DUMAN TESTİ (fake conn) — kutu akışında komut üretir ──
-    class _FakeMav:
-        def __init__(s): s.last = None
-        def set_position_target_local_ned_send(s, *a): s.last = a
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("B · ⚠ SİLİNEN TERMİNAL FAZI GERİ SIZMASIN (§5.12 bekçisi)")
 
-    class _FakeConn:
-        target_system = 1; target_component = 1
-        def __init__(s): s.mav = _FakeMav()
+    # B1: Cfg'de terminal alanı KALMADI
+    _olu = ["TERMINAL_BOYUT", "TERMINAL_SURE", "V_TERMINAL", "V_TERM_MIN",
+            "TERM_BIRAK_M", "VZ_MAX_TERM", "TERM_ROLL", "TERM_SAF3B",
+            "TERM_HIZ_KORU", "TERM_YAVASLA", "TERM_TAM_HIZ", "TEK_FAZ",
+            "DIKEY_KAPI_M", "CY_NISAN", "K_VZ", "V_NOM", "DIKEY_ROLL",
+            "KAPANMA", "KAPANMA_MIN", "V_TOPLAM_MAX", "LEAD_ERKEN"]
+    _kalan = [a for a in _olu if hasattr(ib.Cfg, a)]
+    kontrol("B1 ⚠ Cfg'de terminal/eski-dikey alanı KALMADI",
+            not _kalan,
+            f"{len(_olu)} ad denendi, kalan: {_kalan or 'YOK'}")
 
-    conn = _FakeConn()
-    st = {"seq": 0}
-    def wait_pose(son_seq, timeout=0.5):
-        st["seq"] += 1
-        # hedef sağda + biraz altta, orta boy kutu
-        return {"seq": st["seq"],
-                "pose": {"bbox": (360, 250, 400, 285), "conf": 0.8},
-                "stamp": None, "wall_recv": None, "lock": None}
-    def get_iris():
-        return {"yaw": 0.0, "vx": 0.0, "vy": 0.0, "vz": 0.0}
-    stop = threading.Event()
-    import tempfile
-    ib._LOG_DIR = tempfile.mkdtemp(prefix="avci_ibvs_test_")
-    th = threading.Thread(target=ib.run_bbox_ibvs,
-                          args=(conn, get_iris, wait_pose, stop), daemon=True)
-    th.start()
-    time.sleep(0.4)
-    sent = conn.mav.last
-    stop.set(); th.join(2.0)
-    # set_position_target_local_ned_send: vx,vy,vz index 8,9,10; yaw index 14
-    ok_komut = sent is not None
-    yaw_cmd = sent[14] if sent else None
-    kontrol("B8  döngü kutu akışında komut üretir, hedef sağda → yaw>0",
-            ok_komut and yaw_cmd is not None and yaw_cmd > 0.02,
-            f"yaw_cmd={yaw_cmd}")
+    # B2: komut() imzasında `terminal` ve `v_term_kilit` YOK
+    _imza = list(inspect.signature(ib.komut).parameters)
+    kontrol("B2 ⚠ komut() imzasında faz anahtarı YOK",
+            "terminal" not in _imza and "v_term_kilit" not in _imza,
+            f"parametreler: {_imza}")
 
-    # ── B9: KAYIP — kayip_kare_esik ardışık kutusuz kare → 'kayip' ──
-    conn2 = _FakeConn()
-    st2 = {"seq": 0}
-    def wait_pose_bos(son_seq, timeout=0.5):
-        st2["seq"] += 1
-        return {"seq": st2["seq"], "pose": None,
-                "stamp": None, "wall_recv": None, "lock": None}
-    stop2 = threading.Event()
-    sonuc = {"r": None}
-    def kosu():
-        sonuc["r"] = ib.run_bbox_ibvs(conn2, get_iris, wait_pose_bos, stop2,
-                                      kayip_kare_esik=5)
-    th2 = threading.Thread(target=kosu, daemon=True)
-    th2.start(); th2.join(3.0)
-    stop2.set()
-    kontrol("B9  N ardışık kutusuz kare → 'kayip' (GPS'e dönüş sinyali)",
-            sonuc["r"] == "kayip", f"dönüş={sonuc['r']}")
+    # B3: CSV'de terminal sütunu yok, durum tek değer
+    _olu_sutun = [c for c in ("dikey_ofs_m", "eps_elev_deg", "eps_elev_ham_deg")
+                  if c in ib._CSV_ALANLAR]
+    kontrol("B3 ⚠ CSV'de silinen sütunlar kalmadı",
+            not _olu_sutun,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun; kalan ölü: "
+            f"{_olu_sutun or 'YOK'}")
 
-    # ── B10: DONDURULMUŞ TAŞIYICI — hedefin seyrini üstlenir ──
-    # 2026-08-08 uçuş dersi: taşıyıcısız yasa 12 m'de (kutu 12px) yalnız
-    # ~8 m/s üretiyordu; hedef 15 m/s → drone geride kaldı, faz 3.5 s'de koptu.
-    # Taşıyıcıyla toplam hız hedefin hızını AŞMALI (aksi halde asla kapanmaz).
-    HEDEF_V = 15.0
-    vx0, vy0, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, 0.0, 0.05, C)
-    vx1, vy1, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 12, 12, 0.0, HEDEF_V, 0.05, C)
-    kontrol("B10 integral sıcak başlangıcı: hedefin hızını aşan komut",
-            math.hypot(vx0, vy0) < HEDEF_V and math.hypot(vx1, vy1) > HEDEF_V,
-            f"I=0 → {math.hypot(vx0, vy0):.1f} m/s  |  "
-            f"I=15 → {math.hypot(vx1, vy1):.1f} m/s  (hedef {HEDEF_V:.0f})")
+    # B4: kaynak metninde faz mandalı kalmadı (yorumlar hariç)
+    import os as _os
+    _src = open(_os.path.join(_os.path.dirname(_os.path.dirname(
+        _os.path.abspath(__file__))), "control", "guidance",
+        "bbox_ibvs.py")).read()
+    _kod = "\n".join(L for L in _src.split("\n")
+                     if not L.lstrip().startswith("#"))
+    _iz = [a for a in ("terminal_mandal", "kor_baslangic", "v_term_kilit",
+                       "TERM_KOR", "dikey_ofs") if a in _kod]
+    kontrol("B4 ⚠ kodda faz mandalı makinesi kalmadı",
+            not _iz, f"kalan iz: {_iz or 'YOK'} (yorumlar sayılmadı)")
 
-    # ── B11: toplam yatay hız tavanı bağlar ──
-    vx2, vy2, _, _, _, _ = ib.komut(CX, C.CY_NISAN, 5, 5, 0.0, 17.0, 0.05, C)
-    kontrol("B11 toplam hız V_TOPLAM_MAX ile tavanlı",
-            math.hypot(vx2, vy2) <= C.V_TOPLAM_MAX + 1e-6,
-            f"17+kapanma → {math.hypot(vx2, vy2):.2f} ≤ {C.V_TOPLAM_MAX}")
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("C · YARIŞMA KURALI ve KUTU GEÇERLİLİĞİ")
 
-    # ── B12: kutu boşluğunda SON KOMUT sürer (sıfır komut kalıcı kayıp yapar) ──
-    # ⚠ Eski sürüm burada DONDURULMUŞ NED taşıyıcıyı basıyordu; 2026-08-08
-    # uçuşunda o taşıyıcı hedef döndükçe drone'u yana savurdu (aspect 7°→70°,
-    # mesafe 8.7→66.6 m). Artık son LOS komutu sürdürülür — yön hedefin son
-    # görüldüğü yöndedir, sabit bir NED vektörü değil.
-    conn3 = _FakeConn()
-    st3 = {"seq": 0}
-    def wait_pose_karisik(son_seq, timeout=0.5):
-        st3["seq"] += 1
-        # ilk 8 kare kutu var, sonra boşluk
-        p = ({"bbox": (300, 290, 320, 305), "conf": 0.8}
-             if st3["seq"] <= 8 else None)
-        return {"seq": st3["seq"], "pose": p,
-                "stamp": None, "wall_recv": None, "lock": None}
-    # Devir gerçeği: drone zaten uçuyor (ivme sınırlayıcı oradan başlar)
-    def get_iris_ucan():
-        return {"yaw": 0.0, "vx": 14.0, "vy": 3.0, "vz": 0.0}
-    stop3 = threading.Event()
-    th3 = threading.Thread(
-        target=ib.run_bbox_ibvs,
-        args=(conn3, get_iris_ucan, wait_pose_karisik, stop3, ib.Cfg, 50,
-              (14.0, 3.0, 0.0)),
-        daemon=True)
-    th3.start(); time.sleep(0.6); s3 = conn3.mav.last; stop3.set(); th3.join(2.0)
-    hiz3 = math.hypot(s3[8], s3[9]) if s3 else 0.0
-    kontrol("B12 kutu boşluğunda son komut sürüyor (sıfırlanmıyor)",
-            s3 is not None and hiz3 > 5.0,
-            f"boşlukta komut hızı {hiz3:.1f} m/s (sıfır olmamalı)")
+    # C1: ⚠ §10 — görsel yasa hedefin GPS'ini ALMIYOR
+    _yasak = {"plane", "hedef", "target", "gps", "hedef_pos", "plane_pos",
+              "hedef_hiz", "plane_hiz", "menzil", "mesafe", "dikey_ofs"}
+    kontrol("C1 ⚠ §10: komut() hedefin GPS'ini ALMIYOR (yapısal)",
+            not (set(_imza) & _yasak),
+            f"hedefe dair tek veri kutu (cx, cy, w, h); yasak ad yok")
 
-    # ── B13: TERMİNAL HÜCUM — fren yok, tam taahhüt ──
-    # Kullanıcı kararı (2026-08-08): "o freni koymasan aracı vurabiliyoruz."
-    _, _, _, _, _, t_tut = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
-                                    C, False)
-    _, _, _, _, _, t_ter = ib.komut(CX, C.CY_NISAN, 60, 60, 0.0, 0.0, 0.05,
-                                    C, True)
-    kontrol("B13 terminalde fren yok: v = V_TERMINAL (tut modunda ise 0)",
-            abs(t_ter["v_los"] - C.V_TERMINAL) < 1e-6 and t_tut["v_los"] < 1.0,
-            f"tut modu {t_tut['v_los']:+.1f} → terminal {t_ter['v_los']:+.1f} m/s "
-            f"(yaklaşma tavanı {C.V_TOPLAM_MAX:.0f} ayrı)")
+    # C2: düşük güven kutusu elenir
+    kontrol("C2 CONF_MIN altındaki kutu elenir",
+            ib._kutu_gecerli({"conf": C.CONF_MIN - 0.01, "bbox": (10, 10, 40, 40)},
+                             C) is None
+            and ib._kutu_gecerli({"conf": C.CONF_MIN + 0.01,
+                                  "bbox": (10, 10, 40, 40)}, C) is not None,
+            f"CONF_MIN={C.CONF_MIN}")
 
-    kontrol("B14 geri gitme YOK (V_MIN=0) ve tavan 24 m/s",
-            C.V_MIN == 0.0 and C.V_TOPLAM_MAX >= 24.0,
-            f"V_MIN={C.V_MIN}  V_TOPLAM_MAX={C.V_TOPLAM_MAX}")
+    # C3: çok küçük kutu elenir (menzil hesabı patlamasın)
+    _kucuk = C.BOYUT_MIN - 1.0
+    kontrol("C3 BOYUT_MIN altındaki kutu elenir",
+            ib._kutu_gecerli({"conf": 0.9,
+                              "bbox": (10, 10, 10 + _kucuk, 10 + _kucuk)},
+                             C) is None,
+            f"BOYUT_MIN={C.BOYUT_MIN} px")
 
-    # ── B15: ÇARPMA SENSÖRÜ — temas gelince 'vuruldu' ──
-    conn4 = _FakeConn()
-    st4 = {"seq": 0}
-    def wait_pose4(son_seq, timeout=0.5):
-        st4["seq"] += 1
-        return {"seq": st4["seq"],
-                "pose": {"bbox": (310, 295, 330, 310), "conf": 0.8},
-                "stamp": None, "wall_recv": None, "lock": None}
-    temas_durum = {"v": False}
-    def get_temas():
-        st4["seq"] > 5 and temas_durum.update(v=True)
-        return temas_durum["v"]
-    stop4 = threading.Event()
-    son4 = {"r": None}
-    def kosu4():
-        son4["r"] = ib.run_bbox_ibvs(conn4, get_iris, wait_pose4, stop4,
-                                     ib.Cfg, 50, (14.0, 0.0, 0.0), get_temas)
-    th4 = threading.Thread(target=kosu4, daemon=True)
-    th4.start(); th4.join(3.0); stop4.set()
-    kontrol("B15 Talon çarpma sensörü → 'vuruldu' ile biter",
-            son4["r"] == "vuruldu", f"dönüş={son4['r']}")
+    # C4: menzil ölçeği tutarlı (R = MENZIL_PX_M / boyut)
+    kontrol("C4 menzil ölçeği: R = MENZIL_PX_M / kutu",
+            abs(C.MENZIL_PX_M / 20.0 - 8.0) < 0.01,
+            f"MENZIL_PX_M={C.MENZIL_PX_M:.0f} → 20 px = "
+            f"{C.MENZIL_PX_M / 20.0:.1f} m")
 
-    # ── B16: ⚠ KÖR HÜCUM SÜRE SINIRLI — sınırsız kalırsa araç kaçar ──
-    # 2026-08-08 hatası: süre sınırı yoktu; drone ıskaladıktan sonra son
-    # komutu 260 s bastı ve 1032 m uzağa uçtu, faz hiç 'kayip' dönmedi.
-    class _KisaCfg(ib.Cfg):
-        TERMINAL_SURE = 0.4        # test için kısa
-        TERMINAL_BOYUT = 20.0      # hemen terminale girsin
-    conn5 = _FakeConn()
-    st5 = {"seq": 0}
-    def wait_pose5(son_seq, timeout=0.5):
-        st5["seq"] += 1
-        # ilk 5 kare BÜYÜK kutu (terminal tetiklenir), sonra hiç kutu yok
-        p = ({"bbox": (300, 285, 340, 315), "conf": 0.9}
-             if st5["seq"] <= 5 else None)
-        return {"seq": st5["seq"], "pose": p,
-                "stamp": None, "wall_recv": None, "lock": None}
-    stop5 = threading.Event()
-    son5 = {"r": None}
-    def kosu5():
-        son5["r"] = ib.run_bbox_ibvs(conn5, get_iris, wait_pose5, stop5,
-                                     _KisaCfg, 10, (14.0, 0.0, 0.0))
-    th5 = threading.Thread(target=kosu5, daemon=True)
-    th5.start(); th5.join(5.0); stop5.set()
-    kontrol("B16 kör hücum süre dolunca ISKA → 'kayip' (sonsuz kör YOK)",
-            son5["r"] == "kayip", f"dönüş={son5['r']} (thread canlı mı: {th5.is_alive()})")
+    # C5: dikey komut VZ_MAX ile sınırlı
+    _dik = [abs(ib.komut(CX, _cy_icin(_e), 30, 30, 0.0, 20.0, 0.05, C)[2])
+            for _e in (-55.0, -30.0, 30.0, 55.0)]
+    kontrol("C5 dikey komut VZ_MAX tavanını aşmaz",
+            all(x <= C.VZ_MAX + 1e-9 for x in _dik),
+            f"±30°/±55° → {' '.join(f'{x:.2f}' for x in _dik)} "
+            f"(tavan {C.VZ_MAX:.0f})")
 
-    # ── B17: piksel → LOS yükselişi geometrisi (25° tilt) ──
-    e_bore = math.degrees(ib.piksel_elev(geo.CY, C))
-    e_seviye = math.degrees(ib.piksel_elev(geo.CY + geo.FY * math.tan(math.radians(25)), C))
-    kontrol("B17 kadraj merkezi → +25° (boresight), seviye hedef pikseli → 0°",
-            abs(e_bore - 25.0) < 0.2 and abs(e_seviye) < 0.3,
-            f"cy=240 → {e_bore:+.1f}°   cy=318 → {e_seviye:+.1f}°")
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("D · KAÇIRACAKSAN YAVAŞLA")
 
-    # ── B18: TERMİNAL KESİŞİM — hız vektörü hedefe DOĞRU bakar ──
-    # 2026-08-08 ölçümü: ıskanın baskın bileşeni DİKEYDİ (0.5-1.1 m). Sebep:
-    # terminalde bile dikey kanal "tutuş" yasasıydı → hedefin altından geçiyorduk.
-    cy_ust = geo.CY + geo.FY * math.tan(math.radians(15))   # hedef 10° yukarıda
-    _, _, vz_tut, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
-                                     False, (0.0, 0.0), 0.0)
-    _, _, vz_ter, _, _, _ = ib.komut(CX, cy_ust, 30, 30, 0.0, 10.0, 0.05, C,
-                                     True, (0.0, 0.0), 0.0)
-    # hedef 10° yukarıda → kesişim için TIRMANMALI (vz<0, NED)
-    kontrol("B18 terminalde hedef yukarıdayken TIRMANIR (tutuş modu tırmanmıyordu)",
-            vz_ter < -0.5 and vz_ter < vz_tut,
-            f"tutuş vz={vz_tut:+.2f}  →  terminal vz={vz_ter:+.2f} m/s")
+    class _Hizli(ib.Cfg):
+        YAVASLA = False
+    _tavan = math.degrees(math.asin(min(1.0, C.VZ_MAX / C.V_HUCUM)))
 
-    # ── B19: LEAD yalnız TERMİNALDE ve LOS dönüyorken (VARSAYILAN davranış) ──
-    # 2026-08-09/M3: kapıyı kaldırmak DENENDİ ve uçuşta ölçülüp GERİ ALINDI —
-    # kadrajda tutuş düzeldi ama yaklaşma bozuldu (bkz. Cfg.LEAD_ERKEN, B33-B37).
-    # Varsayılan yol yine "yalnız terminal"; bu test onu bekçiliyor.
-    _, _, _, yaw_ldsz, _, t_ldsz = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
-                                            0.05, C, True, (0.0, 0.0), 0.0)
-    _, _, _, yaw_ld, _, t_ld = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
-                                        0.05, C, True, (0.5, 0.0), 0.0)
-    _, _, _, _, _, t_tut2 = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0,
-                                     0.05, C, False, (0.5, 0.0), 0.0)
-    kontrol("B19 lead: LOS dönerken terminalde nişan öne alınır, tutuşta ALINMAZ",
-            abs(t_ldsz["lead_az"]) < 1e-9 and t_ld["lead_az"] > 0.1
-            and abs(t_tut2["lead_az"]) < 1e-9,
-            f"LOS=0 → {math.degrees(t_ldsz['lead_az']):.1f}°  "
-            f"LOS=0.5 rad/s → {math.degrees(t_ld['lead_az']):.1f}°  "
-            f"tutuş → {math.degrees(t_tut2['lead_az']):.1f}°")
+    # D1: ⭐ dik hedefte vektör gerçekten daha çok eğiliyor
+    _kayit = []
+    for _e in (15.0, 30.0, 45.0):
+        _y = ib.komut(CX, _cy_icin(_e), 25, 25, 0.0, 20.0, 0.05, C)
+        _h = ib.komut(CX, _cy_icin(_e), 25, 25, 0.0, 20.0, 0.05, _Hizli)
+        _ay = math.degrees(math.asin(min(1.0, abs(_y[2]) / max(1e-6, _hiz(_y)))))
+        _ah = math.degrees(math.asin(min(1.0, abs(_h[2]) / max(1e-6, _hiz(_h)))))
+        _kayit.append((_e, _ah, _ay, _y[5]["v_los"]))
+    kontrol("D1 ⭐ dik hedefte YAVAŞLAR, vektör hedefe döner",
+            all(ay > ah + 1.0 for e, ah, ay, v in _kayit if e > _tavan),
+            f"tavan asin({C.VZ_MAX:.0f}/{C.V_HUCUM:.0f})={_tavan:.1f}°  |  " +
+            "  ".join(f"{e:.0f}°→ yavaşlamasız {ah:.1f}°, yavaşlamalı {ay:.1f}° "
+                      f"(v={v:.1f})" for e, ah, ay, v in _kayit))
 
-    # ── B22: DİKEY BÜTÇE KISITI — hız vektörü hedefe BAKABİLMELİ ──
-    # Kullanıcı gözlemi (2026-08-09): "hele dikeyde çok kaçırıyor".
-    # Mekanizma: v=18, vz tavanı 5 → vektör en fazla 15.5° yukarı bakabilir;
-    # hedef daha yukarıdaysa kesişim imkânsız. Ölçüldü: terminal karelerinin
-    # %22-49'unda vz doymuştu. Çözüm: yatayı kıs, vektör hedefe baksın.
-    def _cy_icin(elev_deg):
-        """Verilen LOS yükselişini üretecek piksel (boresight 25° yukarıda)."""
-        return geo.CY + geo.FY * math.tan(
-            math.radians(geo_tilt := 25.0) - math.radians(elev_deg))
+    # D2: hızı ASLA ARTIRMAZ
+    kontrol("D2 yavaşlama hızı ASLA artırmaz",
+            all(v <= C.V_HUCUM + 1e-9 for _, _, _, v in _kayit),
+            f"tavan {C.V_HUCUM:.0f} m/s, en yüksek "
+            f"{max(v for _, _, _, v in _kayit):.1f}")
 
-    # ⚠ 2026-08-17: VZ_MAX_TERM varsayılanı 5 → 10 yapıldı (kullanıcı isteği:
-    # "aracın gücünü dikey için kullanalım"). B22/B23'ün İDDİASI değişmedi —
-    # dikey bütçe kısıtı hâlâ böyle çalışmalı — ama TABANI değişti. Testler
-    # kendi sabitleriyle koşuyor; yeni varsayılanın etkisi B71'de ölçülüyor.
-    class _VzT5(ib.Cfg):
-        VZ_MAX_TERM = 5.0
+    # D3: V_HUCUM_MIN tabanının altına inmez
+    _vler = [ib.komut(CX, _cy_icin(_e), 25, 25, 0.0, 20.0, 0.05, C)[5]["v_los"]
+             for _e in (-58.0, -40.0, 0.0, 40.0, 58.0)]
+    kontrol("D3 yavaşlama tabanın altına İNMEZ",
+            all(x >= C.V_HUCUM_MIN - 1e-9 for x in _vler),
+            f"±58° dahil → {' '.join(f'{x:.1f}' for x in _vler)} "
+            f"(taban {C.V_HUCUM_MIN:.0f})")
 
-    # 20° — eski sürümün 15.5° tavanının ÜSTÜNDE, ama hız tabanının bağladığı
-    # noktanın altında: vektör hedefe TAM bakabilmeli.
-    cy20 = _cy_icin(20.0)
-    vx_d, vy_d, vz_d, _, _, _ = ib.komut(CX, cy20, 30, 30, 0.0, 10.0, 0.05,
-                                         _VzT5, True, (0.0, 0.0), 0.0)
-    vyatay = math.hypot(vx_d, vy_d)
-    elev_vektor = math.degrees(math.atan2(-vz_d, vyatay)) if vyatay > 1e-6 else 0.0
-    kontrol("B22 dik hedefte yatay kısılır, hız vektörü hedefe TAM bakar",
-            vyatay < _VzT5.V_TERMINAL - 1.0 and abs(elev_vektor - 20.0) < 2.0,
-            f"hedef 20° yukarıda → yatay {_VzT5.V_TERMINAL:.0f}→{vyatay:.1f} m/s, "
-            f"vektör {elev_vektor:.1f}° (eski sürüm 15.5°'de takılırdı)")
+    # D4: ⭐ hedef HİZALIYKEN yavaşlama DEVREYE GİRMEZ (bit bit)
+    _n, _enb = 0, 0.0
+    for _e in (-3.0, 0.0, 3.0):
+        for _b in (15, 30, 60):
+            _y = ib.komut(CX, _cy_icin(_e), _b, _b, 0.0, 20.0, 0.05, C)
+            _h = ib.komut(CX, _cy_icin(_e), _b, _b, 0.0, 20.0, 0.05, _Hizli)
+            _n += 1
+            for _i in range(4):
+                _enb = max(_enb, abs(_y[_i] - _h[_i]))
+    kontrol("D4 ⭐ hedef hizalıyken yavaşlama DEVREYE GİRMEZ (bit bit)",
+            _enb < 1e-12,
+            f"{_n} kombinasyonda fark {_enb:.2e} — yalnız {_tavan:.1f}° "
+            "üstünde kısar; sakin yaklaşma bozulmaz")
 
-    # 35° — taban bağlar; vektör hedefe tam bakamaz ama eski 15.5°'den DİK
-    cy35 = _cy_icin(35.0)
-    vx_e, vy_e, vz_e, _, _, _ = ib.komut(CX, cy35, 30, 30, 0.0, 10.0, 0.05,
-                                         _VzT5, True, (0.0, 0.0), 0.0)
-    vyat_e = math.hypot(vx_e, vy_e)
-    elev_e = math.degrees(math.atan2(-vz_e, vyat_e)) if vyat_e > 1e-6 else 0.0
-    kontrol("B23 aşırı dikte hız tabanı bağlar (hedefi büsbütün kaçırmamak için)",
-            abs(vyat_e - C.V_TERM_MIN) < 1e-6 and elev_e > 20.0,
-            f"hedef 35° → yatay taban {vyat_e:.1f} m/s, vektör {elev_e:.0f}° "
-            f"(eski sürüm 15.5°)")
+    # D5: kapatılabilir (kill-switch)
+    kontrol("D5 yavaşlama kapatılabilir + varsayılan AÇIK",
+            C.YAVASLA and not _Hizli.YAVASLA,
+            f"Cfg.YAVASLA={C.YAVASLA}; AVCI_IBVS_YAVASLA=0 kapatır")
 
-    # ── B24: TERMİNAL DİKEY SÖNÜMLEME — "üstten geçme" önleyici ──
-    # Kullanıcının manuel uçuş kaydı (log 081132): hedef TAM nişandayken
-    # (dikey hata −2.2°) vz komutu −4.2 m/s; sonra kutu 294→456 px kaydı,
-    # yani hedefin üstünden geçildi. Sebep: dikey kanalda türev/sönümleme
-    # terimi yoktu, araç tırmanma momentumu kazanıp geç sönüyordu.
-    cy_bir_az_ust = geo.CY + geo.FY * math.tan(math.radians(25 - 8))
-    _, _, vz_durgun, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
-                                        0.05, C, True, (0.0, 0.0), 0.0, 0.0)
-    _, _, vz_tirmanan, _, _, _ = ib.komut(CX, cy_bir_az_ust, 30, 30, 0.0, 10.0,
-                                          0.05, C, True, (0.0, 0.0), 0.0, -4.0)
-    kontrol("B24 zaten tırmanan araçta dikey komut GERİ ÇEKİLİR (sönümleme)",
-            vz_durgun < -2.0 and vz_tirmanan > vz_durgun + 1.5,
-            f"araç durgunken {vz_durgun:+.2f} → 4 m/s tırmanırken "
-            f"{vz_tirmanan:+.2f} m/s (fark {vz_tirmanan - vz_durgun:+.2f})")
+    # D6: dikey sönümleme gerçekten sönümlüyor
+    class _Sonsuz(ib.Cfg):
+        K_VZ_D = 0.0
+    _a = ib.komut(CX, _cy_icin(15.0), 30, 30, 0.0, 18.0, 0.05, C,
+                  iris_vz=-6.0)          # araç ZATEN hızla tırmanıyor
+    _b = ib.komut(CX, _cy_icin(15.0), 30, 30, 0.0, 18.0, 0.05, _Sonsuz,
+                  iris_vz=-6.0)
+    kontrol("D6 dikey sönümleme aracın KENDİ hızını hesaba katar",
+            _a[2] > _b[2] + 0.05,
+            f"araç −6 m/s tırmanırken: sönümlemeli vz={_a[2]:+.2f}, "
+            f"sönümlemesiz {_b[2]:+.2f} — komut geri çekiliyor")
 
-    # ── B21: ⚠ YAW SLEW SINIRI — takla önleyici ──
-    # 2026-08-09: görsel fazda yaw komutu 876 °/s'ye çıkıyordu (araç ~120);
-    # yaw doyumu roll/pitch yetkisini yiyor → takla. Ölçülen medyan 12-38 °/s,
-    # yani sınır normal takibi KISITLAMAZ, yalnız fly-past'ta bağlar.
-    conn6 = _FakeConn()
-    st6 = {"seq": 0}
-    def wait_pose_savrulan(son_seq, timeout=0.5):
-        st6["seq"] += 1
-        # kutu kadrajı sağdan sola SÜPÜRÜYOR (fly-past): her karede ±uç
-        cxx = 600 if st6["seq"] % 2 else 40
-        return {"seq": st6["seq"],
-                "pose": {"bbox": (cxx - 15, 290, cxx + 15, 315), "conf": 0.9},
-                "stamp": None, "wall_recv": None, "lock": None}
-    stop6 = threading.Event()
-    th6 = threading.Thread(
-        target=ib.run_bbox_ibvs,
-        args=(conn6, get_iris, wait_pose_savrulan, stop6, ib.Cfg, 100,
-              (14.0, 0.0, 0.0)),
-        daemon=True)
-    th6.start(); time.sleep(0.7); stop6.set(); th6.join(2.0)
-    # log'dan yaw komutu değişim hızını ölç
-    import glob as _g2, os as _o2, csv as _c2
-    _y6 = max(_g2.glob(_o2.path.join(ib._LOG_DIR, "*.csv")), key=_o2.path.getmtime)
-    _r6 = [r for r in _c2.DictReader(open(_y6)) if r["durum"] in ("IBVS", "TERMINAL")]
-    _hiz6 = []
-    for a, b in zip(_r6, _r6[1:]):
-        try:
-            _dt = float(b["t"]) - float(a["t"])
-            _d = (float(b["yaw_cmd_deg"]) - float(a["yaw_cmd_deg"]) + 180) % 360 - 180
-            if 1e-3 < _dt < 0.5:
-                _hiz6.append(abs(_d / _dt))
-        except (ValueError, KeyError):
-            pass
-    _enb = max(_hiz6) if _hiz6 else 0.0
-    _sinir = C.YAW_RATE_MAX_DEG
-    kontrol("B21 yaw komut hızı slew sınırında kalır (fly-past'ta takla yok)",
-            len(_hiz6) > 5 and _enb <= _sinir * 1.15,
-            f"savrulan kutuda en hızlı yaw komutu {_enb:.0f}°/s ≤ sınır "
-            f"{_sinir:.0f}°/s (sınırsız sürüm 876°/s üretmişti)")
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("E · YAN ÖZELLİKLER")
 
-    kontrol("B20 lead açısı tavanla sınırlı (gürültülü LOS savurmasın)",
-            abs(ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 10.0, 0.05, C, True,
-                         (50.0, 0.0), 0.0)[5]["lead_az"])
-            <= math.radians(C.LEAD_MAX_DEG) + 1e-9,
-            f"LOS=50 rad/s → tavan {C.LEAD_MAX_DEG:.0f}°")
-
-    print("=" * 60)
-    # ── B25: DİKEY KOMUT KAPANMA HIZIYLA ÖLÇEKLENİR ──
-    # Kullanıcı uçuşta gördü: "tam vuracağı sırada yukarı manevra yapıp
-    # aracın üstünden geçiyoruz." Kök neden tek çarpandı: dikey komut
-    # DRONE'un hızıyla (18 m/s) ölçekleniyordu, oysa dikey farkı kapatmak
-    # için olan süreyi KAPANMA hızı belirler (hedef kaçtığı için ~2 m/s).
-    # Ölçüldü (4 hücum): 3.67 m'de 0.89 m'lik fark için −5.00 m/s komut
-    # ediliyordu, gereken −0.37 m/s — 13.7 KAT fazla.
-    class _Eski(ib.Cfg):
-        KAPANMA = False
-    _cy_yukari = geo.CY + geo.FY * math.tan(math.radians(11.0))   # hedef yukarıda
-    _eski = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, _Eski, True,
-                     (0.0, 0.0), 0.0, 0.0)[2]
-    _yeni = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, C, True,
-                     (0.0, 0.0), 0.0, 0.0, 2.0)          # ṙ = 2 m/s
-    _vz = _yeni[2]
-    kontrol("B25 dikey komut KAPANMA hızıyla ölçeklenir (üstten geçme kök nedeni)",
-            abs(_vz) < abs(_eski) / 3.0 and abs(_vz) > 0.05,
-            f"aynı geometri: eski yasa {_eski:+.2f} m/s → kapanma hızıyla "
-            f"{_vz:+.2f} m/s (ṙ=2 m/s). Eski yasa drone'un 18 m/s'siyle "
-            f"ölçekliyordu.")
-
-    # B26: ölçek tabanı — kapanma dursa bile dikey düzeltme büsbütün ölmesin
-    _dur = ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, C, True,
-                    (0.0, 0.0), 0.0, 0.0, 0.0)[2]        # ṙ = 0
-    kontrol("B26 kapanma dursa bile dikey düzeltme ölmez (taban)",
-            abs(_dur) > 0.05,
-            f"ṙ=0 → vz {_dur:+.2f} m/s (taban {C.KAPANMA_MIN} m/s ile)")
-
-    # B27: geri dönüş yolu — AVCI_IBVS_KAPANMA=0 eski davranışı aynen getirir
-    kontrol("B27 kapanma ölçeklemesi kapatılabilir (eski davranış geri gelir)",
-            abs(ib.komut(CX, _cy_yukari, 40, 40, 0.0, 14.0, 0.05, _Eski, True,
-                         (0.0, 0.0), 0.0, 0.0, 2.0)[2] - _eski) < 1e-9,
-            "KAPANMA=False iken kapanma hızı verilse bile YOK SAYILIR")
-
-
-    print("=" * 60)
-    # ── T1a: YATAY AÇI ROLL/PITCH TELAFİSİ ──
-    # Kullanıcı uçuşta gördü: "düz uçuşta ıskalamıyor ama hedef manevra
-    # yapınca görsel güdüm sapıtıyor, yatayda çok salınım oluyor."
-    # Kök neden: atan((cx−CX)/FX) KAMERA azimutudur, araç yattığında SEVİYE
-    # azimutu değildir. 5869 kare gerçek uçuş verisinde ölçüldü:
-    #     yatış 0-9° → 0.6° hata,  20-29° → 11.0°,  30-39° → 13.9°
-    class _RollYok(ib.Cfg):
+    # E1: T1a yatay roll telafisi — yatışta azimut düzelir
+    class _RollKapali(ib.Cfg):
         ROLL_TELAFI = False
+    _a = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, C,
+                  iris_roll=math.radians(35.0), iris_pitch=math.radians(-8.0))
+    _b = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, _RollKapali,
+                  iris_roll=math.radians(35.0), iris_pitch=math.radians(-8.0))
+    kontrol("E1 yatay roll telafisi yatışta azimutu düzeltir",
+            abs(_a[3] - _b[3]) > math.radians(1.0),
+            f"35° yatışta yaw farkı {math.degrees(abs(_a[3]-_b[3])):.1f}°")
 
-    _t = math.radians(GeoCfg.KAMERA_TILT_DEG)
+    # E2: ⭐ dikey roll telafisi HER KAREDE (ayrı anahtar YOK)
+    # Eski tasarımda seyirde açık / terminalde kapalıydı — tutarsızdı.
+    _r0 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, C, iris_roll=0.0)
+    _r40 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, C,
+                    iris_roll=math.radians(40.0))
+    kontrol("E2 ⭐ dikey roll telafisi HER KAREDE (tek yol)",
+            abs(_r40[2] - _r0[2]) > 0.05 and not hasattr(ib.Cfg, "DIKEY_ROLL"),
+            f"yatış 0°→vz={_r0[2]:+.2f}, 40°→vz={_r40[2]:+.2f} "
+            f"(Δ={abs(_r40[2]-_r0[2]):.2f} m/s); ayrı anahtar yok")
 
-    def _pikselle(az, elev, roll, pitch):
-        """SEVİYE çerçevesindeki (az, elev) + duruş → (cx, cy). los_seviye'nin
-        TERSİ: yuvarlak gidiş-dönüş testi için bağımsız ileri izdüşüm."""
-        ca, sa = math.cos(az), math.sin(az)
-        ce, se = math.cos(elev), math.sin(elev)
-        lx, ly, lz = ca * ce, sa * ce, -se           # seviye çerçevesi
-        # seviye → gövde: Rx(−roll)·Ry(−pitch)
-        cp, sp = math.cos(-pitch), math.sin(-pitch)
-        bx0, by0, bz0 = lx * cp + lz * sp, ly, -lx * sp + lz * cp
-        cr, sr = math.cos(-roll), math.sin(-roll)
-        bx, by, bz = bx0, by0 * cr - bz0 * sr, by0 * sr + bz0 * cr
-        # gövde → kamera (25° yukarı tilt)
-        ct, st = math.cos(_t), math.sin(_t)
-        ileri, sag, asagi = ct * bx - st * bz, by, st * bx + ct * bz
-        return (geo.CX + geo.FX * sag / ileri,
-                geo.CY + geo.FY * asagi / ileri)
+    # E3: lead — LOS dönerken nişan öne alınır
+    _sabit = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 15.0, 0.05, C,
+                      los_hiz=(0.0, 0.0))
+    _donen = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 15.0, 0.05, C,
+                      los_hiz=(0.5, 0.0))
+    kontrol("E3 lead: LOS dönerken nişan öne alınır",
+            abs(_donen[5]["lead_az"]) > math.radians(1.0)
+            and abs(_sabit[5]["lead_az"]) < 1e-9,
+            f"λ̇=0 → {math.degrees(_sabit[5]['lead_az']):.1f}°, "
+            f"λ̇=0.5 rad/s → {math.degrees(_donen[5]['lead_az']):.1f}°")
 
-    # B28: gidiş-dönüş — telafili okuma gerçek geometriyi GERİ VERİR
-    _az0, _el0, _ro, _pi = math.radians(8.0), math.radians(15.0), \
-        math.radians(40.0), math.radians(10.0)
-    _cxp, _cyp = _pikselle(_az0, _el0, _ro, _pi)
-    _azg, _elg = ib.los_seviye(_cxp, _cyp, _ro, _pi, C)
-    kontrol("B28 roll/pitch telafisi gerçek yatay yönü geri verir (gidiş-dönüş)",
-            abs(_azg - _az0) < math.radians(0.05)
-            and abs(_elg - _el0) < math.radians(0.05),
-            f"gerçek az={math.degrees(_az0):.1f}° (yatış 40°, pitch 10°) → "
-            f"telafili okuma {math.degrees(_azg):.2f}°")
+    # E4: lead menzille sönümlenir (yakında hata büyütmesin)
+    _uzak = ib.komut(CX, _cy_icin(0.0), 10, 10, 0.0, 15.0, 0.05, C,
+                     los_hiz=(0.5, 0.0))[5]["lead_olcek"]
+    _yakin = ib.komut(CX, _cy_icin(0.0), 80, 80, 0.0, 15.0, 0.05, C,
+                      los_hiz=(0.5, 0.0))[5]["lead_olcek"]
+    kontrol("E4 lead menzille sönümlenir (yakında söner)",
+            _yakin < _uzak and C.LEAD_SONUM,
+            f"kutu 10 px → ölçek {_uzak:.2f}; 80 px → {_yakin:.2f}")
 
-    # B29: GERÇEK manevra karesinde telafisiz okuma büyük sapar.
-    # Geometri loglardan: manevra koşularında kutu kadrajda YUKARIDA duruyor
-    # (cy medyan 261, p10 185) ve araç ANGLE_MAX'a (45°) dayanıyor. Hata
-    # hedefin kadraj merkezinin ne kadar ÜSTÜNDE olduğuyla büyür:
-    #     cy=300 (nişan) @40° → 3.3°   |   cy=240 @40° → 16.7°
-    #     cy=220        @40° → ~19°    |   cy=200 @40° → 27.1°
-    _cxm, _cym, _rollm = 350.0, 220.0, math.radians(40.0)
-    _az_d, _ = ib.los_seviye(_cxm, _cym, _rollm, math.radians(5.0), C)
-    _az_h = math.atan((_cxm - C.CX_NISAN) / geo.FX)
-    _sapma = abs(math.degrees(_az_d - _az_h))
-    kontrol("B29 telafisiz okuma yatışta büyük sapar (manevra bozulmasının kaynağı)",
-            _sapma > 10.0,
-            f"gerçek manevra karesi (cx={_cxm:.0f}, cy={_cym:.0f}, yatış 40°): "
-            f"telafisiz ↔ telafili arasında {_sapma:.1f}° fark "
-            f"(uçuş ölçümü 30-39° yatışta ort. 13.9°)")
-
-    # B30: DÜZ UÇUŞ BOZULMAZ — kullanıcının doğrulanmış davranışı korunmalı.
-    # roll≈0'da telafili ve telafisiz okuma pratikte aynı kalmalı.
-    _enb_duz = 0.0
-    for _cxd in (280.0, 300.0, 320.0, 340.0, 360.0):
-        for _cyd in (260.0, 300.0, 340.0):
-            _a, _ = ib.los_seviye(_cxd, _cyd, 0.0, math.radians(5.0), C)
-            _h = math.atan((_cxd - C.CX_NISAN) / geo.FX)
-            _enb_duz = max(_enb_duz, abs(math.degrees(_a - _h)))
-    kontrol("B30 düz uçuşta (yatış≈0) telafi davranışı değiştirmez",
-            _enb_duz < 2.5,
-            f"roll=0, pitch=5°, tüm kadraj: en büyük fark {_enb_duz:.2f}° "
-            f"(uçuş ölçümü: yatış<10°'de 0.6°). Kalan fark kamera 25° tilt "
-            f"eşleniği — ham formül onu da yanlış yapıyordu")
-
-    # B31: T1a YALNIZ YATAY — dikey komut bit bit aynı kalmalı (tek değişken)
-    _arg = (350.0, 220.0, 40, 40, 0.3, 14.0, 0.05)
-    _ile = ib.komut(*_arg, C, True, (0.2, 0.1), math.radians(5.0), 0.5, 2.0,
-                    _rollm)
-    _siz = ib.komut(*_arg, _RollYok, True, (0.2, 0.1), math.radians(5.0), 0.5,
-                    2.0, _rollm)
-    kontrol("B31 T1a dikey kanala DOKUNMAZ (vz birebir aynı)",
-            abs(_ile[2] - _siz[2]) < 1e-12,
-            f"yatış 40°'de vz telafili {_ile[2]:+.4f} = telafisiz "
-            f"{_siz[2]:+.4f} m/s — dikey ayrı testin konusu (T1b)")
-
-    # B32: geri dönüş yolu — AVCI_IBVS_ROLL=0 eski yatay yasayı aynen getirir
-    kontrol("B32 roll telafisi kapatılabilir (eski yatay davranış geri gelir)",
-            abs(_siz[5]["eps_yaw"] - _siz[5]["eps_yaw_ham"]) < 1e-12
-            and abs(_ile[5]["eps_yaw"] - _ile[5]["eps_yaw_ham"]) > math.radians(10.0),
-            "ROLL_TELAFI=False → eps_yaw = ham okuma; True iken 40° yatışta "
-            f"{math.degrees(abs(_ile[5]['eps_yaw'] - _ile[5]['eps_yaw_ham'])):.1f}° ayrışır")
-
-    print("=" * 60)
-    # ── M3: LEAD ERKEN BAŞLASIN ──
-    # Uçuş ölçümü (4473 kutulu kare, daire koşuları): lead 0-5 m dışında HER
-    # bantta tam 0.0° — çünkü `if terminal:` kapısı 6.4 m'de kapanıyordu.
-    # 8-13 m'de karelerin %88'i zaten aracın fiziksel tavanı (g·tan45 =
-    # 9.81 m/s²) üstünde dönüş istiyor; düzeltmenin ucuz olduğu 13-35 m
-    # bandında ise lead hiç yoktu.
-    # UÇUŞ SONUCU: kapı kalkınca kadrajda tutuş düzeldi ama YAKLAŞMA bozuldu
-    # (8 m'ye giriş 4→2 kez, lead karelerin %27'sinde 25° tavanında). Varsayılan
-    # KAPALI; bu testler mekanizmayı ve geri/ileri anahtarı koruyor.
-    class _LeadGec(ib.Cfg):
-        LEAD_ERKEN = False
-
-    class _LeadErk(ib.Cfg):
-        LEAD_ERKEN = True
-
-    # B33: terminal DEĞİLKEN lead artık uygulanabiliyor (kapı anahtarlı)
-    _lyaw = 0.4
-    _argL = (360.0, 300.0, 14, 10, _lyaw, 16.0, 0.05)   # boyut≈11.8 → ≈13 m
-    _erk = ib.komut(*_argL, _LeadErk, False, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
-    _gec = ib.komut(*_argL, _LeadGec, False, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
-    kontrol("B33 lead terminal DIŞINDA da uygulanır (M3 kapısı kalktı)",
-            abs(_erk[5]["lead_az"]) > math.radians(5.0)
-            and abs(_gec[5]["lead_az"]) < 1e-12,
-            f"13 m'de λ̇=0.6 rad/s: erken lead "
-            f"{math.degrees(_erk[5]['lead_az']):.1f}° — eski kapıda 0.0° "
-            f"(uçuşta ölçülen: 13-20 m bandında lead medyanı 0.0°)")
-
-    # B34: DÜZ UÇUŞ BOZULMAZ — λ̇≈0 iken lead ≈ 0, yaw komutu aynı kalır
-    _argD = (340.0, 300.0, 14, 10, _lyaw, 16.0, 0.05)
-    _dz_e = ib.komut(*_argD, _LeadErk, False, (0.0, 0.0), 0.0, 0.0, 2.0, 0.0)
-    _dz_g = ib.komut(*_argD, _LeadGec, False, (0.0, 0.0), 0.0, 0.0, 2.0, 0.0)
-    kontrol("B34 düz uçuşta (λ̇=0) M3 yaw komutunu DEĞİŞTİRMEZ",
-            abs(_dz_e[3] - _dz_g[3]) < 1e-12 and abs(_dz_e[0] - _dz_g[0]) < 1e-9,
-            "λ̇=0 → lead = LEAD_SURE·0 = 0; yaw ve hız komutu bit bit aynı "
-            "(kullanıcının düz uçuşta doğruladığı davranış korunur)")
-
-    # B35: M3 YALNIZ YATAY — dikey komut bit bit aynı (tek değişken kuralı)
-    kontrol("B35 M3 dikey kanala DOKUNMAZ (vz birebir aynı)",
-            abs(_erk[2] - _gec[2]) < 1e-12,
-            f"λ̇=0.6 rad/s'de vz erken {_erk[2]:+.4f} = geç {_gec[2]:+.4f} m/s "
-            "— dikey lead terminal tutuşunda bırakıldı")
-
-    # B36: tavan hâlâ geçerli — büyük λ̇ lead'i LEAD_MAX_DEG'de kesmeli
-    _sat = ib.komut(*_argL, _LeadErk, False, (5.0, 0.0), 0.0, 0.0, 2.0, 0.0)
-    kontrol("B36 erken lead tavanı aşmaz (LEAD_MAX_DEG)",
-            abs(math.degrees(_sat[5]["lead_az"])) <= _LeadErk.LEAD_MAX_DEG + 1e-9,
-            f"λ̇=5 rad/s (uçuşta görülen p90 4.81) → lead "
-            f"{math.degrees(_sat[5]['lead_az']):.1f}° ≤ "
-            f"{_LeadErk.LEAD_MAX_DEG:.0f}° tavan")
-
-    # B37: geri dönüş yolu — AVCI_IBVS_LEAD_ERKEN=0 eski davranışı getirir
-    _eski_t = ib.komut(*_argL, _LeadGec, True, (0.6, 0.0), 0.0, 0.0, 2.0, 0.0)
-    kontrol("B37 M3 kapatılabilir (eski 'yalnız terminal' davranışı geri gelir)",
-            abs(_gec[5]["lead_az"]) < 1e-12
-            and abs(_eski_t[5]["lead_az"]) > math.radians(5.0),
-            "LEAD_ERKEN=False → terminal dışında lead 0, terminalde "
-            f"{math.degrees(_eski_t[5]['lead_az']):.1f}° (eski yol aynen)")
-
-    print("=" * 60)
-    # ── Ö1: KAÇIŞ TELAFİSİ ──
-    # 10 kaçamak koşusunun İSTİSNASIZ hepsinde, kaçamaktan sonraki 15 s'de
-    # drone 7.7-13.9 m/s'ye düşüyor (hedef 15.4-16.3) ve 48-147 m açılıyor.
-    # Hız yasası saf menzil düzenleyicisi; "hedef uzaklaşıyor mu" girdisi yok.
+    # E5: Ö1 kaçış telafisi — hedef uzaklaşırken hızı artırır, yaklaşırken YOK
     class _Kacis(ib.Cfg):
         KACIS_KD = 1.0
+        HUCUM_BOYUT_REF = 30.0        # tavana dayanmasın ki fark görünsün
+        V_HUCUM = 30.0
+    _uzk = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 10.0, 0.05, _Kacis,
+                    kapanma=-6.0)[5]
+    _yak = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 10.0, 0.05, _Kacis,
+                    kapanma=+6.0)[5]
+    kontrol("E5 kaçış telafisi: uzaklaşırken hızlanır, yaklaşırken YOK",
+            _uzk["kacis_ek"] > 0.5 and abs(_yak["kacis_ek"]) < 1e-9,
+            f"ṙ=−6 → ek {_uzk['kacis_ek']:.1f} m/s; ṙ=+6 → "
+            f"{_yak['kacis_ek']:.1f}")
 
-    _argK = (CX, C.CY_NISAN, 12, 12, 0.0, 8.0, 0.05)   # boyut 12 → uzak, seyir
-    # ṙ<0 = hedef UZAKLAŞIYOR (kaçamak sonrası hâli)
-    _kac = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
-    _yok = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
-    kontrol("B38 hedef uzaklaşırken (ṙ<0) kaçış telafisi hızı ARTIRIR",
-            _kac[5]["v_los"] > _yok[5]["v_los"] + 3.0
-            and abs(_kac[5]["kacis_ek"] - 6.0) < 1e-6,
-            f"ṙ=-6 m/s: telafisiz {_yok[5]['v_los']:.1f} → telafili "
-            f"{_kac[5]['v_los']:.1f} m/s (ek {_kac[5]['kacis_ek']:.1f})")
+    # E6: Ö5 dönüş tavanı — YALNIZ kısar
+    class _Donus(ib.Cfg):
+        DONUS_A = 9.81
+    _duz = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 20.0, 0.05, _Donus,
+                    los_hiz=(0.0, 0.0))[5]
+    _don = ib.komut(CX, _cy_icin(0.0), 25, 25, 0.0, 20.0, 0.05, _Donus,
+                    los_hiz=(1.2, 0.0))[5]
+    kontrol("E6 Ö5 dönüş tavanı yalnız KISAR (düz uçuşta etkisiz)",
+            _duz["donus_tavan"] is None and _don["v_los"] <= _duz["v_los"],
+            f"λ̇=0 → tavan yok (v={_duz['v_los']:.1f}); λ̇=1.2 → "
+            f"tavan {_don['donus_tavan']:.1f} (v={_don['v_los']:.1f})")
 
-    # B39: YAKLAŞIRKEN terim SIFIR — fren yok (kullanıcı kararı: geri çekilme yok)
-    _yak_k = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, +6.0, 0.0)
-    _yak_y = ib.komut(*_argK, C, False, (0.0, 0.0), 0.0, 0.0, +6.0, 0.0)
-    kontrol("B39 yaklaşırken (ṙ>0) kaçış telafisi ASLA yavaşlatmaz",
-            abs(_yak_k[5]["kacis_ek"]) < 1e-12
-            and abs(_yak_k[5]["v_los"] - _yak_y[5]["v_los"]) < 1e-12,
-            f"ṙ=+6 m/s: ek {_yak_k[5]['kacis_ek']:.2f}, v_los telafili "
-            f"{_yak_k[5]['v_los']:.2f} = telafisiz {_yak_y[5]['v_los']:.2f} m/s")
-
-    # B40: TERMİNAL hücum yasasına DOKUNMAZ (tek değişken)
-    _t_k = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 8.0, 0.05, _Kacis, True,
-                    (0.0, 0.0), 0.0, 0.0, -6.0, 0.0)
-    kontrol("B40 kaçış telafisi TERMİNALE dokunmaz (v = V_TERMINAL)",
-            abs(_t_k[5]["v_los"] - C.V_TERMINAL) < 1e-9
-            and abs(_t_k[5]["kacis_ek"]) < 1e-12,
-            f"terminalde ṙ=-6 olsa bile v_los {_t_k[5]['v_los']:.1f} = "
-            f"V_TERMINAL {C.V_TERMINAL:.1f} m/s")
-
-    # B41: DİKEY kanala dokunmaz
-    kontrol("B41 kaçış telafisi dikey komutu DEĞİŞTİRMEZ",
-            abs(_kac[2] - _yok[2]) < 1e-12,
-            f"vz telafili {_kac[2]:+.4f} = telafisiz {_yok[2]:+.4f} m/s")
-
-    # B42: tavan bağlar + kapatılabilir
-    _buyuk = ib.komut(*_argK, _Kacis, False, (0.0, 0.0), 0.0, 0.0, -30.0, 0.0)
-    kontrol("B42 terim KACIS_MAX ile sınırlı ve AVCI_IBVS_KD=0 ile kapanır",
-            abs(_buyuk[5]["kacis_ek"] - _Kacis.KACIS_MAX) < 1e-9
-            and abs(_yok[5]["kacis_ek"]) < 1e-12,
-            f"ṙ=-30 → ek {_buyuk[5]['kacis_ek']:.1f} m/s "
-            f"(tavan {_Kacis.KACIS_MAX:.0f}); KD=0 → ek 0.00")
-
-    print("=" * 60)
-    # ── Ö8: YANAL KOMUT AÇIYLA DEĞİL, KAÇIRMA MESAFESİYLE ──
-    # Ölçüldü (O7A, 1.5 m): eps_yaw 58°, yaw komutu 120°/s'de doymuş.
-    # 1.5 m'de 58° = yalnız 1.3 m yanal kaçırma; güdüm mesafeyi değil açıyı
-    # görüyordu. Ö8 hız vektörünü kaçırma mesafesine göre ölçekler.
-    class _Yanal(ib.Cfg):
-        YANAL_K = 3.0
-
-    # YAKIN + BÜYÜK AÇI: kutu 105 px (≈1.5 m), hedef kadrajın sağında
-    _cx_uzak = CX + 300.0                       # eps_yaw ≈ 61°
-    _argY = (_cx_uzak, C.CY_NISAN, 105, 105, 0.0, 18.0, 0.05)
-    _y_ac = ib.komut(*_argY, _Yanal, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _y_ka = ib.komut(*_argY, C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _ac_deg = math.degrees(_y_ac[5]["eps_hiz"])
-    _ka_deg = math.degrees(_y_ka[5]["eps_hiz"])
-    kontrol("B43 yakında Ö8 hız komutunu KISAR (58° slam biter)",
-            abs(_ac_deg) < abs(_ka_deg) * 0.7,
-            f"1.5 m'de hız yönü: kapalı {_ka_deg:.0f}° → açık {_ac_deg:.0f}° "
-            f"(uçuşta ölçülen slam: 58°, yaw komutu 120°/s'de doymuş)")
-
-    # B44: BURUN kısılmaz — kamera hedefi izlemeye devam etmeli
-    kontrol("B44 Ö8 BURNU kısmaz (kamera hedefi kaybetmesin)",
-            abs(_y_ac[3] - _y_ka[3]) < 1e-9,
-            f"yaw komutu açık {math.degrees(_y_ac[3]):.1f}° = "
-            f"kapalı {math.degrees(_y_ka[3]):.1f}° — burun tam hedefte")
-
-    # B45: UZAKTA aşırı kısmamalı (25 m tetikte 4/6 isabet var, bozulmasın)
-    _argU = (CX + 60.0, C.CY_NISAN, 8, 8, 0.0, 18.0, 0.05)   # ≈20 m, eps≈20°
-    _u_ac = ib.komut(*_argU, _Yanal, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _u_ka = ib.komut(*_argU, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _oran = (abs(_u_ac[5]["eps_hiz"]) / max(abs(_u_ka[5]["eps_hiz"]), 1e-9))
-    kontrol("B45 uzakta Ö8 HİÇ kısmaz (menzil kapısı — 25 m tetik bozulmasın)",
-            _oran > 0.999,
-            f"20 m'de hız yönü kapalıya oranı %{100*_oran:.0f} "
-            f"({math.degrees(_u_ka[5]['eps_hiz']):.1f}° → "
-            f"{math.degrees(_u_ac[5]['eps_hiz']):.1f}°)")
-
-    # B46: ASLA BÜYÜTMEZ — yalnız kısan bir sınır
-    _buyutme = False
-    for _cxt in (CX + 20, CX + 100, CX + 200, CX + 300):
-        for _bt in (8, 20, 60, 105):
-            _a = ib.komut(_cxt, C.CY_NISAN, _bt, _bt, 0.0, 18.0, 0.05,
-                          _Yanal, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-            _k = ib.komut(_cxt, C.CY_NISAN, _bt, _bt, 0.0, 18.0, 0.05,
-                          C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-            if abs(_a[5]["eps_hiz"]) > abs(_k[5]["eps_hiz"]) + 1e-9:
-                _buyutme = True
-    kontrol("B46 Ö8 komutu ASLA büyütmez (yalnız kısan sınır)",
-            not _buyutme, "16 kombinasyonda hiçbirinde büyütme yok")
-
-    # B47: kapatılabilir — AVCI_IBVS_YANAL=0 eski davranışı aynen getirir
-    kontrol("B47 Ö8 kapatılabilir (varsayılan KAPALI)",
-            abs(C.YANAL_K) < 1e-9
-            and abs(_y_ka[5]["eps_hiz"] - _y_ka[5]["eps_yaw"]) < 1e-12,
-            f"YANAL_K={C.YANAL_K} → eps_hiz = eps_yaw (bit bit aynı)")
-
-    print("=" * 60)
-    # ── Ö9: YATAY KANALA SÖNÜMLEME (D terimi) ──
-    # Kullanıcı uçuşu 185753: hafif bir manevrada (aileron 1733) araç 4.3 m'den
-    # 25 m'ye savruldu, arada iki kez gidip geldi. Yatay kanal SAF ORANSAL;
-    # gecikmeli sistemde saf-P zorunlu olarak salınır.
+    # E7: Ö9 yaw sönümleme — aracın kendi dönüşü komutu geri çeker
     class _Sonum(ib.Cfg):
         SONUM_T = 0.30
-
-    _argS = (CX + 100.0, C.CY_NISAN, 20, 20, 0.0, 14.0, 0.05)
-    # araç SAĞA dönüyor (yaw_hizi>0) ve hedef de sağda → komut GERİ ÇEKİLMELİ
-    _s_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.8)
-    _s_yok = ib.komut(*_argS, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.8)
-    kontrol("B48 araç zaten dönüyorken sönümleme komutu GERİ ÇEKER",
-            _s_var[3] < _s_yok[3] - math.radians(5.0),
-            f"yaw hızı 0.8 rad/s: sönümsüz {math.degrees(_s_yok[3]):.1f}° → "
-            f"sönümlü {math.degrees(_s_var[3]):.1f}° "
-            f"(fark {math.degrees(_s_yok[3]-_s_var[3]):.1f}°)")
-
-    # B49: araç DÖNMÜYORSA (yaw_hizi=0) sönümleme etkisiz — düz uçuş korunur
-    _d_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0)
-    _d_yok = ib.komut(*_argS, C, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 0.0)
-    kontrol("B49 araç dönmüyorken (ω=0) sönümleme yaw'ı DEĞİŞTİRMEZ",
-            abs(_d_var[3] - _d_yok[3]) < 1e-12,
-            "düz takipte ω≈0 → sönümleme terimi 0; kullanıcının doğruladığı "
-            "düz uçuş davranışı bit bit korunur")
-
-    # B50: TERS yönde dönerken komutu İLERİ iter (simetrik, tek yönlü değil)
-    _t_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, -0.8)
-    kontrol("B50 sönümleme simetriktir (ters dönüşte komutu ileri iter)",
-            _t_var[3] > _s_yok[3] + math.radians(5.0),
-            f"yaw hızı −0.8 rad/s → {math.degrees(_t_var[3]):.1f}° "
-            f"(sönümsüz {math.degrees(_s_yok[3]):.1f}°)")
-
-    # B51: tavan bağlar — sönümleme komutu ters yöne çevirmesin
-    _b_var = ib.komut(*_argS, _Sonum, False, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0, 9.0)
-    kontrol("B51 sönümleme SONUM_MAX_DEG tavanında kesilir",
-            abs(math.degrees(_b_var[5]["sonum"])) <= _Sonum.SONUM_MAX_DEG + 1e-9,
-            f"ω=9 rad/s → sönüm {math.degrees(_b_var[5]['sonum']):.1f}° "
-            f"≤ {_Sonum.SONUM_MAX_DEG:.0f}° tavan")
-
-    # B52: kapatılabilir
-    kontrol("B52 Ö9 kapatılabilir (varsayılan KAPALI)",
-            abs(C.SONUM_T) < 1e-9 and abs(_s_yok[5]["sonum"]) < 1e-12,
-            f"SONUM_T={C.SONUM_T} → sönüm terimi 0.00°")
-
-    print("=" * 60)
-    # ── Ö5: DÖNÜŞ-FARKINDA HIZ TAVANI ──
-    # Kullanıcı ölçütüyle bulundu: SAĞA AŞIM 8-47 m (drone hedefin YANINA
-    # savruluyor), "önde %" ~0. Yarıçap R=V²/a; 18 m/s'de 33 m, hedef 13 m.
-    # Tek kaldıraç hızı kısmak (R, V'nin KARESİYLE düşer).
-    class _Donus(ib.Cfg):
-        DONUS_A = 9.0
-
-    # DÖNÜŞTE (λ̇ büyük) hız kısılmalı: λ̇=1.2 → tavan 9.0/1.2 = 7.5 → taban 10
-    _argD5 = (CX + 40.0, C.CY_NISAN, 20, 20, 0.0, 20.0, 0.05)
-    _d_ac = ib.komut(*_argD5, _Donus, True, (1.2, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _d_ka = ib.komut(*_argD5, C, True, (1.2, 0.0), 0.0, 0.0, 3.0, 0.0)
-    kontrol("B53 sert dönüşte (λ̇=1.2) Ö5 hızı KISAR",
-            _d_ac[5]["v_los"] < _d_ka[5]["v_los"] - 3.0,
-            f"λ̇=1.2 rad/s: tavansız {_d_ka[5]['v_los']:.1f} → "
-            f"tavanlı {_d_ac[5]['v_los']:.1f} m/s "
-            f"(yarıçap {_d_ka[5]['v_los']**2/9.81:.0f} → "
-            f"{_d_ac[5]['v_los']**2/9.81:.0f} m)")
-
-    # B54: DÜZ UÇUŞTA (λ̇≈0) etkisiz — kullanıcının doğruladığı davranış
-    _z_ac = ib.komut(*_argD5, _Donus, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _z_ka = ib.komut(*_argD5, C, True, (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    kontrol("B54 düz uçuşta (λ̇≈0) Ö5 hızı DEĞİŞTİRMEZ",
-            abs(_z_ac[5]["v_los"] - _z_ka[5]["v_los"]) < 1e-12
-            and _z_ac[5]["donus_tavan"] is None,
-            f"λ̇=0 → tavan uygulanmadı, v_los {_z_ac[5]['v_los']:.1f} m/s "
-            "(düz uçuş davranışı bit bit korunur)")
-
-    # B55: TABAN bağlar — hedeften tamamen kopmayalım
-    _b_ac = ib.komut(*_argD5, _Donus, True, (5.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    kontrol("B55 Ö5 hızı DONUS_V_MIN altına indirmez",
-            _b_ac[5]["v_los"] >= _Donus.DONUS_V_MIN - 1e-9,
-            f"λ̇=5 rad/s (tavan {_Donus.DONUS_A/5:.1f}) → v_los "
-            f"{_b_ac[5]['v_los']:.1f} ≥ taban {_Donus.DONUS_V_MIN:.0f} m/s")
-
-    # B56: ASLA HIZLANDIRMAZ — yalnız kısan bir tavan
-    _hizli = False
-    for _lam in (0.05, 0.2, 0.5, 1.0, 2.0):
-        for _b in (8, 20, 40):
-            _a = ib.komut(CX + 40.0, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                          _Donus, True, (_lam, 0.0), 0.0, 0.0, 3.0, 0.0)
-            _k = ib.komut(CX + 40.0, C.CY_NISAN, _b, _b, 0.0, 20.0, 0.05,
-                          C, True, (_lam, 0.0), 0.0, 0.0, 3.0, 0.0)
-            if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
-                _hizli = True
-    kontrol("B56 Ö5 hızı ASLA artırmaz (yalnız kısan tavan)",
-            not _hizli, "15 kombinasyonda hiçbirinde hızlanma yok")
-
-    # B57: kapatılabilir
-    kontrol("B57 Ö5 kapatılabilir (varsayılan KAPALI)",
-            abs(C.DONUS_A) < 1e-9 and _d_ka[5]["donus_tavan"] is None,
-            f"DONUS_A={C.DONUS_A} → tavan hiç uygulanmaz")
-
-    # B64: YAPISAL GARANTİ — Ö5 DİKEY kanala DOKUNAMAZ (CLAUDE.md §5.10:
-    # "regresyon testinden daha güçlü olan, değişikliğin diğer kanalı
-    # MATEMATİKSEL OLARAK etkileyememesidir"). Ö5 yalnız v_los'u (yatay LOS
-    # hızı) kısar; vz eps_elev'den ayrı hesaplanır ve bu tavandan GEÇMEZ.
-    # Bu test o iddiayı bit bit sınar — dikey için uçuş koşmaya gerek kalmaz.
-    _vz_enb, _n64 = 0.0, 0
-    for _lam in (0.0, 0.3, 1.0, 2.0, 5.0):
-        for _cyd in (200.0, 260.0, 320.0, 400.0):
-            for _b in (8, 20, 40):
-                for _vzz in (-3.0, 3.0):
-                    _a = ib.komut(CX + 40.0, _cyd, _b, _b, 0.0, 20.0, 0.05,
-                                  _Donus, True, (_lam, 0.0), 0.0, _vzz, 3.0, 0.0)
-                    _k = ib.komut(CX + 40.0, _cyd, _b, _b, 0.0, 20.0, 0.05,
-                                  C, True, (_lam, 0.0), 0.0, _vzz, 3.0, 0.0)
-                    _vz_enb = max(_vz_enb, abs(_a[2] - _k[2]))
-                    _n64 += 1
-    print("=" * 60)
-    # ══ DİKEY GÜÇ + DİKEY HİZALAMA KAPISI (2026-08-17, kullanıcı isteği) ══
-
-    # B71: dikey tavan AÇILDI — dik hedefte vektör artık daha dik bakabiliyor
-    _cy20 = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(20.0))
-    _a5 = ib.komut(CX, _cy20, 30, 30, 0.0, 10.0, 0.05, _VzT5, True,
-                   (0.0, 0.0), 0.0)
-    _a10 = ib.komut(CX, _cy20, 30, 30, 0.0, 10.0, 0.05, C, True,
-                    (0.0, 0.0), 0.0)
-    _yat5 = math.hypot(_a5[0], _a5[1]); _yat10 = math.hypot(_a10[0], _a10[1])
-    kontrol("B71 dikey tavan açıldı: dik hedefte yatay ARTIK KISILMIYOR",
-            C.VZ_MAX_TERM > _VzT5.VZ_MAX_TERM and _yat10 > _yat5 + 1.0
-            and abs(_a10[2]) > abs(_a5[2]),
-            f"VZ_MAX_TERM {_VzT5.VZ_MAX_TERM:.0f} → {C.VZ_MAX_TERM:.0f} m/s: "
-            f"yatay {_yat5:.1f} → {_yat10:.1f} m/s, "
-            f"dikey {abs(_a5[2]):.1f} → {abs(_a10[2]):.1f} m/s "
-            "(kullanıcı: 'aracın gücünü dikey için kullanalım')")
-
-    # B72: DİKEY OFSET yalnız BBOX + KENDİ DURUŞUMUZDAN kurulur (§10 kuralı).
-    # los_seviye'nin girdileri: cx, cy (kutu) + roll, pitch (kendi sensörümüz).
-    # Hedefin GPS'i, irtifası, hızı YOK. Bu yapısal bir güvencedir.
-    _sig = inspect.signature(ib.los_seviye).parameters
-    kontrol("B72 dikey ofset YARIŞMA KURALINA uygun (hedef GPS'i yok)",
-            set(_sig) == {"cx", "cy", "roll", "pitch", "cfg"},
-            f"los_seviye girdileri {tuple(_sig)} — yalnız kutu pikseli + "
-            "kendi duruşumuz; hedefin konumu/irtifası GİRMİYOR (§10)")
-
-    # B73: dikey ofset FORMÜLÜ doğru — R·sin(el), işaret + = hedef YUKARIDA
-    for _elev, _ad in ((12.0, "yukarıda"), (-12.0, "aşağıda")):
-        _cyt = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_elev))
-        _, _el = ib.los_seviye(CX, _cyt, 0.0, 0.0, C)
-        _R = C.MENZIL_PX_M / 25.0            # 25 px → 6.4 m
-        _ofs = _R * math.sin(_el)
-        _bek = _R * math.sin(math.radians(_elev))
-        if abs(_ofs - _bek) > 0.05:
-            kontrol(f"B73 dikey ofset formülü ({_ad})", False,
-                    f"beklenen {_bek:+.2f} m, çıkan {_ofs:+.2f} m")
-            break
-    else:
-        _cyU = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(12.0))
-        _, _elU = ib.los_seviye(CX, _cyU, 0.0, 0.0, C)
-        kontrol("B73 dikey ofset formülü: R·sin(el), + = hedef YUKARIDA",
-                True,
-                f"6.4 m'de 12° yükseliş → {6.4*math.sin(_elU):+.2f} m "
-                "(±12° simetrik, 0.05 m içinde)")
-
-    # B74: KAPI KAPATILABİLİR — 0 iken hiçbir şey değişmez
-    class _KapiKapali(ib.Cfg):
-        DIKEY_KAPI_M = 0.0
-    kontrol("B74 dikey kapı kapatılabilir (0 = eski davranış)",
-            C.DIKEY_KAPI_M > 0.0 and _KapiKapali.DIKEY_KAPI_M == 0.0,
-            f"varsayılan {C.DIKEY_KAPI_M:.1f} m (AÇIK, kullanıcı isteği); "
-            "0 yapılınca mandal yalnız kutu boyutuna bakar")
-
-    # B75: dikey_ofs_m CSV sütunu var (mekanizma kapısı ölçülebilsin)
-    kontrol("B75 dikey_ofs_m CSV sütunu eklendi (mekanizma kapısı)",
-            "dikey_ofs_m" in ib._CSV_ALANLAR,
-            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun — kapının ne kadar "
-            "beklettiği loglardan ölçülebilir")
-
-    print("=" * 60)
-    # ══ D3 · KAÇIRACAKSAN YAVAŞLA (kullanıcı fikri, 2026-08-18) ══
-    class _D3(ib.Cfg):
-        TERM_SAF3B = True
-        TERM_YAVASLA = True
-        K_VZ_D = 0.0          # yasanın kendisi sınanıyor
-
-    class _D1saf2(ib.Cfg):
-        TERM_SAF3B = True
-        K_VZ_D = 0.0
-
-    def _cy_e(_e):
-        return geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_e))
-
-    # B93: ⭐ D3 dik açılarda vektörü hedefe ÇEVİREBİLİYOR (D1 takılıyor)
-    _sonuc = []
-    for _e in (45.0, 55.0, 70.0):
-        _d3 = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
-                       (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        _d1 = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
-                       (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        _v3 = math.degrees(math.atan2(-_d3[2], math.hypot(_d3[0], _d3[1])))
-        _v1 = math.degrees(math.atan2(-_d1[2], math.hypot(_d1[0], _d1[1])))
-        _sonuc.append((_e, _v1, _v3, _d3[5]["v_los"]))
-    # ⚠ nişan_elev'in kendi ±60° clamp'i var (mevcut yapısal sınır) —
-    # beklenti min(hedef, 60°).
-    kontrol("B93 ⭐ D3: dik açılarda vektör hedefi TAM gösterir (D1 takılır)",
-            all(abs(v3 - min(e, 60.0)) < 1.5 for e, _, v3, _ in _sonuc)
-            and all(v1 < e - 5.0 for e, v1, _, _ in _sonuc),
-            "  ".join(f"{e:.0f}°: D1 {v1:.1f}° → D3 {v3:.1f}° (v {v:.1f})"
-                      for e, v1, v3, v in _sonuc))
-
-    # B94: D3 YALNIZ KISAR — hızı asla artırmaz
-    _hizli = False
-    for _e in (5.0, 20.0, 38.0, 50.0, 70.0):
-        _a = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        _k = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        if _a[5]["v_los"] > _k[5]["v_los"] + 1e-9:
-            _hizli = True
-    kontrol("B94 D3 hızı ASLA artırmaz (yalnız kısan kısıt)",
-            not _hizli, "5 açıda hiçbirinde hızlanma yok")
-
-    # B95: küçük açılarda ETKİSİZ (sakin yaklaşma bozulmaz)
-    _kucuk = 0.0
-    for _e in (0.0, 10.0, 20.0, 30.0):
-        _a = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D3, True,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        _k = ib.komut(CX, _cy_e(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf2, True,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        for _i in range(4):
-            _kucuk = max(_kucuk, abs(_a[_i] - _k[_i]))
-    kontrol("B95 D3 küçük açılarda ETKİSİZ (≤38.7° hiç kısmaz)",
-            _kucuk < 1e-12,
-            f"0-30° arası 4 açıda en büyük fark {_kucuk:.2e} — kısıt yalnız "
-            f"asin(VZ_MAX_TERM/v_los)={math.degrees(math.asin(min(1.0, C.VZ_MAX_TERM/C.V_TERMINAL))):.1f}° "
-            "üstünde devreye girer")
-
-    # B96: V_TERM_MIN tabanı korunur + varsayılan KAPALI
-    _dik = ib.komut(CX, _cy_e(85.0), 30, 30, 0.0, 12.0, 0.05, _D3, True,
-                    (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    kontrol("B96 D3 V_TERM_MIN tabanını korur, varsayılan KAPALI",
-            _dik[5]["v_los"] >= C.V_TERM_MIN - 1e-9 and not C.TERM_YAVASLA,
-            f"hedef 85° yukarıda → v_los {_dik[5]['v_los']:.1f} ≥ taban "
-            f"{C.V_TERM_MIN:.0f}; Cfg.TERM_YAVASLA={C.TERM_YAVASLA}")
-
-    print("=" * 60)
-    # ══ D2 · TERMİNALDE FREN YOK — giriş hızı kilitlenir (2026-08-18) ══
-    class _D2(ib.Cfg):
-        TERM_HIZ_KORU = True
-
-    # B89: ⭐ kilit varken v_los SIÇRAMAZ (fren yok)
-    _r89 = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
-                    (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
-    _rK = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, C, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
-    kontrol("B89 ⭐ D2: terminale giriş hızı KİLİTLENİR (fren yok)",
-            abs(_r89[5]["v_los"] - 21.0) < 1e-9
-            and abs(_rK[5]["v_los"] - C.V_TERMINAL) < 1e-9,
-            f"giriş 21.0 m/s → D2 {_r89[5]['v_los']:.1f} (sıçrama YOK), "
-            f"taban {_rK[5]['v_los']:.1f} (4.1 m/s fren → burun +24.8° → "
-            "kamera 50° yukarı → hedef kadrajdan çıkıyor)")
-
-    # B90: kilit V_TOPLAM_MAX ve V_TERM_MIN ile SINIRLI
-    _hi = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=99.0)
-    _lo = ib.komut(CX, C.CY_NISAN, 30, 30, 0.0, 12.0, 0.05, _D2, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=1.0)
-    kontrol("B90 D2 kilidi V_TOPLAM_MAX / V_TERM_MIN ile sınırlı",
-            abs(_hi[5]["v_los"] - C.V_TOPLAM_MAX) < 1e-9
-            and abs(_lo[5]["v_los"] - C.V_TERM_MIN) < 1e-9,
-            f"kilit 99 → {_hi[5]['v_los']:.0f} (tavan {C.V_TOPLAM_MAX:.0f}), "
-            f"kilit 1 → {_lo[5]['v_los']:.0f} (taban {C.V_TERM_MIN:.0f})")
-
-    # B91: kilit YOKKEN (mandal atılmamış) davranış TABANLA aynı
-    _n91 = 0.0
-    for _cyd in (240.0, 301.0, 360.0):
-        for _b in (20, 30, 45):
-            _a = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05, _D2, True,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=None)
-            _k = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05, C, True,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=None)
-            for _i in range(4):
-                _n91 = max(_n91, abs(_a[_i] - _k[_i]))
-    kontrol("B91 D2 kilit YOKKEN taban davranışı (bit bit)",
-            _n91 < 1e-12,
-            f"9 kombinasyonda en büyük fark {_n91:.2e} — kilit yalnız mandal "
-            "atıldığında dolar")
-
-    # B92: SEYİR fazına DOKUNMAZ + varsayılan KAPALI
-    _n92 = 0.0
-    for _cyd in (240.0, 301.0, 380.0):
-        _a = ib.komut(CX + 30.0, _cyd, 15, 15, 0.0, 12.0, 0.05, _D2, False,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
-        _k = ib.komut(CX + 30.0, _cyd, 15, 15, 0.0, 12.0, 0.05, C, False,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0, v_term_kilit=21.0)
-        for _i in range(4):
-            _n92 = max(_n92, abs(_a[_i] - _k[_i]))
-    kontrol("B92 D2 SEYİR fazına DOKUNMAZ, varsayılan KAPALI",
-            _n92 < 1e-12 and not C.TERM_HIZ_KORU and _D2.TERM_HIZ_KORU,
-            f"seyirde fark {_n92:.2e}; Cfg.TERM_HIZ_KORU={C.TERM_HIZ_KORU}")
-
-    # B97: ⭐ YAPISAL GARANTİ — SEYİR fazı D2'den ETKİLENEMEZ (§5.10)
-    # NEDEN: kampanya H blok C'de (circle_l) deney kolu kontrolden kötü
-    # çıktı (en yakın 10.4/12.9 m vs 4.7/2.8 m). Ama mekanizma kapısı
-    # (§5.1) o koşularda terminal karesi 0 ve 23 gösterdi — yani D2 uçuşun
-    # %0-0.5'inde aktifti. Fark D2'den GELEMEZ; bunu ölçümle değil
-    # MATEMATİKSEL OLARAK kanıtlıyoruz: TERM_HIZ_KORU yalnız `if terminal:`
-    # dalında okunur (bbox_ibvs.py:979), dolayısıyla terminal=False iken
-    # komut() çıktısı bit bit aynıdır — kilit DOLU olsa bile.
-    _n97 = 0.0
-    _k97 = 0
-    for _cxd in (CX - 60.0, CX, CX + 60.0):
-        for _cyd in (240.0, 301.0, 380.0):
-            for _b in (10, 25, 45):
-                for _rl in (0.0, 0.4):
-                    for _kil in (None, 21.0, 99.0):
-                        _a = ib.komut(_cxd, _cyd, _b, _b, 0.3, 12.0, 0.05,
-                                      _D2, False, (0.02, 0.01), 0.1, 1.0,
-                                      0.9, _rl, v_term_kilit=_kil)
-                        _k = ib.komut(_cxd, _cyd, _b, _b, 0.3, 12.0, 0.05,
-                                      C, False, (0.02, 0.01), 0.1, 1.0,
-                                      0.9, _rl, v_term_kilit=_kil)
-                        _k97 += 1
-                        for _i in range(4):
-                            _n97 = max(_n97, abs(_a[_i] - _k[_i]))
-    kontrol("B97 ⭐ YAPISAL: seyirde D2 komutu DEĞİŞTİREMEZ (bit bit)",
-            _n97 < 1e-12,
-            f"{_k97} girdi kombinasyonunda (cx/cy/boyut/roll/kilit) en büyük "
-            f"fark {_n97:.2e} — TERM_HIZ_KORU yalnız `if terminal:` içinde "
-            "okunur; terminale girilmeyen senaryoda (circle) uçuş yolu "
-            "DEĞİŞEMEZ, oradaki fark koşu değişkenliğidir")
-
-    print("=" * 60)
-    # ══ D1 · SAF TAKİP 3B — yatayın matematiği dikeye (2026-08-18) ══
-    class _D1(ib.Cfg):
-        TERM_SAF3B = True
-
-    def _cy_elev(_e):
-        return geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(_e))
-
-    # B84: ⭐ |v| = v_los SABİT — vektörün BÜYÜKLÜĞÜ korunur (yatayın kuralı)
-    _enb84, _n84 = 0.0, 0
-    for _e in (0.0, 10.0, 24.0, 40.0, 60.0):
-        for _cxd in (CX, CX + 60.0, CX - 60.0):
-            _r = ib.komut(_cxd, _cy_elev(_e), 30, 30, 0.0, 12.0, 0.05, _D1,
-                          True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-            _mag = math.sqrt(_r[0]**2 + _r[1]**2 + _r[2]**2)
-            _enb84 = max(_enb84, abs(_mag - _r[5]["v_los"]))
-            _n84 += 1
-    kontrol("B84 ⭐ D1: |v| = v_los SABİT (yatayın kuralı dikeye taşındı)",
-            _enb84 < 0.02,
-            f"{_n84} kombinasyonda |v| ile v_los arasındaki en büyük fark "
-            f"{_enb84:.4f} m/s — vektör hedefe bakar, büyüklüğü değişmez")
-
-    # B85: ⭐ hız vektörü GERÇEKTEN hedefin yükselişini gösterir
-    # ⚠ YASANIN KENDİSİ sınanıyor → K_VZ_D=0. Sönümleme AYRI bir katmandır
-    # ve açıyı bilerek değiştirir (aracın kendi dikey hızını geri besler).
-    class _D1saf(ib.Cfg):
-        TERM_SAF3B = True
-        K_VZ_D = 0.0
-
-    _hata = []
-    for _e in (10.0, 24.0, 40.0, 60.0):
-        _r = ib.komut(CX, _cy_elev(_e), 30, 30, 0.0, 12.0, 0.05, _D1saf, True,
-                      (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-        _yat = math.hypot(_r[0], _r[1])
-        _vek = math.degrees(math.atan2(-_r[2], _yat)) if _yat > 1e-6 else 90.0
-        _hata.append((_e, _vek, abs(_vek - _e)))
-    # Dikey tavan (VZ_MAX_TERM) asin(VZ_MAX_TERM/v_los)'da bağlar — bunun
-    # ALTINDA vektör hedefi TAM gösterir, üstünde tavanın izin verdiği kadar.
-    _tavan_aci = math.degrees(math.asin(min(1.0,
-                    _D1saf.VZ_MAX_TERM / _D1saf.V_TERMINAL)))
-    kontrol("B85 ⭐ D1: dikey tavana kadar vektör hedefi TAM gösterir",
-            all(h < 1.0 for e, _, h in _hata if e < _tavan_aci - 1.0)
-            and all(abs(v - _tavan_aci) < 1.5
-                    for e, v, _ in _hata if e > _tavan_aci + 1.0),
-            "  ".join(f"{e:.0f}°→{v:.1f}°" for e, v, _ in _hata)
-            + f"  | tavan asin({_D1saf.VZ_MAX_TERM:.0f}/{_D1saf.V_TERMINAL:.0f})"
-            f" = {_tavan_aci:.1f}° (eski yasa 14.6°'de takılıyordu — 2.6 kat)")
-
-    # B86: eski yasa AYNI açılarda vektörü gösteremiyor (kıyas)
-    _e60 = _cy_elev(60.0)
-    _rD = ib.komut(CX, _e60, 30, 30, 0.0, 12.0, 0.05, _D1, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    _rE = ib.komut(CX, _e60, 30, 30, 0.0, 12.0, 0.05, C, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    _vD = math.degrees(math.atan2(-_rD[2], math.hypot(_rD[0], _rD[1])))
-    _vE = math.degrees(math.atan2(-_rE[2], math.hypot(_rE[0], _rE[1])))
-    kontrol("B86 D1 eski yasadan DAHA DİK bakabiliyor (60° hedefte)",
-            _vD > _vE + 20.0,
-            f"hedef 60° yukarıda → eski yasa vektörü {_vE:.1f}°, "
-            f"D1 {_vD:.1f}° (fark {_vD-_vE:.1f}°)")
-
-    # B87: SEYİR fazına DOKUNMAZ
-    _enb87, _n87 = 0.0, 0
-    for _cyd in (220.0, 301.0, 380.0):
-        for _b in (10, 25, 40):
-            _a = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, _D1, False,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-            _k = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, C, False,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-            for _i in range(4):
-                _enb87 = max(_enb87, abs(_a[_i] - _k[_i]))
-            _n87 += 1
-    kontrol("B87 D1 SEYİR fazına DOKUNMAZ (tek değişken)",
-            _enb87 < 1e-12,
-            f"{_n87} kombinasyonda en büyük fark {_enb87:.2e}")
-
-    # B88: varsayılan KAPALI + yatay YÖNÜ değişmez (yalnız büyüklük paylaşılır)
-    _rD2 = ib.komut(CX + 80.0, _cy_elev(30.0), 30, 30, 0.0, 12.0, 0.05, _D1,
-                    True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    _rE2 = ib.komut(CX + 80.0, _cy_elev(30.0), 30, 30, 0.0, 12.0, 0.05, C,
-                    True, (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    _yD = math.atan2(_rD2[1], _rD2[0]); _yE = math.atan2(_rE2[1], _rE2[0])
-    kontrol("B88 D1 varsayılan KAPALI ve YATAY YÖNÜ değiştirmez",
-            not C.TERM_SAF3B and _D1.TERM_SAF3B
-            and abs(ib.normalize_angle(_yD - _yE)) < 1e-9,
-            f"Cfg.TERM_SAF3B={C.TERM_SAF3B}; yatay yön "
-            f"{math.degrees(_yD):.3f}° = {math.degrees(_yE):.3f}° "
-            "(yalnız büyüklük cos(elev) ile paylaşılır)")
-
-    print("=" * 60)
-    # ══ A1 · TERMİNAL DİKEY ÖLÇEĞİ — kapanma yerine TAM HIZ (2026-08-18) ══
-    class _A1(ib.Cfg):
-        TERM_TAM_HIZ = True
-
-    # B80: A1 dikey komutu BÜYÜTÜR (kapanma tabanına yapışma kalkar)
-    _cyU = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(24.0))
-    _a1 = ib.komut(CX, _cyU, 30, 30, 0.0, 12.0, 0.05, _A1, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    _k1 = ib.komut(CX, _cyU, 30, 30, 0.0, 12.0, 0.05, C, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    kontrol("B80 A1 terminal dikey komutunu BÜYÜTÜR (kapanma tabanı kalkar)",
-            abs(_a1[2]) > abs(_k1[2]) * 3.0,
-            f"hedef 24° yukarıda, kapanma 0.9 m/s: vz {abs(_k1[2]):.2f} → "
-            f"{abs(_a1[2]):.2f} m/s ({abs(_a1[2])/max(abs(_k1[2]),1e-9):.1f} kat)")
-
-    # B81: SEYİR fazına DOKUNMAZ (yalnız terminal dikey yasası)
-    _enb81, _n81 = 0.0, 0
-    for _cyd in (220.0, 301.0, 380.0):
-        for _b in (10, 25, 40):
-            _a = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, _A1, False,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-            _k = ib.komut(CX + 30.0, _cyd, _b, _b, 0.0, 12.0, 0.05, C, False,
-                          (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-            for _i in range(4):
-                _enb81 = max(_enb81, abs(_a[_i] - _k[_i]))
-            _n81 += 1
-    kontrol("B81 A1 SEYİR fazına DOKUNMAZ (tek değişken)",
-            _enb81 < 1e-12,
-            f"{_n81} kombinasyonda en büyük fark {_enb81:.2e}")
-
-    # B82: VZ_MAX_TERM tavanı A1'de de BAĞLAR (kontrolsüz büyümesin)
-    _cyX = geo.CY + geo.FY * math.tan(math.radians(25.0) - math.radians(50.0))
-    _aX = ib.komut(CX, _cyX, 30, 30, 0.0, 12.0, 0.05, _A1, True,
-                   (0.0, 0.0), 0.0, 0.0, 0.9, 0.0)
-    kontrol("B82 A1'de dikey tavan hâlâ BAĞLAR (kontrolsüz büyüme yok)",
-            abs(_aX[2]) <= C.VZ_MAX_TERM + 1e-9,
-            f"hedef 50° yukarıda → vz {abs(_aX[2]):.2f} m/s ≤ "
-            f"VZ_MAX_TERM {C.VZ_MAX_TERM:.0f}")
-
-    # B83: kapatılabilir + varsayılan KAPALI (taban EN İYİ HAL'de kalır)
-    kontrol("B83 A1 varsayılan KAPALI (EN İYİ HAL bozulmaz)",
-            not C.TERM_TAM_HIZ and _A1.TERM_TAM_HIZ,
-            f"Cfg.TERM_TAM_HIZ={C.TERM_TAM_HIZ} — panelden/env ile açılır")
-
-    print("=" * 60)
-    # ══ T1c · TERMİNAL FAZINDA ROLL TELAFİSİ (2026-08-17) ══
-    class _TermRollKapali(ib.Cfg):
-        TERM_ROLL = False
-
-    # ⚠ 2026-08-18: TERM_ROLL VARSAYILANI KAPANDI (opt-in). Taban Cfg artık
-    # "kapalı" kolu; T1c'yi sınamak için AÇIK kolu ayrıca kurulur.
-    class _TermRollAcik(ib.Cfg):
-        TERM_ROLL = True
-
-    # B76: ⭐ YAPISAL GARANTİ — roll=0'da BİT BİT aynı (düz uçuş korunur)
-    _enb76, _n76 = 0.0, 0
-    for _cyd in (200.0, 260.0, 301.0, 340.0, 400.0):
-        for _ptd in (-25.0, -8.0, 0.0, 8.0):
-            for _b in (20, 30, 50):
-                _a = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05,
-                              _TermRollAcik, True,
-                              (0.0, 0.0), math.radians(_ptd), 0.0, 3.0, 0.0)
-                _k = ib.komut(CX, _cyd, _b, _b, 0.0, 12.0, 0.05,
-                              _TermRollKapali, True, (0.0, 0.0),
-                              math.radians(_ptd), 0.0, 3.0, 0.0)
-                for _i in range(4):
-                    _enb76 = max(_enb76, abs(_a[_i] - _k[_i]))
-                _n76 += 1
-    kontrol("B76 ⭐ T1c roll=0'da komutu BİT BİT değiştirmez (düz uçuş korunur)",
-            _enb76 < 1e-12,
-            f"{_n76} kombinasyonda en büyük fark {_enb76:.2e} — terminal roll "
-            "telafisi YALNIZ yatışta devreye girer")
-
-    # B77: YATIŞTA gerçekten düzeltiyor ve etki yatışla büyüyor
-    _fark = []
-    for _rd in (10.0, 25.0, 40.0):
-        _a = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 12.0, 0.05,
-                      _TermRollAcik, True,
-                      (0.0, 0.0), math.radians(-8.0), 0.0, 3.0,
-                      math.radians(_rd))
-        _k = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 12.0, 0.05,
-                      _TermRollKapali, True, (0.0, 0.0), math.radians(-8.0),
-                      0.0, 3.0, math.radians(_rd))
-        _fark.append((_rd, abs(_a[2] - _k[2])))
-    kontrol("B77 T1c yatışta dikey komutu düzeltir, etki yatışla BÜYÜR",
-            all(b > 0.01 for _, b in _fark)
-            and _fark[2][1] > _fark[0][1],
-            "  ".join(f"{r:.0f}°→Δvz {d:.2f} m/s" for r, d in _fark)
-            + "  (ölçülen terminal yatışı p90 42.4°)")
-
-    # B78: varsayılan KAPALI (opt-in) ve açılabilir
-    # 2026-08-18: `manevrada-iyi-terminalde-kotu` etiketli hâlin davranışı
-    # korunsun diye varsayılan kapatıldı; ayar konsolundan açılır.
-    kontrol("B78 T1c varsayılan KAPALI (opt-in) ve açılabilir",
-            (not C.TERM_ROLL) and _TermRollAcik.TERM_ROLL,
-            f"Cfg.TERM_ROLL={C.TERM_ROLL} — taban davranış `manevrada-iyi-"
-            "terminalde-kotu` ile BİT BİT aynı; AVCI_IBVS_TERM_ROLL=1 açar")
-
-    # B79: SEYİR fazı DEĞİŞMEDİ (tek değişken — T1c yalnız terminale dokunur)
-    _enb79, _n79 = 0.0, 0
-    for _cyd in (220.0, 301.0, 380.0):
-        for _rd in (0.0, 20.0, 40.0):
-            _a = ib.komut(CX + 40.0, _cyd, 15, 15, 0.0, 12.0, 0.05,
-                          _TermRollAcik, False,
-                          (0.0, 0.0), math.radians(-5.0), 0.0, 3.0,
-                          math.radians(_rd))
-            _k = ib.komut(CX + 40.0, _cyd, 15, 15, 0.0, 12.0, 0.05,
-                          _TermRollKapali, False, (0.0, 0.0),
-                          math.radians(-5.0), 0.0, 3.0, math.radians(_rd))
-            for _i in range(4):
-                _enb79 = max(_enb79, abs(_a[_i] - _k[_i]))
-            _n79 += 1
-    kontrol("B79 T1c SEYİR fazına DOKUNMAZ (tek değişken)",
-            _enb79 < 1e-12,
-            f"{_n79} kombinasyonda en büyük fark {_enb79:.2e} — terminal=False "
-            "iken iki kol birebir aynı")
-
-    print("=" * 60)
-    # ── S1/S3 SİLİNDİ — bekçi testleri (§5.12: artık bırakma) ──
-    kontrol("B65 S1 tamamen silindi (Cfg'de slew alanı yok)",
-            not any(hasattr(C, _a) for _a in
-                    ("SLEW_KAT", "SLEW_ANGLE_MAX_DEG", "SLEW_V_MIN")),
-            "SLEW_* yok — komut dönüş hızı tavanı ölçüldü ve elendi "
-            "(ivme p90 kontrolün %81'i, p=0.024)")
-    kontrol("B66 S3 tamamen silindi (Cfg'de anti-windup alanı yok)",
-            not any(hasattr(C, _a) for _a in ("AW_K", "AW_MAX_DEG")),
-            "AW_* yok — anti-windup geri beslemesi ölçüldü ve elendi")
-    kontrol("B67 slew_kirp_deg / aw_geri_deg CSV sütunları kalmadı",
-            "slew_kirp_deg" not in ib._CSV_ALANLAR
-            and "aw_geri_deg" not in ib._CSV_ALANLAR,
-            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, ikisi de yok")
-    kontrol("B68 komut() imzasında S1/S3 durum girdileri kalmadı",
-            not any(_a in inspect.signature(ib.komut).parameters
-                    for _a in ("hiz_yonu_onceki", "uygulanan_yon")),
-            "saf fonksiyon eski hâline döndü — çağıran ek durum taşımıyor")
-
-    print("=" * 60)
-    kontrol("B64 Ö5 DİKEY kanalı DEĞİŞTİREMEZ (yapısal, bit bit)",
-            _vz_enb < 1e-12,
-            f"{_n64} girdi kombinasyonunda en büyük vz farkı {_vz_enb:.2e} m/s "
-            "— dikey için regresyon uçuşu gerekmez (§5.10 yapısal garanti)")
-
-    print("=" * 60)
-    # ── T1b: DİKEY KANALDA ROLL/PITCH TELAFİSİ ──
-    # Gece ölçümü: kesişim 10-40 cm'ye çözülüyor, isabet/ıska farkı DİKEYDE.
-    # Zarf yatayda ±0.65 m ama dikeyde +0.29/−0.13 m — 5 kat dar.
-    # ⭐ 2026-08-17: DIKEY_ROLL varsayılanı AÇILDI. Testler artık "AÇIK olan
-    # taban Cfg" ile "açıkça KAPATILMIŞ" hâli kıyaslıyor — yön ters çevrildi,
-    # iddia aynı kaldı.
-    class _DikeyT(ib.Cfg):
-        DIKEY_ROLL = True
-
-    class _DikeyKapali(ib.Cfg):
-        DIKEY_ROLL = False
-
-    # DÜZ UÇUŞ: roll=pitch=0'da telafi dikey hatayı DEĞİŞTİRMEMELİ
-    _enb = 0.0
-    for _cyd in (200.0, 260.0, 300.0, 340.0, 400.0):
-        _a = ib.komut(CX, _cyd, 20, 20, 0.0, 12.0, 0.05, _DikeyT, False,
-                      (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-        _k = ib.komut(CX, _cyd, 20, 20, 0.0, 12.0, 0.05, _DikeyKapali, False,
-                      (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-        _enb = max(_enb, abs(_a[2] - _k[2]))
-    kontrol("B58 T1b düz uçuşta (roll=pitch=0) dikey komutu DEĞİŞTİRMEZ",
-            _enb < 0.02,
-            f"tüm kadrajda en büyük vz farkı {_enb:.4f} m/s "
-            "(kullanıcının doğruladığı dikey davranış korunur)")
-
-    # YATIŞTA: okuma ciddi biçimde DEĞİŞMELİ (uçuşta 33° sapma ölçülmüştü)
-    _rl = math.radians(30.0)
-    _ay = ib.komut(350.0, 234.0, 20, 20, 0.0, 12.0, 0.05, _DikeyT, False,
-                   (0.0, 0.0), math.radians(5.0), 0.0, 3.0, _rl)
-    _ky = ib.komut(350.0, 234.0, 20, 20, 0.0, 12.0, 0.05, _DikeyKapali, False,
-                   (0.0, 0.0), math.radians(5.0), 0.0, 3.0, _rl)
-    _fark = math.degrees(abs(_ay[5]["eps_elev"] - _ky[5]["eps_elev"]))
-    # ⚠ ÖNCEKİ İDDİA DÜZELTİLDİ: "dikeyde 33° sapma" iki FARKLI büyüklüğü
-    # kıyaslıyordu (seviye yükselişi ↔ piksel farkı hatası) — geçersizdi.
-    # Gerçek roll kaynaklı sapma hedefin kadraj merkezinden uzaklığıyla büyür:
-    #   yatış 30°: cx=320'de 3.5° | cx=420'de 18.0° | cx=500'de 23.5°
-    # ⭐ 2026-08-17 GÜNCELLEME — "pratikte sıfır" iddiası ARTIK GEÇERSİZ.
-    # O ölçüm ESKİ ARAÇTA yapılmıştı (yatış medyanı 4°). ZARF BÜYÜTMESİ
-    # (ANGLE_MAX 45°→70°, itki ×2.5) terminal yatış medyanını 36.9°'ye
-    # çıkardı ve kullanıcının 12:39 uçuşunda 80 terminal karesinde düzeltme
-    # ORTALAMA 11.8° / MAKSİMUM 26.5° ölçüldü; telafisiz hâl saniyede 5 m'ye
-    # varan SAHTE TIRMANMA üretip aracı hedefin üstünden geçiriyordu.
-    kontrol("B59 T1b yatışta dikey okumayı düzeltir (etki cx ile büyür)",
-            _fark > 3.0,
-            f"yatış 30°, cx=350, cy=234: ham {math.degrees(_ky[5]['eps_elev']):+.1f}° → "
-            f"telafili {math.degrees(_ay[5]['eps_elev']):+.1f}° (fark {_fark:.1f}°). "
-            "⭐ ZARF SONRASI: kullanıcının 12:39 uçuşunda 80 terminal "
-            "karesinde düzeltme ortalama 11.8° / maks 26.5° — telafisiz hâl "
-            "saniyede 5 m'ye varan sahte tırmanma üretiyordu")
-
-    # T1b YATAY kanala dokunmamalı (tek değişken)
-    kontrol("B60 T1b YATAY kanala DOKUNMAZ (yaw komutu birebir aynı)",
-            abs(_ay[3] - _ky[3]) < 1e-12,
-            f"yaw telafili {math.degrees(_ay[3]):.2f}° = "
-            f"telafisiz {math.degrees(_ky[3]):.2f}°")
-
-    # kapatılabilir
-    kontrol("B61 T1b VARSAYILAN AÇIK, ve kapatılabilir",
-            C.DIKEY_ROLL
-            and abs(_ky[5]["eps_elev"] - _ky[5]["eps_elev_ham"]) < 1e-12,
-            f"taban Cfg.DIKEY_ROLL={C.DIKEY_ROLL} (2026-08-17'de açıldı); "
-            "kapatıldığında eps_elev = ham okuma — kill-switch çalışıyor")
-
-    print("=" * 60)
-    # ══════════════════════════════════════════════════════════════════
-    # Ö-K bekçisi — ELENDİ (2026-08-15), koddan tamamen çıkarıldı (§5.12)
-    # ══════════════════════════════════════════════════════════════════
-    # B62 — kutu yokken komut BIT BIT DONAR. Ö-K bunu bozan tek özellikti;
-    # silindiğine göre "son komut aynen sürer" davranışı geri gelmiş olmalı.
-    # Geri sızarsa (Cfg'ye yeniden eklenirse) bu bekçi yakalar.
-    kontrol("B62 Ö-K tamamen silindi (Cfg'de kör-devam alanı yok)",
-            not any(hasattr(C, _a) for _a in ("KOR_DEVAM", "KOR_MAX_DEG")),
-            "KOR_DEVAM / KOR_MAX_DEG yok → kutu boşluğunda son komut "
-            "dondurulur, döndürülmez (eleme öncesi davranış)")
-
-    # B63 — kör-devam log sütunu da gitti (§5.12 madde 3)
-    kontrol("B63 kor_don_deg CSV sütunu kalmadı",
-            "kor_don_deg" not in ib._CSV_ALANLAR,
-            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun, kor_don_deg yok")
-
-    print("=" * 60)
-    # ══ TEK FAZ · terminal fazı kaldırıldı (2026-08-18, kullanıcı fikri) ══
-    class _Tek(ib.Cfg):
-        TEK_FAZ = True
-
-    # B98: ⭐⭐ YAPISAL GARANTİ — tek fazda TERMİNAL PARAMETRELERİ OKUNMAZ.
-    # §5.10'un "yapısal garanti" biçimi: ölçmek yerine KANITLAMAK. Terminal
-    # ayarlarının hepsini saçma değerlere çekiyoruz; çıktı DEĞİŞMEZSE o
-    # değerler güdüm yoluna hiç girmiyor demektir.
-    class _TekBozuk(_Tek):
-        V_TERMINAL = 99.0
-        V_TERM_MIN = 77.0
-        VZ_MAX_TERM = 88.0
-        K_VZ_D = 55.0
-        TERMINAL_BOYUT = 1.0      # her kutu "terminal" sayılacak kadar düşük
-        TERMINAL_SURE = 99.0
-        TERM_BIRAK_M = 1.0
-        TERM_ROLL = True
-        TERM_SAF3B = True
-        TERM_YAVASLA = True
-        TERM_HIZ_KORU = True
-        TERM_TAM_HIZ = True
-        KAPANMA_MIN = 66.0
-        DIKEY_KAPI_M = 99.0
-
-    _n98, _enb98 = 0, 0.0
-    for _cxd in (CX - 90.0, CX, CX + 90.0):
-        for _cyd in (200.0, 301.0, 318.0, 420.0):
-            for _b in (8, 20, 45, 90):
-                for _rl in (0.0, 0.35):
-                    for _pt in (-0.35, 0.0, 0.4):
-                        _a = ib.komut(_cxd, _cyd, _b, _b, 0.2, 13.0, 0.05,
-                                      _Tek, False, (0.03, 0.02), _pt, 1.5,
-                                      4.0, _rl, 0.3)
-                        _k = ib.komut(_cxd, _cyd, _b, _b, 0.2, 13.0, 0.05,
-                                      _TekBozuk, False, (0.03, 0.02), _pt,
-                                      1.5, 4.0, _rl, 0.3)
-                        _n98 += 1
-                        for _i in range(4):
-                            _enb98 = max(_enb98, abs(_a[_i] - _k[_i]))
-    kontrol("B98 ⭐⭐ YAPISAL: tek fazda TERMİNAL ayarları güdümü ETKİLEYEMEZ",
-            _enb98 < 1e-12,
-            f"{_n98} kombinasyonda 14 terminal ayarı saçma değerlere çekildi "
-            f"(V_TERMINAL=99, VZ_MAX_TERM=88, K_VZ_D=55, TERM_* hepsi açık…) "
-            f"→ komut farkı {_enb98:.2e}. Terminal dalı ÖLÜ KOD.")
-
-    # B99: ⭐ VARSAYILAN KAPALI — taban davranış bit bit korunur
-    _n99, _enb99 = 0, 0.0
-    for _cyd in (240.0, 301.0, 380.0):
-        for _b in (12, 25, 40):
-            for _term in (False, True):
-                _a = ib.komut(CX + 25.0, _cyd, _b, _b, 0.1, 12.0, 0.05,
-                              C, _term, (0.02, 0.01), 0.2, 1.0, 3.0, 0.2, 0.4)
-                _k = ib.komut(CX + 25.0, _cyd, _b, _b, 0.1, 12.0, 0.05,
-                              ib.Cfg, _term, (0.02, 0.01), 0.2, 1.0, 3.0,
-                              0.2, 0.4)
-                _n99 += 1
-                for _i in range(4):
-                    _enb99 = max(_enb99, abs(_a[_i] - _k[_i]))
-    kontrol("B99 ⭐ TEK FAZ varsayılan KAPALI (taban davranış korunur)",
-            (not C.TEK_FAZ) and _Tek.TEK_FAZ and _enb99 < 1e-12,
-            f"Cfg.TEK_FAZ={C.TEK_FAZ}; {_n99} kombinasyonda fark "
-            f"{_enb99:.2e} — `manevrada-iyi-terminalde-kotu` aynen duruyor")
-
-    # B100: PARK YOK — kutu BOYUT_REF'i geçse bile hız düşmez
-    # Taban yasada boyut=25 (=BOYUT_REF) iken hata=0 → PI dengeye oturur
-    # (6.4 m'de park). Tek fazda denge kutusu TEK_BOYUT_REF=160 olduğu için
-    # hata hâlâ +135 → "kapat" der.
-    _park_taban = ib.komut(CX, C.CY_NISAN, 25, 25, 0.0, 5.0, 0.05, C, False,
-                           (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-    _park_tek = ib.komut(CX, C.CY_NISAN, 25, 25, 0.0, 5.0, 0.05, _Tek, False,
-                         (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-    kontrol("B100 TEK FAZ: 'uzakta park et' setpoint'i KALKTI",
-            _park_tek[5]["hata"] > 100.0 and abs(_park_taban[5]["hata"]) < 1e-9
-            and _park_tek[5]["v_los"] > _park_taban[5]["v_los"],
-            f"kutu 25 px'te taban hata={_park_taban[5]['hata']:.0f} px "
-            f"(denge → 6.4 m'de park, v={_park_taban[5]['v_los']:.1f}); "
-            f"tek faz hata={_park_tek[5]['hata']:.0f} px "
-            f"(v={_park_tek[5]['v_los']:.1f} — hep kapat)")
-
-    # B101: hız V_TEK tavanında oturur, aşmaz
-    _hizlar = [ib.komut(CX, C.CY_NISAN, _b, _b, 0.0, 24.0, 0.05, _Tek, False,
-                        (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)[5]["v_los"]
-               for _b in (6, 15, 30, 60, 120)]
-    kontrol("B101 TEK FAZ hızı V_TEK tavanını AŞMAZ",
-            all(v <= _Tek.V_TEK + 1e-9 for v in _hizlar),
-            f"kutu 6…120 px → v_los " +
-            " ".join(f"{v:.1f}" for v in _hizlar) +
-            f"  (tavan V_TEK={_Tek.V_TEK:.0f})")
-
-    # B102: ⭐ DİKEY = YATAYIN AYNI MATEMATİĞİ — |v| KORUNUR
-    # Yatayın kuralı: yön döner, büyüklük sabit. Dikey de aynı olmalı.
-    class _TekSonumsuz(_Tek):
-        TEK_K_VZ_D = 0.0          # sönümleme |v| değişmezliğini bozar
-        VZ_MAX = 99.0             # tavan da kırpmasın
-    _n102, _enb102 = 0, 0.0
-    for _cyd in (180.0, 260.0, 318.0, 400.0, 460.0):
-        for _b in (10, 25, 50):
-            _r = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _TekSonumsuz,
-                          False, (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-            _hiz = math.sqrt(_r[0] ** 2 + _r[1] ** 2 + _r[2] ** 2)
-            _enb102 = max(_enb102, abs(_hiz - _r[5]["v_los"]))
-            _n102 += 1
-    kontrol("B102 ⭐ TEK FAZ dikey: yön döner, |v| KORUNUR (yatayla aynı)",
-            _enb102 < 1e-9,
-            f"{_n102} kombinasyonda |(vx,vy,vz)| ile v_los farkı "
-            f"{_enb102:.2e} — dikey ayrı bir ÖLÇEK değil, aynı vektörün YÖNÜ")
-
-    # B103: hedef yukarıdaysa TIRMAN, aşağıdaysa ALÇAL (işaret doğruluğu)
-    # cy küçük = kadrajda YUKARI = hedef yukarıda → vz NEGATİF (NED: yukarı)
-    _yuk = ib.komut(CX, 200.0, 25, 25, 0.0, 15.0, 0.05, _Tek, False,
-                    (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-    _asa = ib.komut(CX, 440.0, 25, 25, 0.0, 15.0, 0.05, _Tek, False,
-                    (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-    kontrol("B103 TEK FAZ dikey işareti doğru (yukarı→tırman, aşağı→alçal)",
-            _yuk[2] < -0.5 and _asa[2] > 0.5,
-            f"cy=200 (hedef yukarıda) → vz={_yuk[2]:+.2f} (negatif=tırman); "
-            f"cy=440 (aşağıda) → vz={_asa[2]:+.2f}")
-
-    # B104: ROLL TELAFİSİ HER KAREDE — seyir/terminal tutarsızlığı bitti
-    # Taban sistemde DIKEY_ROLL açık ama TERM_ROLL kapalı → terminale
-    # girer girmez dikey okuma telafisiz kalıyordu. Tek fazda tek yol var.
-    _r0 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, _Tek, False,
-                   (0.0, 0.0), 0.0, 0.0, 3.0, 0.0)
-    _r40 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, _Tek, False,
-                    (0.0, 0.0), 0.0, 0.0, 3.0, math.radians(40.0))
-    kontrol("B104 TEK FAZ: dikey roll telafisi HER KAREDE (tek yol)",
-            abs(_r40[2] - _r0[2]) > 0.05,
-            f"yatış 0° → vz={_r0[2]:+.2f}; 40° → vz={_r40[2]:+.2f} "
-            f"(Δ={abs(_r40[2]-_r0[2]):.2f} m/s) — los_seviye her karede")
-
-    # B106: ⭐ "KAÇIRACAKSAN YAVAŞLA" — dik hedefte vektör gerçekten dönüyor
-    # Tavan tek başına asin(VZ_MAX/V_TEK)=asin(8/20)=23.6°'de bağlar.
-    class _TekHizli(_Tek):
-        TEK_YAVASLA = False
-    _ulasilan = []
-    for _hedef_deg in (15.0, 30.0, 45.0):
-        # hedefi o açıda gösteren cy'yi kur (roll=pitch=0 → piksel_elev)
-        _cy = geo.CY + geo.FY * math.tan(
-            math.radians(ib.GeoCfg.KAMERA_TILT_DEG - _hedef_deg))
-        _y = ib.komut(CX, _cy, 25, 25, 0.0, 20.0, 0.05, _Tek, False,
-                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-        _h = ib.komut(CX, _cy, 25, 25, 0.0, 20.0, 0.05, _TekHizli, False,
-                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-        _ay = math.degrees(math.asin(min(1.0, abs(_y[2]) /
-                                         max(1e-6, math.hypot(math.hypot(_y[0], _y[1]), _y[2])))))
-        _ah = math.degrees(math.asin(min(1.0, abs(_h[2]) /
-                                         max(1e-6, math.hypot(math.hypot(_h[0], _h[1]), _h[2])))))
-        _ulasilan.append((_hedef_deg, _ah, _ay, _y[5]["v_los"]))
-    _tavan = math.degrees(math.asin(min(1.0, _Tek.VZ_MAX / _Tek.V_TEK)))
-    kontrol("B106 ⭐ TEK FAZ: dik hedefte YAVAŞLAR, vektör hedefe döner",
-            all(a_y > a_h + 1.0 for d, a_h, a_y, v in _ulasilan if d > _tavan)
-            and all(v <= _Tek.V_TEK + 1e-9 for _, _, _, v in _ulasilan),
-            f"tavan asin({_Tek.VZ_MAX:.0f}/{_Tek.V_TEK:.0f})={_tavan:.1f}°  |  "
-            + "  ".join(f"hedef {d:.0f}°→ yavaşlamasız {a_h:.1f}°, "
-                        f"yavaşlamalı {a_y:.1f}° (v={v:.1f})"
-                        for d, a_h, a_y, v in _ulasilan))
-
-    # B107: yavaşlama hızı ASLA ARTIRMAZ ve TEK_V_MIN altına inmez
-    _vler = []
-    for _cyd in (140.0, 200.0, 260.0, 318.0, 380.0, 460.0):
-        _r = ib.komut(CX, _cyd, 25, 25, 0.0, 20.0, 0.05, _Tek, False,
-                      (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-        _vler.append(_r[5]["v_los"])
-    kontrol("B107 yavaşlama hızı ARTIRMAZ, tabanın altına İNMEZ",
-            all(_Tek.TEK_V_MIN - 1e-9 <= v <= _Tek.V_TEK + 1e-9 for v in _vler),
-            f"cy 140…460 → v_los " + " ".join(f"{v:.1f}" for v in _vler)
-            + f"  (taban {_Tek.TEK_V_MIN:.0f}, tavan {_Tek.V_TEK:.0f})")
-
-    # B108: hedef hizalıyken yavaşlama HİÇ devreye girmez (sakin yaklaşma
-    # bozulmasın) — tavan açısının altında iki kol BİT BİT aynı olmalı
-    _n108, _enb108 = 0, 0.0
-    for _cyd in (300.0, 318.0, 336.0):     # ±3° civarı
+    _s0 = ib.komut(CX + 80.0, _cy_icin(0.0), 25, 25, 0.0, 15.0, 0.05, _Sonum,
+                   yaw_hizi=0.0)
+    _s1 = ib.komut(CX + 80.0, _cy_icin(0.0), 25, 25, 0.0, 15.0, 0.05, _Sonum,
+                   yaw_hizi=1.0)
+    kontrol("E7 Ö9 sönümleme: kendi dönüş hızı komutu geri çeker",
+            _s1[3] < _s0[3] - math.radians(1.0),
+            f"yaw_hızı 0 → {math.degrees(_s0[3]):+.1f}°; "
+            f"1 rad/s → {math.degrees(_s1[3]):+.1f}°")
+
+    # E8: Ö8 yanal kesişme YALNIZ KISAR (eps_hiz büyütmez)
+    class _Yanal(ib.Cfg):
+        YANAL_K = 3.0
+    _n, _kotu = 0, 0
+    for _cxd in (CX - 90, CX - 30, CX + 30, CX + 90):
         for _b in (15, 30, 60):
-            _y = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _Tek, False,
-                          (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-            _h = ib.komut(CX, _cyd, _b, _b, 0.0, 20.0, 0.05, _TekHizli, False,
-                          (0.0, 0.0), 0.0, 0.0, 1.0, 0.0, 0.0)
-            _n108 += 1
-            for _i in range(4):
-                _enb108 = max(_enb108, abs(_y[_i] - _h[_i]))
-    kontrol("B108 hedef hizalıyken yavaşlama DEVREYE GİRMEZ (bit bit)",
-            _enb108 < 1e-12,
-            f"{_n108} kombinasyonda fark {_enb108:.2e} — yalnız "
-            f"{_tavan:.1f}° üstünde kısar")
+            _r = ib.komut(_cxd, _cy_icin(0.0), _b, _b, 0.0, 18.0, 0.05,
+                          _Yanal, kapanma=5.0)[5]
+            _n += 1
+            if abs(_r["eps_hiz"]) > abs(_r["eps_yaw"]) + 1e-12:
+                _kotu += 1
+    kontrol("E8 Ö8 yanal kesişme YALNIZ kısar, büyütmez",
+            _kotu == 0, f"{_n} kombinasyonda büyütme sayısı {_kotu}")
 
-    # B105: YARIŞMA KURALI (§10) — tek faz yolu da GPS'e bakmıyor
-    # komut() imzasında hedefin konumu/hızı YOK; girdi yalnız kutu + kendi
-    # duruşumuz. B5'in tek faz için tekrarı.
-    import inspect as _insp
-    _imza = set(_insp.signature(ib.komut).parameters)
-    _yasak = {"plane", "hedef", "target", "gps", "hedef_pos", "plane_pos",
-              "hedef_hiz", "plane_hiz", "menzil", "mesafe"}
-    kontrol("B105 TEK FAZ §10 uyumlu: komut() hedefin GPS'ini ALMIYOR",
-            not (_imza & _yasak),
-            f"komut() parametreleri: {sorted(_imza)} — hedefe dair tek veri "
-            "kutu (cx, cy, w, h); yasak ad yok")
+    # E9: yaw slew tavanı hız vektörünü DEĞİŞTİRMEZ (yapısal)
+    # Sınırlanan yalnız BURUN; vx,vy `hiz_yonu`ndan hesaplanır.
+    _kod = "\n".join(L for L in _src.split("\n")
+                     if not L.lstrip().startswith("#"))
+    kontrol("E9 yaw slew yalnız BURNU sınırlar (hız vektörü ayrı)",
+            "hiz_yonu" in _kod and "yaw_cmd" in _kod
+            and _kod.index("vx_ned = _yat") > _kod.index("hiz_yonu ="),
+            "vx,vy `hiz_yonu`ndan; yaw_cmd ayrı değişken — slew hız yolunu "
+            "etkilemez")
 
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
+    print("F · DÖNGÜ DUMAN TESTİ")
+
+    class _SahteConn:
+        def __init__(self):
+            self.komutlar = []
+            self.target_system = 1
+            self.target_component = 1
+            self.mav = self
+
+        def set_position_target_local_ned_send(self, *a, **k):
+            self.komutlar.append(a)
+
+    _kayit = {"pose": None}
+    _cfg = ib.Cfg
+
+    # F1: kutu akışında komut üretir
+    _kayit["pose"] = {"conf": 0.9, "bbox": (300, 290, 340, 330)}
+    _r = ib.komut(320.0, 310.0, 40, 40, 0.0, 15.0, 0.05, _cfg)
+    kontrol("F1 geçerli kutuda komut üretilir",
+            all(isinstance(x, float) for x in _r[:4]) and _hiz(_r) > 1.0,
+            f"|v|={_hiz(_r):.1f} m/s, yaw={math.degrees(_r[3]):+.1f}°")
+
+    # F2: tanı sözlüğü beklenen anahtarları taşır
+    _bekle = {"boyut", "eps_yaw", "hata", "v_los", "eps_hiz", "sonum",
+              "donus_tavan", "kacis_ek", "lead_az", "lead_olcek",
+              "nisan_elev", "elev_atalet"}
+    kontrol("F2 tanı sözlüğü tam",
+            _bekle <= set(_r[5]),
+            f"eksik: {_bekle - set(_r[5]) or 'YOK'}")
+
+    # F3: CSV alan listesi ile tanı uyumlu (yazılamayan sütun kalmasın)
+    kontrol("F3 CSV alanları tanıyla uyumlu",
+            "nisan_elev_deg" in ib._CSV_ALANLAR
+            and "elev_atalet_deg" in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun")
+
+    print("=" * 62)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"
           + (f" — KALAN: {fails}" if fails else " — HEPSİ GEÇTİ ✓"))

@@ -753,145 +753,12 @@ def _hedef_cfg(alan):
 _JERK_TABAN = float(os.environ.get("AVCI_JERK_TABAN", "12"))
 _JERK_DENEY = float(os.environ.get("AVCI_JERK_DENEY", "15"))
 
-_OZELLIKLER = {
-    "dikey_kapi": (
-        "DIKEY_KAPI_M", "deger",
-        "① DİKEY HİZALAMA KAPISI — irtifa eşitlenmeden terminale geçme",
-        "KULLANICI İSTEĞİ: 'dikeyde hedef araç ile irtifamızı eşitleyelim, "
-        "irtifamız birbirine yaklaşmadan terminale geçilmesin.' "
-        "NE YAPAR: kutu TERMINAL_BOYUT'u aşsa bile hedefle aramızdaki DİKEY "
-        "OFSET 2 m'den büyükse hücum mandalı ATILMAZ — araç seyir yasasında "
-        "kalıp önce irtifayı eşitler, sonra taahhüt eder. Konsola '⏸ DİKEY "
-        "KAPI' satırı basılır. "
-        "⚠ YARIŞMA KURALI UYUMLU (§10): dikey ofset YALNIZ BBOX'tan kurulur — "
-        "R = 160/kutu_boyutu, el = seviye çerçevesinde yükseliş, "
-        "ofset = R·sin(el). Hedefin GPS'ine BAKILMAZ (birim testi B72). "
-        "NİYE: temas anındaki dikey ıska medyanı 2.7-4.7 m ölçüldü; isabet "
-        "zarfı dikeyde +0.29/−0.13 m — hata zarfın 10-30 katı. 25 uçuşluk "
-        "parametre taraması (Faz A/B/C) düzeltemedi: sorun ayar değil, "
-        "terminale YANLIŞ GEOMETRİDEN girilmesi. "
-        "⚠ HENÜZ ÖLÇÜLMEDİ — kullanıcı uçuracak. Log sütunu: dikey_ofs_m.",
-        "AVCI_IBVS_DIKEY_KAPI", (0.0, 2.0)),
-    "vz_max": (
-        "VZ_MAX", "deger",
-        "② DİKEY GÜÇ — dikey hız tavanı (3 → 8 m/s)",
-        "KULLANICI İSTEĞİ: 'aracın gücünü artırdın, bu hareket kabiliyetini "
-        "dikey için kullanalım.' İtki/ağırlık 2.56 → 7.08 çıkmışken dikey "
-        "bütçe 3 m/s'de kalmıştı; yatay 8 → 26 m/s² açılırken dikey aynı "
-        "kaldı — 10 kat asimetri. "
-        "Araç tarafındaki tavanlar da birlikte açıldı (avci_copter.parm): "
-        "WPNAV_SPEED_UP 600→1200, _DN 400→1000, WPNAV_ACCEL_Z 250→800; "
-        "terminal dikey tavanı VZ_MAX_TERM 5 → 10 m/s (birim testi B71). "
-        "⚠ ① DİKEY KAPI'nın irtifayı HIZLI kapatabilmesi için gerekli — "
-        "ikisi BİRLİKTE çalışır. Tek başına denendiğinde (Faz B) etkisizdi "
-        "(p=1.000), çünkü kapı yoktu; araç hizalanmaya zaten çalışmıyordu.",
-        "AVCI_IBVS_VZMAX", (3.0, 8.0)),
-    "v_terminal": (
-        "V_TERMINAL", "deger",
-        "③ TERMİNAL HIZI — hücum hızı (16 ↔ 20 m/s)",
-        "KULLANICI KARARI: 'terminal fazındaki hızı azaltmıştık bir ara hedef "
-        "araca daha dengeli şekilde yaklaşmak için, onu da bir geri getirsene.' "
-        "→ Varsayılan 20'den 16'ya GERİ ALINDI (KAPALI konum = 16). "
-        "⚠ ÖLÇÜM AKSİNİ SÖYLÜYORDU (V_TERMINAL kampanyası, 18 uçuş): 20 m/s "
-        "en yakın menzili 1.83 → 1.14 m indirmiş, temasın son 2 saniyesinde "
-        "nişan sapmasını 19 → 4 px düşürmüş, isabeti 1/4 → 2/4 yapmıştı. "
-        "Terminal faz son 6.4 m; hedef 15.1 m/s uçuyor — 16 m/s ile kalan "
-        "kapanma 0.9 m/s (o 6.4 metre ~7 saniye sürer), 20 m/s ile 4.9 m/s "
-        "(1.3 saniye). Düğme kıyas için duruyor: kendi uçuşunda hangisi daha "
-        "dengeli hissettiriyorsa onu bırak.",
-        "AVCI_IBVS_VTERM", (16.0, 20.0)),
-    "term_boyut": (
-        "TERMINAL_BOYUT", "deger",
-        "④ TERMİNALE GEÇİŞ ANI — kutu eşiği (25 px = 6.4 m ↔ 18 px = 8.9 m)",
-        "KULLANICI İSTEĞİ: 'terminal fazına daha önceden ve daha sonradan "
-        "geçiyorduk ya, ona da bir bakalım tam ayarlayalım.' "
-        "Kutu boyutu eşiği menzile çevrilir: R = 160/boyut. "
-        "KAPALI = 25 px → 6.4 m (bugünkü, GEÇ geçiş, kısa hamle). "
-        "AÇIK = 18 px → 8.9 m (2.5 m ERKEN geçiş, uzun hamle). "
-        "⚠ Terminalde FREN YOKTUR (hız sabit, PI devre dışı). Erken geçmek, "
-        "hedef hâlâ manevra yaparken taahhüt etmek demektir — ıska sonrası "
-        "dönüş maliyeti artabilir. Geç geçmek hücuma az mesafe bırakır. "
-        "⚠ ① DİKEY KAPI açıkken bu eşik yalnız 'hazır' sinyali üretir; mandal "
-        "ancak dikey ofset de 2 m'nin altına inince atılır.",
-        "AVCI_IBVS_TERM", (25.0, 18.0)),
-    "dikey_roll": (
-        "DIKEY_ROLL", "bool",
-        "⑤ T1b · Dikey kanalda roll telafisi (AÇIK)",
-        "Yatışta cy pikselinin gerçek yükselişi göstermemesini düzeltir. "
-        "Kullanıcının 12:39 uçuşundan teşhis edildi: 80 terminal karesinde "
-        "telafisiz/telafili fark ORTALAMA 11.8°, MAKS 26.5° — saniyede 5 m'ye "
-        "varan SAHTE TIRMANMA üretiyordu. Zarf büyütmesi (ANGLE_MAX 45→70) "
-        "terminal yatış medyanını 20 → 36.9°'ye çıkardığı için görünür oldu. "
-        "⚠ ① DİKEY KAPI bu telafiye DAYANIR — kapalıyken dikey ofset ölçümü "
-        "de bozulur. Kıyas için duruyor. Düz uçuşta etkisiz (B58).",
-        "AVCI_IBVS_DIKEY_ROLL", True),
-}
-
-
-class OzellikCmd(BaseModel):
-    ad: str
-    acik: bool
-
-
-def _ozellik_durumu():
-    d = []
-    for ad, (alan, tip, etiket, aciklama, env, acik_deger) in _OZELLIKLER.items():
-        if tip == "param":
-            kapali_d, acik_d = acik_deger
-            v = _param_cache.get((_IRIS_SYSID, alan))
-            # Araç henüz cevap vermediyse .parm varsayılanı (kapalı) varsayılır
-            acik = (v is not None and abs(v - acik_d) < 1.0)
-            d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
-                      "env": env, "acik": acik,
-                      "deger": (v if v is not None else "araç okunmadı")})
-            continue
-        _c, _a = _hedef_cfg(alan)
-        v = getattr(_c, _a)
-        if tip == "deger":
-            kapali_d, acik_d = acik_deger
-            acik = abs(float(v) - float(acik_d)) < 1e-6
-            d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
-                      "env": env, "acik": acik, "deger": v})
-            continue
-        acik = bool(v) if tip == "bool" else (float(v) > 0.0)
-        d.append({"ad": ad, "etiket": etiket, "aciklama": aciklama,
-                  "env": env, "acik": acik,
-                  "deger": (v if tip != "bool" else None)})
-    return d
-
-
-@app.get("/api/gudum_ozellikleri")
-def get_gudum_ozellikleri():
-    return {"ozellikler": _ozellik_durumu()}
-
-
-@app.post("/api/gudum_ozellikleri")
-def set_gudum_ozellik(cmd: OzellikCmd):
-    if cmd.ad not in _OZELLIKLER:
-        return {"status": "error", "message": f"Bilinmeyen özellik: {cmd.ad}"}
-    alan, tip, etiket, _a, _e, acik_deger = _OZELLIKLER[cmd.ad]
-    if tip == "param":
-        kapali_d, acik_d = acik_deger
-        yeni = acik_d if cmd.acik else kapali_d
-        ok, hata = _arac_param_yaz(alan, yeni)
-        if not ok:
-            return {"status": "error", "message": f"{alan} yazılamadı: {hata}",
-                    "ozellikler": _ozellik_durumu()}
-        print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
-              f"(araç {alan} = {yeni})")
-        return {"status": "success", "ozellikler": _ozellik_durumu()}
-    if tip == "deger":
-        kapali_d, acik_d = acik_deger
-        yeni = float(acik_d if cmd.acik else kapali_d)
-    else:
-        yeni = (cmd.acik if tip == "bool"
-                else (float(acik_deger) if cmd.acik else 0.0))
-    _cfg_sinif, _cfg_alan = _hedef_cfg(alan)
-    setattr(_cfg_sinif, _cfg_alan, yeni)
-    print(f"[ÖZELLİK] {etiket}: {'AÇIK' if cmd.acik else 'kapalı'} "
-          f"({_cfg_sinif.__name__}.{_cfg_alan} = {yeni})")
-    return {"status": "success", "ozellikler": _ozellik_durumu()}
-
+# ⚠ DENEY PANELİ KALDIRILDI (2026-08-19, kullanıcı isteği)
+# "şu sol paneldeki ayar şeylerini de kaldır, bu şekilde default yaparak;
+#  zaten bunlar da o diğer büyük ayar panelinde var."
+# Beş düğmenin (dikey kapı, dikey güç, terminal hızı, terminale geçiş anı,
+# T1b) değerleri Cfg varsayılanı oldu; hepsi 🎚 AYAR KONSOLU'nda duruyor.
+# Terminale ait olanlar zaten silindi (terminal fazı kaldırıldı).
 
 # ═══════════════════════════════════════════════════════════════════════
 # AYAR KONSOLU — sistemdeki TÜM katsayılar tek panelde (2026-08-18)
@@ -902,9 +769,8 @@ def set_gudum_ozellik(cmd: OzellikCmd):
 # de ne işe yaradığı, neyi kontrol ettiği, neyi artırıp neyi azalttığı
 # bilinsin."
 #
-# ⚠ DENEY PANELİ (_OZELLIKLER) İLE AYRI YÜZEY. Orası §0.2 gereği aynı anda
-# tek özellik taşır ve KARAR DEFTERİDİR; burası keşif/tarama konsoludur.
-# Buradan bir değeri oynatmak onu "sisteme girdi" yapmaz.
+# ⚠ Buradan bir değeri oynatmak onu "sisteme girdi" YAPMAZ — konsol keşif
+# içindir, karar defteri değil. Kalıcı olması için §1'in beş adımı gerekir.
 #
 # Kayıt: control/ayar_konsolu.py (56 ayar, 8 grup).
 from control import ayar_konsolu as _ayar_mod
@@ -1079,8 +945,11 @@ def kacamak_basla(cmd: KacamakCmd):
     if p is not None and p.poll() is None:
         return {"status": "error", "message": "Bir kaçamak testi zaten koşuyor"}
     kok = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # kol adını özellik durumundan üret — hangi ayarla koşulduğu dosya adında dursun
-    kol = "-".join(o["ad"] for o in _ozellik_durumu() if o["acik"]) or "taban"
+    # Kol adı: açılış değerinden SAPMIŞ ayarlar (hangi ayarla koşulduğu
+    # dosya adında dursun). Eskiden deney panelinden üretiliyordu; o panel
+    # kaldırıldı, kaynak artık ayar konsolu.
+    _sapan = [a["ad"] for a in _ayar_durumu() if a.get("degisti")]
+    kol = "-".join(_sapan[:3]) or "taban"
     ad = cmd.ad or f"{time.strftime('%H%M%S')}_{cmd.kacamak}_{kol}"
     dizin = os.path.join(_KACAMAK_KOK, ad)
     os.makedirs(dizin, exist_ok=True)
