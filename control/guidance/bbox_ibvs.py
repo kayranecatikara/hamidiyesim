@@ -127,7 +127,61 @@ class Cfg:
     #
     # REF ölçümden (2026-08-08): 12 m'de kutu ≈ 12-14 px → boyut ≈ 1/menzil.
     # 6-7 m tutuş için REF ≈ 25 px.
-    BOYUT_REF = _env_f("AVCI_IBVS_REF", 25.0)   # px; sqrt(w·h) denge boyutu
+    # ═══════════════════════════════════════════════════════════════════
+    # KUTU → MENZİL ÖLÇÜSÜ (2026-08-19, kullanıcı önerisi)
+    # ═══════════════════════════════════════════════════════════════════
+    # NEDEN: menzil, iğne deliği kamera bağıntısından çıkar —
+    #     p / FX = S / R      (benzer üçgenler)
+    #   p  : hedefin kadrajdaki boyu, piksel
+    #   FX : odak uzaklığı, piksel  (bizde 166.58)
+    #   S  : hedefin GERÇEK boyu, metre
+    #   R  : menzil, metre
+    # Buradan  R = (FX·S)/p = MENZIL_PX_M / p.
+    # ⚠ Bu, S'nin SABİT olduğunu varsayar. Ama bir uçağın görünen boyu
+    # hangi taraftan bakıldığına ve YATIŞINA göre değişir — varsayım orada
+    # bozulur ve menzil yanlış çıkar.
+    #
+    # KULLANICI ÖNERİSİ: `p` olarak KÖŞEGEN sqrt(w²+h²) alalım. Gerekçesi
+    # şu: kutu eksen-hizalı olduğu için, İNCE BİR ÇUBUK kadrajda θ kadar
+    # dönerse  w = L·|cosθ|,  h = L·|sinθ|  olur ve
+    #     sqrt(w² + h²) = L·sqrt(cos²θ + sin²θ) = L      → YATIŞTAN BAĞIMSIZ
+    # Talon arkadan bakınca büyük ölçüde "ince çubuk"tur (kanat 1.280 m,
+    # kuyruk yüksekliği 0.286 m).
+    #
+    # ÖLÇÜLDÜ (8 uçuş, 5812 kare; gerçek menzil telem'den, YALNIZ ANALİZDE):
+    #   görüş açısı dağılımı: %91'i 0-15° (tam arkadan), medyan 1°
+    #     → kullanıcının "devirde hedefi hep arkadan görüyoruz" tespiti DOĞRU
+    #   0-15° bandında bağıl menzil hatası (p50):
+    #     sqrt(w·h)  %22        ← bugünkü
+    #     KÖŞEGEN    %14        ← %36 daha iyi
+    #     w tek başına %12      ← en iyi AMA 30-60°'de %35'e fırlıyor
+    #   Teorik yatış duyarlılığı (0-90°, kanat 1.280 / kuyruk 0.286):
+    #     KÖŞEGEN %19  ·  sqrt(w·h) %83  ·  w %359
+    #   ⇒ köşegen, hâkim rejimde kazancın çoğunu alıyor ve bozulduğunda
+    #     zarifçe bozuluyor. `w` daha iyi ama kırılgan.
+    #
+    # ⚠ MODEL ÖLÇÜLERİ (mini_talon_vtail collision mesh'ten, doğrulandı):
+    #   kanat açıklığı 1.280 m · gövde boyu 0.814 m · yükseklik 0.286 m
+    # Kalibre sabitleri MODELDEN DEĞİL ÖLÇÜMDEN alındı (kutu, görsel modeli
+    # kaplıyor ve YOLO kutusu gevşek çiziliyor; ampirik sabit doğrusu).
+    #
+    # AVCI_IBVS_OLCU = "carpim" | "kosegen"
+    BOYUT_OLCU = os.environ.get("AVCI_IBVS_OLCU", "carpim").strip().lower()
+
+    # Ölçüye göre kalibrasyon — C = medyan(p · R_gerçek), 0-15° bandında.
+    # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller
+    # %14 EKSİK tahmin ediliyordu (kendimizi olduğumuzdan yakın sanıyorduk).
+    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 185.7)   # px·m
+    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 296.8)  # px·m
+
+    # ── EŞİKLER ARTIK METRE ───────────────────────────────────────────
+    # Ölçü değişince piksel eşikleri anlamını yitirir (köşegen ~1.6 kat
+    # büyük sayı verir). Metre cinsinden tutulunca ölçü değişimi TEK
+    # DEĞİŞKEN olarak kalır: yalnız menzil kestirimi değişir, kurulan
+    # hedefler aynı fiziksel yerde durur.
+    HUCUM_MENZIL_M = _env_f("AVCI_IBVS_HUCUM_M", 1.0)   # m; PI'nın sıfır noktası
+    LEAD_MENZIL_M = _env_f("AVCI_IBVS_LEAD_M", 6.4)     # m; lead tamamen sönene menzil
+
     K_FWD = _env_f("AVCI_IBVS_KFWD", 0.35)      # (m/s)/px; P kazancı
     K_I = _env_f("AVCI_IBVS_KI", 0.04)          # (m/s)/(px·s); İ kazancı
     I_MIN, I_MAX = 0.0, 24.0       # m/s; integral penceresi (windup koruması)
@@ -163,8 +217,6 @@ class Cfg:
 
 
     KAPANMA_EMA = _env_f("AVCI_IBVS_KAPANMA_EMA", 0.20)  # kare başına yumuşatma
-    # Kutu boyutu → menzil ölçeği: R = MENZIL_PX_M / sqrt(w·h)
-    MENZIL_PX_M = 160.0                                  # px·m
     # ⭐ 2026-08-17 ZARF BÜYÜTMESİ: bu sayı ESKİ aracın 8 m/s²'lik ivme
     # tavanına göre konmuştu ve komut, onu bile karelerin %35'inde aşıyordu.
     # Araç zarfı büyütüldü (ANGLE_MAX 45°→70°, WPNAV_ACCEL 8→26 m/s²,
@@ -396,9 +448,6 @@ class Cfg:
     # oturma süresi bırakmaz (D2'de ölçüldü: 3 m içinde |dikey| 0.21 → 1.06 m).
     V_HUCUM = _env_f("AVCI_IBVS_V_HUCUM", 20.0)          # m/s
 
-    # Tek fazda PI'nın "denge" kutusu = TEMAS kutusu (park yok).
-    # 160 px → R = 160/160 = 1.0 m. Hata hep büyük pozitif → hep kapat.
-    HUCUM_BOYUT_REF = _env_f("AVCI_IBVS_HUCUM_REF", 160.0)   # px
 
     # Dikey saf takip kazancı. 1.0 = yatayla AYNI (K_YAW da 1.0) — hız
     # vektörü doğrudan hedefe döner. <1 tembelleşir, >1 aşım yapar.
@@ -439,6 +488,31 @@ _CSV_ALANLAR = [
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
     "elev_atalet_deg",
 ]
+
+
+def kutu_olcusu(w, h, cfg=Cfg):
+    """Kutunun MENZİL için kullanılacak tek sayılık boyu (piksel).
+
+    "carpim"  : sqrt(w·h) — geometrik ortalama (2026-08-19 öncesi tek yol)
+    "kosegen" : sqrt(w²+h²) — eksen-hizalı kutunun köşegeni
+
+    ⚠ KÖŞEGEN NEDEN: kutu eksen-hizalı olduğu için, kadrajda θ kadar dönmüş
+    İNCE BİR ÇUBUK için w=L·|cosθ|, h=L·|sinθ| olur ve köşegen tam L kalır —
+    yatıştan BAĞIMSIZ. Talon arkadan bakınca büyük ölçüde ince çubuktur.
+    Ölçüldü: 0-15° bandında bağıl menzil hatası %22 → %14.
+    """
+    w = max(w, 0.0)
+    h = max(h, 0.0)
+    if cfg.BOYUT_OLCU == "kosegen":
+        return math.sqrt(w * w + h * h)
+    return math.sqrt(w * h)
+
+
+def menzil_sabiti(cfg=Cfg):
+    """Seçili ölçünün kalibre sabiti C (px·m); R = C / kutu_olcusu."""
+    if cfg.BOYUT_OLCU == "kosegen":
+        return cfg.MENZIL_PX_M_KOSEGEN
+    return cfg.MENZIL_PX_M_CARPIM
 
 
 def piksel_elev(cy, cfg=Cfg):
@@ -504,7 +578,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     Hız DAİMA LOS (burun) yönünde: hedef dönünce hız vektörü de döner —
     dondurulmuş NED taşıyıcının yana savurma hatası yapısal olarak imkânsız.
     """
-    boyut = math.sqrt(max(w, 0.0) * max(h, 0.0))
+    boyut = kutu_olcusu(w, h, cfg)
+    _C = menzil_sabiti(cfg)
 
     # YAW: yatay açı hatası → burun hedefe
     # ROLL/PITCH TELAFİSİ (bkz. Cfg.ROLL_TELAFI): araç yattığında kamera
@@ -519,7 +594,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # boyut ∝ 1/menzil olduğu için REF/boyut ≈ menzil/menzil_REF.
     lead_olcek = 1.0
     if cfg.LEAD_SONUM and boyut > 1e-6:
-        lead_olcek = clamp(cfg.BOYUT_REF / boyut, 0.0, 1.0)
+        # lead, LEAD_MENZIL_M'nin altında kademeli söner. Piksel yerine
+        # METRE eşik: ölçü değişse de aynı fiziksel menzilde söner.
+        lead_olcek = clamp((_C / cfg.LEAD_MENZIL_M) / boyut, 0.0, 1.0)
     lead_sure = cfg.LEAD_SURE * lead_olcek
     lead_az = 0.0
     # LEAD: nişanı atalet LOS dönüş hızıyla öne al (bkz. Cfg.LEAD_SURE).
@@ -544,7 +621,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # ⚠ Eski sistemde bu BOYUT_REF=25 px idi → 160/25 = 6.4 m'de PARK ederdi;
     # terminal fazi tam da o parki ezmek icin vardi. Park kalkinca faza da
     # gerek kalmadi (bkz. dosya basindaki TEK GORSEL FAZ notu).
-    hata = cfg.HUCUM_BOYUT_REF - boyut         # px; + = uzak
+    # Denge kutusu = TEMAS kutusu. Piksel karşılığı ölçüye göre kendiliğinden
+    # ölçeklenir (HUCUM_MENZIL_M metre olarak sabit kalır).
+    hata = (_C / cfg.HUCUM_MENZIL_M) - boyut    # px; + = uzak
     hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
     # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
     # hızı ANINDA artır — integralin 5 saniyesini bekleme.
@@ -570,7 +649,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # BURUN (yaw_cmd) tam eps_yaw'da kalır — kamera hedefi izlemeye devam eder.
     eps_hiz = eps_yaw
     if cfg.YANAL_K > 0.0 and boyut > 1e-6 and v_los > 0.1:
-        _R = cfg.MENZIL_PX_M / boyut                  # menzil (m)
+        _R = _C / boyut                               # menzil (m)
         _y = _R * math.sin(eps_yaw)                   # YANAL KAÇIRMA (m)
         _rdot = max(abs(kapanma) if kapanma is not None else 0.0,
                     cfg.YANAL_RDOT_MIN)
@@ -652,6 +731,9 @@ def _kutu_gecerli(pose, cfg):
         h = pose.get("h", 0.0)
     else:
         return None
+    # ⚠ BOYUT_MIN piksel güvenilirliği kapısıdır, menzil değil — bu yüzden
+    # HER ZAMAN sqrt(w·h) ile ölçülür (ölçü seçiminden BAĞIMSIZ), yoksa
+    # köşegene geçince eşik sessizce gevşerdi.
     if math.sqrt(max(w, 0.0) * max(h, 0.0)) < cfg.BOYUT_MIN:
         return None
     return cx, cy, w, h, conf
@@ -714,7 +796,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     w_csv.writeheader()
     print(f"[IBVS] bbox görsel güdüm başladı — SAF TAKİP + PI hız "
           f"(CANLI GPS YOK, yarışma kuralı). İntegral sıcak başlangıç: "
-          f"{hiz_I:.1f} m/s, REF={cfg.BOYUT_REF:.0f}px, tavan "
+          f"{hiz_I:.1f} m/s, ölçü={cfg.BOYUT_OLCU}, tavan "
           f"{cfg.V_HUCUM:.0f} m/s, kayıp eşiği={kayip_kare_esik} kare, "
           f"yatay roll/pitch telafisi={'AÇIK' if cfg.ROLL_TELAFI else 'kapalı'}, "
           f"temas sensörü={'VAR' if get_temas is not None else 'yok'} "
@@ -838,10 +920,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # GPS YOK: yalnız kutu boyutunun büyüme hızı. Kutu titrediği için
             # EMA'lanır; ilk karede geçmiş yok, None kalır (komut o turda
             # eski davranışa düşer — güvenli taraf).
-            boyut_simdi = math.sqrt(bw * bh)
+            boyut_simdi = kutu_olcusu(bw, bh, cfg)
             if (boyut_onceki is not None and boyut_simdi > 1e-6
                     and 1e-3 < dt < 0.5):
-                _R = cfg.MENZIL_PX_M / boyut_simdi
+                _R = menzil_sabiti(cfg) / boyut_simdi
                 _rdot = _R * ((boyut_simdi - boyut_onceki) / dt) / boyut_simdi
                 _rdot = clamp(_rdot, -30.0, 30.0)      # gürültü kalkanı
                 kapanma = (_rdot if kapanma is None else
@@ -862,7 +944,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             # YALNIZ BURUN — hız vektörü yukarıda hesaplandı, dokunulmuyor.
             _yaw_tavan = cfg.YAW_RATE_MAX_DEG
             if cfg.YAW_MENZIL_REF > 0.0 and tani["boyut"] > 1e-6:
-                _Ryaw = cfg.MENZIL_PX_M / tani["boyut"]
+                _Ryaw = menzil_sabiti(cfg) / tani["boyut"]
                 _yaw_tavan *= clamp(_Ryaw / cfg.YAW_MENZIL_REF,
                                     cfg.YAW_MIN_KAT, 1.0)
             yaw_err = normalize_angle(yaw_hedef - cmd_yaw)

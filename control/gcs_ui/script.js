@@ -1388,7 +1388,20 @@ function ayarSatir(a) {
     et.appendChild(ad); et.appendChild(alan);
     s.appendChild(et);
 
-    if (a.tip === 'bool') {
+    if (a.tip === 'secim') {
+        // metin seçeneği — her seçenek bir düğme
+        const kutu = document.createElement('div');
+        kutu.className = 'ayar-secim';
+        (a.secenekler || []).forEach(sec => {
+            const b = document.createElement('button');
+            b.className = 'ayar-bool' + (a.deger === sec ? ' acik' : '');
+            b.textContent = sec;
+            b.addEventListener('click', () => ayarYaz(a.ad, sec));
+            kutu.appendChild(b);
+        });
+        s.appendChild(kutu);
+        s.appendChild(document.createElement('div'));
+    } else if (a.tip === 'bool') {
         // orta sütun boş kalsın ki ızgara bozulmasın
         s.appendChild(document.createElement('div'));
         const sag = document.createElement('div');

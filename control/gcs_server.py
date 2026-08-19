@@ -807,23 +807,32 @@ def _ayar_durumu():
     for a in _ayar_mod.ayarlar():
         d = _ayar_mod.sozluk(a)
         v = _ayar_oku(a)
-        if d["tip"] == "bool":
+        if d["tip"] == "secim":
+            d["deger"] = v
+            d["secenekler"] = list(a[6] or [])
+        elif d["tip"] == "bool":
             d["deger"] = bool(v) if v is not None else None
         elif v is None:
             d["deger"] = None       # araç henüz cevap vermedi
         else:
             d["deger"] = float(v)
         d["varsayilan"] = _AYAR_VARSAYILAN.get(d["ad"])
-        d["degisti"] = (d["varsayilan"] is not None and d["deger"] is not None
-                        and abs(float(d["deger"]) - float(d["varsayilan"]))
-                        > 1e-9)
+        # "degisti" — açılış değerinden sapma. Metin (secim) alanlarda
+        # doğrudan karşılaştırma, sayısal alanlarda toleranslı.
+        if d["varsayilan"] is None or d["deger"] is None:
+            d["degisti"] = False
+        elif d["tip"] == "secim":
+            d["degisti"] = d["deger"] != d["varsayilan"]
+        else:
+            d["degisti"] = (abs(float(d["deger"]) - float(d["varsayilan"]))
+                            > 1e-9)
         out.append(d)
     return out
 
 
 class AyarCmd(BaseModel):
     ad: str
-    deger: float | bool | None = None
+    deger: float | bool | str | None = None
 
 
 @app.get("/api/ayarlar")
@@ -839,6 +848,18 @@ def set_ayar(cmd: AyarCmd):
     if a is None:
         return {"status": "error", "message": f"Bilinmeyen ayar: {cmd.ad}"}
     ad, alan, etiket, _grup, tip, _br, mn, mx, _ad2 = a[:9]
+    if tip == "secim":
+        secenekler = list(mn or [])
+        yeni = str(cmd.deger)
+        if yeni not in secenekler:
+            return {"status": "error",
+                    "message": f"{ad}: geçersiz seçim {yeni!r}; "
+                               f"seçenekler {secenekler}"}
+        _c, _a = _hedef_cfg(alan)
+        eski = getattr(_c, _a)
+        setattr(_c, _a, yeni)
+        print(f"[AYAR] {_c.__name__}.{_a}: {eski} → {yeni}  ({etiket})")
+        return {"status": "success", "ayarlar": _ayar_durumu()}
     if tip == "bool":
         yeni = bool(cmd.deger)
     else:
