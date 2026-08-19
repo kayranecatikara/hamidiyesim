@@ -446,7 +446,12 @@ class Cfg:
     # Tek fazda hız tavanı. Hedef 15.1 m/s uçuyor → kapanma = V_HUCUM − 15.1.
     # 20 → 4.9 m/s kapanma (son 3 m: 0.61 s). Çok yükseltmek dikey kanala
     # oturma süresi bırakmaz (D2'de ölçüldü: 3 m içinde |dikey| 0.21 → 1.06 m).
-    V_HUCUM = _env_f("AVCI_IBVS_V_HUCUM", 20.0)          # m/s
+    # ⚠ 2026-08-19 KULLANICI KARARI: 20.0 → 18.0. Kullanıcı 18'e çekip
+    # uçtu, "bir sorun olmadı, drone hedef araca yaklaşıp vurabiliyor" dedi
+    # ve kalıcı olmasını istedi. Hedef 15.1 m/s → kapanma 2.9 m/s.
+    # ⚠ GEÇİCİ: menzile bağlı yavaşlama profili gelince bu sabit tavan
+    # yerini o profile bırakacak (yol haritası, sıra 2).
+    V_HUCUM = _env_f("AVCI_IBVS_V_HUCUM", 18.0)          # m/s
 
 
     # Dikey saf takip kazancı. 1.0 = yatayla AYNI (K_YAW da 1.0) — hız
