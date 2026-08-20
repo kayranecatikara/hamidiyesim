@@ -4,9 +4,12 @@
 #   Gazebo Harmonic + ArduCopter SITL (avcı) + ArduPlane SITL (hedef) + GCS
 #
 # Kullanım:  [env...] bash scripts/mkur.sh [etiket]
-#   [etiket]   log dosyası eki (gz_<etiket>.log gibi). Varsayılan: m
-#   AVCI_GUI=1 Gazebo penceresini aç. Varsayılan headless
-#              (--headless-rendering: pencere yok ama KAMERALAR RENDER EDİLİR).
+#   [etiket]     log dosyası eki (gz_<etiket>.log gibi). Varsayılan: m
+#   AVCI_GUI=1   Gazebo penceresini aç. Varsayılan headless
+#                (--headless-rendering: pencere yok ama KAMERALAR RENDER EDİLİR).
+#   AVCI_TEMIZ=1 Ayakta sim varsa ÖNCE KAPAT sonra kur (tek komutla yeniden
+#                kurulum). Varsayılan kapalı — koşan bir uçuşu sessizce
+#                düşürmemek için susturma istenerek yazılır.
 #
 # ⚠ BORUYA BAĞLAMA (CLAUDE.md §9) — arka plandaki sim süreçleri yüzünden boru
 #   EOF almaz, script asılı kalır. Çıktıyı dosyaya yaz:
@@ -31,8 +34,27 @@ T=${1:-m}
 # olduğu için yeni Gazebo FDM'i ve yeni gcs_server sessizce çöker, script
 # 4.5 dk bekleyip boşuna döner. Baştan söyle.
 DESEN='gz sim|gz-sim-server|sim_vehicle|/arducopter|/arduplane|control\.gcs_server'
+
+# AVCI_TEMIZ=1 → TEK KOMUTLA YENİDEN KURULUM: aşağıdaki kapıya takılmak yerine
+# önce kapat, sonra kur. Varsayılan KAPALI ve öyle kalmalı: koşan bir kampanyayı
+# ya da havadaki aracı sessizce düşürmek en kötü sürpriz olur — susturma
+# İSTENEREK yazılır.
+# ⚠ kapat.sh AYRI DOSYADAN çağrılır; pkill deseni bu scriptin komut satırında
+#   görünmediği için kendi kabuğumuzu öldürmüyoruz (CLAUDE.md §9, exit 144).
+if [ "${AVCI_TEMIZ:-0}" = "1" ]; then
+  echo "[mkur] AVCI_TEMIZ=1 — önceki sim kapatılıyor..."
+  bash "$REPO/scripts/kapat.sh" >/dev/null 2>&1
+  # Kör bekleme YOK: süreçler VE 8000 portu gerçekten boşalana kadar bak.
+  for i in $(seq 1 15); do
+    if ! pgrep -f "$DESEN" >/dev/null 2>&1 \
+       && ! ss -lnt 2>/dev/null | grep -q ':8000 '; then break; fi
+    sleep 1
+  done
+fi
+
 if pgrep -f "$DESEN" >/dev/null 2>&1; then
   echo "HATA: sim zaten ayakta — önce 'bash scripts/kapat.sh' çalıştır."
+  echo "      (ya da tek komutta: AVCI_TEMIZ=1 bash scripts/mkur.sh $T)"
   pgrep -af "$DESEN" | cut -c1-110
   exit 1
 fi

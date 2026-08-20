@@ -5,63 +5,108 @@ Depo: `~/projects/avci_sim` · ArduPilot: `~/ardupilot` · Gazebo eklentisi:
 
 ---
 
-## 1 · Hızlı başlatma
+## 1 · Tek komut
 
-cd ~/projects/avci_sim
-bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1   # headless (varsayılan)
-tail -1 ~/.avci_sim/log/kur_m.log                          # "sim hazır HH:MM:SS"
+**Yeniden kur** — ayakta ne varsa kapatır, sonra kurar. Günlük kullanımda
+tek ihtiyacın olan budur:
 
-Gazebo + ArduCopter (avcı) + ArduPlane (hedef) + panel. ~90 sn.
+```bash
+AVCI_TEMIZ=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+**Kur** (ayakta sim yokken) ve **kapat**:
+
+```bash
+bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+bash scripts/kapat.sh
+```
+
+**Pencereli Gazebo** (varsayılan headless):
+
+```bash
+AVCI_TEMIZ=1 AVCI_GUI=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+Kurulan: Gazebo + ArduCopter (avcı) + ArduPlane (hedef) + panel. **~90 sn.**
 Panel: **http://127.0.0.1:8000**
 
-AVCI_GUI=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1   # pencereli
-bash scripts/kapat.sh                                                # hepsini kapat
+Son satır `sim hazır HH:MM:SS` ise hazırdır. **Çıkış kodu:** 0 = hazır ·
+1 = kurulamadı, son satır sebebi söyler. Kör "hazır" yok.
 
-⚠ `mkur.sh`'i boruya bağlamayın (`| tail`, `| grep`). Arka plandaki sim
-süreçleri yüzünden boru EOF almaz, script asılı kalır. Çıktıyı dosyaya yazın.
+Tek kelimeye indirmek istersen `~/.bashrc`'ye:
 
-**Çıkış kodu:** 0 = hazır · 1 = kurulamadı, son satır sebebi söyler.
+```bash
+alias simkur='AVCI_TEMIZ=1 bash ~/projects/avci_sim/scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log'
+alias simkapat='bash ~/projects/avci_sim/scripts/kapat.sh'
+```
+
+| değişken | ne yapar |
+|---|---|
+| `AVCI_TEMIZ=1` | önce `kapat.sh`, süreçler ve 8000 portu boşalınca kurar |
+| `AVCI_GUI=1` | Gazebo penceresini açar (varsayılan `--headless-rendering`) |
+| `[etiket]` | 1. argüman; log adlarına ek (`gz_m.log`). Varsayılan `m` |
+
+⚠ `AVCI_TEMIZ` varsayılan olarak **kapalı**: koşan bir kampanyayı ya da
+havadaki aracı sessizce düşürmesin diye susturma isteyerek yazılır.
+
+⚠ `mkur.sh`'i **boruya bağlamayın** (`| tail`, `| grep`). Arka plandaki sim
+süreçleri yüzünden boru EOF almaz, script asılı kalır. Çıktıyı dosyaya yazın —
+yukarıdaki satırlarda `>` sonrası ayrı komutla `tail` alınmasının sebebi budur.
 
 ---
 
 ## 2 · Uçuş komutları
 
+```bash
 API=http://127.0.0.1:8000
 
 curl -s -X POST $API/api/command/plane/scenario/duz    # hedefi kaldır + senaryo
 curl -s -X POST $API/api/command/iris/start_chase      # avcıyı takibe başlat
 curl -s -X POST $API/api/command/plane/stop_scenario   # senaryoyu durdur
 curl -s -X POST $API/api/command/iris/stop_chase       # takibi durdur
+```
 
-**Senaryolar:** `duz` · `square` · `aggressive` · `circle` ·
+**Senaryolar:** `duz` · `square` · `elips_gorev` · `aggressive` · `circle` ·
 `circle_xl` (~96 m) · `circle_l` (~71 m) · `circle_s` (~41 m)
 
 **Kayıt** — saniyede 1 kare + eşli telemetri:
 
+```bash
 python3 tools/ucus_kaydi.py logs/kayit/<ad> <süre_sn>
+```
 
 **Kaçamak testi** — düz uçuşta buluşma anında tetiklenen manevra:
 
+```bash
 python3 tools/kacamak_testi.py logs/kacamak/<ad> <kacamak> <tetik_m> <kayit_s> <senaryo>
+```
 
 Kaçamak türleri: `yatay` · `dikey_yukari` · `dikey_asagi` · `capraz` ·
 `hizlan` · `yok` (taban koşusu)
 
 **Video üret:**
 
-ffmpeg -framerate 5 -i logs/kayit/<ad>/frames/f%04d.jpg \
-       -c:v libx264 -pix_fmt yuv420p logs/<ad>.mp4
+```bash
+ffmpeg -framerate 5 -i logs/kayit/<ad>/frames/f%04d.jpg -c:v libx264 -pix_fmt yuv420p logs/<ad>.mp4
+```
 
 ---
 
 ## 3 · Doğrulama
 
+```bash
 curl -sL -o /dev/null -w 'panel: %{http_code}\n' http://127.0.0.1:8000/   # 200 bekle
-for v in iris plane iris_chase talon_chase; do
-  curl -s -o /dev/null -w "$v: %{http_code}\n" --max-time 5 \
-       http://127.0.0.1:8000/api/video_feed/$v
-done
+```
+
+Dört kamera akışı (ikisi ön, ikisi dış görüş):
+
+```bash
+for v in iris plane iris_chase talon_chase; do curl -s -o /dev/null -w "$v: %{http_code}\n" --max-time 5 http://127.0.0.1:8000/api/video_feed/$v; done
+```
+
+```bash
 curl -s http://127.0.0.1:8000/api/debug/telem | python3 -m json.tool | head -20
+```
 
 **Hazır olma işaretleri**
 
@@ -71,6 +116,11 @@ curl -s http://127.0.0.1:8000/api/debug/telem | python3 -m json.tool | head -20
 | `AP: Frame: QUAD/X` | ArduCopter | motorlar yapılandırıldı |
 | `AP: EKF3 IMU0 is using GPS` | iki SITL | GPS kilidi geldi (~50 sn) |
 | `Iris kamerasından ilk görüntü` | GCS logu | ön kamera akıyor (~31 sn, YOLO ısınması) |
+| `dış görüş kamerasından ilk görüntü` | GCS logu | AVD/TLD pencereleri dolacak (~6 sn) |
+
+```bash
+grep 'ilk görüntü' ~/.avci_sim/log/gcs_m.log     # dört satır bekleriz
+```
 
 ---
 
@@ -81,18 +131,21 @@ Her adımın hazır işaretini görmeden sonrakine geçmeyin.
 
 ### Terminal 1 — Gazebo
 
+```bash
 cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 unset DISPLAY
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
 export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 gz sim -s -r --headless-rendering -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
+```
 
 `-s` yalnız sunucu · `-r` duraklatmadan başlat · `--headless-rendering`
 pencere yok ama **kameralar render edilir** (görsel güdümün şartı).
 
 ### Terminal 2 — ArduCopter (avcı, FDM 9002)
 
+```bash
 cd ~/ardupilot
 APT=$HOME/ardupilot/Tools/autotest
 python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
@@ -102,6 +155,7 @@ python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON 
   --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
   --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 \
   --mavproxy-args="--streamrate=25"
+```
 
 ⚠ Üç `--add-param-file` de zorunlu ve **sıra önemli**; `avci_copter.parm` en
 sonda kalmalı. İlk ikisi olmadan `FRAME_CLASS`/`FRAME_TYPE` tanımsız kalır
@@ -109,27 +163,37 @@ sonda kalmalı. İlk ikisi olmadan `FRAME_CLASS`/`FRAME_TYPE` tanımsız kalır
 
 ### Terminal 3 — ArduPlane (hedef, FDM 9012)
 
+```bash
 cd ~/ardupilot
 python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 \
   -I1 --sysid 2 --no-rebuild \
   --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm \
   --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 \
   --mavproxy-args="--streamrate=25"
+```
 
 ### Terminal 4 — GCS
 
+```bash
 cd ~/projects/avci_sim
 export AVCI_GZ_CAMERA=1 AVCI_GORSEL=on AVCI_NO_BROWSER=1
 python3 -m control.gcs_server
+```
 
 `AVCI_NO_BROWSER=1` şart: sunucu açılıştan 2 sn sonra tarayıcı açmayı dener,
 ekransız oturumda bu kilitler.
 
+`AVCI_GZ_CHASE_CAM=0` verilirse dış görüş (chase) kameraları hiç açılmaz —
+iki ek 640×480@15 Hz render; zayıf GPU'da kapatmak isteyebilirsiniz.
+
 ### Terminal 5 — pencereli Gazebo (isteğe bağlı)
 
+```bash
 cd ~/projects/avci_sim
-bash scripts/start_harmonic.sh     # ya da yalnız Terminal 1'i şöyle değiştirin:
+bash scripts/start_harmonic.sh
+# ya da yalnız Terminal 1'i şöyle değiştirin:
 gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
+```
 
 ⚠ `unset DISPLAY` satırını çıkarın ama `export DISPLAY=:1` **yazmayın** —
 mevcut değerinizi kullanın. Ekranınızı `ls /tmp/.X11-unix/` ile doğrulayın.
@@ -140,19 +204,21 @@ mevcut değerinizi kullanın. Ekranınızı `ls /tmp/.X11-unix/` ile doğrulayı
 
 | belirti | sebep | çözüm |
 |---|---|---|
-| `mkur.sh`: "sim zaten ayakta" | önceki simden kalan süreçler | `bash scripts/kapat.sh` |
+| `mkur.sh`: "sim zaten ayakta" | önceki simden kalan süreçler | `AVCI_TEMIZ=1` ile kurun (ya da `bash scripts/kapat.sh`) |
 | `mkur.sh`: "8000 portu dolu" | eski panel süreci | `fuser -k 8000/tcp` |
 | `mkur.sh`: "9002 açılmadı" | Gazebo kalkmadı | `~/.avci_sim/log/gz_<etiket>.log` |
 | `mkur.sh`: "GPS kilidi gelmedi" | SITL hatası | `~/.avci_sim/log/cop_*.log`, `pla_*.log` |
 | `mkur.sh`: "ön kamera gelmedi" | render bozuk / YOLO yavaş | `grep 'ilk görüntü' ~/.avci_sim/log/gcs_*.log` |
+| Panelde AVD/TLD boş | Gazebo dış görüş sensörleri olmadan başlamış | simi yeniden kurun (sensörler dünya yüklenirken okunur) |
 | Araç uçmuyor, `Frame: UNSUPPORTED` | param dosyası sırası yanlış | Terminal 2'deki üç dosyayı sırayla verin |
 | Kutu hiç gelmiyor | `--headless-rendering` yok | bayrağı ekleyin; yalnız `-s` yetmez |
-| Kabuk exit 144 ile ölüyor | `pkill -f` kendi kabuğunu eşliyor | `kapat.sh`'i **ayrı** komutta çalıştırın |
+| Kabuk exit 144 ile ölüyor | `pkill -f` kendi kabuğunu eşliyor | deseni elle yazmayın, `kapat.sh` kullanın |
 | Panel donuyor | `gcs_server`'ı tek başına yeniden başlattınız | tam restart yapın |
 
 ⚠ **`pkill -9 -f 'gz sim|sim_vehicle|...'` elle yazmayın** — komut satırınız
 desenin kendisini içerdiği için kabuğunuzu öldürür. `scripts/kapat.sh`
-kullanın; desen ayrı dosyada durduğu için bu tuzağa düşmez.
+kullanın; desen ayrı dosyada durduğu için bu tuzağa düşmez. `AVCI_TEMIZ=1` de
+aynı sebeple `kapat.sh`'i ayrı dosyadan çağırır.
 
 ⚠ Test bitince araçları havada **kontrolsüz bırakmayın**; simi komple kapatın.
 
@@ -174,6 +240,7 @@ böyle emin olunur.
 
 ### Şablon — `~/.avci_sim/kosu.sh`
 
+```bash
 #!/bin/bash
 # Kullanım: bash kosu.sh <ad> <kol:K|D> [senaryo] [kayit_s]
 set -u
@@ -186,8 +253,7 @@ cd $REPO || exit 1
 # KOL — güdüm alanıysa env ile
 [ "$KOL" = "D" ] && export AVCI_GPS_VZ_ALCALMA=2.0 || export AVCI_GPS_VZ_ALCALMA=6.0
 
-bash scripts/kapat.sh > /dev/null 2>&1
-bash scripts/mkur.sh "$AD" > ~/.avci_sim/log/kur_$AD.log 2>&1
+AVCI_TEMIZ=1 bash scripts/mkur.sh "$AD" > ~/.avci_sim/log/kur_$AD.log 2>&1
 grep -qa "sim hazır" ~/.avci_sim/log/kur_$AD.log || {
   echo "[$AD] HATA: sim kurulamadı"; tail -3 ~/.avci_sim/log/kur_$AD.log; exit 1; }
 
@@ -210,9 +276,11 @@ for b in $(ls -t $HOME/ardupilot/logs/*.BIN 2>/dev/null | head -4); do
 done
 echo "$KOL $SEN" > "$D/KOL.txt"
 echo "[$AD] bitti"
+```
 
 ### Araç parametresi yazma + teyit
 
+```bash
 python3 - <<'EOF'
 from pymavlink import mavutil
 import time, sys
@@ -230,6 +298,7 @@ while time.time() - t0 < 10:
         sys.exit(0 if ok else 1)
 print("PARAM_VALUE gelmedi — koşu GEÇERSİZ"); sys.exit(1)
 EOF
+```
 
 ⚠ `MAV_PARAM_TYPE_REAL32` kullanın; `INT32` ondalık değerleri sıfırlayabilir.
 
