@@ -110,6 +110,35 @@ sürekli. Anlamlı değil (p=0.200) ama yönü tutarlı (3/3 koşuda daha az).
 
 ---
 
+## 5b · ⭐ EŞLEŞMİŞ KIYAS — koşular arası değişkenlik SIFIR
+
+Kullanıcı haklı bir soru sordu: *"gerçek mesafe ve bu çarpım vs köşegenden
+gelen mesafe karşılaştırması yok mu?"* — ve panelde fark göremediğini söyledi.
+
+⚠ **AI HATASI:** kullanıcıya panelin `mesafe` göstergesine bakmasını
+söylemiştim. O sayı `telemetry_state`'ten, yani **iki aracın GPS'inden**
+geliyor; bbox'la ilgisi yok. `BOYUT_OLCU` onu değiştiremezdi.
+
+Doğru kıyas: her karede ham `w,h` loglandığı için **aynı kareden iki tahmini
+birden** hesaplayabiliyoruz. Koşu şansı, rüzgâr, başlangıç geometrisi —
+hepsi elenmiş oluyor.
+
+| uçuş | kare | çarpım p50 | köşegen p50 | çarpım p90 | köşegen p90 | kazanan |
+|---|---|---|---|---|---|---|
+| OL01_C | 605 | %17 | **%13** | %41 | %35 | köşegen |
+| OL03_C | 891 | %22 | **%14** | %50 | %46 | köşegen |
+| OL05_C | 642 | %23 | **%14** | %47 | %41 | köşegen |
+| OL02_K | 531 | %24 | **%14** | %49 | %42 | köşegen |
+| OL04_K | 231 | %17 | **%9** | %43 | %41 | köşegen |
+| OL06_K | 478 | %26 | **%17** | %53 | %48 | köşegen |
+| **TOPLAM** | **3378** | **%22** | **%14** | %48 | %43 | **6/6** |
+
+**Altı uçuşun altısında da köşegen kazandı.** Şansa bağlı değil.
+
+Görselleştirme: `claude.ai/code/artifact/957cc588-7ab6-470f-b95c-0711e516f6be`
+
+---
+
 ## 6 · AI ÖNERİSİ
 
 **Köşegen GİRSİN** — ama sonuç ölçütü için değil, **altyapı** olduğu için:
@@ -126,6 +155,19 @@ sürekli. Anlamlı değil (p=0.200) ama yönü tutarlı (3/3 koşuda daha az).
 haritasının 2. adımı (yavaşlama profili) gelince görünecek.
 
 ⚠ **Karar kullanıcınındır** — komutlar §7'de.
+
+---
+
+## 6b · ✅ KULLANICI KARARI (2026-08-19)
+
+*"al köşegeni"* → **`BOYUT_OLCU` varsayılanı `kosegen` yapıldı.**
+
+`carpim` seçeneği konsolda duruyor — ölü kod değil, **aday listesi**:
+`w` (yalnız genişlik) 0-15° bandında en iyiydi (%12) ama 30-60°'de %35'e
+fırlıyordu; ileride sınanabilir.
+
+Testler 39/39 (G1-G6 yeni tabana göre düzeltildi: taban artık köşegen
+olduğu için çarpım kolu açık `_Car` sınıfıyla sınanıyor).
 
 ---
 

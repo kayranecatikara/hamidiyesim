@@ -58,14 +58,6 @@ AYARLAR = [
      "Kapanma yavaşlar; dikey daha iyi oturur ama hedefle daha uzun süre "
      "yan yana uçulur. 15.1'in altına inersen hiç yaklaşamazsın."),
 
-    ("HUCUM_BOYUT_REF", "HUCUM_BOYUT_REF", "Denge kutusu = TEMAS kutusu", "G0", "sayi",
-     "px", 30.0, 400.0, 5.0,
-     "PI'nın 'ulaşınca dur' kutusu. R = 160/boyut → 160 px ≈ 1.0 m, yani "
-     "TEMAS. Taban sistemde bu 25 px (6.4 m) olduğu için araç orada PARK "
-     "ediyordu; terminal fazı tam da bunu ezmek için vardı.",
-     "Daha büyük = daha yakında dur = hep kapat (istenen).",
-     "Küçültürsen park davranışı geri gelir — 160/değer metrede durur."),
-
     ("K_ELEV", "K_ELEV", "Dikey saf takip kazancı (yatayla aynı)", "G0", "sayi", "",
      0.0, 2.5, 0.05,
      "Dikeyin yatayla AYNI matematiği: hız vektörünün YÖNÜ hedefe döner, "
@@ -157,6 +149,58 @@ AYARLAR = [
      "Lead daha erken söner; temas anı sakinleşir."),
 
     # ═════════════════════════════════════════════════════════════════════
+    ("GY", None, "⭐ YAVAŞLAMA PROFİLİ — menzille azalan kapanma", None,
+     "grup", None, None, None, None,
+     "KULLANICI FİKRİ: 'hedef araca çarparken hedef araç ile yakın hızlarda "
+     "olmak kaçırma riskini minimuma indirir.' Hız şu an SABİT (karelerin "
+     "%58'i tam V_HUCUM'da). Bu grup onun yerine menzille azalan bir kapanma "
+     "hedefi koyuyor: kapanma = R/T_GO, taban ve tavanla sınırlı. "
+     "⛔ KUTU BOYUTUYLA ORANTILI YAPILMADI — kutu 1/R gittiği için o, temas "
+     "anında ANİ FREN demek olurdu (sildiğimiz terminal fazının kök nedeni).",
+     None, None),
+
+    ("YAVASLAMA", "YAVASLAMA", "⭐ YAVAŞLAMA AÇIK", "GY", "bool",
+     None, None, None, None,
+     "Açıkken hız yasası değişir: v_los = hedef_hızı_kestirimi + kapanma "
+     "profili. Kestirim, kapanma hatasıyla sürülen bir integraldir — "
+     "gürültülü kapanma sinyalinin DOĞRU yeri orasıdır (integratör alçak "
+     "geçiren filtredir; oransal yola konsa komut titrerdi).",
+     "AÇIK = menzille yavaşlayan yaklaşma. Hedefe yakın hızda temas.",
+     "KAPALI = bugünkü sabit hız (V_HUCUM'da doygun)."),
+
+    ("T_GO", "T_GO", "Profil zaman sabiti", "GY", "sayi", "s",
+     1.0, 12.0, 0.25,
+     "kapanma = R / T_GO. 4 s → 20 m'de 5.0 m/s · 10 m'de 2.5 · 5 m'de 1.25. "
+     "Adı 'çarpışmaya kalan süre'den gelir: profil, sabit t_go hedefler.",
+     "Daha yavaş yaklaşma — dikey/yanal kanala oturma süresi artar. ⚠ Hedefe "
+     "kaçma zamanı da verir: ölçüldü, 0.9 m/s kapanmada araç 8 SANİYE 6 "
+     "metrede asılı kaldı ve hiç yaklaşamadı.",
+     "Daha hızlı yaklaşma; profil sertleşir, tavan daha erken bağlar."),
+
+    ("KAPANMA_TABAN", "KAPANMA_TABAN", "⭐ Kapanma tabanı (Zenon kalkanı)",
+     "GY", "sayi", "m/s", 0.3, 6.0, 0.1,
+     "⚠ TEMASI GARANTİ EDER. Taban olmasaydı R→0 iken kapanma→0 olurdu ve "
+     "araç hedefe MATEMATİKSEL OLARAK asla değmezdi (Zenon paradoksu).",
+     "Son metrelerde daha hızlı temas; oturma süresi azalır.",
+     "Daha nazik temas. ⚠ Çok düşürürsen hedefe yaklaşma sonsuza uzar."),
+
+    ("KAPANMA_TAVAN", "KAPANMA_TAVAN", "Kapanma tavanı", "GY", "sayi", "m/s",
+     1.0, 15.0, 0.5,
+     "Uzaktayken imkânsız hız istenmesin diye profilin üst sınırı. Zaten "
+     "V_HUCUM da ayrıca bağlar.",
+     "Uzaktan daha agresif kapanma.",
+     "Uzakta da sakin; hedefe varış gecikir."),
+
+    ("K_I_KAP", "K_I_KAP", "Kestirim öğrenme hızı", "GY", "sayi", "",
+     0.0, 3.0, 0.05,
+     "Hedefin hızını öğrenen integralin kazancı. Kapanma hatasıyla sürülür: "
+     "ölçülen kapanma hedeften büyükse kestirim düşer, küçükse yükselir. "
+     "⚠ Kutu kaybolunca DONAR (bayat ölçümle sürüklenmesin).",
+     "Hedef hız değişimine daha çabuk uyum. Çok yükseğe çekilirse gürültüyü "
+     "içeri alır ve hız salınır.",
+     "Sakin ama geç öğrenir; 0 = hiç öğrenmez, kestirim başlangıçta kalır."),
+
+    # ═════════════════════════════════════════════════════════════════════
     ("G1", None, "② YATAY KANAL — hedefi kadrajda ortalama (yaw)", None,
      "grup", None, None, None, None,
      "Kutunun yatay piksel hatası (cx − 320) yaw komutuna çevrilir. "
@@ -235,6 +279,34 @@ AYARLAR = [
      "Yalnız çok yakında çalışır."),
 
     # ═════════════════════════════════════════════════════════════════════
+    ("GD", None, "⭐ DİKEY KOMUT ÖLÇEĞİ — salınımın kök nedeni", None,
+     "grup", None, None, None, None,
+     "KULLANICI GÖZLEMİ: 'son anlarda dikeyde hizaya gelmeye çalışılırken "
+     "çok salınım oluyor, alttan üstten kaçırılıyor.' Sebep bulundu: dikey "
+     "komut vz = v_los·sin(ε) ile hesaplanıyor — bu DURGUN hedef için "
+     "doğru. Hedef 15 m/s ile kaçarken gerçek kapanma 1.5-3 m/s; d metrelik "
+     "ofseti t_go = R/ṙ sürede kapatmak için gereken vz = ṙ·sin(ε). "
+     "Oran v_los/ṙ ≈ 11 kat.",
+     None, None),
+
+    ("DIKEY_KAPANMA", "DIKEY_KAPANMA", "⭐ Dikeyi KAPANMA hızıyla ölçekle",
+     "GD", "bool", None, None, None, None,
+     "Açıkken dikey komut ölçeği v_los yerine kapanma hızı olur: "
+     "vz = clamp(ṙ, taban, v_los)·sin(ε).",
+     "AÇIK — ÖLÇÜLDÜ (kullanıcı uçuşu 20260820_124706, 251 kare): komut "
+     "edilen dikey hız gerekenin 4-18 KATI. 0-3 m'de 3.08 m/s komut, "
+     "gereken 0.17. Karelerde: dikey ofset 11.7→2.2 m arasında kusursuz "
+     "(−0.26…−0.02), sonra son 2 metrede −0.86'ya dalıp +0.63'e savruluyor.",
+     "KAPALI = bugünkü saf takip (durgun hedef varsayımı)."),
+
+    ("DIKEY_KAP_TABAN", "DIKEY_KAP_TABAN", "Dikey ölçek tabanı", "GD",
+     "sayi", "m/s", 0.2, 8.0, 0.1,
+     "Kapanma ~0 iken (yan yana uçuş) dikey komut da 0 olurdu ve ofset hiç "
+     "düzelmezdi. Taban asgari yetki bırakır.",
+     "Yavaş kapanırken dikey daha canlı; ama aşırı komut geri gelir.",
+     "Daha sakin; çok düşükse yan yana uçarken hizalanma durur."),
+
+    # ═════════════════════════════════════════════════════════════════════
     ("G2", None, "③ DİKEY KANAL — tavan ve bütçe", None,
      "grup", None, None, None, None,
      "Dikey YASA artık ① gruptadır (yatayın aynı matematiği). Burada yalnız "
@@ -268,15 +340,6 @@ AYARLAR = [
      "pozitif kalır ve hız V_HUCUM tavanında oturur. Buradaki kazançlar "
      "o döngünün dinamiğini belirler.",
      None, None),
-
-    ("BOYUT_REF", "BOYUT_REF", "Lead sönümleme referansı", "G3", "sayi", "px",
-     8.0, 60.0, 1.0,
-     "⚠ ARTIK HIZ SETPOINT'İ DEĞİL. Eski sistemde PI'nın denge kutusuydu "
-     "(25 px → 160/25 = 6.4 m'de PARK) ve terminal fazı tam da o parkı "
-     "ezmek için vardı. Park kalkınca tek kalan görevi lead'in menzille "
-     "sönümlenmesi: lead_ölçek = BOYUT_REF / kutu.",
-     "Lead daha geç söner — yakında da kestirme yapılır.",
-     "Lead daha erken söner; temas anı sakinleşir."),
 
     ("K_FWD", "K_FWD", "Hız P kazancı", "G3", "sayi", "(m/s)/px",
      0.0, 2.0, 0.05,

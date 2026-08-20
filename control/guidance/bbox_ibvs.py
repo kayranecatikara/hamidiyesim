@@ -114,7 +114,10 @@ class Cfg:
     # dikey bütçe 3 m/s'de kalmıştı (yatay 3.3 katına çıkarken) — 10 kat
     # asimetri. Varsayılan 3 → 8 m/s. Araç tarafındaki tavanlar da birlikte
     # açıldı (avci_copter.parm: WPNAV_SPEED_UP/DN, WPNAV_ACCEL_Z).
-    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 8.0)      # m/s; dikey hız tavanı
+    # ⭐ 2026-08-20 · 8.0 → 15.0. Dikey zarf genişletildikten sonra güdümün
+    # kendi tavanı aracı boğmasın: WPNAV_SPEED_UP 20 m/s, ACCEL_Z 20 m/s²,
+    # PSC_JERK_Z 40 m/s³. 8'de bırakmak, genişletmeyi etkisiz kılardı.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 15.0)     # m/s; dikey hız tavanı
 
 
     # ── HIZ: PI kontrol, kutu boyutu hatası üzerinden (menzil vekili) ──
@@ -165,8 +168,27 @@ class Cfg:
     # Kalibre sabitleri MODELDEN DEĞİL ÖLÇÜMDEN alındı (kutu, görsel modeli
     # kaplıyor ve YOLO kutusu gevşek çiziliyor; ampirik sabit doğrusu).
     #
+    # ⭐ 2026-08-19 KULLANICI KARARI: varsayılan "kosegen".
+    # Kampanya OL, 6 uçuş. Eşleşmiş kıyas (AYNI karelerde iki tahmin, koşular
+    # arası değişkenlik SIFIR, 3378 kare): ortanca menzil hatası %22 → %14,
+    # 6 uçuşun 6'sında da köşegen kazandı. Uçuş sonucu ölçütleri ayrışmadı
+    # (isabet 3/3 → 3/3) — çünkü daha iyi menzilin bugün gidecek yeri yok
+    # (bkz. aşağıdaki not). Karar SONUÇ için değil ALTYAPI için verildi:
+    # yol haritasının her sonraki adımı (yavaşlama profili, kapanma integrali,
+    # aykırı değer kapısı, durum kestirimi) R ve ṙ'ye dayanıyor.
+    #
+    # ⚠ MENZİLİN BUGÜNKÜ ETKİ ALANI (ölçüldü):
+    #   lead sönmesi (LEAD_SONUM)   ✅ tek gerçek yol
+    #   hız PI hatası               ⚠ hız doygun — 13325 karenin %58'i tam
+    #                                  V_HUCUM'da; hatanın değeri etkisiz
+    #   YANAL_K / YAW_MENZIL_REF / KACIS_KD hepsi 0 → kapalı
+    #
+    # SEÇENEK NEDEN DURUYOR: "w" (yalnız genişlik) 0-15° bandında en iyiydi
+    # (%12) ama 30-60°'de %35'e fırlıyor. İleride sınanabilir; seçici o yüzden
+    # kalıyor, ölü kod değil aday listesi.
+    #
     # AVCI_IBVS_OLCU = "carpim" | "kosegen"
-    BOYUT_OLCU = os.environ.get("AVCI_IBVS_OLCU", "carpim").strip().lower()
+    BOYUT_OLCU = os.environ.get("AVCI_IBVS_OLCU", "kosegen").strip().lower()
 
     # Ölçüye göre kalibrasyon — C = medyan(p · R_gerçek), 0-15° bandında.
     # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller
@@ -477,6 +499,104 @@ class Cfg:
     YAVASLA = _env_f("AVCI_IBVS_YAVASLA", 1.0) >= 0.5
     V_HUCUM_MIN = _env_f("AVCI_IBVS_VHUCUM_MIN", 12.0)   # m/s; yavaşlama tabanı
 
+    # ═══════════════════════════════════════════════════════════════════
+    # YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ (2026-08-19, kullanıcı fikri)
+    # ═══════════════════════════════════════════════════════════════════
+    # KULLANICI: *"Hedefin kadrajda büyümesiyle orantılı şekilde avcı dronun
+    # hızını azaltma gibi bir şey yapabilir miyiz? Çünkü hedef araca
+    # çarparken hedef araç ile yakın hızlarda olmak aracı kaçırma riskini
+    # minimuma indirir, daha dengeli yaklaşmayı mümkün kılar."*
+    #
+    # ⛔ "KUTU BOYUTUYLA ORANTILI" YAPILMADI — kasıtlı. Kutu 1/R ile gider:
+    #   menzil 30→5 m (25 metre!) → kutu hatası 155→128, yani %17 değişim
+    #   menzil  2→1 m (tek metre) → kutu hatası  80→  0, yani %100 değişim
+    # Yani kutu-orantılı yavaşlama, TAM TEMAS ANINDA ANİ FREN demektir. Ani
+    # fren de burnu kaldırıp hedefi kadrajdan çıkarır — sildiğimiz terminal
+    # fazının kök nedeni tam buydu. Bunun yerine MENZİLLE DOĞRUSAL profil.
+    #
+    # YASA — ileri besleme + integral:
+    #   kapanma_hedefi = clamp(R / T_GO, KAPANMA_MIN, KAPANMA_MAX)
+    #   v_hedef_I     += K_I_KAP · (kapanma_hedefi − kapanma_ölçülen) · dt
+    #   v_los          = clamp(v_hedef_I + kapanma_hedefi, V_MIN, V_HUCUM)
+    #
+    # NEDEN BU BİÇİM: profil DOĞRUDAN eklenir (gecikmesiz, menzille iner);
+    # integral yalnız BİLİNMEYENİ öğrenir — hedefin hızı. Dengede
+    # kapanma_ölçülen = kapanma_hedefi ve v_hedef_I = hedefin gerçek hızı.
+    #
+    # ⚠ GÜRÜLTÜ: `kapanma` kutu büyüme hızından gelir ve gürültülüdür
+    # (ölçüldü: ardışık kare değişimi p90 %17.5, gerçek değişim ~%2.5 —
+    # yedi kat). Bu yüzden YALNIZ İNTEGRAL yolunda kullanılır; integratör
+    # zaten alçak geçiren filtredir. Oransal yola konsaydı komut titrerdi.
+    #
+    # ⚠ ZENON: taban olmasaydı R→0 iken kapanma→0 olur ve ARAÇ HEDEFE ASLA
+    # DEĞMEZDİ. KAPANMA_MIN bunu engeller.
+    #
+    # ⚠ ÖLÇÜLMÜŞ RİSK: yavaş kapanma hedefe kaçma zamanı verir. V_TERMINAL=16
+    # (kapanma 0.9 m/s) ile araç 8 SANİYE 6 metrede asılı kalmış ve hiç
+    # yaklaşamamıştı. Taban ve T_GO bunun ayarıdır.
+    #
+    # AVCI_IBVS_YAVASLAMA=1 → açık. Varsayılan KAPALI (ölçülmeden girmez).
+    YAVASLAMA = _env_f("AVCI_IBVS_YAVASLAMA", 0.0) >= 0.5
+
+    # Profilin zaman sabiti: kapanma = R / T_GO.
+    # 4 s → 20 m'de 5.0 m/s · 10 m'de 2.5 · 5 m'de 1.25 · 2 m'de 0.50
+    T_GO = _env_f("AVCI_IBVS_TGO", 4.0)                  # s
+
+    # Kapanma tabanı — TEMASI GARANTİ EDER (Zenon kalkanı).
+    # ⚠ AD SEÇİMİ: "KAPANMA_MIN" DEĞİL. O ad silinen terminal fazının
+    # "kapanma ölçeği tabanı" alanına aitti; aynı adı farklı anlamla geri
+    # getirmek §5.12'nin uyardığı karışıklığı üretirdi (birim testi B1
+    # zaten yakaladı).
+    KAPANMA_TABAN = _env_f("AVCI_IBVS_KAPANMA_TABAN", 1.5)  # m/s
+    # Kapanma tavanı — uzakta imkânsız hız istenmesin.
+    KAPANMA_TAVAN = _env_f("AVCI_IBVS_KAPANMA_TAVAN", 6.0)  # m/s
+
+    # Hedef hızı kestiriminin öğrenme hızı. Düşük = sakin ama geç;
+    # yüksek = çevik ama gürültüyü içeri alır ve salınabilir.
+    K_I_KAP = _env_f("AVCI_IBVS_KI_KAP", 0.8)            # (m/s)/(m/s·s)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # DİKEY KOMUT ÖLÇEĞİ — kapanma hızı mı, toplam hız mı? (2026-08-20)
+    # ═══════════════════════════════════════════════════════════════════
+    # KULLANICI GÖZLEMİ: *"son anlarda, tam çarpışma anından önceki anlarda,
+    # dikeyde hedef araçla tam aynı hizaya gelmeye çalışılırken çok salınım
+    # oluyor ve alttan üstten araç kaçırılıyor."* — DOĞRU, ve sebebi bu.
+    #
+    # ⛔ MEVCUT YASA YANLIŞ ÖLÇEK KULLANIYOR:
+    #     vz = v_los · sin(ε)
+    # Bu, DURGUN hedef için doğrudur (o zaman ṙ = v_los). Ama hedef bizden
+    # ~15 m/s ile kaçıyor; gerçek kapanma 1.5-3 m/s. Doğrusu:
+    #     d metrelik ofseti t_go = R/ṙ sürede kapatmak gerekir
+    #     ⇒ vz = d / t_go = (R·sin ε) · ṙ / R = ṙ · sin(ε)
+    # Oran v_los/ṙ ≈ 11 kat.
+    #
+    # ÖLÇÜLDÜ (kullanıcı uçuşu 20260820_124706, 251 eşleşmiş kare;
+    # gerçek menzil ve gerçek dikey ofset telemetriden, YALNIZ ANALİZDE):
+    #   menzil      |vz| KOMUT   GEREKEN    kat   gerçek |dz|
+    #   10-15 m         0.35       0.08    4.5x      0.25 m
+    #    6-10 m         0.58       0.14    4.0x      0.24 m
+    #     3-6 m         0.67       0.09    7.6x      0.18 m
+    #     0-3 m         3.08       0.17   18.6x      0.40 m
+    #
+    # SONUCU KARELERDE GÖRÜNÜYOR: dikey ofset 11.7 m'den 2.2 m'ye kadar
+    # −0.26…−0.02 arasında KUSURSUZ; sonra son 2 metrede −0.02 → −0.86'ya
+    # DALIYOR, geçtikten sonra +0.63'e savruluyor. Yakında piksel gürültüsü
+    # açıya, açı da aşırı komuta çevriliyor: 2.2 m'de 10 px gürültü = 3.4°
+    # = 0.13 m gerçek hata, ama komut 0.98 m/s → yarım saniyede 0.5 m yer
+    # değiştirme. Döngü hatayı silmek yerine ÜRETİYOR.
+    #
+    # ⚠ ESKİ SİSTEMDE BU ÖLÇEK DOĞRUYDU. `manevrada-iyi-terminalde-kotu`:
+    #     v_dikey = clamp(kapanma, KAPANMA_MIN, v_los)
+    # Terminal fazını silerken bu da silindi ve dikey saf takibe çevrildi.
+    # Yatay için saf takip doğruydu; dikey için değildi.
+    #
+    # TABAN NEDEN VAR: kapanma ~0 iken (yan yana uçuş) dikey komut da 0
+    # olurdu ve ofset hiç düzelmezdi. Taban asgari yetki bırakır.
+    #
+    # AVCI_IBVS_DIKEY_KAPANMA=1 → açık. Varsayılan KAPALI (ölçülmeden girmez).
+    DIKEY_KAPANMA = _env_f("AVCI_IBVS_DIKEY_KAPANMA", 0.0) >= 0.5
+    DIKEY_KAP_TABAN = _env_f("AVCI_IBVS_DIKEY_KAP_TABAN", 1.5)   # m/s
+
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
 
@@ -491,7 +611,7 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
-    "elev_atalet_deg",
+    "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
 ]
 
 
@@ -629,14 +749,43 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # Denge kutusu = TEMAS kutusu. Piksel karşılığı ölçüye göre kendiliğinden
     # ölçeklenir (HUCUM_MENZIL_M metre olarak sabit kalır).
     hata = (_C / cfg.HUCUM_MENZIL_M) - boyut    # px; + = uzak
-    hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
-    # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
-    # hızı ANINDA artır — integralin 5 saniyesini bekleme.
     kacis_ek = 0.0
-    if cfg.KACIS_KD > 0.0 and kapanma is not None and kapanma < 0.0:
-        kacis_ek = min(cfg.KACIS_KD * (-kapanma), cfg.KACIS_MAX)
-    v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
-                  cfg.V_MIN, cfg.V_HUCUM)
+    kapanma_hedefi = None
+    if cfg.YAVASLAMA:
+        # ── YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ (bkz. Cfg.YAVASLAMA) ──
+        # `hiz_I` burada ARTIK "hız integrali" değil, HEDEFİN HIZI
+        # KESTİRİMİDİR. İsim aynı kaldı çünkü çağıran onu taşıyor.
+        _R = _C / boyut if boyut > 1e-6 else cfg.KAPANMA_TAVAN * cfg.T_GO
+        kapanma_hedefi = clamp(_R / cfg.T_GO,
+                               cfg.KAPANMA_TABAN, cfg.KAPANMA_TAVAN)
+        # ── ANTI-WINDUP (2026-08-19, ilk kampanyada MEKANİZMA KAPISI yakaladı)
+        # İlk sürümde integral koşulsuz güncelleniyordu ve ŞİŞTİ: uzakta
+        # profil 5.5 m/s kapanma istiyor, V_HUCUM=18 buna izin vermiyor,
+        # hata kapanmıyor, `hiz_I` I_MAX'a (24) tırmanıyordu. Yakına gelince
+        # kapanma_hedefi 1.5'e düşse bile 24+1.5 yine tavana çarpıyor ve
+        # ÖZELLİĞİN HIZA SIFIR ETKİSİ oluyordu (ölçüldü: v_los her menzil
+        # bandında tam 18.00).
+        # ÇÖZÜM: çıktı doyumdayken, doyumu DERİNLEŞTİREN yönde integrali
+        # dondur. Böylece `hiz_I` hedefin gerçek hızında kalır ve menzil
+        # düşüp profil daralınca v_los doyumdan ÇIKAR.
+        _v_ham = hiz_I + kapanma_hedefi
+        if kapanma is not None:
+            # İntegral YALNIZ ölçüm varken güncellenir. Kutu kaybolunca
+            # `kapanma` bayat kalır; sürüklenmesin diye DONDURULUR.
+            _delta = cfg.K_I_KAP * (kapanma_hedefi - kapanma) * dt
+            _ust = _v_ham >= cfg.V_HUCUM - 1e-9
+            _alt = _v_ham <= cfg.V_MIN + 1e-9
+            if not ((_ust and _delta > 0.0) or (_alt and _delta < 0.0)):
+                hiz_I = clamp(hiz_I + _delta, cfg.I_MIN, cfg.I_MAX)
+        v_los = clamp(hiz_I + kapanma_hedefi, cfg.V_MIN, cfg.V_HUCUM)
+    else:
+        hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
+        # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
+        # hızı ANINDA artır — integralin 5 saniyesini bekleme.
+        if cfg.KACIS_KD > 0.0 and kapanma is not None and kapanma < 0.0:
+            kacis_ek = min(cfg.KACIS_KD * (-kapanma), cfg.KACIS_MAX)
+        v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
+                      cfg.V_MIN, cfg.V_HUCUM)
 
     # Ö5 DÖNÜŞ TAVANI (bkz. Cfg.DONUS_A): gereken yanal ivme V·λ̇ aracın
     # tavanını aşıyorsa hızı kıs — yarıçap V² ile düştüğü için dönüş sıkışır.
@@ -693,11 +842,22 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # KAÇIRACAKSAN YAVAŞLA (bkz. Cfg.YAVASLA): vektörün eğilebileceği en dik
     # açı asin(VZ_MAX/v_los)'tur. Hedef daha dikse kesişim imkânsız ve komut
     # kırpılır → altından geçilir. Tavan yetmiyorsa YATAYI kıs.
+    # ── DİKEY KOMUT ÖLÇEĞİ (bkz. Cfg.DIKEY_KAPANMA) ──
+    # Kapalıyken v_los (saf takip, durgun hedef varsayımı).
+    # Açıkken kapanma hızı — d/t_go'nun ta kendisi.
+    _dikey_olcek = v_los
+    if cfg.DIKEY_KAPANMA and kapanma is not None:
+        _dikey_olcek = clamp(kapanma, cfg.DIKEY_KAP_TABAN, v_los)
     if cfg.YAVASLA:
+        # ⚠ Dikey bütçe kısıtı AYNI ÖLÇEĞİ kullanmalı — yoksa yatayı, artık
+        # var olmayan bir dikey talep yüzünden kısar (boşuna frene basar).
+        # Bu ders eski terminal kodunda da yazılıydı; korunuyor.
         _se = abs(math.sin(nisan_elev))
-        if _se > 1e-6 and v_los * _se > cfg.VZ_MAX:
+        if _se > 1e-6 and _dikey_olcek * _se > cfg.VZ_MAX:
             v_los = max(cfg.V_HUCUM_MIN, cfg.VZ_MAX / _se)
-    vz_nisan = -v_los * math.sin(nisan_elev)
+            if not cfg.DIKEY_KAPANMA:
+                _dikey_olcek = v_los
+    vz_nisan = -_dikey_olcek * math.sin(nisan_elev)
     # TÜREV SÖNÜMLEMESİ: aracın KENDİ dikey hızı nişanın ötesine geçtiyse
     # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
     vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
@@ -713,6 +873,8 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
+            "kapanma_hedefi": kapanma_hedefi,
+            "dikey_olcek": _dikey_olcek,
             "nisan_elev": nisan_elev,
             "elev_atalet": elev_atalet}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -982,6 +1144,12 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
+                # MEKANİZMA SÜTUNLARI (§5.1): yavaşlama profili çalıştı mı?
+                "kapanma_hedefi": ("" if tani["kapanma_hedefi"] is None
+                                   else round(tani["kapanma_hedefi"], 2)),
+                "kapanma_olculen": ("" if kapanma is None
+                                    else round(kapanma, 2)),
+                "dikey_olcek": round(tani["dikey_olcek"], 2),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "gecikme_s": (round(gecikme_s, 4)
                               if gecikme_s is not None else ""),
