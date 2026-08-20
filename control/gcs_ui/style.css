@@ -351,9 +351,15 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 /* Canlı kare akan görüşte ince yeşil halka (akış sağlığı göstergesi). */
 .camdot.live{border-color:var(--green);color:var(--green)}
 .camdot.live[aria-pressed="true"]{border-color:var(--green);box-shadow:0 0 0 2px rgba(52,216,168,.35)}
-/* ANA ekrandaki görüşün dairesi: pencere değil, ana sahneyi aç/kapatır —
-   dıştaki ince halka bunu pencere dairelerinden ayırır. Kapalıyken (basılı
-   değil) kesikli halka kalır ki "ana ekran burada ama söndürülmüş" okunsun. */
+/* ⟲ DÜZEN dairesi: kamera değil, komut düğmesi (pencere düzenini varsayılana
+   döndürür) — kesikli çerçeveyle ayrılır, "canlı akış" halkasını (.live) hiç
+   almaz ve aria-pressed durumu yoktur. */
+.camdot.duzen{font-size:15px;border-style:dashed;letter-spacing:0}
+.camdot.duzen:hover{color:var(--green);border-color:var(--green);border-style:solid}
+/* ANA ekrandaki görüşün (AV — avcı kamerası) dairesi: takip ekranını pencereye
+   alır / panele geri koyar. Dıştaki ince halka bunu kamera pencerelerinin
+   dairelerinden ayırır; basılı değilken kesikli kalır ki "ana ekran burada ama
+   sütunda duruyor" okunsun. */
 .camdot.ana{outline:1px solid var(--line2);outline-offset:3px}
 .camdot.ana[aria-pressed="true"]{outline-color:var(--blue)}
 .camdot.ana[aria-pressed="false"]{outline-style:dashed;outline-color:var(--muted)}

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avcı GCS — Taktik Saha Ekranı</title>
-<link rel="stylesheet" href="style.css?v=64">
+<link rel="stylesheet" href="style.css?v=65">
 </head>
 <body>
 
@@ -224,7 +224,7 @@
     <!-- CENTER FPV -->
     <div class="col" id="centerCol">
       <section class="panel fpvpanel" style="display:flex;flex-direction:column">
-        <div class="phead" id="fpvHead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="spacer"></span><span class="label" id="camTag">CAM · HEDEF İHA</span></div>
+        <div class="phead" id="fpvHead"><span class="ptitle">FPV Canlı Görüntü — Hedef &amp; Avcı Takibi</span><span class="spacer"></span><span class="label" id="camTag">CAM · AVCI</span></div>
         <div class="fpvwrap" id="fpvwrap">
           <!-- Kilitlenme paneli buradan SOL SÜTUNA (Avcı Drone sekmesi,
                Görevi Başlat'ın altına) taşındı. Boşalan pillarbox şeridi
@@ -240,7 +240,7 @@
                  kareye çiziliyor (process_iris_frame → draw_overlay). -->
             <div class="nofeed" id="noFeed">GÖRÜNTÜ BEKLENİYOR</div>
             <div class="xhair"></div>
-            <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">HEDEF</span></div>
+            <div class="ov tl"><b>MODE</b> <span class="g" id="oMode">BEKLEME</span><br><b>ARAÇ</b> <span id="oVeh">AVCI</span></div>
             <!-- KAMERA SEÇİCİ buradan ÜST ÇUBUĞA taşındı: sahnenin içindeyken
                  takip ekranı pencereye alınınca daireler de pencereyle birlikte
                  hareket ediyordu. Artık sabit duruyor. -->
@@ -404,6 +404,6 @@
 <!-- ?v= sürüm etiketi ŞART: onsuz tarayıcı eski script'i önbellekten servis
      ediyor ve düzeltmeler görünmüyor (2026-08-04'te "mesafe hâlâ yanlış"
      şikâyetinin sebebi buydu). script.js'i her değiştirdiğinde artır. -->
-<script src="script.js?v=64"></script>
+<script src="script.js?v=65"></script>
 </body>
 </html>

@@ -124,6 +124,41 @@ Her denemede **tek değişken** değiştirin ve eski sayıyla karşılaştırın
 
 ## Simülasyon altyapısı
 
+- [ ] **⚠ YAŞANAN PROBLEM (2026-08-20): daire çapları arasında geçince hedef
+      İHA tırmanıp tırmanıp STALL ediyor ve yere çakılıyor.**
+      *Kök neden:* FBWA'da elevatör irtifayı değil **pitch açısını** komut eder.
+      `_daire` sabit `pitch = int(150 / cos(yatış))` = 154-171 (≈ +4° burun
+      yukarı) gönderiyor ve bunu geri çeken bir geri besleme YOK — açık çevrim.
+      Uçak ~1 m/s (≈65 m/dk) tırmanıyor; gaz sabit olduğu için hız payı eriyor,
+      sonunda stall edip spiral dalışla düşüyor.
+      *Ölçüldü (2 uçuş, `logs/gps_guidance_20260820_18*.csv` ve `..._19*.csv`):*
+      1. uçuş 124 m → **508 m**, 352 s, **+1.09 m/s**, 2646 örnekte tek bir
+      2 m'lik alçalma bile yok; sonra 52 s'de 508 → 87 m, düşey hız 28 m/s,
+      yatay hız 0.3 m/s (= dik düşüş). 2. uçuş 23 m → 84 m → yer, uçuş yolu
+      açısı −70°. Çakılan enkaz sonra Gazebo zemininin kenarından taşıp
+      sonsuza düşüyor (`tgt_z` −5391 m'ye kadar) ve avcı 5 km yeraltındaki
+      hedefe KİLİT kalıyor.
+      *Neden çap değiştirince çıkıyor:* uçak havadayken yeni senaryo kalkışı
+      atlıyor (`AIRBORNE_ALT_M`), yani tırmanış sıfırlanmıyor **birikiyor**.
+      Ayrıca `gcs_server._stop_scenario_proc` senaryoyu `SIGKILL` ile öldürdüğü
+      için (yakalanamaz) "kanatları düzleştir, nötr bırak" satırı hiç çalışmıyor
+      — uçak 2-4 s sahipsiz, son tam yatış komutu kilitli kalıyor.
+      *Düzeltme ZATEN VAR ama bu dalda değil:* `d542309` (main, 2026-08-09,
+      `_irtifa_pitch` — PD'li kapalı çevrim irtifa tutucu) ve `08f8619`
+      (`origin/hit_irtifa_tutucu`, 2026-08-15, aynı kazançlar + panel düğmesi,
+      **12 uçuşla ölçülmüş**). `kubra-kayra`, `93ea734`'ten (kayramin hattı)
+      ayrıldığı için ikisini de içermiyor; `main` sonradan birleştirdiği için
+      onda var. Aynı kusur `3873344`'te (2026-08-08) dört A/B'yi birden
+      geçersiz kılmıştı.
+      *Yapılacak:* `_irtifa_kilitle` + `_irtifa_pitch` + 4 sabit
+      (`IRTIFA_KP/KD/PITCH_MAX/OTURMA_S`) main'den elle taşınacak; çağrı
+      yerleri `scenario_duz`, `_daire_sureli`, `_daire` (hold periyodu
+      0.5 → 0.2 s). `elips_gorev` kendi `irtifa_hedef`'ini kullanıyor,
+      DOKUNULMAZ; `square`/`aggressive` de dokunulmaz. Cherry-pick tutmaz
+      (dosyalar 78+/228− ayrışmış). Ayrıca `_stop_scenario_proc` önce `SIGTERM`
+      + 0.5 s beklemeli, ancak ölmezse `SIGKILL` — bu kısım hiçbir dalda yok.
+      (`control/run_plane_scenario.py:342`, `control/gcs_server.py:196`)
+
 - [ ] **Hasar modülünü arayüze bağla** — `/api/hasar` endpoint'i var, panelde
       gösterilmiyor.
 - [ ] **RTF'i tam sistemde tekrar ölç** — `gcs_server` + YOLO yükü altında

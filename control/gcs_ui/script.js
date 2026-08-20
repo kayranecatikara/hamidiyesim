@@ -79,34 +79,33 @@ function switchCamera(vehicle){
   $('noFeed').hidden = false;
 }
 
+// SEKME YALNIZ SOLDAKİ KONTROL PANELİNİ DEĞİŞTİRİR — kameralara DOKUNMAZ.
+// Eskiden sekme değişince ana ekrandaki kamera da değişiyordu ve "artık ana
+// ekranda olan" görüşün ayrı penceresi KAPATILIYORDU: Hedef İHA sekmesine
+// geçilince kullanıcının açtığı Talon penceresi kayboluyordu (aynı şey ters
+// yönde de oluyordu). Artık FPV ekranı SABİT avcı drone kamerasıdır
+// (bkz. ANA_KEY) ve Talon burun kamerası kendi TL penceresinde kalır — beş
+// pencerenin hiçbiri sekme değişiminden etkilenmez.
 function setTab(t){
   st.tab = t;
   $('segT').setAttribute('aria-pressed', String(t === 'hedef'));
   $('segA').setAttribute('aria-pressed', String(t === 'avci'));
   $('viewHedef').hidden = t !== 'hedef';
   $('viewAvci').hidden  = t !== 'avci';
-  $('camTag').textContent = t === 'hedef' ? 'CAM · HEDEF İHA' : 'CAM · AVCI';
-  $('oVeh').textContent = t === 'hedef' ? 'HEDEF' : 'AVCI';
-  $('manBadge').hidden = !(t === 'hedef' && st.manual);
-  switchCamera(t === 'hedef' ? 'plane' : 'iris');
-  addLog('sys', 'SYS', t === 'hedef' ? 'Kamera: HEDEF İHA (Talon burun)' : 'Kamera: AVCI DRONE (iris)');
-  // Sekme değişince ana sahnedeki kamera değişir: akış yeniden açılmış olur ve
-  // artık ANA olan görüşün ayrı penceresi varsa gereksizdir — kapatılır.
-  anaAcik = true;
-  if (camWins.has(camAnaKey())) closeCamWin(camAnaKey());
-  camDotDurum();
+  addLog('sys', 'SYS', t === 'hedef' ? 'Kontrol: HEDEF İHA' : 'Kontrol: AVCI DRONE');
 }
 $('segT').addEventListener('click', () => { if (st.tab !== 'hedef') setTab('hedef'); });
 $('segA').addEventListener('click', () => { if (st.tab !== 'avci')  setTab('avci'); });
 
 // ══ KAMERA GÖRÜŞLERİ ─ pencereler ══════════════════════════════════════
-// FPV sahnesinin sağ üst köşesindeki 4 daire, dört görüşün TAMAMINI yönetir.
-// Bir daire iki işten birini yapar — hangisi olduğu görüşün nerede olduğuna
-// bağlıdır:
-//   • ANA sahnedeki görüş (sekmeye göre iris ya da plane): dairesi o akışı
-//     AÇAR/KAPATIR. Pencere olarak ikinci kez açılmaz — zaten ekranda.
-//   • Diğer görüşler: taşınabilir/boyutlandırılabilir pencere olarak açılır.
-// Böylece dört görüş de aynı anda izlenebilir, hiçbiri iki kez çizilmez.
+// Üst çubuktaki daireler dört görüşün TAMAMINI yönetir. Hangi daire ne yapar,
+// SEKMEDEN BAĞIMSIZDIR (2026-08-20 — sekme değişiminde pencere kapanması):
+//   • AV (iris) = ANA görüş: FPV takip ekranını pencereye alır / panele geri
+//     koyar. Ana ekranın kamerası her zaman budur, sekme onu değiştirmez.
+//   • TL / AVD / TLD: kendi taşınabilir-boyutlandırılabilir penceresini
+//     açar/kapatır.
+// Böylece dört görüş de aynı anda izlenebilir, hiçbiri iki kez çizilmez ve
+// hiçbiri sekme değiştirince kaybolmaz.
 // Akışlar sunucuda: /api/video_feed/{iris|plane|iris_chase|talon_chase}
 const CAMS = [
   { key: 'iris',        kod: 'AV',  ad: 'Avcı Drone Kamerası',
@@ -127,36 +126,170 @@ const CHASE_IPUCU = 'Gazebo, dış görüş sensörleriyle yeniden başlatılmal
                     '(Harmonic + AVCI_GZ_CAMERA=1)';
 
 const camWins = new Map();          // key → {win, img, nofeed, dot, ad}
-let camZ = 60, camCascade = 0;
-let anaAcik = true;                 // ana sahnedeki kamera akışı açık mı
+let camZ = 60;
 
-// Ana sahnede hangi kamera var — sekmeye bağlı (Avcı Drone / Hedef İHA).
-function camAnaKey(){ return st.tab === 'hedef' ? 'plane' : 'iris'; }
+// ANA sahnedeki (FPV takip ekranı) görüş SABİTTİR: avcı drone kamerası.
+// Sekmeye bağlı DEĞİL — bkz. setTab'daki gerekçe. AV dairesi bu yüzden her
+// zaman "takip ekranını pencereye al / panele geri koy" demektir.
+const ANA_KEY = 'iris';
+function camAnaKey(){ return ANA_KEY; }
 
-// Ana sahne akışını aç/kapat. Kapatmak <img>'i DOM'dan siler: MJPEG multipart
-// bağlantısı ancak böyle bırakılır (src boşaltmak her tarayıcıda kapatmıyor —
-// switchCamera'nın da gerekçesi bu). Kapalıyken sunucudan kare çekilmez.
-function setAnaFeed(on){
-  anaAcik = on;
-  const noFeed = $('noFeed');
-  if (on){
-    switchCamera(st.tab === 'hedef' ? 'plane' : 'iris');
-    noFeed.textContent = 'GÖRÜNTÜ BEKLENİYOR';
-  } else {
-    const old = $('fpvImg');
-    if (old){ old.src = ''; old.remove(); }
-    noFeed.textContent = 'KAPALI';
-    noFeed.hidden = false;
+// ══ PENCERE DÜZENİ — varsayılan yerleşim + hatırlama ═══════════════════
+// Beş pencerenin (AV takip ekranı · KNM konum izleme · TL/AVD/TLD kameralar)
+// açılış GENİŞLİĞİ, YÜKSEKLİĞİ ve KONUMU tek yerden gelir. Sebebi: her oturumda
+// beşini de elle yerleştirmek gerekiyordu — kamera pencereleri sağ üst köşeden
+// 26 px'lik kademeyle açıldığı için üst üste biniyorlardı.
+//
+// Yerleşim ORTA SÜTUNA (#centerCol) göre ORANLA hesaplanır, piksel sabitiyle
+// değil: sol panel katlansa da, ekran boyu değişse de düzen kendini yeniden
+// ölçer. Oranlar kullanıcının elle kurduğu düzenden alındı (2026-08-20 ekran
+// görüntüsü):
+//     ┌───────────────────────┬─────────────────┐  üst sıra = alanın %64'ü
+//     │   AV  (takip ekranı)  │   KNM (konum)   │  genişlik %52 | %48
+//     ├───────────┬───────────┼─────────────────┤
+//     │    TL     │    AVD    │      TLD        │  alt sıra = kalan, üçe eşit
+//     └───────────┴───────────┴─────────────────┘
+//
+// Kullanıcı bir pencereyi TAŞIR ya da BOYUTLANDIRIRSA yalnız o pencerenin
+// geometrisi localStorage'a yazılır ve sonraki açılışta o kullanılır.
+// Dokunulmayan pencereler varsayılanda kalır (böylece ekran boyu değişince
+// kendilerini yeniden ölçerler). Üst çubuktaki ⟲ dairesi kaydı siler.
+const DUZEN_ANAHTAR = 'avci.pencere.duzen.v1';
+const FPV_KEY   = ANA_KEY;   // takip ekranı — kamera penceresi DEĞİL, panelin kendisi
+const POS_DOT   = '__pos';   // konum izleme paneli
+const DUZEN_DOT = '__duzen'; // "düzeni sıfırla" dairesi (kamera değil)
+const PEN_BOSLUK = 8;        // pencereler arası boşluk — .main grid gap'iyle aynı
+// Alt sıradaki üç küçük pencerenin anahtarları (soldan sağa).
+const DUZEN_ALT = ['plane', 'iris_chase', 'talon_chase'];
+
+// Orta sütunun ekrandaki dikdörtgeni. Takip ekranı pencereye alınınca bu sütun
+// boşalır ama grid genişliğini/yüksekliğini KORUR (grid-template-columns'ta
+// minmax(0,1fr), align-items:stretch) — ölçüm bu yüzden güvenilir. Yine de
+// güvenlik kapısı var: dar ekranda (.main tek sütuna düşer, <=1080 px) ya da
+// ölçüm alınamazsa tüm görüntü alanı kullanılır.
+function ortaAlan(){
+  const r = $('centerCol')?.getBoundingClientRect();
+  if (!r || r.width < 360 || r.height < 260){
+    const ust = document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 80;
+    return { x: PEN_BOSLUK, y: ust + PEN_BOSLUK,
+             w: innerWidth - 2 * PEN_BOSLUK, h: innerHeight - ust - 2 * PEN_BOSLUK };
   }
-  camDotDurum();
-  const ad = CAMS.find(c => c.key === camAnaKey()).ad;
-  addLog('sys', 'SYS', `Ana ekran ${on ? 'açıldı' : 'kapatıldı'}: ${ad}`);
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
 }
+
+// Beş pencerenin VARSAYILAN geometrisi — orta alanın oranlarından.
+function varsayilanDuzen(){
+  const a = ortaAlan(), g = PEN_BOSLUK;
+  const ustH = Math.round((a.h - g) * 0.64);          // üst sıra: AV + KNM
+  const altH = a.h - g - ustH;                        // kalan: TL + AVD + TLD
+  const avW  = Math.round((a.w - g) * 0.52);
+  const kW   = Math.round((a.w - 2 * g) / 3);         // alt sıra üçe eşit bölünür
+  const altT = a.y + ustH + g;
+  const d = {};
+  d[FPV_KEY]      = { l: a.x,                 t: a.y,  w: avW,             h: ustH };
+  d[POS_DOT]      = { l: a.x + avW + g,       t: a.y,  w: a.w - avW - g,   h: ustH };
+  d[DUZEN_ALT[0]] = { l: a.x,                 t: altT, w: kW,              h: altH };
+  d[DUZEN_ALT[1]] = { l: a.x + kW + g,        t: altT, w: kW,              h: altH };
+  d[DUZEN_ALT[2]] = { l: a.x + 2 * (kW + g),  t: altT, w: a.w - 2*(kW+g),  h: altH };
+  return d;
+}
+
+// localStorage okuma/yazma — depo kapalıysa (gizli sekme, kota) sessizce
+// varsayılana düşer; düzen bir konfor özelliğidir, uçuşu etkilemez.
+function duzenOku(){
+  try { return JSON.parse(localStorage.getItem(DUZEN_ANAHTAR)) || {}; }
+  catch { return {}; }
+}
+function duzenYaz(o){
+  try { localStorage.setItem(DUZEN_ANAHTAR, JSON.stringify(o)); } catch {}
+}
+
+// Bir pencerenin AÇILIŞ geometrisi: kullanıcının kaydettiği varsa o, yoksa
+// varsayılan. Her iki durumda da ekrana kelepçelenir — kayıt daha büyük bir
+// ekranda kurulmuş olabilir, orada geçerli konum burada dışarıda kalırdı.
+function duzenGeo(key){
+  const say = v => typeof v === 'number' && isFinite(v);
+  let g = (duzenOku().geo || {})[key];
+  if (!(g && say(g.l) && say(g.t) && say(g.w) && say(g.h))) g = varsayilanDuzen()[key];
+  if (!g) g = { l: 40, t: 100, w: 420, h: 354 };      // bilinmeyen anahtar — olmamalı
+  const w = clamp(Math.round(g.w), CW_MIN_W, Math.max(CW_MIN_W, innerWidth  - 16));
+  const h = clamp(Math.round(g.h), CW_MIN_H, Math.max(CW_MIN_H, innerHeight - 16));
+  return { w, h,
+           l: clamp(Math.round(g.l), 0, Math.max(0, innerWidth  - w)),
+           t: clamp(Math.round(g.t), 0, Math.max(0, innerHeight - h)) };
+}
+
+function geoUygula(el, g){
+  el.style.left = g.l + 'px';  el.style.top    = g.t + 'px';
+  el.style.width = g.w + 'px'; el.style.height = g.h + 'px';
+}
+
+// Bir DOM öğesi hangi pencere? (geometri kaydında anahtar olarak kullanılır)
+function pencereAnahtari(el){
+  if (el.classList.contains('fpvpanel')) return FPV_KEY;
+  if (el.id === 'posPanel') return POS_DOT;
+  for (const [k, w] of camWins) if (w.win === el) return k;
+  return null;
+}
+
+// YALNIZ taşınan/boyutlandırılan pencerenin geometrisi yazılır. Hepsini birden
+// yazmak, dokunulmamış pencereleri de "elle ayarlanmış" sayardı; o zaman
+// varsayılan yerleşim ekran boyu değiştiğinde bir daha uygulanamazdı.
+function duzenGeoKaydet(el){
+  const key = pencereAnahtari(el);
+  if (!key || el.classList.contains('max')) return;   // tam ekran hâli kaydedilmez
+  const r = el.getBoundingClientRect();
+  const o = duzenOku();
+  (o.geo = o.geo || {})[key] = { l: Math.round(r.left), t: Math.round(r.top),
+                                 w: Math.round(r.width), h: Math.round(r.height) };
+  duzenYaz(o);
+}
+
+// Hangi pencereler AÇIK — bir sonraki oturum aynı takımla açılsın. Kapattığın
+// pencere kapalı gelir; hiç kayıt yoksa BEŞİ de açılır (varsayılan düzen).
+function duzenAcikKaydet(){
+  const o = duzenOku();
+  const a = {};
+  a[FPV_KEY] = !!document.querySelector('.fpvpanel.pencere');
+  a[POS_DOT] = !!document.querySelector('#posPanel.pencere');
+  for (const k of DUZEN_ALT) a[k] = camWins.has(k);
+  o.acik = a;
+  duzenYaz(o);
+}
+
+// AÇILIŞ DÜZENİ — sayfa yüklenince çağrılır (bkz. dosya sonu).
+function duzenAcilista(){
+  const acik = duzenOku().acik;
+  const iste = k => (acik ? !!acik[k] : true);        // kayıt yoksa hepsi açık
+  if (iste(FPV_KEY)) setFpvPencere(true);
+  if (iste(POS_DOT)) posPen.ayarla(true);
+  for (const k of DUZEN_ALT) if (iste(k)) openCamWin(k);
+}
+
+// ⟲ — kaydı at, beş pencereyi de varsayılan yerine oturt. Elle dağıtılmış bir
+// düzeni tek tıkla toparlamanın yolu; ekran boyu değişince de bunu kullan.
+function duzenSifirla(){
+  duzenYaz({});                                       // kayıt gitti → duzenGeo varsayılanı verir
+  if (!fpvPen.pencereMi()) setFpvPencere(true); else geoUygula(fpvPanel, duzenGeo(FPV_KEY));
+  if (!posPen.pencereMi()) posPen.ayarla(true);  else geoUygula(posPanel, duzenGeo(POS_DOT));
+  for (const k of DUZEN_ALT){
+    if (!camWins.has(k)) { openCamWin(k); continue; }
+    const w = camWins.get(k).win;
+    camMax(w, false);                                 // büyütülmüşse önce eski hâline
+    geoUygula(w, duzenGeo(k));
+  }
+  duzenAcikKaydet();
+  requestAnimationFrame(() => dispatchEvent(new Event('resize')));
+  addLog('sys', 'SYS', 'Pencere düzeni varsayılana döndürüldü.');
+}
+
 
 // Dairelerin görünümü tek yerden kurulur: hangisi ana ekran, hangisinin
 // penceresi açık, başlıkta ne yazacak.
 function camDotDurum(){
   for (const b of camDock.children){
+    // DÜZEN dairesi (⟲) bir görüş değil, komut düğmesidir: durumu yok.
+    if (b.dataset.cam === DUZEN_DOT) continue;
     // KONUM dairesi CAMS'te yok (kamera değil) — kendi kuralıyla işlenir.
     // Anahtar burada düz metin: bu döngü POS_DOT sabiti ilklenmeden de
     // çalışabilir ve sabite dokunmak TDZ hatası verirdi.
@@ -277,6 +410,8 @@ function camDrag(win, handle, mode, izin, kelepce){
     on = false;
     win.classList.remove('busy', 'dragging', 'resizing');
     if (e && handle.hasPointerCapture?.(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    // Elle ayarlanan yer/boyut bir dahaki açılışta da geçerli olsun.
+    duzenGeoKaydet(win);
   };
   handle.addEventListener('pointerup', bitir);
   handle.addEventListener('pointercancel', bitir);
@@ -289,18 +424,11 @@ function openCamWin(key){
 
   const win = document.createElement('div');
   win.className = 'camwin';
-  // 4:3 gövde + 39px başlık — açılışta video gerilmeden oturur.
-  const w = 420, h = Math.round(420 * 3 / 4) + 39;
-  const off = (camCascade++ % 5) * 26;      // üst üste açılmasın, kademeli dizilsin
-  win.style.width  = w + 'px';
-  win.style.height = h + 'px';
-  // Pencere DAİRELERİN ALTINDAN başlar: daireler sağ üstte olduğu için sağa
-  // hizalı bir pencere tam üstlerine düşer ve seçiciyi tıklanamaz hale getirir
-  // (tarayıcıda birebir bu yaşandı). Dock'un gerçek konumu ölçülüp altına
-  // iniliyor — sabit sayı yerine, düzen değişse de doğru kalsın diye.
-  const dock = camDock.getBoundingClientRect();
-  win.style.left = clamp(innerWidth - w - 40 - off, 0, Math.max(0, innerWidth  - w)) + 'px';
-  win.style.top  = clamp(dock.bottom + 14 + off,    0, Math.max(0, innerHeight - h)) + 'px';
+  // Boyut ve konum DÜZEN'den gelir (bkz. PENCERE DÜZENİ bölümü): kullanıcının
+  // kaydettiği geometri varsa o, yoksa orta sütunun alt sırasındaki yeri.
+  // Eskiden sabit 420 px'lik pencere sağ üstten kademeli açılıyor ve üçü üst
+  // üste biniyordu — her açılışta elle dağıtmak gerekiyordu.
+  geoUygula(win, duzenGeo(key));
   // Sekiz boyutlandırma tutamacı: dört kenar + dört köşe. Sağ alt köşe ayrıca
   // görünür bir işaret taşır (.cw-grip), çünkü kenarlar görünmezdir ve
   // pencerenin boyutlandırılabildiğinin tek görsel ipucu odur.
@@ -343,6 +471,7 @@ function openCamWin(key){
   camWins.set(key, { win, img, nofeed, dot, ad: c.ad });
   camDotDurum();
   camBringFront(key);
+  duzenAcikKaydet();
   addLog('sys', 'SYS', `Kamera penceresi açıldı: ${c.ad}`);
 }
 
@@ -355,6 +484,7 @@ function closeCamWin(key){
   camWins.delete(key);
   w.dot.classList.remove('live');
   camDotDurum();
+  duzenAcikKaydet();
   addLog('sys', 'SYS', `Kamera penceresi kapatıldı: ${w.ad}`);
 }
 
@@ -379,7 +509,6 @@ for (const c of CAMS){
 // 5. DAİRE — KONUM İZLEME. CAMS'e eklenmedi bilerek: orada olsaydı openCamWin
 // /camAnaKey/video_feed onu bir kamera sanardı. Aynı .camdot görünümünü
 // paylaşır, ayrı anahtarla (POS_DOT) ayırt edilir.
-const POS_DOT = '__pos';
 {
   const b = document.createElement('button');
   b.type = 'button';
@@ -387,6 +516,19 @@ const POS_DOT = '__pos';
   b.dataset.cam = POS_DOT;
   b.textContent = 'KNM';
   b.addEventListener('click', () => posPen.ayarla(!posPen.pencereMi()));
+  camDock.appendChild(b);
+}
+// 6. DAİRE — DÜZENİ SIFIRLA. Kamera değil, komut düğmesi: elle dağıtılmış beş
+// pencereyi varsayılan yerleşime döndürür (kapalı olanları da açar).
+{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'camdot duzen';
+  b.dataset.cam = DUZEN_DOT;
+  b.textContent = '⟲';
+  b.title = 'Pencere düzenini varsayılana döndür — beş pencere de yerine oturur';
+  b.setAttribute('aria-label', b.title);
+  b.addEventListener('click', duzenSifirla);
   camDock.appendChild(b);
 }
 camDotDurum();   // açılıştaki durum (ana ekran dairesi dolu başlar)
@@ -477,8 +619,8 @@ function renderTelemetryPanels(){
     $('aPos').textContent  = `${ir.x.toFixed(1)}, ${ir.y.toFixed(1)}`;
     $('aHead').textContent = `${Math.round(ir.yaw)}°`;
   }
-  // FPV üstü telemetri — seçili kameranın aracı
-  const v = st.tab === 'hedef' ? pl : ir;
+  // FPV üstü telemetri — FPV ekranı SABİT avcı kamerası olduğu için hep iris
+  const v = ir;
   if (v){
     $('oAlt').textContent = (-v.z).toFixed(0);
     $('oSpd').textContent = (v.speed ?? 0).toFixed(1);
@@ -866,7 +1008,7 @@ async function enterManual(){
       $('manwrap').hidden = false;
       manBtn.classList.add('open'); manBtn.setAttribute('aria-pressed', 'true');
       $('manLbl').textContent = 'Manuel Kapat';
-      $('manBadge').hidden = st.tab !== 'hedef';
+      $('manBadge').hidden = false;   // rozet manuel moda bağlı, sekmeye değil
       addLog('sys', 'SYS', 'Manuel mod AKTİF — W/S pitch, A/D roll, L hızlan, I yavaşla.');
       manualLoop = setInterval(manualTick, 50);
     } else {
@@ -1288,6 +1430,7 @@ function pencereKur(panel, o){
     }
     o.sonra?.(ac);
     camDotDurum();                                    // daireler bu modun düğmesi
+    duzenAcikKaydet();                                // açık pencere takımı hatırlansın
     requestAnimationFrame(() => dispatchEvent(new Event('resize')));
     addLog('sys', 'SYS', `${o.ad} ${ac ? 'pencereye alındı' : 'panele geri kondu'}.`);
   }
@@ -1351,17 +1494,10 @@ const fpvDock = $('fpvDock');
 const fpvPen = pencereKur(fpvPanel, {
   ad: 'Takip ekranı', basSec: '#fpvHead',
   olcuEl: $('fpvwrap'),
-  // Sütundayken video sütunu TAM doldurur; pencereye alınınca ~740 px'e
-  // (video ~738x554) küçülür — "küçük hâli" bilinçli olarak bu ölçü.
-  // Panelin bulunduğu yerin ORTASINDA açılır ki göz onu kaybetmesin.
-  acilis: () => {
-    const r = fpvPanel.getBoundingClientRect();
-    const w = Math.min(740, innerWidth  - 32);
-    const h = Math.min(600, innerHeight - 32);
-    return { w, h,
-      l: clamp(Math.round(r.left + (r.width - w) / 2), 0, Math.max(0, innerWidth  - w)),
-      t: clamp(Math.round(r.top), 0, Math.max(0, innerHeight - h)) };
-  },
+  // Açılış geometrisi DÜZEN'den: orta sütunun ÜST SIRASINDA, solda, alanın
+  // %52 genişliği. Beş pencerenin en büyüğü budur (KNM ile birlikte) — bkz.
+  // PENCERE DÜZENİ bölümündeki şema.
+  acilis: () => duzenGeo(FPV_KEY),
   // Kilit paneli artık SOL SÜTUNDA (Avcı Drone sekmesi) — pencere moduyla
   // taşınmıyor, hep aynı yerde duruyor.
   sonra: ac => { fpvDock.hidden = !ac; },
@@ -1375,18 +1511,10 @@ $('fpvDockBtn').addEventListener('click', () => setFpvPencere(false));
 const posPen = pencereKur(posPanel, {
   ad: 'Konum izleme', basSec: '.phead',
   olcuEl: posPanel.querySelector('.scenewrap'),
-  // Kamera pencereleriyle AYNI açılış: belirli bir boyut, dock'un altında,
-  // kademeli. "Bulunduğu yerden" açılsaydı sağ sütundaki 288 px'lik panel
+  // Açılış geometrisi DÜZEN'den: orta sütunun ÜST SIRASINDA, sağda, alanın
+  // %48 genişliği. "Bulunduğu yerden" açılsaydı sağ sütundaki 288 px'lik panel
   // aynı yerde aynı boyutta kalır, pencereye geçtiği ANLAŞILMAZDI.
-  acilis: () => {
-    const w = Math.min(560, innerWidth  - 32);
-    const h = Math.min(430, innerHeight - 32);
-    const dock = camDock.getBoundingClientRect();     // daireler üst çubukta
-    const off = (camCascade++ % 5) * 26;              // üst üste binmesin
-    return { w, h,
-      l: clamp(Math.round(innerWidth - w - 40 - off), 0, Math.max(0, innerWidth  - w)),
-      t: clamp(Math.round(dock.bottom + 14 + off),    0, Math.max(0, innerHeight - h)) };
-  },
+  acilis: () => duzenGeo(POS_DOT),
   // Panel sütunda hidden duruyor; pencere açılırken görünür olmalı ki
   // getBoundingClientRect/canvas ölçümü sıfır çıkmasın.
   girerken: () => { posPanel.hidden = false; },
@@ -1409,7 +1537,7 @@ function frame(now){
   // ölçüt fpvImg, diğerleri için kendi pencerelerinin <img>'i.
   for (const b of camDock.children){
     const key = b.dataset.cam;
-    const el = key === camAnaKey() ? (anaAcik ? img : null) : camWins.get(key)?.img;
+    const el = key === camAnaKey() ? img : camWins.get(key)?.img;
     b.classList.toggle('live', !!(el && el.naturalWidth > 0));
   }
   // (Aşağı yukarı süzülen yeşil "tarama" çizgisi KALDIRILDI — sinüsle
@@ -1850,7 +1978,9 @@ function ayarKopyala(){
 markScenario();
 kayitTazele();
 drawKnob();
-setTab('avci');          // ana ekran avcı drone kamerasıyla açılır (hedef sekmesi elle seçilir)
+setTab('avci');          // soldaki kontrol paneli avcı drone sekmesiyle açılır
+switchCamera(ANA_KEY);   // FPV ekranı SABİT: avcı drone kamerası (sekme değiştirmez)
+duzenAcilista();         // beş pencere varsayılan/kayıtlı yerleşimine oturur
 connectWS();
 pollChase(); pollPnp(); pollHasar();
 setInterval(pollChase, 500);
