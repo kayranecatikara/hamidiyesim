@@ -279,6 +279,34 @@ AYARLAR = [
      "Yalnız çok yakında çalışır."),
 
     # ═════════════════════════════════════════════════════════════════════
+    ("GD", None, "⭐ DİKEY KOMUT ÖLÇEĞİ — salınımın kök nedeni", None,
+     "grup", None, None, None, None,
+     "KULLANICI GÖZLEMİ: 'son anlarda dikeyde hizaya gelmeye çalışılırken "
+     "çok salınım oluyor, alttan üstten kaçırılıyor.' Sebep bulundu: dikey "
+     "komut vz = v_los·sin(ε) ile hesaplanıyor — bu DURGUN hedef için "
+     "doğru. Hedef 15 m/s ile kaçarken gerçek kapanma 1.5-3 m/s; d metrelik "
+     "ofseti t_go = R/ṙ sürede kapatmak için gereken vz = ṙ·sin(ε). "
+     "Oran v_los/ṙ ≈ 11 kat.",
+     None, None),
+
+    ("DIKEY_KAPANMA", "DIKEY_KAPANMA", "⭐ Dikeyi KAPANMA hızıyla ölçekle",
+     "GD", "bool", None, None, None, None,
+     "Açıkken dikey komut ölçeği v_los yerine kapanma hızı olur: "
+     "vz = clamp(ṙ, taban, v_los)·sin(ε).",
+     "AÇIK — ÖLÇÜLDÜ (kullanıcı uçuşu 20260820_124706, 251 kare): komut "
+     "edilen dikey hız gerekenin 4-18 KATI. 0-3 m'de 3.08 m/s komut, "
+     "gereken 0.17. Karelerde: dikey ofset 11.7→2.2 m arasında kusursuz "
+     "(−0.26…−0.02), sonra son 2 metrede −0.86'ya dalıp +0.63'e savruluyor.",
+     "KAPALI = bugünkü saf takip (durgun hedef varsayımı)."),
+
+    ("DIKEY_KAP_TABAN", "DIKEY_KAP_TABAN", "Dikey ölçek tabanı", "GD",
+     "sayi", "m/s", 0.2, 8.0, 0.1,
+     "Kapanma ~0 iken (yan yana uçuş) dikey komut da 0 olurdu ve ofset hiç "
+     "düzelmezdi. Taban asgari yetki bırakır.",
+     "Yavaş kapanırken dikey daha canlı; ama aşırı komut geri gelir.",
+     "Daha sakin; çok düşükse yan yana uçarken hizalanma durur."),
+
+    # ═════════════════════════════════════════════════════════════════════
     ("G2", None, "③ DİKEY KANAL — tavan ve bütçe", None,
      "grup", None, None, None, None,
      "Dikey YASA artık ① gruptadır (yatayın aynı matematiği). Burada yalnız "

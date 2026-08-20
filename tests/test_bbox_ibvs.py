@@ -130,6 +130,104 @@ def main():
 
     # ══════════════════════════════════════════════════════════════════
     print("=" * 62)
+    print("D2 · DİKEY KOMUT ÖLÇEĞİ (kapanma hızı ↔ toplam hız)")
+
+    class _Dk(ib.Cfg):
+        DIKEY_KAPANMA = True
+
+    # D2-1: ⭐ KAPALIYKEN BİT BİT AYNI
+    _n, _enb = 0, 0.0
+    for _e in (-20.0, -5.0, 0.0, 5.0, 20.0):
+        for _b in (10, 30, 80):
+            for _kap in (None, 0.5, 3.0, 12.0):
+                _a = ib.komut(CX, _cy_icin(_e), _b, _b, 0.0, 15.1, 0.05, C,
+                              kapanma=_kap)
+                _z = ib.komut(CX, _cy_icin(_e), _b, _b, 0.0, 15.1, 0.05,
+                              ib.Cfg, kapanma=_kap)
+                _n += 1
+                for _i in range(4):
+                    _enb = max(_enb, abs(_a[_i] - _z[_i]))
+    kontrol("D2-1 ⭐ DIKEY_KAPANMA varsayılan KAPALI, taban bit bit korunur",
+            (not C.DIKEY_KAPANMA) and _enb < 1e-12,
+            f"Cfg.DIKEY_KAPANMA={C.DIKEY_KAPANMA}; {_n} kombinasyonda fark "
+            f"{_enb:.2e}")
+
+    # D2-2: ⭐⭐ ÖLÇEK GERÇEKTEN KAPANMA HIZI — vz = ṙ·sin(ε)
+    # Bu, "d metrelik ofseti t_go = R/ṙ sürede kapat"ın ta kendisi.
+    _rd = 1.5
+    _hata = []
+    for _e in (2.0, 5.0, 12.0, 25.0):
+        _r = ib.komut(CX, _cy_icin(_e), 25, 6, 0.0, 15.1, 0.05, _Dk,
+                      kapanma=_rd, iris_vz=0.0)
+        # K_VZ_D sönümlemesi var; ham nişan değerini tani'den al
+        _bek = _rd * math.sin(_r[5]["nisan_elev"])
+        _hata.append((_e, _r[5]["dikey_olcek"], _bek))
+    kontrol("D2-2 ⭐⭐ dikey ölçek = KAPANMA HIZI (d/t_go'nun kendisi)",
+            all(abs(o - _rd) < 1e-9 for _, o, _b in _hata),
+            f"kapanma {_rd} m/s → ölçek "
+            + " ".join(f"{o:.2f}" for _, o, _ in _hata)
+            + "  (v_los değil, kapanma)")
+
+    # D2-3: ⭐ AŞIRI KOMUT KALKTI — ölçülen 4-18 kat fark
+    _oran = []
+    for _e in (1.0, 3.0, 6.0, 10.0):
+        _a = abs(ib.komut(CX, _cy_icin(_e), 25, 6, 0.0, 15.1, 0.05, C,
+                          kapanma=1.5)[2])
+        _b = abs(ib.komut(CX, _cy_icin(_e), 25, 6, 0.0, 15.1, 0.05, _Dk,
+                          kapanma=1.5)[2])
+        _oran.append((_e, _a, _b))
+    kontrol("D2-3 ⭐ aşırı dikey komut kalkıyor (uçuşta 4-18 kat ölçüldü)",
+            all(b < a / 3.0 for _, a, b in _oran),
+            "  ".join(f"{e:.0f}°: {a:.2f}→{b:.2f}" for e, a, b in _oran)
+            + "  (kapanma 1.5, v_los 18 → ~12 kat)")
+
+    # D2-4: TABAN — kapanma sıfıra inse bile dikey yetki kalır
+    _sifir = ib.komut(CX, _cy_icin(10.0), 25, 6, 0.0, 15.1, 0.05, _Dk,
+                      kapanma=0.0)
+    kontrol("D2-4 taban: kapanma 0 iken bile dikey yetki kalır",
+            abs(_sifir[5]["dikey_olcek"] - _Dk.DIKEY_KAP_TABAN) < 1e-9,
+            f"kapanma=0 → ölçek {_sifir[5]['dikey_olcek']:.2f} = taban "
+            f"{_Dk.DIKEY_KAP_TABAN:.1f} m/s (ofset hiç düzelmesin diye değil)")
+
+    # D2-5: TAVAN — ölçek v_los'u aşmaz
+    _hizli = ib.komut(CX, _cy_icin(10.0), 25, 6, 0.0, 15.1, 0.05, _Dk,
+                      kapanma=99.0)
+    kontrol("D2-5 ölçek v_los'u AŞMAZ",
+            _hizli[5]["dikey_olcek"] <= _hizli[5]["v_los"] + 1e-9,
+            f"kapanma=99 → ölçek {_hizli[5]['dikey_olcek']:.2f} ≤ v_los "
+            f"{_hizli[5]['v_los']:.2f}")
+
+    # D2-6: kapanma ÖLÇÜLEMEDİYSE eski yola düşer (güvenli taraf)
+    _yok = ib.komut(CX, _cy_icin(10.0), 25, 6, 0.0, 15.1, 0.05, _Dk,
+                    kapanma=None)
+    _tab = ib.komut(CX, _cy_icin(10.0), 25, 6, 0.0, 15.1, 0.05, C,
+                    kapanma=None)
+    kontrol("D2-6 kapanma ölçümü yoksa TABAN davranışa düşer",
+            abs(_yok[2] - _tab[2]) < 1e-12,
+            f"kapanma=None → vz {_yok[2]:.3f} = taban {_tab[2]:.3f} "
+            "(bilinmeyene göre komut üretilmiyor)")
+
+    # D2-7: YATAY KANAL DEĞİŞMEZ (tek değişken)
+    _n7, _e7 = 0, 0.0
+    for _cxd in (CX - 90.0, CX, CX + 90.0):
+        for _b in (12, 40):
+            _a = ib.komut(_cxd, _cy_icin(0.0), _b, _b, 0.0, 15.1, 0.05, C,
+                          kapanma=1.5)
+            _z = ib.komut(_cxd, _cy_icin(0.0), _b, _b, 0.0, 15.1, 0.05, _Dk,
+                          kapanma=1.5)
+            _n7 += 1
+            _e7 = max(_e7, abs(_a[3] - _z[3]))     # yaw komutu
+    kontrol("D2-7 YATAY kanal (yaw) DEĞİŞMEZ — tek değişken",
+            _e7 < 1e-12,
+            f"{_n7} kombinasyonda yaw farkı {_e7:.2e}")
+
+    # D2-8: mekanizma sütunu CSV'de
+    kontrol("D2-8 `dikey_olcek` sütunu CSV'de (§5.1 ölçülebilsin)",
+            "dikey_olcek" in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun")
+
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
     print("H · YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ")
 
     class _Yav(ib.Cfg):

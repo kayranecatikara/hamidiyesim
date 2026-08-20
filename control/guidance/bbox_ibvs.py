@@ -552,6 +552,48 @@ class Cfg:
     # yüksek = çevik ama gürültüyü içeri alır ve salınabilir.
     K_I_KAP = _env_f("AVCI_IBVS_KI_KAP", 0.8)            # (m/s)/(m/s·s)
 
+    # ═══════════════════════════════════════════════════════════════════
+    # DİKEY KOMUT ÖLÇEĞİ — kapanma hızı mı, toplam hız mı? (2026-08-20)
+    # ═══════════════════════════════════════════════════════════════════
+    # KULLANICI GÖZLEMİ: *"son anlarda, tam çarpışma anından önceki anlarda,
+    # dikeyde hedef araçla tam aynı hizaya gelmeye çalışılırken çok salınım
+    # oluyor ve alttan üstten araç kaçırılıyor."* — DOĞRU, ve sebebi bu.
+    #
+    # ⛔ MEVCUT YASA YANLIŞ ÖLÇEK KULLANIYOR:
+    #     vz = v_los · sin(ε)
+    # Bu, DURGUN hedef için doğrudur (o zaman ṙ = v_los). Ama hedef bizden
+    # ~15 m/s ile kaçıyor; gerçek kapanma 1.5-3 m/s. Doğrusu:
+    #     d metrelik ofseti t_go = R/ṙ sürede kapatmak gerekir
+    #     ⇒ vz = d / t_go = (R·sin ε) · ṙ / R = ṙ · sin(ε)
+    # Oran v_los/ṙ ≈ 11 kat.
+    #
+    # ÖLÇÜLDÜ (kullanıcı uçuşu 20260820_124706, 251 eşleşmiş kare;
+    # gerçek menzil ve gerçek dikey ofset telemetriden, YALNIZ ANALİZDE):
+    #   menzil      |vz| KOMUT   GEREKEN    kat   gerçek |dz|
+    #   10-15 m         0.35       0.08    4.5x      0.25 m
+    #    6-10 m         0.58       0.14    4.0x      0.24 m
+    #     3-6 m         0.67       0.09    7.6x      0.18 m
+    #     0-3 m         3.08       0.17   18.6x      0.40 m
+    #
+    # SONUCU KARELERDE GÖRÜNÜYOR: dikey ofset 11.7 m'den 2.2 m'ye kadar
+    # −0.26…−0.02 arasında KUSURSUZ; sonra son 2 metrede −0.02 → −0.86'ya
+    # DALIYOR, geçtikten sonra +0.63'e savruluyor. Yakında piksel gürültüsü
+    # açıya, açı da aşırı komuta çevriliyor: 2.2 m'de 10 px gürültü = 3.4°
+    # = 0.13 m gerçek hata, ama komut 0.98 m/s → yarım saniyede 0.5 m yer
+    # değiştirme. Döngü hatayı silmek yerine ÜRETİYOR.
+    #
+    # ⚠ ESKİ SİSTEMDE BU ÖLÇEK DOĞRUYDU. `manevrada-iyi-terminalde-kotu`:
+    #     v_dikey = clamp(kapanma, KAPANMA_MIN, v_los)
+    # Terminal fazını silerken bu da silindi ve dikey saf takibe çevrildi.
+    # Yatay için saf takip doğruydu; dikey için değildi.
+    #
+    # TABAN NEDEN VAR: kapanma ~0 iken (yan yana uçuş) dikey komut da 0
+    # olurdu ve ofset hiç düzelmezdi. Taban asgari yetki bırakır.
+    #
+    # AVCI_IBVS_DIKEY_KAPANMA=1 → açık. Varsayılan KAPALI (ölçülmeden girmez).
+    DIKEY_KAPANMA = _env_f("AVCI_IBVS_DIKEY_KAPANMA", 0.0) >= 0.5
+    DIKEY_KAP_TABAN = _env_f("AVCI_IBVS_DIKEY_KAP_TABAN", 1.5)   # m/s
+
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
 
@@ -566,7 +608,7 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
-    "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen",
+    "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
 ]
 
 
@@ -797,11 +839,22 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # KAÇIRACAKSAN YAVAŞLA (bkz. Cfg.YAVASLA): vektörün eğilebileceği en dik
     # açı asin(VZ_MAX/v_los)'tur. Hedef daha dikse kesişim imkânsız ve komut
     # kırpılır → altından geçilir. Tavan yetmiyorsa YATAYI kıs.
+    # ── DİKEY KOMUT ÖLÇEĞİ (bkz. Cfg.DIKEY_KAPANMA) ──
+    # Kapalıyken v_los (saf takip, durgun hedef varsayımı).
+    # Açıkken kapanma hızı — d/t_go'nun ta kendisi.
+    _dikey_olcek = v_los
+    if cfg.DIKEY_KAPANMA and kapanma is not None:
+        _dikey_olcek = clamp(kapanma, cfg.DIKEY_KAP_TABAN, v_los)
     if cfg.YAVASLA:
+        # ⚠ Dikey bütçe kısıtı AYNI ÖLÇEĞİ kullanmalı — yoksa yatayı, artık
+        # var olmayan bir dikey talep yüzünden kısar (boşuna frene basar).
+        # Bu ders eski terminal kodunda da yazılıydı; korunuyor.
         _se = abs(math.sin(nisan_elev))
-        if _se > 1e-6 and v_los * _se > cfg.VZ_MAX:
+        if _se > 1e-6 and _dikey_olcek * _se > cfg.VZ_MAX:
             v_los = max(cfg.V_HUCUM_MIN, cfg.VZ_MAX / _se)
-    vz_nisan = -v_los * math.sin(nisan_elev)
+            if not cfg.DIKEY_KAPANMA:
+                _dikey_olcek = v_los
+    vz_nisan = -_dikey_olcek * math.sin(nisan_elev)
     # TÜREV SÖNÜMLEMESİ: aracın KENDİ dikey hızı nişanın ötesine geçtiyse
     # komut geri çekilir → hedefin üstünden geçme biter (bkz. Cfg.K_VZ_D).
     vz = clamp(vz_nisan + cfg.K_VZ_D * (vz_nisan - iris_vz),
@@ -818,6 +871,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "kapanma_hedefi": kapanma_hedefi,
+            "dikey_olcek": _dikey_olcek,
             "nisan_elev": nisan_elev,
             "elev_atalet": elev_atalet}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -1092,6 +1146,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                                    else round(tani["kapanma_hedefi"], 2)),
                 "kapanma_olculen": ("" if kapanma is None
                                     else round(kapanma, 2)),
+                "dikey_olcek": round(tani["dikey_olcek"], 2),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "gecikme_s": (round(gecikme_s, 4)
                               if gecikme_s is not None else ""),
