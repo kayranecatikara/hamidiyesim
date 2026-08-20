@@ -11,20 +11,27 @@ Depo: `~/projects/avci_sim` · ArduPilot: `~/ardupilot` · Gazebo eklentisi:
 tek ihtiyacın olan budur:
 
 ```bash
-AVCI_TEMIZ=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+cd ~/projects/avci_sim && AVCI_TEMIZ=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
 ```
 
-**Kur** (ayakta sim yokken) ve **kapat**:
+**Kur** — ayakta sim YOKKEN. (Varsa "sim zaten ayakta" der; o zaman yukarıdaki `AVCI_TEMIZ=1`'li satırı kullanın.)
 
 ```bash
-bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
-bash scripts/kapat.sh
+cd ~/projects/avci_sim && bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+Satırın `; tail -1 …` kısmı kurulumun bir parçası değildir — logun son satırını okur, `sim hazır HH:MM:SS` yazıyorsa hazırdır.
+
+**Kapat** — her şeyi indirir (Gazebo + iki SITL + MAVProxy + panel):
+
+```bash
+cd ~/projects/avci_sim && bash scripts/kapat.sh
 ```
 
 **Pencereli Gazebo** (varsayılan headless):
 
 ```bash
-AVCI_TEMIZ=1 AVCI_GUI=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+cd ~/projects/avci_sim && AVCI_TEMIZ=1 AVCI_GUI=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
 ```
 
 Kurulan: Gazebo + ArduCopter (avcı) + ArduPlane (hedef) + panel. **~90 sn.**
@@ -33,7 +40,9 @@ Panel: **http://127.0.0.1:8000**
 Son satır `sim hazır HH:MM:SS` ise hazırdır. **Çıkış kodu:** 0 = hazır ·
 1 = kurulamadı, son satır sebebi söyler. Kör "hazır" yok.
 
-Tek kelimeye indirmek istersen `~/.bashrc`'ye:
+Tek kelimeye indirmek istersen `~/.bashrc`'ye — bunlarda `cd` yok, script
+yolu mutlak verildiği için **her dizinden** çalışırlar (`mkur.sh` içeride
+kendisi depo köküne geçiyor):
 
 ```bash
 alias simkur='AVCI_TEMIZ=1 bash ~/projects/avci_sim/scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log'
@@ -58,6 +67,7 @@ yukarıdaki satırlarda `>` sonrası ayrı komutla `tail` alınmasının sebebi 
 ## 2 · Uçuş komutları
 
 ```bash
+cd ~/projects/avci_sim
 API=http://127.0.0.1:8000
 
 curl -s -X POST $API/api/command/plane/scenario/duz    # hedefi kaldır + senaryo
@@ -72,13 +82,13 @@ curl -s -X POST $API/api/command/iris/stop_chase       # takibi durdur
 **Kayıt** — saniyede 1 kare + eşli telemetri:
 
 ```bash
-python3 tools/ucus_kaydi.py logs/kayit/<ad> <süre_sn>
+cd ~/projects/avci_sim && python3 tools/ucus_kaydi.py logs/kayit/<ad> <süre_sn>
 ```
 
 **Kaçamak testi** — düz uçuşta buluşma anında tetiklenen manevra:
 
 ```bash
-python3 tools/kacamak_testi.py logs/kacamak/<ad> <kacamak> <tetik_m> <kayit_s> <senaryo>
+cd ~/projects/avci_sim && python3 tools/kacamak_testi.py logs/kacamak/<ad> <kacamak> <tetik_m> <kayit_s> <senaryo>
 ```
 
 Kaçamak türleri: `yatay` · `dikey_yukari` · `dikey_asagi` · `capraz` ·
@@ -87,7 +97,7 @@ Kaçamak türleri: `yatay` · `dikey_yukari` · `dikey_asagi` · `capraz` ·
 **Video üret:**
 
 ```bash
-ffmpeg -framerate 5 -i logs/kayit/<ad>/frames/f%04d.jpg -c:v libx264 -pix_fmt yuv420p logs/<ad>.mp4
+cd ~/projects/avci_sim && ffmpeg -framerate 5 -i logs/kayit/<ad>/frames/f%04d.jpg -c:v libx264 -pix_fmt yuv420p logs/<ad>.mp4
 ```
 
 ---
