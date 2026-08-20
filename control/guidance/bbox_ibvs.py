@@ -165,8 +165,27 @@ class Cfg:
     # Kalibre sabitleri MODELDEN DEĞİL ÖLÇÜMDEN alındı (kutu, görsel modeli
     # kaplıyor ve YOLO kutusu gevşek çiziliyor; ampirik sabit doğrusu).
     #
+    # ⭐ 2026-08-19 KULLANICI KARARI: varsayılan "kosegen".
+    # Kampanya OL, 6 uçuş. Eşleşmiş kıyas (AYNI karelerde iki tahmin, koşular
+    # arası değişkenlik SIFIR, 3378 kare): ortanca menzil hatası %22 → %14,
+    # 6 uçuşun 6'sında da köşegen kazandı. Uçuş sonucu ölçütleri ayrışmadı
+    # (isabet 3/3 → 3/3) — çünkü daha iyi menzilin bugün gidecek yeri yok
+    # (bkz. aşağıdaki not). Karar SONUÇ için değil ALTYAPI için verildi:
+    # yol haritasının her sonraki adımı (yavaşlama profili, kapanma integrali,
+    # aykırı değer kapısı, durum kestirimi) R ve ṙ'ye dayanıyor.
+    #
+    # ⚠ MENZİLİN BUGÜNKÜ ETKİ ALANI (ölçüldü):
+    #   lead sönmesi (LEAD_SONUM)   ✅ tek gerçek yol
+    #   hız PI hatası               ⚠ hız doygun — 13325 karenin %58'i tam
+    #                                  V_HUCUM'da; hatanın değeri etkisiz
+    #   YANAL_K / YAW_MENZIL_REF / KACIS_KD hepsi 0 → kapalı
+    #
+    # SEÇENEK NEDEN DURUYOR: "w" (yalnız genişlik) 0-15° bandında en iyiydi
+    # (%12) ama 30-60°'de %35'e fırlıyor. İleride sınanabilir; seçici o yüzden
+    # kalıyor, ölü kod değil aday listesi.
+    #
     # AVCI_IBVS_OLCU = "carpim" | "kosegen"
-    BOYUT_OLCU = os.environ.get("AVCI_IBVS_OLCU", "carpim").strip().lower()
+    BOYUT_OLCU = os.environ.get("AVCI_IBVS_OLCU", "kosegen").strip().lower()
 
     # Ölçüye göre kalibrasyon — C = medyan(p · R_gerçek), 0-15° bandında.
     # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller

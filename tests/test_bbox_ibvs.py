@@ -135,13 +135,20 @@ def main():
     class _Kos(ib.Cfg):
         BOYUT_OLCU = "kosegen"
 
+    # ⚠ 2026-08-19: taban artık KÖŞEGEN. Çarpım kolunu sınamak için açık
+    # sınıf gerekiyor — `C` ile kıyaslamak iki köşegeni kıyaslamak olurdu.
+    class _Car(ib.Cfg):
+        BOYUT_OLCU = "carpim"
+
     # G1: iki ölçü de doğru sayıyı veriyor
     _w, _h = 40.0, 14.0
     kontrol("G1 kutu_olcusu: çarpım = sqrt(w·h), köşegen = sqrt(w²+h²)",
-            abs(ib.kutu_olcusu(_w, _h, C) - math.sqrt(_w * _h)) < 1e-9
-            and abs(ib.kutu_olcusu(_w, _h, _Kos) - math.hypot(_w, _h)) < 1e-9,
-            f"w={_w:.0f} h={_h:.0f} → çarpım {ib.kutu_olcusu(_w,_h,C):.1f} px, "
-            f"köşegen {ib.kutu_olcusu(_w,_h,_Kos):.1f} px")
+            abs(ib.kutu_olcusu(_w, _h, _Car) - math.sqrt(_w * _h)) < 1e-9
+            and abs(ib.kutu_olcusu(_w, _h, _Kos) - math.hypot(_w, _h)) < 1e-9
+            and C.BOYUT_OLCU == "kosegen",
+            f"w={_w:.0f} h={_h:.0f} → çarpım {ib.kutu_olcusu(_w,_h,_Car):.1f} px, "
+            f"köşegen {ib.kutu_olcusu(_w,_h,_Kos):.1f} px; "
+            f"varsayılan = {C.BOYUT_OLCU}")
 
     # G2: ⭐ KÖŞEGEN YATIŞTAN BAĞIMSIZ — ince çubuk için TAM
     # Kutu eksen-hizalı: θ dönmüş L uzunluğunda çubuk → w=L·cosθ, h=L·sinθ.
@@ -152,7 +159,7 @@ def main():
         _t = math.radians(_td)
         _ww, _hh = _L * abs(math.cos(_t)), _L * abs(math.sin(_t))
         _kos.append(ib.kutu_olcusu(_ww, _hh, _Kos))
-        _car.append(ib.kutu_olcusu(_ww, _hh, C))
+        _car.append(ib.kutu_olcusu(_ww, _hh, _Car))
     kontrol("G2 ⭐ köşegen yatıştan BAĞIMSIZ (ince çubuk), çarpım DEĞİL",
             max(_kos) - min(_kos) < 1e-9
             and (max(_car) - min(_car)) / max(_car) > 0.5,
@@ -167,9 +174,9 @@ def main():
     # menzil hatasıyla AYNI mertebede kalması.
     _fark = []
     for _R in (2.0, 5.0, 10.0, 20.0):
-        _wc, _hc = _kutu_uret(ib.menzil_sabiti(C) / _R, C)
+        _wc, _hc = _kutu_uret(ib.menzil_sabiti(_Car) / _R, _Car)
         _wk, _hk = _kutu_uret(ib.menzil_sabiti(_Kos) / _R, _Kos)
-        _a = ib.komut(CX, _cy_icin(0.0), _wc, _hc, 0.0, 15.0, 0.05, C)
+        _a = ib.komut(CX, _cy_icin(0.0), _wc, _hc, 0.0, 15.0, 0.05, _Car)
         _b = ib.komut(CX, _cy_icin(0.0), _wk, _hk, 0.0, 15.0, 0.05, _Kos)
         _fark.append((_R, _a[5]["lead_olcek"], _b[5]["lead_olcek"]))
     kontrol("G3 ⭐ ölçü değişimi TEK DEĞİŞKEN: aynı menzilde aynı lead",
@@ -179,18 +186,18 @@ def main():
 
     # G4: HUCUM_MENZIL_M gerçekten metre — her iki ölçüde de aynı yerde sıfır
     _s = []
-    for _cfg in (C, _Kos):
+    for _cfg in (_Car, _Kos):
         _ww, _hh = _kutu_uret(ib.menzil_sabiti(_cfg) / _cfg.HUCUM_MENZIL_M,
                               _cfg)
         _s.append(ib.komut(CX, _cy_icin(0.0), _ww, _hh, 0.0, 15.0, 0.05,
                            _cfg)[5]["hata"])
     kontrol("G4 PI'nın sıfır noktası METREDE sabit (ölçüden bağımsız)",
             all(abs(x) < 1e-9 for x in _s),
-            f"{C.HUCUM_MENZIL_M:.1f} m'de hata: çarpım {_s[0]:.2e}, "
+            f"{_Car.HUCUM_MENZIL_M:.1f} m'de hata: çarpım {_s[0]:.2e}, "
             f"köşegen {_s[1]:.2e}")
 
     # G5: BOYUT_MIN ölçüden BAĞIMSIZ (piksel güvenilirlik kapısı)
-    _kck = C.BOYUT_MIN - 1.0
+    _kck = _Car.BOYUT_MIN - 1.0
     kontrol("G5 BOYUT_MIN ölçü seçiminden BAĞIMSIZ (hep sqrt(w·h))",
             ib._kutu_gecerli({"conf": 0.9, "bbox": (0, 0, _kck, _kck)},
                              _Kos) is None,
@@ -199,7 +206,7 @@ def main():
 
     # G6: model ölçüleri ile kalibre tutarlı mı (kaba akıl kontrolü)
     _S_car = C.MENZIL_PX_M_CARPIM / FX
-    _S_kos = C.MENZIL_PX_M_KOSEGEN / FX
+    _S_kos = C.MENZIL_PX_M_KOSEGEN / FX   # taban artık köşegen
     kontrol("G6 kalibre sabitleri makul aralıkta",
             0.5 < _S_car < 2.5 and 1.0 < _S_kos < 3.0 and _S_kos > _S_car,
             f"ima edilen görünen boy: çarpım {_S_car:.2f} m, köşegen "
