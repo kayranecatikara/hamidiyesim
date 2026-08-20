@@ -713,12 +713,25 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
         _R = _C / boyut if boyut > 1e-6 else cfg.KAPANMA_TAVAN * cfg.T_GO
         kapanma_hedefi = clamp(_R / cfg.T_GO,
                                cfg.KAPANMA_TABAN, cfg.KAPANMA_TAVAN)
-        # İntegral YALNIZ ölçüm varken güncellenir. Kutu kaybolunca `kapanma`
-        # bayat kalır; sürüklenmesin diye DONDURULUR.
+        # ── ANTI-WINDUP (2026-08-19, ilk kampanyada MEKANİZMA KAPISI yakaladı)
+        # İlk sürümde integral koşulsuz güncelleniyordu ve ŞİŞTİ: uzakta
+        # profil 5.5 m/s kapanma istiyor, V_HUCUM=18 buna izin vermiyor,
+        # hata kapanmıyor, `hiz_I` I_MAX'a (24) tırmanıyordu. Yakına gelince
+        # kapanma_hedefi 1.5'e düşse bile 24+1.5 yine tavana çarpıyor ve
+        # ÖZELLİĞİN HIZA SIFIR ETKİSİ oluyordu (ölçüldü: v_los her menzil
+        # bandında tam 18.00).
+        # ÇÖZÜM: çıktı doyumdayken, doyumu DERİNLEŞTİREN yönde integrali
+        # dondur. Böylece `hiz_I` hedefin gerçek hızında kalır ve menzil
+        # düşüp profil daralınca v_los doyumdan ÇIKAR.
+        _v_ham = hiz_I + kapanma_hedefi
         if kapanma is not None:
-            hiz_I = clamp(hiz_I + cfg.K_I_KAP
-                          * (kapanma_hedefi - kapanma) * dt,
-                          cfg.I_MIN, cfg.I_MAX)
+            # İntegral YALNIZ ölçüm varken güncellenir. Kutu kaybolunca
+            # `kapanma` bayat kalır; sürüklenmesin diye DONDURULUR.
+            _delta = cfg.K_I_KAP * (kapanma_hedefi - kapanma) * dt
+            _ust = _v_ham >= cfg.V_HUCUM - 1e-9
+            _alt = _v_ham <= cfg.V_MIN + 1e-9
+            if not ((_ust and _delta > 0.0) or (_alt and _delta < 0.0)):
+                hiz_I = clamp(hiz_I + _delta, cfg.I_MIN, cfg.I_MAX)
         v_los = clamp(hiz_I + kapanma_hedefi, cfg.V_MIN, cfg.V_HUCUM)
     else:
         hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)

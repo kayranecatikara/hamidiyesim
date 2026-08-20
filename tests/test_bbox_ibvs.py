@@ -254,6 +254,50 @@ def main():
             + " ".join(f"{v:.1f}" for v in _hepsi)
             + f"  (tavan {_Yav.V_HUCUM:.0f})")
 
+    # H11: ⭐⭐ ANTI-WINDUP — doyumda integral ŞİŞMEZ
+    # İlk sürümde bu yoktu ve ÖZELLİK FİİLEN ÇALIŞMADI: uzakta profil
+    # V_HUCUM'un izin verdiğinden fazla kapanma istiyor, hata kapanmıyor,
+    # integral I_MAX'a tırmanıyordu; yakında profil daralsa bile toplam
+    # yine tavana çarpıyordu. Uçuşta ölçüldü: v_los HER menzil bandında
+    # tam 18.00, hiz_I 24.0 (= I_MAX). Mekanizma kapısı (§5.1) yakaladı.
+    _w, _h = _kutu_R(25.0, _Yav)          # uzak → profil tavanda
+    _sis = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05, _Yav,
+                    kapanma=0.5)          # çok yavaş kapanıyoruz → hata BÜYÜK
+    kontrol("H11 ⭐⭐ ANTI-WINDUP: doyumdayken integral ŞİŞMEZ",
+            abs(_sis[4] - 15.1) < 1e-12
+            and abs(_sis[5]["v_los"] - _Yav.V_HUCUM) < 1e-9,
+            f"R=25 m, profil {_sis[5]['kapanma_hedefi']:.2f} → "
+            f"v_ham {15.1 + _sis[5]['kapanma_hedefi']:.2f} > tavan "
+            f"{_Yav.V_HUCUM:.0f} → v_los doygun, kestirim {_sis[4]:.4f} "
+            "(DONDU, şişmedi)")
+
+    # H12: ⭐ DOYUMDAN ÇIKIŞ — menzil düşünce hız gerçekten iner
+    _pro = []
+    for _R in (25.0, 15.0, 10.0, 5.0, 2.0):
+        _w, _h = _kutu_R(_R, _Yav)
+        _pro.append((_R, ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05,
+                                  _Yav, kapanma=1.0)[5]["v_los"]))
+    _uzak = _pro[0][1]
+    _yakin = _pro[-1][1]
+    kontrol("H12 ⭐ menzil düşünce hız DOYUMDAN ÇIKAR ve iner",
+            abs(_uzak - _Yav.V_HUCUM) < 1e-9 and _yakin < _Yav.V_HUCUM - 1.0
+            and all(_pro[i][1] >= _pro[i+1][1] - 1e-9
+                    for i in range(len(_pro) - 1)),
+            "  ".join(f"{R:.0f} m→{v:.2f}" for R, v in _pro)
+            + "  (monoton azalan, tavandan çıkıyor)")
+
+    # H13: doyum yönü doğru — ALT doyumda da şişmez
+    class _YavAlt(_Yav):
+        V_HUCUM = 30.0        # üst tavan bağlamasın
+        I_MIN = 0.0
+    _w, _h = _kutu_R(3.0, _YavAlt)
+    _alt = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 0.0, 0.05, _YavAlt,
+                    kapanma=9.0)          # hedeften HIZLI kapanıyoruz
+    kontrol("H13 anti-windup ALT doyumda da çalışır",
+            _alt[4] >= _YavAlt.I_MIN - 1e-12,
+            f"kestirim tabanda (0.0), ölçülen kapanma hedeften büyük → "
+            f"kestirim {_alt[4]:.4f} (I_MIN altına inmedi)")
+
     # H10: mekanizma sütunları CSV'de var
     kontrol("H10 mekanizma sütunları CSV'de (§5.1 ölçülebilsin)",
             "kapanma_hedefi" in ib._CSV_ALANLAR
