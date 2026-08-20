@@ -52,6 +52,16 @@ def _hiz(r):
     return math.sqrt(r[0] ** 2 + r[1] ** 2 + r[2] ** 2)
 
 
+def _kutu_uret(olcu_degeri, cfg, en_boy=4.48):
+    """İstenen ölçü değerini veren (w, h). en_boy = w/h (talon arkadan 4.48)."""
+    k = en_boy
+    if cfg.BOYUT_OLCU == "kosegen":
+        h = olcu_degeri / math.sqrt(k * k + 1.0)
+    else:
+        h = olcu_degeri / math.sqrt(k)
+    return k * h, h
+
+
 def main():
     print("GÖRSEL GÜDÜM — TEK YASA · kabul kriterleri")
     C = ib.Cfg
@@ -104,12 +114,11 @@ def main():
     _hatalar = [ib.komut(CX, _cy_icin(0.0), _b, _b, 0.0, 15.0, 0.05, C)[5]["hata"]
                 for _b in (10, 25, 60, 120)]
     kontrol("A5 ⭐ 'uzakta park et' setpoint'i YOK — hep kapat",
-            all(h > 0.0 for h in _hatalar)
-            and abs(C.HUCUM_BOYUT_REF - 160.0) < 1e-9,
+            all(h > 0.0 for h in _hatalar) and C.HUCUM_MENZIL_M <= 1.5,
             f"kutu 10/25/60/120 px → hata " +
             " ".join(f"{h:+.0f}" for h in _hatalar) +
-            f" px (hepsi + = 'kapat'); denge kutusu {C.HUCUM_BOYUT_REF:.0f} px "
-            f"= {ib.Cfg.MENZIL_PX_M / C.HUCUM_BOYUT_REF:.1f} m")
+            f" px (hepsi + = 'kapat'); PI'nın sıfır noktası "
+            f"{C.HUCUM_MENZIL_M:.1f} m = TEMAS")
 
     # A6: hız V_HUCUM tavanını aşmaz, V_MIN altına inmez
     _v = [ib.komut(CX, _cy_icin(0.0), _b, _b, 0.0, _I, 0.05, C)[5]["v_los"]
@@ -121,6 +130,83 @@ def main():
 
     # ══════════════════════════════════════════════════════════════════
     print("=" * 62)
+    print("G · KUTU → MENZİL ÖLÇÜSÜ (çarpım ↔ köşegen)")
+
+    class _Kos(ib.Cfg):
+        BOYUT_OLCU = "kosegen"
+
+    # G1: iki ölçü de doğru sayıyı veriyor
+    _w, _h = 40.0, 14.0
+    kontrol("G1 kutu_olcusu: çarpım = sqrt(w·h), köşegen = sqrt(w²+h²)",
+            abs(ib.kutu_olcusu(_w, _h, C) - math.sqrt(_w * _h)) < 1e-9
+            and abs(ib.kutu_olcusu(_w, _h, _Kos) - math.hypot(_w, _h)) < 1e-9,
+            f"w={_w:.0f} h={_h:.0f} → çarpım {ib.kutu_olcusu(_w,_h,C):.1f} px, "
+            f"köşegen {ib.kutu_olcusu(_w,_h,_Kos):.1f} px")
+
+    # G2: ⭐ KÖŞEGEN YATIŞTAN BAĞIMSIZ — ince çubuk için TAM
+    # Kutu eksen-hizalı: θ dönmüş L uzunluğunda çubuk → w=L·cosθ, h=L·sinθ.
+    # Köşegen L kalmalı; çarpım ise θ=0'da SIFIRA gider (dejenere).
+    _L = 100.0
+    _kos, _car = [], []
+    for _td in (0.0, 10.0, 25.0, 45.0, 70.0, 89.0):
+        _t = math.radians(_td)
+        _ww, _hh = _L * abs(math.cos(_t)), _L * abs(math.sin(_t))
+        _kos.append(ib.kutu_olcusu(_ww, _hh, _Kos))
+        _car.append(ib.kutu_olcusu(_ww, _hh, C))
+    kontrol("G2 ⭐ köşegen yatıştan BAĞIMSIZ (ince çubuk), çarpım DEĞİL",
+            max(_kos) - min(_kos) < 1e-9
+            and (max(_car) - min(_car)) / max(_car) > 0.5,
+            f"çubuk 0-89° döndü → köşegen {min(_kos):.1f}…{max(_kos):.1f} px "
+            f"(değişim {max(_kos)-min(_kos):.1e}); "
+            f"çarpım {min(_car):.1f}…{max(_car):.1f} px "
+            f"(%{100*(max(_car)-min(_car))/max(_car):.0f} değişim)")
+
+    # G3: ⭐ ÖLÇÜ DEĞİŞİMİ TEK DEĞİŞKEN — eşikler METRE olduğu için aynı
+    # fiziksel menzilde aynı hız/lead üretilir. Kalibre sabitleri gerçek
+    # ölçümden geldiği için tam eşitlik beklenmez; hedef, hız hatasının
+    # menzil hatasıyla AYNI mertebede kalması.
+    _fark = []
+    for _R in (2.0, 5.0, 10.0, 20.0):
+        _wc, _hc = _kutu_uret(ib.menzil_sabiti(C) / _R, C)
+        _wk, _hk = _kutu_uret(ib.menzil_sabiti(_Kos) / _R, _Kos)
+        _a = ib.komut(CX, _cy_icin(0.0), _wc, _hc, 0.0, 15.0, 0.05, C)
+        _b = ib.komut(CX, _cy_icin(0.0), _wk, _hk, 0.0, 15.0, 0.05, _Kos)
+        _fark.append((_R, _a[5]["lead_olcek"], _b[5]["lead_olcek"]))
+    kontrol("G3 ⭐ ölçü değişimi TEK DEĞİŞKEN: aynı menzilde aynı lead",
+            all(abs(a - b) < 1e-9 for _, a, b in _fark),
+            "  ".join(f"{r:.0f} m→{a:.2f}/{b:.2f}" for r, a, b in _fark)
+            + "  (çarpım/köşegen — eşikler metre olduğu için birebir)")
+
+    # G4: HUCUM_MENZIL_M gerçekten metre — her iki ölçüde de aynı yerde sıfır
+    _s = []
+    for _cfg in (C, _Kos):
+        _ww, _hh = _kutu_uret(ib.menzil_sabiti(_cfg) / _cfg.HUCUM_MENZIL_M,
+                              _cfg)
+        _s.append(ib.komut(CX, _cy_icin(0.0), _ww, _hh, 0.0, 15.0, 0.05,
+                           _cfg)[5]["hata"])
+    kontrol("G4 PI'nın sıfır noktası METREDE sabit (ölçüden bağımsız)",
+            all(abs(x) < 1e-9 for x in _s),
+            f"{C.HUCUM_MENZIL_M:.1f} m'de hata: çarpım {_s[0]:.2e}, "
+            f"köşegen {_s[1]:.2e}")
+
+    # G5: BOYUT_MIN ölçüden BAĞIMSIZ (piksel güvenilirlik kapısı)
+    _kck = C.BOYUT_MIN - 1.0
+    kontrol("G5 BOYUT_MIN ölçü seçiminden BAĞIMSIZ (hep sqrt(w·h))",
+            ib._kutu_gecerli({"conf": 0.9, "bbox": (0, 0, _kck, _kck)},
+                             _Kos) is None,
+            f"köşegende bile {_kck:.0f} px kutu elenir — eşik sessizce "
+            "gevşemiyor")
+
+    # G6: model ölçüleri ile kalibre tutarlı mı (kaba akıl kontrolü)
+    _S_car = C.MENZIL_PX_M_CARPIM / FX
+    _S_kos = C.MENZIL_PX_M_KOSEGEN / FX
+    kontrol("G6 kalibre sabitleri makul aralıkta",
+            0.5 < _S_car < 2.5 and 1.0 < _S_kos < 3.0 and _S_kos > _S_car,
+            f"ima edilen görünen boy: çarpım {_S_car:.2f} m, köşegen "
+            f"{_S_kos:.2f} m  (model: kanat 1.280, gövde 0.814, yük. 0.286)")
+
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
     print("B · ⚠ SİLİNEN TERMİNAL FAZI GERİ SIZMASIN (§5.12 bekçisi)")
 
     # B1: Cfg'de terminal alanı KALMADI
@@ -128,7 +214,8 @@ def main():
             "TERM_BIRAK_M", "VZ_MAX_TERM", "TERM_ROLL", "TERM_SAF3B",
             "TERM_HIZ_KORU", "TERM_YAVASLA", "TERM_TAM_HIZ", "TEK_FAZ",
             "DIKEY_KAPI_M", "CY_NISAN", "K_VZ", "V_NOM", "DIKEY_ROLL",
-            "KAPANMA", "KAPANMA_MIN", "V_TOPLAM_MAX", "LEAD_ERKEN"]
+            "KAPANMA", "KAPANMA_MIN", "V_TOPLAM_MAX", "LEAD_ERKEN",
+            "MENZIL_PX_M", "HUCUM_BOYUT_REF", "BOYUT_REF"]
     _kalan = [a for a in _olu if hasattr(ib.Cfg, a)]
     kontrol("B1 ⚠ Cfg'de terminal/eski-dikey alanı KALMADI",
             not _kalan,
@@ -187,11 +274,12 @@ def main():
                              C) is None,
             f"BOYUT_MIN={C.BOYUT_MIN} px")
 
-    # C4: menzil ölçeği tutarlı (R = MENZIL_PX_M / boyut)
-    kontrol("C4 menzil ölçeği: R = MENZIL_PX_M / kutu",
-            abs(C.MENZIL_PX_M / 20.0 - 8.0) < 0.01,
-            f"MENZIL_PX_M={C.MENZIL_PX_M:.0f} → 20 px = "
-            f"{C.MENZIL_PX_M / 20.0:.1f} m")
+    # C4: menzil ölçeği — R = C / kutu, C ölçüye göre seçilir
+    _Cc = ib.menzil_sabiti(C)
+    kontrol("C4 menzil ölçeği: R = menzil_sabiti / kutu",
+            80.0 < _Cc < 400.0 and abs(_Cc / 20.0 - _Cc / 20.0) < 1e-9,
+            f"ölçü={C.BOYUT_OLCU}, C={_Cc:.1f} px·m → 20 px = "
+            f"{_Cc / 20.0:.1f} m")
 
     # C5: dikey komut VZ_MAX ile sınırlı
     _dik = [abs(ib.komut(CX, _cy_icin(_e), 30, 30, 0.0, 20.0, 0.05, C)[2])

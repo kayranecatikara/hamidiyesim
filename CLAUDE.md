@@ -49,6 +49,35 @@ göre tamamen çıkarılır.
 **"Ölçüm sürerken bir sonrakini de hazırlayayım" YASAKTIR.** Sıra sıra
 gidilir.
 
+## 0.3 · ⛔ HER ŞEYİ TAM TEFERRUATIYLA AÇIKLA — terim bırakma
+
+**Kullanıcı kuralı (2026-08-19):** *"Artık bu aşamadan sonra sisteme ne
+ekliyoruz, ne çıkartıyoruz, nasıl yapıyoruz tam öğrenmek istiyorum. O yüzden
+bu tür şeyleri, terimleri vs. bana hep tüm teferruatıyla açıkla. KONTROL
+LİTERATÜRÜNE ÇOK HAKİM DEĞİLİM, BUNU BİL, BUNA GÖRE AÇIKLA."*
+
+Yapay zekâ artık **kontrol mühendisliği bilgisi varsaymaz.** Bir öneri,
+teşhis ya da tasarım anlatırken:
+
+1. **HER TERİM ilk geçtiği yerde tanımlanır.** "kapanma hızı", "t_go",
+   "integral", "türev sönümlemesi", "doyum", "kazanç", "saf takip",
+   "orantısal seyrüsefer", "kalıcı hata", "aşım", "limit çevrimi",
+   "durum kestirimi" — hiçbiri açıklanmadan kullanılmaz.
+2. **NEREDEN GELDİĞİ gösterilir.** Bir büyüklük hangi ölçümden, hangi
+   denklemle çıkıyor — türetmesi tek tek yazılır. "Menzil kutu boyutundan
+   geliyor" yetmez; `R = FX·S/p` benzer üçgenlerden nasıl çıkıyor, `FX`
+   ne, `S` ne, hangi varsayıma dayanıyor — hepsi yazılır.
+3. **NEYİN DOĞRU OLMADIĞI da yazılır.** Her yöntemin dayandığı varsayım ve
+   o varsayım bozulunca ne olacağı açıkça söylenir.
+4. **SAYIYLA bağlanır.** Soyut anlatım, bu deponun ölçülmüş sayılarıyla
+   somutlaştırılır (kendi loglarımızdan, kendi parametrelerimizden).
+5. **Seçenekler ödünleşimleriyle sunulur** — "şu daha iyi" demek yetmez;
+   neyi kazanıp neyi kaybettiği yazılır.
+
+⚠ Kısa kesmek, "detaya girmeyeyim" demek, ya da bir terimi tanımsız
+bırakmak KURAL İHLALİDİR. Kullanıcı bilmediğini söyledi; bilgi eksikliği
+varsayılan kabul edilir, aksi belirtilene kadar.
+
 ---
 
 # 1 · GELİŞTİRME STRATEJİSİ — döngünün tamamı

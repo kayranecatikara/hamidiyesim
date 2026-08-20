@@ -539,3 +539,5 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .ayar-rozet{min-width:18px;text-align:center;padding:1px 5px;border-radius:9px;
   font-family:var(--mono);font-size:10px;font-weight:700;background:#1F2937;color:var(--muted)}
 .ayar-rozet.dolu{background:var(--amber);color:#1C1917}
+.ayar-secim{display:flex;gap:5px;flex-wrap:wrap}
+.ayar-secim .ayar-bool{min-width:66px}

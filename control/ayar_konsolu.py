@@ -32,6 +32,7 @@ Alan adı "modul:ALAN" biçiminde verilebilir (bkz. gcs_server._hedef_cfg).
 # tip: "sayi"  → kayan çubuk + sayı kutusu (Cfg alanı)
 #      "bool"  → aç/kapa (Cfg alanı)
 #      "param" → ARAÇ parametresi (MAVLink PARAM_SET, uçuşta yazılır)
+#      "secim" → metin seçeneği; min alanına seçenek listesi konur
 
 AYARLAR = [
 
@@ -99,6 +100,61 @@ AYARLAR = [
      "Dik hedefte az yavaşlar; geometri düzelmez ama hedefi kaçırmazsın.",
      "Daha çok yavaşlayıp daha dik girebilir. ⚠ 15.1'in altında hedef "
      "senden uzaklaşır — yalnız geometriyi düzeltmelik kısa süre için."),
+
+    # ═════════════════════════════════════════════════════════════════════
+    ("GM", None, "⓪ KUTU → MENZİL ÖLÇÜSÜ", None,
+     "grup", None, None, None, None,
+     "Menzil iğne deliği kamera bağıntısından çıkar: R = (FX·S)/p. "
+     "FX = odak uzaklığı (166.58 px), S = hedefin görünen boyu, p = kutunun "
+     "kadrajdaki boyu. ⚠ S'nin SABİT olduğu varsayılır — ama bir uçağın "
+     "görünen boyu yatışına ve bakış açısına göre değişir. `p` olarak neyi "
+     "aldığın bu hatayı belirler. MODEL: kanat 1.280 m, gövde 0.814 m, "
+     "yükseklik 0.286 m (collision mesh'ten doğrulandı).",
+     None, None),
+
+    ("BOYUT_OLCU", "BOYUT_OLCU", "⭐ Menzil ölçüsü", "GM", "secim",
+     None, ["carpim", "kosegen"], None, None,
+     "carpim = sqrt(w·h) (2026-08-19 öncesi tek yol) · "
+     "kosegen = sqrt(w²+h²), eksen-hizalı kutunun köşegeni. "
+     "KÖŞEGENİN MANTIĞI: kadrajda θ dönmüş İNCE bir çubuk için "
+     "w=L·|cosθ|, h=L·|sinθ| olur ve sqrt(w²+h²)=L kalır — YATIŞTAN "
+     "BAĞIMSIZ. Talon arkadan bakınca büyük ölçüde ince çubuktur.",
+     "kosegen — ÖLÇÜLDÜ (8 uçuş, 5812 kare): görüş açısının %91'i 0-15° "
+     "(tam arkadan). O bantta bağıl menzil hatası %22 → %14 (%36 daha iyi). "
+     "Teorik yatış duyarlılığı 0-90°: köşegen %19, çarpım %83, w %359.",
+     "carpim — bugünkü. Yatışta menzil %83'e varan hata veriyor."),
+
+    ("MENZIL_PX_M_CARPIM", "MENZIL_PX_M_CARPIM", "Kalibre C — çarpım", "GM",
+     "sayi", "px·m", 80.0, 400.0, 1.0,
+     "R = C / sqrt(w·h). ⚠ 2026-08-19'a kadar 160.0 kullanılıyordu; gerçek "
+     "loglardan ölçülen 185.7 (medyan p·R, 0-15° bandı, n=5274). Yani "
+     "menziller %14 EKSİK tahmin ediliyordu — kendimizi olduğumuzdan yakın "
+     "sanıyorduk.",
+     "Menzil tahmini büyür (kendimizi daha uzak sanırız).",
+     "Menzil tahmini küçülür."),
+
+    ("MENZIL_PX_M_KOSEGEN", "MENZIL_PX_M_KOSEGEN", "Kalibre C — köşegen",
+     "GM", "sayi", "px·m", 120.0, 600.0, 1.0,
+     "R = C / sqrt(w²+h²). Ölçülen 296.8 (aynı yöntem). İma ettiği görünen "
+     "boy 1.78 m — model köşegeni 1.31 m'den büyük, çünkü YOLO kutusu "
+     "görsel modeli gevşek sarıyor. Ampirik sabit doğrusudur.",
+     "Menzil tahmini büyür.", "Menzil tahmini küçülür."),
+
+    ("HUCUM_MENZIL_M", "HUCUM_MENZIL_M", "PI'nın sıfır noktası", "GM",
+     "sayi", "m", 0.3, 8.0, 0.1,
+     "Hız PI'sının dengeye oturduğu MENZİL. Burada hata sıfırlanır. "
+     "⚠ 1.0 m = TEMAS, yani 'hiç durma'. Metre cinsinden tutulduğu için "
+     "ölçü değiştirince anlamı değişmez.",
+     "Daha uzakta dengeye gelir → orada PARK eder (eski hatanın kendisi: "
+     "6.4 m'de park ediyordu ve terminal fazı onu ezmek için vardı).",
+     "Temasa daha yakın; hep kapatma davranışı korunur."),
+
+    ("LEAD_MENZIL_M", "LEAD_MENZIL_M", "Lead sönme menzili", "GM", "sayi",
+     "m", 1.0, 30.0, 0.5,
+     "Lead (hedefi öne alma) bu menzilin altında kademeli söner: "
+     "lead_ölçek = R / LEAD_MENZIL_M, [0,1] arasına kırpılır.",
+     "Lead daha geç söner — yakında da kestirme yapılır.",
+     "Lead daha erken söner; temas anı sakinleşir."),
 
     # ═════════════════════════════════════════════════════════════════════
     ("G1", None, "② YATAY KANAL — hedefi kadrajda ortalama (yaw)", None,

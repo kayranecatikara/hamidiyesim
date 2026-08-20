@@ -1690,7 +1690,22 @@ function ayarSatir(a){
   et.append(ad, alan);
   s.appendChild(et);
 
-  if (a.tip === 'bool'){
+  if (a.tip === 'secim'){
+    // Metin seçeneği (ör. menzil ölçüsü: carpim | kosegen) — her seçenek bir
+    // düğme. kayramin_super_gudumu 98f7c61'den geldi; sunucu seçenekleri
+    // /api/ayarlar'da `secenekler` alanıyla yolluyor.
+    const kutu = document.createElement('div');
+    kutu.className = 'ayar-secim';
+    (a.secenekler || []).forEach(sec => {
+      const b = document.createElement('button');
+      b.className = 'ayar-bool' + (a.deger === sec ? ' acik' : '');
+      b.textContent = sec;
+      b.addEventListener('click', () => ayarYaz(a.ad, sec));
+      kutu.appendChild(b);
+    });
+    s.appendChild(kutu);
+    s.appendChild(document.createElement('div'));
+  } else if (a.tip === 'bool'){
     s.appendChild(document.createElement('div'));   // orta sütun boş: ızgara bozulmasın
     const sag = document.createElement('div');
     sag.className = 'ayar-sag';
