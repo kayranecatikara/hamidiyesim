@@ -1,1292 +1,541 @@
-:root {
-    --bg-main: #0a0b0d;
-    --bg-panel: #13161a;
-    --bg-panel-light: #1c2026;
-    
-    --text-main: #e0e6ed;
-    --text-dim: #798696;
-    --text-dark: #475569;
-    
-    --border-color: #2a313d;
-    --border-hightlight: #3f4a5c;
-    
-    --accent-blue: #3b82f6;
-    --success-green: #10b981;
-    --warning-yellow: #f59e0b;
-    --danger-red: #ef4444;
-    
-    --font-mono: 'Roboto Mono', monospace;
-    --font-sans: 'Roboto', sans-serif;
-}
-
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
-    background-color: var(--bg-main);
-    color: var(--text-main);
-    font-family: var(--font-sans);
-    height: 100vh;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.gcs-container {
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    padding: 0.5rem;
-    gap: 0.5rem;
-}
-
-/* Header */
-.gcs-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    background-color: var(--bg-panel);
-    border: 1px solid var(--border-color);
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-}
-
-.title-head {
-    font-weight: 700;
-    color: var(--text-main);
-    letter-spacing: 1px;
-}
-
-.right-head {
-    display: flex;
-    gap: 2rem;
-    align-items: center;
-}
-
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 600;
-}
-
-.dot {
-    width: 8px; height: 8px; border-radius: 50%;
-}
-.dot.red { background-color: var(--danger-red); }
-.dot.green { background-color: var(--success-green); }
-
-.network-stats {
-    display: flex;
-    gap: 1.5rem;
-    color: var(--text-dim);
-}
-.network-stats span span { color: var(--text-main); }
-
-/* Uçuş log paneli linki — her GPS uçuşu bitince otomatik tazelenen HTML rapor */
-.log-panel-link {
-    color: var(--text-dim);
-    text-decoration: none;
-    border: 1px solid var(--text-dim);
-    border-radius: 4px;
-    padding: 0.25rem 0.6rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    transition: color .12s, border-color .12s;
-}
-.log-panel-link:hover, .log-panel-link:focus-visible {
-    color: var(--text-main);
-    border-color: var(--text-main);
-}
-
-/* Main Grid Layout */
-.gcs-main {
-    flex: 1;          /* kalan yüksekliği al, footer'a yer bırak */
-    min-height: 0;    /* flex shrink çalışsın */
-    display: flex;
-    gap: 0.5rem;
-    overflow: hidden;
-}
-
-/* ─── BOTTOM LOG PANEL ──────────────────────── */
-.bottom-panel {
-    flex: 0 0 140px;      /* sabit yükseklik — büyümez */
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;     /* içerik taşmasın */
-}
-
-.log-container {
-    flex: 1;
-    overflow-y: auto;    /* yalnızca bu alan scroll */
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 4px 6px;
-    scroll-behavior: smooth;
-}
-
-/* Scrollbar stili */
-.log-container::-webkit-scrollbar { width: 4px; }
-.log-container::-webkit-scrollbar-track { background: transparent; }
-.log-container::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 2px;
-}
-
-/* Log satırı */
-.log-entry {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.5;
-    padding: 1px 4px;
-    border-radius: 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex-shrink: 0;
-}
-.log-entry.info    { color: var(--text-dim); }
-.log-entry.success { color: var(--success-green); }
-.log-entry.warn    { color: var(--warning-yellow); }
-.log-entry.crit    { color: var(--danger-red); background: rgba(239,68,68,0.05); }
-
-.log-time { color: var(--text-dark); flex-shrink: 0; }
-.log-src  { color: var(--accent-blue); flex-shrink: 0; min-width: 36px; }
-.log-msg  { overflow: hidden; text-overflow: ellipsis; }
-
-/* Panels */
-.panel {
-    background-color: var(--bg-panel);
-    border: 1px solid var(--border-color);
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-}
-
-.left-panel, .right-panel {
-    flex: 0 0 320px;
-    max-height: 100%;
-    overflow-y: auto;
-    min-height: 0;
-    align-self: stretch;
-}
-
-.center-panel {
-    flex: 1;
-    background-color: #000;
-    border: 1px solid var(--border-color);
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-}
-
-/* Typography inside panels */
-.panel-title {
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--text-dim);
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-    letter-spacing: 1px;
-}
-
-/* Left Panel Controls */
-.vehicle-selector {
-    display: flex;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
-}
-
-.vehicle-selector input[type="radio"] {
-    display: none;
-}
-
-.vehicle-selector label {
-    flex: 1;
-    text-align: center;
-    padding: 0.5rem;
-    background-color: var(--bg-panel-light);
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: 700;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.vehicle-selector input[type="radio"]:checked + label {
-    background-color: var(--accent-blue);
-    color: #fff;
-    border-color: var(--accent-blue);
-}
-
-.control-section {
-    display: none;
-    flex-direction: column;
-}
-
-.control-section.active-section {
-    display: flex;
-}
-
-.section-title {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    margin-bottom: 0.5rem;
-    text-transform: uppercase;
-}
-
-.btn-grid, .btn-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.t-btn {
-    background-color: var(--bg-panel-light);
-    border: 1px solid var(--border-hightlight);
-    color: var(--text-main);
-    padding: 0.6rem;
-    font-family: var(--font-sans);
-    font-size: 0.85rem;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.2s;
-}
-
-.t-btn:hover { background-color: var(--border-color); }
-.t-btn:active { transform: scale(0.98); }
-
-.btn-action { border-left: 3px solid var(--accent-blue); }
-.btn-warning { border-left: 3px solid var(--warning-yellow); }
-.btn-danger { border-left: 3px solid var(--danger-red); }
-.btn-success { border-left: 3px solid var(--success-green); text-align: center; font-weight: bold;}
-
-.block-btn { width: 100%; display: block; text-align: center; }
-
-.mt-1 { margin-top: 0.5rem; }
-.mt-2 { margin-top: 1rem; }
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    font-family: var(--font-mono);
-    padding: 0.5rem;
-    background: var(--bg-panel-light);
-}
-.value-highlight { color: var(--warning-yellow); font-weight: bold;}
-
-/* Right Panel Telemetry */
-.telemetry-block {
-    margin-bottom: 1rem;
-}
-
-.block-head {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    margin-bottom: 0.5rem;
-    border-bottom: 1px dotted var(--border-color);
-    padding-bottom: 0.25rem;
-}
-
-.data-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-.d-row {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    background-color: var(--bg-panel-light);
-    padding: 0.4rem 0.5rem;
-    border: 1px solid transparent;
-}
-.d-row span:first-child { color: var(--text-dim); }
-
-.val { font-weight: 600; color: var(--text-main); }
-.val.red { color: var(--danger-red); }
-.val.green { color: var(--success-green); }
-.val.warning { color: var(--warning-yellow); }
-
-/* Center Panel (FPV area) */
-.fpv-container {
-    width: 100%;
-    height: 100%;
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-#fpv-canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    background-color: #111; /* fallback */
-}
-
-/* FPV Overlays */
-.hud-overlay {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none;
-}
-
-.hud-top-center {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.lock-status {
-    padding: 0.5rem 1.5rem;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 1.2rem;
-    border: 2px solid;
-    background: rgba(0,0,0,0.5);
-}
-
-.mode-search { color: var(--warning-yellow); border-color: var(--warning-yellow); }
-.mode-track { color: var(--accent-blue); border-color: var(--accent-blue); }
-.mode-lock { color: var(--danger-red); border-color: var(--danger-red); }
-
-.hud-center-crosshair {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 40px; height: 40px;
-}
-.ch-h { position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: rgba(255,255,255,0.5); }
-.ch-v { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: rgba(255,255,255,0.5); }
-
-/* Bounding box HTML element representation */
-.target-box {
-    position: absolute;
-    border: 2px solid var(--danger-red);
-    width: 100px; height: 80px;
-    top: 40%; left: 45%; /* mocked initial pos */
-    display: flex;
-    flex-direction: column;
-}
-.target-box.hidden { display: none; }
-.t-class {
-    position: absolute;
-    top: -25px; left: -2px;
-    background: var(--danger-red);
-    color: #fff;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    padding: 2px 5px;
-    white-space: nowrap;
-}
-
-.hud-warnings {
-    position: absolute;
-    bottom: 20px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(239, 68, 68, 0.8);
-    color: white;
-    padding: 0.5rem 2rem;
-    font-family: var(--font-mono);
-    font-weight: bold;
-    animation: blink 1s infinite alternate;
-}
-@keyframes blink {
-    from { opacity: 1; }
-    to { opacity: 0.2; }
-}
-.hidden { display: none !important; }
-
-/* === JOYSTICK & MANUEL KONTROL === */
-.manual-hint {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 0.75rem;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid var(--warning-yellow);
-    margin-bottom: 1rem;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    color: var(--warning-yellow);
-}
-
-.w-key {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px; height: 32px;
-    background: var(--warning-yellow);
-    color: #000;
-    font-weight: 900;
-    font-size: 1rem;
-    flex-shrink: 0;
-}
-
-.joystick-area {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.joystick-label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--text-dim);
-    letter-spacing: 1px;
-}
-
-.joystick-base {
-    position: relative;
-    width: 160px; height: 160px;
-    border-radius: 50%;
-    background: var(--bg-main);
-    border: 2px solid var(--border-hightlight);
-    cursor: crosshair;
-    touch-action: none;
-    user-select: none;
-}
-
-.joystick-knob {
-    position: absolute;
-    width: 44px; height: 44px;
-    border-radius: 50%;
-    background: var(--accent-blue);
-    border: 2px solid #fff;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    transition: background 0.1s;
-}
-.joystick-knob.active { background: var(--warning-yellow); }
-
-.joystick-axes {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none;
-}
-
-.axis-label {
-    position: absolute;
-    font-family: var(--font-mono);
-    font-size: 0.6rem;
-    color: var(--text-dark);
-}
-.axis-left  { top: 50%; left: 6px;  transform: translateY(-50%); }
-.axis-right { top: 50%; right: 6px; transform: translateY(-50%); }
-.axis-top   { top: 6px; left: 50%;  transform: translateX(-50%); }
-.axis-bottom { bottom: 6px; left: 50%; transform: translateX(-50%); }
-
-.joystick-readout {
-    display: flex;
-    gap: 0.75rem;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: var(--text-dim);
-}
-.joystick-readout span span {
-    color: var(--text-main);
-    font-weight: 700;
-}
-
-/* === DAİRE ÇAPI SEÇİMİ === */
-/* "DAİRE ÇİZ" butonunun altında açılan çap listesi. Girintili ve daha küçük:
-   ana senaryo butonlarının alt seçeneği olduğu görsel olarak belli olsun. */
-.cap-grup {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-    gap: 0.25rem;
-    margin: 0.25rem 0 0.15rem 0.9rem;
-}
-
-.cap-grup .cap-btn {
-    padding: 0.35rem 0.3rem;
-    font-size: 0.75rem;
-    text-align: center;
-    font-family: var(--font-mono, monospace);
-}
-
-.cap-grup .cap-btn.aktif {
-    background: rgba(34, 197, 94, 0.14);
-    border-color: #22c55e;
-    color: #22c55e;
-    font-weight: 700;
-}
-
-/* === UÇUŞ SENARYOSU BUTONLARI & KLAVYE MANUEL === */
-.t-btn.scn-active {
-    background: rgba(239, 68, 68, 0.12);
-    border-left-color: var(--danger-red);
-    color: var(--danger-red);
-    font-weight: 700;
-}
-
-.joystick-knob {
-    transition: none;   /* klavye/tick güncellemelerinde gecikmesiz takip */
-}
-
-/* === 3B KONUM İZLEME (sağ panel alt) === */
-.pos3d-block {
-    display: flex;
-    flex-direction: column;
-}
-
-#pos3d-canvas {
-    width: 100%;
-    height: 240px;
-    background: var(--bg-main);
-    border: 1px solid var(--border-color);
-    cursor: grab;
-    touch-action: none;
-    display: block;
-}
-
-#pos3d-canvas:active { cursor: grabbing; }
-
-.pos3d-legend {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    font-family: var(--font-mono);
-    font-size: 0.62rem;
-    color: var(--text-dim);
-    margin-top: 4px;
-    letter-spacing: 0.5px;
-}
-
-.legend-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 5px;
-    vertical-align: middle;
-}
-.legend-dot.dot-avci  { background: var(--success-green); }
-.legend-dot.dot-hedef { background: var(--danger-red); }
-
-.pos3d-hint {
-    margin-left: auto;
-    color: var(--text-dark);
-    font-size: 0.58rem;
-}
-
-/* Bottom Panel */
-.bottom-panel {
-    flex: 0 0 150px;
-    margin-top: auto;
-}
-.small-title { margin-bottom: 0.5rem; font-size: 0.8rem; border: none; }
-
-.log-container {
-    height: calc(100% - 25px);
-    overflow-y: auto;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    background-color: var(--bg-main);
-    border: 1px solid var(--border-color);
-    padding: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.log-entry {
-    display: flex;
-    gap: 1rem;
-    padding: 2px 4px;
-    border-bottom: 1px dotted var(--border-color);
-}
-.log-time { color: var(--text-dim); }
-.log-src { color: var(--accent-blue); width: 80px;}
-.log-msg { color: var(--text-main); }
-.log-entry.warn .log-msg { color: var(--warning-yellow); }
-.log-entry.crit .log-msg { color: var(--danger-red); }
-
-/* ---- CHASE MODE ---- */
-.chase-info-panel {
-    background: rgba(16, 185, 129, 0.05);
-    border: 1px solid rgba(16, 185, 129, 0.15);
-    border-radius: 6px;
-    padding: 8px 10px;
-}
-
-.chase-info-panel .d-row {
-    padding: 3px 0;
-}
-
-#btn-chase {
-    font-size: 0.85rem;
-    letter-spacing: 0.5px;
-    transition: all 0.3s ease;
-}
-
-#btn-chase:hover:not(:disabled) {
-    transform: scale(1.02);
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
-}
-
-.btn-danger {
-    border-left-color: var(--danger-red) !important;
-    background: rgba(239, 68, 68, 0.08) !important;
-}
-
-.btn-danger:hover:not(:disabled) {
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3) !important;
-}
-
-/* ---- VIDEO GÜRÜLTÜ CANVAS KATMANI ---- */
-.video-noise-canvas {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    pointer-events: none;   /* tıklama geçirgen */
-    z-index: 5;             /* HUD'un altında, videonun üstünde */
-    display: block;
-}
-
-/* ---- GPS KARIŞTIRMA SİMÜLASYONU ---- */
-.gps-jam-panel {
-    background: rgba(239, 68, 68, 0.04);
-    border: 1px solid rgba(239, 68, 68, 0.15);
-    border-left: 2px solid rgba(239, 68, 68, 0.4);
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-top: 6px;
-}
-
-.gps-jam-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.gps-jam-label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--text-dim);
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-}
-
-/* Değer göstergesi — d-row val ile aynı stil */
-.gps-jam-value {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    transition: color 0.2s;
-}
-.gps-jam-value.green  { color: var(--success-green); }
-.gps-jam-value.yellow { color: var(--warning-yellow); }
-.gps-jam-value.orange { color: #ff8c00; }
-.gps-jam-value.red    { color: var(--danger-red); }
-.gps-jam-value.blink  { animation: blink-red 0.5s ease-in-out infinite; }
-
-/* Custom range slider */
-.gps-jam-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 4px;
-    border-radius: 2px;
-    outline: none;
-    cursor: pointer;
-    background: linear-gradient(to right,
-        var(--success-green) 0%,
-        var(--warning-yellow) 28%,
-        #ff8c00 58%,
-        var(--danger-red) 82%,
-        #ff0040 100%
-    );
-    margin-bottom: 4px;
-}
-
-.gps-jam-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--text-main);
-    border: 2px solid var(--bg-panel-light);
-    box-shadow: 0 0 4px rgba(0,0,0,0.6);
-    cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
-}
-
-.gps-jam-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
-}
-
-.gps-jam-slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--text-main);
-    border: 2px solid var(--bg-panel-light);
-    cursor: pointer;
-}
-
-.gps-jam-labels {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 2px;
-    margin-bottom: 8px;
-    font-family: var(--font-mono);
-    font-size: 0.55rem;
-    color: var(--text-dark);
-    letter-spacing: 0.2px;
-}
-
-.gps-jam-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    color: var(--text-dim);
-    letter-spacing: 0.3px;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-color);
-}
-
-/* Renkli dot'lar */
-.dot.yellow { background: var(--warning-yellow); }
-.dot.orange { background: #ff8c00; }
-
-/* GPS kayıp blink animasyonu */
-@keyframes blink-red {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.15; }
-}
-
-.dot.blink {
-    animation: blink-red 0.5s ease-in-out infinite;
-}
-
-/* ═══════════════════════════════════════════════
-   VURMA (STRIKE) PANELI
-   ═══════════════════════════════════════════════ */
-
-/* Bölüm ayırıcı */
-.section-divider {
-    border: none;
-    border-top: 1px solid rgba(220,38,38,0.18);
-    margin: 10px 0 2px;
-}
-
-/* Ana panel */
-.strike-panel {
-    background: rgba(220, 38, 38, 0.04);
-    border: 1px solid rgba(220, 38, 38, 0.16);
-    border-left: 2px solid rgba(220, 38, 38, 0.45);
-    border-radius: 4px;
-    padding: 10px 12px 12px;
-    margin-top: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-/* Sürgü satırı: etiket + durum */
-.strike-slider-wrap {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-}
-
-.strike-slider-label {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--text-dark);
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-}
-
-.strike-slider-pct {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    color: var(--danger-red);
-    transition: color 0.2s;
-}
-
-.strike-slider-pct.green { color: var(--success-green); }
-
-/* Kilit sürgüsü — native range, gri→kırmızı */
-.strike-arm-input {
-    display: block;
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 4px;
-    border-radius: 2px;
-    outline: none;
-    cursor: pointer;
-    background: linear-gradient(to right,
-        #374151 0%,
-        #6b7280 45%,
-        #b91c1c 80%,
-        #ef4444 100%
-    );
-    margin-bottom: 10px;
-}
-
-.strike-arm-input::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: #9ca3af;
-    border: 2px solid var(--bg-panel);
-    box-shadow: 0 0 4px rgba(0,0,0,0.5);
-    cursor: pointer;
-    transition: background 0.25s, box-shadow 0.2s;
-}
-
-.strike-arm-input.armed::-webkit-slider-thumb {
-    background: #ef4444;
-    box-shadow: 0 0 8px rgba(239,68,68,0.6);
-}
-
-.strike-arm-input::-moz-range-thumb {
-    width: 15px; height: 15px;
-    border-radius: 50%;
-    background: #9ca3af;
-    border: 2px solid var(--bg-panel);
-    cursor: pointer;
-}
-
-/* ─── VUR BUTONU ─────────────────────────────── */
-
-/* 1. KİLİTLİ — tamamen statik, hiçbir efekt yok */
-.btn-strike {
-    display: block;
-    width: 100%;
-    padding: 10px 0;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    border-radius: 4px;
-    border: 1px solid rgba(220, 38, 38, 0.15);
-    background: rgba(40, 8, 8, 0.6);
-    color: rgba(200, 50, 50, 0.28);
-    cursor: not-allowed;
-    /* sıfır transition — tamamen statik */
-    transition: none;
-    transform: none;
-    box-shadow: none;
-}
-
-/* hover/focus kilitliyken hiçbir etki yok */
-.btn-strike:hover,
-.btn-strike:focus {
-    outline: none;
-    transform: none;
-    box-shadow: none;
-}
-
-/* 2. KİLİT AÇILDI (armed) — biraz küçük, hazır hissi */
-.btn-strike.armed {
-    background: linear-gradient(180deg, #c81e1e 0%, #991b1b 100%);
-    color: #fff;
-    border: 1px solid rgba(239, 68, 68, 0.4);
-    cursor: pointer;
-    /* Sürekli scale(0.96) → "hazır, bas beni" efekti */
-    transform: scale(0.96);
-    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.25),
-                inset 0 1px 0 rgba(255,255,255,0.08);
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-/* hover armed: değişecek bir şey yok — kullanıcı zaten görüyor */
-.btn-strike.armed:hover {
-    transform: scale(0.96);  /* aynı kal */
-    box-shadow: 0 2px 14px rgba(239, 68, 68, 0.35),
-                inset 0 1px 0 rgba(255,255,255,0.08);
-}
-
-/* press efekti — belirgin küçülme, basıldığı hissedilsin */
-.btn-strike.armed:active {
-    transform: scale(0.91);
-    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15),
-                inset 0 2px 4px rgba(0,0,0,0.3);
-    transition: transform 0.06s ease;
-}
-
-/* 3. AKTİF (vurma sürüyor) — turuncu, normal boyut */
-.btn-strike.active {
-    background: linear-gradient(180deg, #c2410c 0%, #9a3412 100%);
-    color: #fff;
-    border: 1px solid rgba(249, 115, 22, 0.35);
-    cursor: pointer;
-    transform: scale(1);
-    box-shadow: 0 2px 10px rgba(249, 115, 22, 0.2);
-    transition: transform 0.18s ease;
-}
-
-.btn-strike.active:active {
-    transform: scale(0.95);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
-    transition: transform 0.06s ease;
-}
-
-/* Durum satırı */
-.strike-status-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--text-dark);
-    letter-spacing: 0.3px;
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px solid var(--border-color);
-}
-
-/* gps-jam-value.red yardımcısı */
-.gps-jam-value.red { color: var(--danger-red); }
-}
-
-/* ── Güdüm fazı göstergesi (GPS / GÖRSEL ışıkları) ── */
-.faz-grup { display: inline-flex; gap: 10px; }
-.faz-isik {
-    color: #556;
-    font-weight: bold;
-    letter-spacing: 0.5px;
-    transition: color 0.2s, text-shadow 0.2s;
-}
-.faz-isik.aktif {
-    color: #22c55e;
-    text-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
-}
-.faz-isik.vuruldu {
-    color: #f43f5e;
-    text-shadow: 0 0 6px rgba(244, 63, 94, 0.8);
-}
-
-/* ── Güdüm modu butonları (GPS / GÖRSEL / HİBRİT) ── */
-.mod-grup { display: inline-flex; gap: 6px; }
-.mod-btn {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: #99a;
-    font: inherit;
-    font-size: 11px;
-    font-weight: bold;
-    letter-spacing: 0.5px;
-    padding: 2px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-.mod-btn:hover { border-color: #22c55e; color: #cdd; }
-.mod-btn.aktif {
-    background: rgba(34, 197, 94, 0.15);
-    border-color: #22c55e;
-    color: #22c55e;
-    text-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
-}
-
-/* ── GÜDÜM ÖZELLİKLERİ paneli (canlı aç/kapa, 2026-08-10) ────────────
-   Her satır bir davranış anahtarı. Yeşil = açık, gri = kapalı.
-   Liste sunucudan geldiği için yeni özellik eklendiğinde CSS'e
-   dokunmak gerekmez. */
-.ozellik-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 4px;
-}
-.ozellik-bos { opacity: .6; font-size: 12px; padding: 4px 2px; }
-.ozellik-satir {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 8px;
-    border: 1px solid #1f2937;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
-}
-.ozellik-satir.acik { border-color: rgba(34, 197, 94, 0.55); }
-.ozellik-metin { flex: 1; min-width: 0; }
-.ozellik-ad { font-size: 12px; color: #cdd; line-height: 1.25; }
-.ozellik-satir.acik .ozellik-ad { color: #22c55e; }
-.ozellik-aciklama {
-    font-size: 10.5px;
-    opacity: .62;
-    line-height: 1.3;
-    margin-top: 2px;
-}
-.ozellik-env { font-size: 10px; opacity: .45; font-family: monospace; }
-.ozellik-btn {
-    flex: 0 0 auto;
-    min-width: 62px;
-    padding: 4px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 5px;
-    border: 1px solid #334155;
-    background: #0b1220;
-    color: #94a3b8;
-}
-.ozellik-btn:hover { border-color: #22c55e; }
-.ozellik-btn.acik {
-    border-color: #22c55e;
-    color: #052e16;
-    background: #22c55e;
-}
-
-/* ── KAÇAMAK TESTİ paneli (2026-08-11) ──────────────────────────────── */
-.kacamak-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.kac-sec {
-    padding: 3px 7px; font-size: 11px; cursor: pointer; border-radius: 4px;
-    border: 1px solid #334155; background: #0b1220; color: #94a3b8;
-}
-.kac-sec:hover { border-color: #22c55e; }
-.kac-sec.aktif { border-color: #22c55e; background: #22c55e; color: #052e16; font-weight: 600; }
-.kac-btn-basla {
-    flex: 1; padding: 6px; font-size: 12px; font-weight: 700;
-    border: 1px solid #22c55e; background: #16311f; color: #22c55e; border-radius: 5px;
-}
-.kac-btn-basla:hover { background: #22c55e; color: #052e16; }
-.kac-btn-basla:disabled { opacity: .4; cursor: not-allowed; }
-.kac-btn-dur {
-    padding: 6px 10px; font-size: 12px; border: 1px solid #7f1d1d;
-    background: #1a0e0e; color: #f87171; border-radius: 5px;
-}
-.kac-btn-dur:disabled { opacity: .35; cursor: not-allowed; }
+/* ══════════════════════════════════════════════════════════════════
+   AVCI GCS — Taktik Saha Ekranı
+   Tasarım kullanıcı maketinden; canlı veri gcs_server API'sinden gelir.
+   Klasik arayüz (index.html/style.css/script.js) olduğu gibi durur.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#070A0E; --panel:#10161E; --panel2:#0C1219; --card:#131B24;
+  --line:#1D2833; --line2:#2A3846;
+  --text:#C6D2DE; --muted:#66788A; --dim:#3E4C59;
+  --green:#34D8A8; --red:#FF4D4D; --amber:#F4B740; --blue:#3D7DFF; --orange:#FF8A3C;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0}
+.app{
+  /* Sayfa artık KAYMAZ: altta duran "Görev Kaydı" paneli kaldırıldığı için
+     aşağıda gösterilecek bir şey kalmadı; eskisi gibi min-height olsaydı
+     boşluğa doğru ~55 px kayıyordu. Yükseklik ekrana sabit, .main kalanı alır,
+     yan sütunlar kendi içinde kayar. */
+  height:100vh;
+  background:
+    radial-gradient(1100px 520px at 82% -8%, #10202b 0%, transparent 58%),
+    radial-gradient(800px 480px at -4% 108%, #14100b 0%, transparent 52%),
+    var(--bg);
+  color:var(--text); font-family:var(--sans); font-size:13.5px;
+  display:flex; flex-direction:column; gap:8px; padding:8px;
+}
+.label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.u{font-size:.62em;color:var(--muted);font-weight:500;margin-left:2px}
+
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:9px}
+.ptitle{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.ptitle::before{content:"";width:3px;height:12px;background:var(--green);border-radius:2px}
+.phead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--line)}
+
+/* header */
+.topbar{display:flex;align-items:center;gap:14px;padding:11px 16px;flex-wrap:wrap}
+.logo{width:34px;height:34px;border-radius:7px;background:linear-gradient(135deg,var(--blue),#1c4fb0);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;flex:none}
+.htxt h1{margin:0;font-size:14px;letter-spacing:.16em;font-weight:700}
+.htxt .sub{font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-top:3px}
+.spacer{flex:1}
+.hstat{display:flex;gap:5px;align-items:baseline}
+.hstat .k{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+.hstat .v{font-family:var(--mono);font-size:12px;font-weight:600}
+.online{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--red)}
+.online .d{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 9px var(--red)}
+.online.on{color:var(--green)}
+.online.on .d{background:var(--green);box-shadow:0 0 9px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.4}}
+.hlink{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--muted);
+  text-decoration:none;border:1px solid var(--line2);border-radius:6px;padding:6px 9px;transition:.15s}
+.hlink:hover{color:var(--text);border-color:var(--blue)}
+
+
+/* main */
+.main{display:grid;grid-template-columns:284px minmax(0,1fr) 288px;gap:8px;align-items:stretch;flex:1;min-height:0}
+.col{display:flex;flex-direction:column;min-width:0;gap:8px}
+/* YALNIZ yan sütunlar kendi içinde kayar (2026-08-05).
+   - Sayfa normal kayar: ortadan aşağı inip Görev Kaydı'na ulaşılır.
+   - FPV sütununa dokunulmaz, boyutu değişmez.
+   - max-height ekran boyuna bağlı: sütun içeriği ekrandan uzunsa İÇİNDE kayar,
+     kısaysa eskisi gibi esner (align-items:stretch korunuyor).
+   - overscroll-behavior:contain → panelin sonuna gelince kaydırma sayfaya
+     zincirlenmez; tekerlek panelde kalır. */
+/* max-height artık .main'in verdiği yüksekliğe göre (%100) — sabit
+   calc(100vh - 24px) üst çubuğun payını saymadığı için taşıyordu. */
+#leftCol,#rightCol{min-height:0;max-height:100%;
+                   overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#leftCol::-webkit-scrollbar,#rightCol::-webkit-scrollbar{width:8px}
+#leftCol::-webkit-scrollbar-thumb,#rightCol::-webkit-scrollbar-thumb{
+  background:var(--line2);border-radius:4px}
+
+/* left control */
+.mc{padding:14px;display:flex;flex-direction:column;gap:15px;flex:1}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:4px}
+.seg button{border:0;background:transparent;color:var(--muted);font-family:var(--sans);font-size:11.5px;font-weight:700;letter-spacing:.06em;padding:9px 6px;border-radius:5px;cursor:pointer;transition:.15s}
+.seg button[aria-pressed="true"]{background:linear-gradient(180deg,var(--blue),#2a5fc4);color:#fff;box-shadow:0 2px 8px rgba(61,125,255,.3)}
+.view{display:flex;flex-direction:column;gap:14px;flex:1}
+.view[hidden]{display:none}
+
+/* scenario buttons */
+.scn{display:flex;flex-direction:column;gap:8px}
+.scn button{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-left:3px solid var(--blue);background:var(--panel2);color:var(--text);
+  font-family:var(--sans);font-size:12.5px;font-weight:600;padding:12px 13px;border-radius:7px;cursor:pointer;text-align:left;transition:.15s}
+.scn button:hover{background:var(--card)}
+.scn button svg{width:16px;height:16px;flex:none;stroke:var(--blue)}
+.scn button[aria-pressed="true"]{background:#0f1b2c;border-color:var(--blue)}
+.scn .aggr{border-left-color:var(--orange)} .scn .aggr svg{stroke:var(--orange)}
+.scn .aggr[aria-pressed="true"]{background:#231208;border-color:var(--orange)}
+.scn .manuel{border-left-color:var(--red)} .scn .manuel svg{stroke:var(--red)}
+.scn .manuel.open{background:#1c0d0d;border-color:#5a1f1f;color:var(--red);font-weight:700}
+.scn button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.scn button[disabled]{opacity:.55;cursor:progress}
+
+/* ── SOL PANEL (Görev ve Kontrol) YAZI ÖLÇEĞİ ──────────────────────────
+   Sütun dar (284 px) ama yazılar ana gövde ölçeğindeydi: Faz 16 px, Görevi
+   Başlat ve kilit değerleri 14 px, satır değerleri 13 px... Sütuna göre
+   büyük duruyordu. Hepsi hiyerarşi korunarak ~%12 indirildi; en küçük
+   metin 9.5 px'in altına DÜŞÜRÜLMEDİ (altında okunurluk bozuluyor).
+   Kapsam #ctrlPanel: sağdaki telemetri sütunu aynı sınıfların bir kısmını
+   kullanıyor, oraya sızmasın. */
+#ctrlPanel .ptitle{font-size:9.5px}
+#ctrlPanel .seg button{font-size:10.5px}
+#ctrlPanel .label{font-size:9.5px}
+#ctrlPanel .scn button{font-size:11.5px}
+#ctrlPanel .scn button svg{width:15px;height:15px}
+#ctrlPanel .startbtn{font-size:12px;letter-spacing:.12em}
+#ctrlPanel .hint{font-size:9.5px}
+#ctrlPanel .trow .tk{font-size:10.5px}
+#ctrlPanel .trow .tv{font-size:11.5px}
+/* Bu satır dosyada DAHA SONRA gelen #viewAvci .kp-faz{16px} kuralını
+   yenmek zorunda — aynı özgüllükte olsaydı sonraki kazanırdı. */
+#ctrlPanel #viewAvci .kp-faz{font-size:13px}
+#ctrlPanel .kp-title{font-size:10px}
+#ctrlPanel .kp-k{font-size:10.5px}
+#ctrlPanel .kp-v{font-size:12px}
+#ctrlPanel .kp-note{font-size:9.5px}
+#ctrlPanel .sec .slabel{font-size:10px}
+#ctrlPanel .slrow .sk{font-size:10px}
+#ctrlPanel .slrow .sv{font-size:12px}
+#ctrlPanel .scale{font-size:9.5px}
+#ctrlPanel .readout{font-size:11px}
+#ctrlPanel .sig{font-size:10px}
+
+/* manual panel */
+.manwrap{display:flex;flex-direction:column;gap:14px;border:1px dashed #33414f;border-radius:8px;padding:14px 12px;background:rgba(9,14,20,.5)}
+.manwrap[hidden]{display:none}
+.stick{width:168px;height:168px;border-radius:50%;margin:0 auto;position:relative;
+  background:radial-gradient(circle at 50% 42%, #18212c 0%, #0b1015 72%);border:1px solid var(--line2);
+  box-shadow:inset 0 0 30px rgba(0,0,0,.6);touch-action:none;cursor:grab}
+.stick:active{cursor:grabbing}
+.stick .ring{position:absolute;inset:26px;border-radius:50%;border:1px dashed #24313d}
+.stick .ax{position:absolute;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.05em}
+.stick .ax.n{top:8px;left:50%;transform:translateX(-50%)}
+.stick .ax.s{bottom:8px;left:50%;transform:translateX(-50%)}
+.stick .ax.w{left:9px;top:50%;transform:translateY(-50%)}
+.stick .ax.e{right:9px;top:50%;transform:translateY(-50%)}
+.knob{width:52px;height:52px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 40% 34%, #6ea6ff, var(--blue) 70%);box-shadow:0 5px 14px rgba(61,125,255,.45),inset 0 -3px 6px rgba(0,0,0,.3);
+  border:1px solid #7fb0ff;pointer-events:none}
+.stick:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.readout{display:flex;justify-content:center;gap:13px;font-family:var(--mono);font-size:12px;color:var(--muted);flex-wrap:wrap}
+.readout b{color:var(--text);font-weight:600}
+.sec .slabel{font-size:11px;letter-spacing:.1em;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:10px;text-transform:uppercase}
+.slrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.slrow .sk{font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.slrow .sv{font-family:var(--mono);font-size:14px;font-weight:700}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:linear-gradient(90deg,#3a5f2a,var(--amber),var(--red));outline:none}
+#gpsSl,#vidSl{background:linear-gradient(90deg,var(--green),var(--amber),var(--red))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--panel);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--panel);cursor:pointer}
+.scale{display:flex;justify-content:space-between;font-size:8.5px;letter-spacing:.05em;color:var(--dim);text-transform:uppercase;margin-top:7px}
+.sig{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);margin-top:9px}
+.sig .d{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);flex:none}
+.envbox{display:flex;flex-direction:column;gap:14px;border:1px solid var(--line);border-radius:8px;padding:13px 12px;background:var(--panel2)}
+
+/* avcı view */
+.grp{display:flex;flex-direction:column;gap:8px}
+.startbtn{width:100%;border:1px solid #1f5a49;background:linear-gradient(180deg,#123027,#0e241d);color:var(--green);
+  font-family:var(--sans);font-size:14px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  padding:16px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:.15s}
+.startbtn:hover{background:linear-gradient(180deg,#163c30,#102b22);border-color:var(--green)}
+.startbtn:active{transform:translateY(1px)}
+.startbtn svg{width:16px;height:16px}
+.startbtn.on{background:linear-gradient(180deg,#3a1010,#240a0a);color:var(--red);border-color:#5a1f1f}
+.startbtn.on .play{display:none}
+.startbtn[disabled]{opacity:.6;cursor:progress}
+.hint{font-size:10.5px;color:var(--dim);line-height:1.5}
+.avcinfo{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:4px 12px;margin-top:auto}
+.avcinfo .trow{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}
+.avcinfo .trow:last-child{border-bottom:0}
+.avcinfo .tk{color:var(--muted)} .avcinfo .tv{font-family:var(--mono);font-weight:600}
+
+/* center FPV */
+/* 900 px tavan — sütunun 996 px'ine göre bir tık küçük. Daha küçük görmek
+   için üst çubuktaki AV dairesiyle pencereye alınır (~740 px).
+   .pencere'de tavan KALKMALI: orada genişliği inline geometri belirler,
+   yoksa pencere 900 px'in üstüne büyütülemezdi. */
+.fpvpanel{flex:1;width:100%;max-width:900px;align-self:center}
+.fpvpanel.pencere{max-width:none;align-self:auto}
+/* FPV alanı yatay ikiye bölünür: SOL kilit paneli + SAĞ 4:3 video sahnesi.
+   Sahne 4:3 (aspect-ratio) ve object-fit:contain → gerilme YOK; sahnenin
+   solunda kalan (pillarbox) alanı kilit paneli doldurur. */
+.fpvwrap{position:relative;display:flex;flex-direction:row;width:100%;aspect-ratio:4/3;min-height:340px;max-height:100%;margin:auto 0;background:#05080b;border-radius:8px;overflow:hidden}
+.fpvstage{position:relative;flex:0 1 auto;height:100%;aspect-ratio:4/3;margin:0 auto;background:#000;overflow:hidden}
+.fpvwrap #fpvImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.fpvwrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+/* Kilit kutuları katmanı — img ile aynı 4:3 kutuya oturur, birlikte ölçeklenir */
+#avOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* SOL dikey kilitlenme paneli */
+.kilitpanel{display:flex;flex-direction:column;gap:9px;padding:12px 13px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.kp-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.18em;color:#9fb0bf}
+.kp-faz{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:.06em;color:var(--text);padding:2px 0 4px}
+.kp-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.kp-k{font-size:11.5px;color:var(--muted)}
+.kp-v{font-family:var(--mono);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.kp-v.ok{color:var(--green)} .kp-v.no{color:var(--muted)} .kp-v.hot{color:var(--red)}
+.kp-cum{display:flex;flex-direction:column;gap:6px;padding:4px 0}
+.kp-bar{height:7px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
+.kp-fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber),var(--green));transition:width .25s}
+.kp-note{margin-top:2px;font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
+/* Avcı Drone bölümü — faz durumu (Takip Modu — Otonom başlığı altında) */
+.avci-faz{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 10px;
+  padding-bottom:8px;border-bottom:1px solid var(--line)}
+#viewAvci .kp-faz{font-size:16px;letter-spacing:.05em}
+.nofeed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--dim);pointer-events:none}
+.nofeed[hidden]{display:none}
+.xhair{position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%);pointer-events:none}
+.xhair::before,.xhair::after{content:"";position:absolute;background:rgba(255,255,255,.85);box-shadow:0 0 3px rgba(0,0,0,.9)}
+.xhair::before{left:0;right:0;top:50%;height:1.4px;
+  -webkit-mask:linear-gradient(90deg,#000 0 33%,transparent 33% 67%,#000 67% 100%);
+  mask:linear-gradient(90deg,#000 0 33%,transparent 33% 67%,#000 67% 100%)}
+.xhair::after{top:0;bottom:0;left:50%;width:1.4px;
+  -webkit-mask:linear-gradient(180deg,#000 0 33%,transparent 33% 67%,#000 67% 100%);
+  mask:linear-gradient(180deg,#000 0 33%,transparent 33% 67%,#000 67% 100%)}
+.ov{position:absolute;font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:#dfe9f2;text-shadow:0 1px 3px rgba(0,0,0,.9);line-height:1.55;pointer-events:none}
+.ov.tl{top:14px;left:16px} .ov.tr{top:14px;right:16px;text-align:right}
+.ov.bl{bottom:14px;left:16px} .ov.br{bottom:14px;right:16px;text-align:right}
+.ov b{color:#fff;font-weight:600} .ov .g{color:var(--green)}
+.lockbadge{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.2em;
+  color:var(--red);border:1.5px solid var(--red);border-radius:5px;padding:5px 14px;background:rgba(20,4,4,.55);pointer-events:none}
+.lockbadge.searching{color:var(--amber);border-color:var(--amber);background:rgba(24,16,2,.5)}
+.lockbadge.idle{color:var(--muted);border-color:var(--line2);background:rgba(8,12,17,.55)}
+.lockbadge.hit{color:#fff;border-color:var(--red);background:rgba(140,10,10,.8)}
+.manbadge{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
+  color:var(--blue);border:1px solid #2a5fc4;border-radius:5px;padding:4px 12px;background:rgba(6,14,30,.6);pointer-events:none}
+.manbadge[hidden]{display:none}
+/* güdüm tipi rozeti (GPS mi görsel mi?) */
+.guidebadge{position:absolute;top:50px;left:50%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.1em;padding:6px 14px;border-radius:22px;
+  border:1.5px solid var(--line2);background:rgba(6,10,16,.66);transition:color .25s,border-color .25s,box-shadow .25s;white-space:nowrap;pointer-events:none}
+.guidebadge svg{width:15px;height:15px;flex:none}
+.guidebadge .sub{font-weight:500;letter-spacing:.05em;opacity:.72;font-size:9.5px;margin-left:1px}
+.guidebadge.gps{color:var(--amber);border-color:var(--amber);box-shadow:0 0 13px rgba(244,183,64,.22)}
+.guidebadge.gps svg{stroke:var(--amber)}
+.guidebadge.vision{color:var(--green);border-color:var(--green);box-shadow:0 0 15px rgba(52,216,168,.3)}
+.guidebadge.vision svg{stroke:var(--green)}
+.guidebadge.hit{color:var(--red);border-color:var(--red);box-shadow:0 0 16px rgba(255,77,77,.35)}
+.guidebadge.hit svg{stroke:var(--red)}
+.guidebadge.idle{color:var(--muted);border-color:var(--line2)}
+.guidebadge.idle svg{stroke:var(--muted)}
+
+/* position tracker (3D scene) */
+#posPanel{flex:1;min-height:0}
+/* Konum paneli: sütunda gizli durur, yalnız KNM dairesiyle pencere olarak
+   açılır. display burada tanımlı ki [hidden] gerçekten gizleyebilsin. */
+.posPanel{display:flex;flex-direction:column}
+.posPanel[hidden]{display:none}
+.scenewrap{position:relative;flex:1;min-height:230px;background:radial-gradient(700px 360px at 50% 100%,#0e1a24 0%,#080c11 70%);border-radius:0 0 9px 9px;overflow:hidden}
+.scenewrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+.scenewrap canvas:active{cursor:grabbing}
+/* max-width: dar pencerede (560 px) sol alttaki efsane ile üst üste biniyordu;
+   sarmasına izin verilir, efsanenin üstünden geçmez. */
+.draghint{position:absolute;bottom:10px;right:12px;max-width:46%;text-align:right;line-height:1.6;
+  font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.1em;pointer-events:none}
+.viewbtns{position:absolute;top:10px;right:12px;display:flex;gap:3px;background:rgba(8,12,17,.72);border:1px solid var(--line);border-radius:6px;padding:3px}
+.viewbtns button{border:0;background:transparent;color:var(--muted);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;padding:4px 7px;border-radius:4px;cursor:pointer;transition:.12s}
+.viewbtns button:hover{color:var(--text)}
+.viewbtns button.on{background:var(--blue);color:#fff}
+.iconbtn{border:1px solid var(--line2);background:var(--panel2);color:var(--muted);min-width:24px;height:22px;padding:0 7px;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:.15s;font-family:var(--sans)}
+.iconbtn:hover{color:var(--text);background:var(--card)}
+.iconbtn:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+/* control panel collapse */
+@media (min-width:1081px){.ctrl-collapsed .main{grid-template-columns:44px minmax(0,1fr) 288px}}
+.ctrl-collapsed #ctrlPanel .ptitle{display:none}
+.ctrl-collapsed #ctrlPanel .phead{justify-content:center;padding:11px 6px}
+#ctrlBody[hidden]{display:none}
+.legend{position:absolute;bottom:10px;left:12px;display:flex;gap:10px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.03em;white-space:nowrap;pointer-events:none;background:rgba(8,12,17,.55);border-radius:5px;padding:3px 6px}
+.legend .lg{display:inline-flex;align-items:center;gap:5px} .legend .sw{width:9px;height:9px;border-radius:2px}
+.menzil{position:absolute;top:11px;left:12px;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.05em;background:rgba(8,12,17,.7);border:1px solid var(--line);border-radius:5px;padding:4px 8px;pointer-events:none}
+
+/* right telemetry */
+.tel{padding:13px;display:flex;flex-direction:column;gap:12px;flex:1}
+.tgrp{display:flex;flex-direction:column}
+.mgh{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#9fb0bf;font-weight:700;padding:8px 2px 4px}
+.trow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.trow:last-child{border-bottom:0}
+.trow .tk{font-size:11.5px;color:var(--muted)}
+.trow .tv{font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.trow.red .tv{color:var(--red)} .trow.green .tv{color:var(--green)}
+.tv.green{color:var(--green)} .tv.red{color:var(--red)} .tv.amber{color:var(--amber)} .tv.muted{color:var(--muted)}
+
+/* log */
+
+/* ── ANA EKRANI BÜYÜT ────────────────────────────────────────────────────
+   FPV paneli tüm görünüm alanını kaplar. z-index 55: kamera pencerelerinin
+   (60+) ALTINDA kalır — büyütülmüş ana ekranın üstünde pencereler görünmeye
+   devam etsin diye. Daireler sahnenin içinde olduğundan panelle birlikte
+   büyür, erişilebilir kalır. */
+/* ── PANEL PENCERE MODU (takip ekranı + konum izleme) ──────────────────
+   Kamera pencereleriyle AYNI kalıp: position:fixed + inline geometri (left/
+   top/width/height JS'ten), taşıma başlıktan, boyutlandırma .cw-rs
+   tutamaklarından — ikisi de camDrag ile. Tutamak sınıfları kamera
+   penceresinden yeniden kullanılıyor, kopya CSS yazılmadı. */
+.panel .cw-rs{display:none}                    /* sütundayken tutamak yok */
+.panel.pencere .cw-rs{display:block}
+.pencere{position:fixed;z-index:60;margin:0;border-radius:9px;
+  box-shadow:0 18px 46px rgba(0,0,0,.62)}
+.pencere.front{border-color:var(--blue)}
+/* Başlık pencere modunda tutamaktır: sürüklerken başlık metni seçilmesin
+   (seçim mavi vurgu bırakıp sürüklemeyi kirletiyordu). */
+.pencere .phead{cursor:grab;user-select:none}
+.pencere.dragging .phead{cursor:grabbing}
+/* Sürükleme/boyutlandırma sırasında gövde olayları yemesin (kamera
+   penceresindeki .camwin.busy ile aynı gerekçe: img/canvas üzerine kaçmasın) */
+.pencere.busy .fpvwrap,.pencere.busy .scenewrap{pointer-events:none}
+.panel.pencere:hover .cw-grip{background:linear-gradient(135deg,transparent 48%,var(--blue) 48%,var(--blue) 60%,
+  transparent 60%,transparent 72%,var(--blue) 72%,var(--blue) 84%,transparent 84%)}
+/* Pencerede 16/9 oranı ve 480 px tabanı kilit olmamalı — gövde panel
+   yüksekliğini doldurur. */
+.fpvpanel.pencere .fpvwrap{aspect-ratio:auto;min-height:0;flex:1;height:auto;border-radius:0 0 9px 9px}
+/* Pencerede kilit paneli yok (orta sütuna taşınıyor) → sahne gövdenin TAMAMINI
+   doldurur. 4:3 kutusu bırakılıyor: video object-fit:contain, overlay
+   preserveAspectRatio="meet" olduğu için sahne 4:3 olmasa da görüntü ve kilit
+   kutuları AYNI şekilde letterbox olur — hizalama bozulmaz. */
+.fpvpanel.pencere .fpvstage{flex:1 1 auto;max-width:100%;margin:0}
+/* Konum sahnesinin 230 px tabanı pencerede küçülmeyi erken durdururdu;
+   sınırı CW_MIN_H belirlesin. */
+.posPanel.pencere .scenewrap{min-height:0}
+.fpvdock{flex:1;display:flex;flex-direction:column;min-height:0}
+.fpvdock[hidden]{display:none}
+.fpvdock .phead{gap:10px}
+.fpvdock .iconbtn{width:auto;height:auto;padding:5px 10px;font-size:10.5px;font-weight:700;letter-spacing:.06em}
+
+/* Büyükken 16/9 oranı kilit olmamalı — panel yüksekliği ne ise sahne onu
+   doldurur. */
+
+/* ── KAMERA SEÇİCİ (daireler) ────────────────────────────────────────────
+   FPV sahnesinin SAĞ üst köşesinde, ALT/SPD overlay'inin ALTINDA durur
+   (top:62px — .ov.tr iki satır + nefes payı). Ana ekrandaki görüşün dairesi
+   o akışı aç/kapat yapar; diğerleri pencere açar. */
+/* ÜST ÇUBUKTA duruyor (eskiden .fpvstage içinde position:absolute idi ve takip
+   ekranı pencereye alınınca pencereyle birlikte hareket ediyordu). */
+.camsel{display:flex;align-items:center;gap:9px}
+.camsel .k{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600}
+.camdock{display:flex;gap:8px}
+.camdot{width:34px;height:34px;border-radius:50%;flex:none;cursor:pointer;
+  border:1px solid var(--line2);background:rgba(8,12,18,.72);backdrop-filter:blur(3px);
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.02em;
+  display:flex;align-items:center;justify-content:center;transition:.15s;padding:0}
+.camdot:hover{color:var(--text);border-color:var(--blue);transform:translateY(-1px)}
+.camdot:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+/* Penceresi AÇIK olan daire dolu görünür — hangi görüşlerin açıldığı
+   pencereler ekranın başka yerine taşınmış olsa da buradan okunur. */
+.camdot[aria-pressed="true"]{background:linear-gradient(180deg,var(--blue),#2a5fc4);
+  color:#fff;border-color:var(--blue);box-shadow:0 2px 10px rgba(61,125,255,.4)}
+/* Canlı kare akan görüşte ince yeşil halka (akış sağlığı göstergesi). */
+.camdot.live{border-color:var(--green);color:var(--green)}
+.camdot.live[aria-pressed="true"]{border-color:var(--green);box-shadow:0 0 0 2px rgba(52,216,168,.35)}
+/* ANA ekrandaki görüşün dairesi: pencere değil, ana sahneyi aç/kapatır —
+   dıştaki ince halka bunu pencere dairelerinden ayırır. Kapalıyken (basılı
+   değil) kesikli halka kalır ki "ana ekran burada ama söndürülmüş" okunsun. */
+.camdot.ana{outline:1px solid var(--line2);outline-offset:3px}
+.camdot.ana[aria-pressed="true"]{outline-color:var(--blue)}
+.camdot.ana[aria-pressed="false"]{outline-style:dashed;outline-color:var(--muted)}
+
+/* ── KAMERA PENCERELERİ ──────────────────────────────────────────────────
+   position:fixed → ekranın herhangi bir yerine taşınabilir. Başlıktan
+   sürüklenir, sağ alt tutamaçtan boyutlandırılır (min 220x180). */
+.camwin{position:fixed;z-index:60;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line2);border-radius:9px;overflow:hidden;
+  box-shadow:0 18px 44px rgba(0,0,0,.62)}
+.camwin.front{border-color:var(--blue)}
+.cw-head{display:flex;align-items:center;gap:8px;padding:8px 10px;flex:none;
+  border-bottom:1px solid var(--line);cursor:grab;user-select:none;touch-action:none}
+.camwin.dragging .cw-head{cursor:grabbing}
+.cw-title{flex:1;min-width:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cw-title::before{content:"";display:inline-block;vertical-align:-1px;margin-right:8px;
+  width:3px;height:11px;background:var(--blue);border-radius:2px}
+.cw-x,.cw-max{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--muted);cursor:pointer;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;transition:.15s}
+.cw-max{font-size:11px}
+.cw-max:hover{color:#fff;background:var(--blue);border-color:var(--blue)}
+.cw-x:hover{color:#fff;background:var(--red);border-color:var(--red)}
+.cw-body{position:relative;flex:1;min-height:0;background:#000}
+.cw-body img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+/* Sürükleme/boyutlandırma sırasında imleç pencere içine girince <img> olayı
+   yakalamasın — aksi halde hızlı harekette sürükleme "düşer".
+   ⚠ Bu satırın ÜSTÜNDE blok dışında kalmış bir `font-variant-numeric:
+   tabular-nums` bildirimi vardı; ayrıştırıcı onu aşağıdaki kuralın
+   SEÇİCİSİNE katıyor, seçici geçersiz oluyor ve kural SESSİZCE DÜŞÜYORDU.
+   Yaslama geri alınırken bu tek satırlık düzeltme KORUNDU — geri konsa
+   aşağıdaki kural yeniden ölü kalırdı. */
+.camwin.busy .cw-body{pointer-events:none}
+.cw-nofeed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--dim);
+  text-align:center;padding:0 12px;line-height:1.6}
+.cw-nofeed[hidden]{display:none}
+/* Boyutlandırma tutamaçları: dört kenar + dört köşe. Kenarlar görünmez ince
+   şeritlerdir; görünür işaret yalnız sağ alt köşededir — pencerenin
+   boyutlandırılabildiğini oradan anlaşılsın diye belirgin tutuldu. */
+.cw-rs{position:absolute;z-index:3;touch-action:none}
+.cw-rs.n{top:0;left:10px;right:10px;height:6px;cursor:ns-resize}
+.cw-rs.s{bottom:0;left:10px;right:10px;height:6px;cursor:ns-resize}
+.cw-rs.w{left:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}
+.cw-rs.e{right:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}
+.cw-rs.nw{left:0;top:0;width:12px;height:12px;cursor:nwse-resize}
+.cw-rs.ne{right:0;top:0;width:12px;height:12px;cursor:nesw-resize}
+.cw-rs.sw{left:0;bottom:0;width:12px;height:12px;cursor:nesw-resize}
+.cw-grip{right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;
+  background:linear-gradient(135deg,transparent 48%,var(--line2) 48%,var(--line2) 60%,
+    transparent 60%,transparent 72%,var(--line2) 72%,var(--line2) 84%,transparent 84%)}
+.camwin:hover .cw-grip{background:linear-gradient(135deg,transparent 48%,var(--blue) 48%,var(--blue) 60%,
+    transparent 60%,transparent 72%,var(--blue) 72%,var(--blue) 84%,transparent 84%)}
+/* Tam ekran büyütülmüş pencerede köşe işareti anlamsız — gizlenir. */
+.camwin.max .cw-grip{display:none}
+
+@media (prefers-reduced-motion:reduce){.online .d{animation:none!important}}
+@media (max-width:1080px){.main{grid-template-columns:1fr}.fpvwrap{aspect-ratio:16/10;min-height:300px}}
+
+/* ══ Daire çapı varyantları (#cap) ══════════════════════════════════════
+   Aynı senaryo API'sini kullanır; .scn butonlarıyla aynı dil, iki sütun. */
+.capgrp{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.capgrp button{border:1px solid var(--line);border-left:3px solid var(--blue);
+  background:var(--panel2);color:var(--text);font:inherit;font-size:11.5px;
+  padding:7px 8px;border-radius:7px;cursor:pointer;text-align:center}
+.capgrp button:hover{background:var(--card)}
+.capgrp button[aria-pressed="true"]{background:#0f1b2c;border-color:var(--blue)}
+.capgrp button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.capgrp button[disabled]{opacity:.55;cursor:progress}
+
+/* ══ Uçuş kaydı butonu ══════════════════════════════════════════════════
+   .scn dilini kullanır; kayıttayken kırmızı (evrensel "REC" işareti). */
+.scn .kayit{border-left-color:var(--red)}
+.scn .kayit svg{stroke:none;fill:var(--red)}
+.scn .kayit[aria-pressed="true"]{background:#1c0d0d;border-color:#5a1f1f;color:var(--red);font-weight:700}
+
+/* ══ Güdüm modu (GPS / GÖRSEL / HİBRİT) ═════════════════════════════════ */
+.mod-grup{display:inline-flex;gap:6px}
+.mod-btn{background:transparent;border:1px solid var(--line2);color:var(--muted);
+  font:inherit;font-size:11px;font-weight:700;letter-spacing:.5px;
+  padding:4px 12px;border-radius:5px;cursor:pointer;transition:all .15s}
+.mod-btn:hover{border-color:var(--green);color:var(--text)}
+.mod-btn.aktif{background:rgba(52,216,168,.15);border-color:var(--green);
+  color:var(--green);text-shadow:0 0 6px rgba(52,216,168,.5)}
+
+/* ══ Boş liste satırı ═══════════════════════════════════════════════════
+   Güdüm özellikleri paneli 2026-08-20'de çıkarıldı (sunucu ucu bu dalda yok);
+   .ozellik-bos kaldı, ayar konsolunun "yükleniyor / eşleşen ayar yok"
+   satırını o çiziyor. */
+.ozellik-bos{opacity:.6;font-size:11px;padding:4px 2px;color:var(--muted)}
+
+/* ══ KAÇAMAK TESTİ PANELİ ═══════════════════════════════════════════════
+   Bu blok eski arayüzden (08-11 sürümü) taşındı; yeni arayüzün .mod-btn
+   düğme diline uyarlandı, kendi düğme sınıflarını getirmiyor. */
+.kac-satir { margin-top: 6px; }
 .kacamak-durum {
-    font-size: 11px; padding: 5px 7px; border-radius: 4px;
-    background: rgba(255,255,255,.03); border: 1px solid #1f2937;
-    color: #cdd; white-space: pre-line; line-height: 1.45;
+  font-size: 11px; padding: 5px 7px; border-radius: 4px; margin-top: 6px;
+  background: rgba(255,255,255,.03); border: 1px solid #1f2937;
+  color: #cdd; white-space: pre-line; line-height: 1.45;
 }
 .kacamak-durum.kosuyor { border-color: #eab308; color: #eab308; }
-.kacamak-sonuc { font-size: 11px; line-height: 1.5; }
+.kacamak-sonuc { font-size: 11px; line-height: 1.5; margin-top: 4px; }
 .kacamak-sonuc .kac-basari { color: #22c55e; font-weight: 700; }
-.kacamak-sonuc .kac-iska { color: #f87171; font-weight: 700; }
-.kacamak-sonuc .kac-sans { color: #eab308; font-weight: 700; }
+.kacamak-sonuc .kac-iska   { color: #f87171; font-weight: 700; }
+.kacamak-sonuc .kac-sans   { color: #eab308; font-weight: 700; }
 .kac-olcut { font-size: 10px; opacity: .75; margin-left: 8px; }
-.kacamak-gecmis { font-size: 10px; opacity: .65; line-height: 1.5; }
+.kacamak-gecmis { font-size: 10px; opacity: .65; line-height: 1.5; margin-top: 4px; }
+#kac-basla:disabled, #kac-dur:disabled { opacity: .35; cursor: not-allowed; }
 
-/* ══ AYAR KONSOLU (2026-08-18) ═══════════════════════════════════════════
-   Kullanıcı isteği: sistemdeki tüm katsayılar kayan çubuklarla, her birinin
-   ne işe yaradığı / neyi artırıp azalttığı yazılı olarak. Deney panelinden
-   (🎛 GÜDÜM ÖZELLİKLERİ) ayrı yüzey. */
+/* ══ AYAR KONSOLU ════════════════════════════════════════════════════════
+   Klasik arayüzden taşındı (2026-08-20). Renkler taktik ekranın kendi
+   değişkenlerine bağlandı (--panel/--line/--amber…) — eski dosyanın
+   --accent-blue / --warning-yellow gibi adları burada TANIMLI DEĞİL, olduğu
+   gibi kopyalansaydı bütün kutu renksiz kalırdı. */
+.ayar-ac-btn{color:var(--amber);border-color:var(--line2);cursor:pointer;
+  background:linear-gradient(180deg,#1b2430,#121922);font-family:var(--sans)}
+.ayar-ac-btn:hover{border-color:var(--amber);color:#ffd98a}
 
-.ayar-ac-btn {
-    background: linear-gradient(180deg, #1e293b, #0f172a);
-    color: var(--warning-yellow);
-    border: 1px solid #3f4a5c;
-    border-radius: 5px;
-    padding: 4px 10px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .4px;
-    cursor: pointer;
-    margin-left: 10px;
-}
-.ayar-ac-btn:hover { border-color: var(--warning-yellow); color: #fde68a; }
+.ayar-katman{position:fixed;inset:0;z-index:4000;background:rgba(3,5,8,.86);
+  backdrop-filter:blur(3px);display:flex;align-items:stretch;justify-content:center;padding:22px}
+.ayar-katman.gizli{display:none}
+.ayar-kutu{width:min(1180px,100%);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line2);border-radius:9px;overflow:hidden}
 
-.ayar-katman {
-    position: fixed;
-    inset: 0;
-    z-index: 4000;
-    background: rgba(3, 5, 8, 0.86);
-    backdrop-filter: blur(3px);
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
-    padding: 22px;
-}
-.ayar-katman.gizli { display: none; }
+.ayar-baslik{display:flex;align-items:center;gap:10px;padding:10px 14px;
+  border-bottom:1px solid var(--line);background:var(--panel2);flex-wrap:wrap}
+.ayar-baslik-ad{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--amber);letter-spacing:.5px}
+.ayar-baslik-not{font-size:10.5px;color:var(--muted);flex:1;min-width:200px}
+.ayar-baslik-not b{color:var(--red)}
+.ayar-ara{width:230px;padding:4px 8px;font-family:var(--mono);font-size:11px;
+  color:var(--text);background:#0B1220;border:1px solid var(--line2);border-radius:5px}
+.ayar-ara:focus{outline:none;border-color:var(--blue)}
+.ayar-btn{padding:4px 10px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;
+  color:var(--text);background:#0B1220;border:1px solid var(--line2);border-radius:5px}
+.ayar-btn:hover{border-color:var(--blue)}
+.ayar-sifirla-btn{font-size:10.5px;padding:4px 8px;color:var(--red)}
+.ayar-kopyala-btn{font-size:10.5px;padding:4px 8px;color:var(--blue)}
 
-.ayar-kutu {
-    width: min(1180px, 100%);
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-hightlight);
-    border-radius: 8px;
-    overflow: hidden;
-}
+.ayar-govde{flex:1;overflow-y:auto;padding:12px 14px 20px}
+.ayar-grup{margin-bottom:18px}
+.ayar-grup-bas{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--text);
+  padding:6px 8px;background:rgba(61,125,255,.09);border-left:3px solid var(--blue);border-radius:3px}
+.ayar-grup-not{font-size:10.5px;color:var(--muted);line-height:1.45;padding:5px 8px 8px 11px}
 
-.ayar-baslik {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-panel-light);
-    flex-wrap: wrap;
-}
-.ayar-baslik-ad {
-    font-family: var(--font-mono);
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--warning-yellow);
-    letter-spacing: .5px;
-}
-.ayar-baslik-not { font-size: 10.5px; color: var(--text-dim); flex: 1; min-width: 200px; }
-.ayar-baslik-not b { color: #fca5a5; }
-.ayar-ara {
-    width: 230px;
-    padding: 4px 8px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-main);
-    background: #0b1220;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-}
-.ayar-ara:focus { outline: none; border-color: var(--accent-blue); }
-.ayar-sifirla-btn { font-size: 10.5px; padding: 4px 8px; color: #fca5a5; }
-.ayar-kapat-btn { font-size: 11px; padding: 4px 10px; }
+.ayar-satir{display:grid;grid-template-columns:210px 1fr 118px 34px;align-items:center;
+  gap:10px;padding:7px 8px;border-bottom:1px solid var(--line)}
+.ayar-satir:hover{background:rgba(255,255,255,.022)}
+.ayar-satir.degisti{background:rgba(244,183,64,.07)}
+.ayar-etiket{min-width:0}
+.ayar-etiket-ad{font-size:12px;color:var(--text);line-height:1.2}
+.ayar-satir.degisti .ayar-etiket-ad{color:var(--amber)}
+.ayar-etiket-alan{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-top:1px}
 
-.ayar-govde { flex: 1; overflow-y: auto; padding: 12px 14px 20px; }
+.ayar-kaydir{width:100%;accent-color:var(--blue);cursor:pointer}
+.ayar-satir.degisti .ayar-kaydir{accent-color:var(--amber)}
+.ayar-sag{display:flex;align-items:center;gap:5px}
+.ayar-sayi{width:74px;padding:3px 5px;font-family:var(--mono);font-size:11.5px;text-align:right;
+  color:var(--text);background:#0B1220;border:1px solid var(--line2);border-radius:4px}
+.ayar-sayi:focus{outline:none;border-color:var(--blue)}
+.ayar-birim{font-size:10px;color:var(--muted);min-width:34px}
 
-.ayar-grup { margin-bottom: 18px; }
-.ayar-grup-bas {
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    font-weight: 700;
-    color: var(--text-main);
-    padding: 6px 8px;
-    background: rgba(59, 130, 246, 0.09);
-    border-left: 3px solid var(--accent-blue);
-    border-radius: 3px;
-}
-.ayar-grup-not {
-    font-size: 10.5px;
-    color: var(--text-dim);
-    line-height: 1.45;
-    padding: 5px 8px 8px 11px;
-}
+.ayar-bool{min-width:74px;padding:3px 8px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;
+  border-radius:4px;border:1px solid var(--line2);background:#0B1220;color:var(--muted)}
+.ayar-bool.acik{border-color:var(--green);background:var(--green);color:#052E16}
 
-.ayar-satir {
-    display: grid;
-    grid-template-columns: 210px 1fr 118px 34px;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 8px;
-    border-bottom: 1px solid #1a1f27;
-}
-.ayar-satir:hover { background: rgba(255, 255, 255, 0.022); }
-.ayar-satir.degisti { background: rgba(245, 158, 11, 0.07); }
+.ayar-bilgi-btn{width:26px;height:24px;font:inherit;font-size:12px;cursor:pointer;border-radius:4px;
+  border:1px solid var(--line2);background:#0B1220;color:var(--muted)}
+.ayar-bilgi-btn:hover{border-color:var(--blue);color:var(--blue)}
+.ayar-bilgi{grid-column:1/-1;font-size:11px;line-height:1.5;color:var(--muted);padding:8px 10px;
+  margin-top:5px;background:rgba(255,255,255,.025);border-left:2px solid var(--line2);border-radius:3px}
+.ayar-bilgi.gizli{display:none}
+.ayar-bilgi p{margin:0 0 5px}
+.ayar-bilgi .yon{display:block;margin-top:4px}
+.ayar-bilgi .yon.artar{color:#86EFAC}
+.ayar-bilgi .yon.azalir{color:#FCA5A5}
+.ayar-bilgi .vars{color:var(--dim);font-family:var(--mono);font-size:10px}
 
-.ayar-etiket { min-width: 0; }
-.ayar-etiket-ad { font-size: 12px; color: #cdd; line-height: 1.2; }
-.ayar-satir.degisti .ayar-etiket-ad { color: var(--warning-yellow); }
-.ayar-etiket-alan {
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    color: var(--text-dark);
-    margin-top: 1px;
-}
-
-.ayar-kaydir { width: 100%; accent-color: var(--accent-blue); cursor: pointer; }
-.ayar-satir.degisti .ayar-kaydir { accent-color: var(--warning-yellow); }
-
-.ayar-sag { display: flex; align-items: center; gap: 5px; }
-.ayar-sayi {
-    width: 74px;
-    padding: 3px 5px;
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    text-align: right;
-    color: var(--text-main);
-    background: #0b1220;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-}
-.ayar-sayi:focus { outline: none; border-color: var(--accent-blue); }
-.ayar-birim { font-size: 10px; color: var(--text-dim); min-width: 34px; }
-
-.ayar-bool {
-    min-width: 74px;
-    padding: 3px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 4px;
-    border: 1px solid #334155;
-    background: #0b1220;
-    color: #94a3b8;
-}
-.ayar-bool.acik { border-color: #22c55e; background: #22c55e; color: #052e16; }
-
-.ayar-bilgi-btn {
-    width: 26px; height: 24px;
-    font-size: 12px;
-    cursor: pointer;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    background: #0b1220;
-    color: var(--text-dim);
-}
-.ayar-bilgi-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
-
-.ayar-bilgi {
-    grid-column: 1 / -1;
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--text-dim);
-    padding: 8px 10px;
-    margin-top: 5px;
-    background: rgba(255, 255, 255, 0.025);
-    border-left: 2px solid var(--border-hightlight);
-    border-radius: 3px;
-}
-.ayar-bilgi.gizli { display: none; }
-.ayar-bilgi p { margin: 0 0 5px; }
-.ayar-bilgi .yon { display: block; margin-top: 4px; }
-.ayar-bilgi .yon.artar { color: #86efac; }
-.ayar-bilgi .yon.azalir { color: #fca5a5; }
-.ayar-bilgi .vars { color: var(--text-dark); font-family: var(--font-mono); font-size: 10px; }
-.ayar-suz {
-    display: flex; align-items: center; gap: 5px;
-    font-size: 10.5px; color: var(--text-dim); cursor: pointer;
-    user-select: none; white-space: nowrap;
-}
-.ayar-suz input { cursor: pointer; accent-color: var(--warning-yellow); }
-.ayar-rozet {
-    min-width: 18px; text-align: center;
-    padding: 1px 5px; border-radius: 9px;
-    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-    background: #1f2937; color: var(--text-dim);
-}
-.ayar-rozet.dolu { background: var(--warning-yellow); color: #1c1917; }
-.ayar-kopyala-btn { font-size: 10.5px; padding: 4px 8px; color: #93c5fd; }
+.ayar-suz{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);
+  cursor:pointer;user-select:none;white-space:nowrap}
+.ayar-suz input{cursor:pointer;accent-color:var(--amber)}
+.ayar-rozet{min-width:18px;text-align:center;padding:1px 5px;border-radius:9px;
+  font-family:var(--mono);font-size:10px;font-weight:700;background:#1F2937;color:var(--muted)}
+.ayar-rozet.dolu{background:var(--amber);color:#1C1917}
