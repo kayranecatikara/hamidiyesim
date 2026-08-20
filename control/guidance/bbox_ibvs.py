@@ -114,7 +114,10 @@ class Cfg:
     # dikey bütçe 3 m/s'de kalmıştı (yatay 3.3 katına çıkarken) — 10 kat
     # asimetri. Varsayılan 3 → 8 m/s. Araç tarafındaki tavanlar da birlikte
     # açıldı (avci_copter.parm: WPNAV_SPEED_UP/DN, WPNAV_ACCEL_Z).
-    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 8.0)      # m/s; dikey hız tavanı
+    # ⭐ 2026-08-20 · 8.0 → 15.0. Dikey zarf genişletildikten sonra güdümün
+    # kendi tavanı aracı boğmasın: WPNAV_SPEED_UP 20 m/s, ACCEL_Z 20 m/s²,
+    # PSC_JERK_Z 40 m/s³. 8'de bırakmak, genişletmeyi etkisiz kılardı.
+    VZ_MAX = _env_f("AVCI_IBVS_VZMAX", 15.0)     # m/s; dikey hız tavanı
 
 
     # ── HIZ: PI kontrol, kutu boyutu hatası üzerinden (menzil vekili) ──

@@ -106,14 +106,14 @@ WPNAV_ACCEL 2600
 # dikey bütçe yatayın onda birinde kalmıştı (yatay 8 → 26 m/s², dikey 6/4
 # m/s ve 2.5 m/s² aynı). Dikey hizalama kapısının (Cfg.DIKEY_KAPI_M) hızlı
 # kapatabilmesi için tavanlar birlikte açıldı.
-WPNAV_SPEED_UP 1200
-WPNAV_SPEED_DN 1000
+WPNAV_SPEED_UP 2000
+WPNAV_SPEED_DN 1500
 
 # Dikey ivme (B7 açık sorusu). Varsayılan 1.0 m/s² ile 6 m/s'den fren mesafesi
 # 18 m; hedefin dalıştan çıkışını takip etmeye yetmiyordu. 2.5 m/s² → 7.2 m.
 # 2026-08-17: itki artışıyla birlikte 8.0 m/s² — yatay 26 m/s²'nin hâlâ
 # altında ama 3.2 kat açıldı.
-WPNAV_ACCEL_Z 800
+WPNAV_ACCEL_Z 2000
 
 # Jerk (m/s³). Varsayılan 1.0 ile 8 m/s²'ye ulaşmak 8 saniye sürer — ivme
 # tavanını açmak tek başına işe yaramaz, jerk onu boğar. 4.0 → ~2 s.
@@ -171,6 +171,14 @@ ATC_ACCEL_P_MAX 250000
 # Ölçüldü: jerk BU ARACIN yanal çevikliğini bağlayan TEK kısıttı
 # (docs/kampanya/S_SALINIM.md §10) — zarf büyürken o da büyümeli.
 PSC_JERK_XY 40
+# ⭐ 2026-08-20 · DİKEY ZARF GENİŞLETMESİ (kullanıcı kuralı: "aracı
+# kısıtlayan ne varsa genişlet, gerçek FPV dronumuz çok daha güçlü")
+# PSC_JERK_Z ArduPilot varsayılanı 5.0 m/s³ idi ve HİÇ DOKUNULMAMIŞTI.
+# Yatayı 40'a çıkarmıştık — 8 KAT ASİMETRİ. Ölçüldü: dikey komut ile
+# gerçekleşme arasındaki çapraz korelasyon tepesi 0.6-1.0 s gecikmede.
+# 5 m/s³ ile 3 m/s'lik değişim 2·√(3/5)=1.55 s sürer — birebir örtüşüyor.
+# 40 ile 0.55 s'ye iner.
+PSC_JERK_Z 40
 
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
