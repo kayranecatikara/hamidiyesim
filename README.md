@@ -85,8 +85,8 @@ make -j4
 
 ### 5) Bu depo + Python paketleri
 ```bash
-git clone <bu-depo-url> ~/projects/hamidiyesim
-cd ~/projects/hamidiyesim
+git clone <bu-depo-url> ~/projects/avci_sim
+cd ~/projects/avci_sim
 pip install -r requirements.txt
 ```
 
@@ -99,21 +99,73 @@ bash scripts/setup_mission_planner.sh   # binary'yi tools/mission_planner/ altı
 ### 7) Ortam değişkenleri (her Gazebo terminaline ya da ~/.bashrc'ye)
 ```bash
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 ```
 
 ---
 
 ## Çalıştırma
 
-> Kopyala-yapıştır için hazır tam komut listesi: **[docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md)**
+Günlük kullanımda **tek komut** yeter (§ Tek komut). Bir şey ters gittiğinde
+hangi bileşenin sorunlu olduğunu görmek için 5 terminali elle açın
+(§ Elle çalıştırma).
 
-Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo).
+### Tek komut
+
+**Yeniden kur** — ayakta ne varsa kapatır, sonra kurar:
+```bash
+cd ~/projects/avci_sim && AVCI_TEMIZ=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+**Kur** — ayakta sim YOKKEN. (Varsa "sim zaten ayakta" der; o zaman
+yukarıdaki `AVCI_TEMIZ=1`'li satırı kullanın.)
+```bash
+cd ~/projects/avci_sim && bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+**Pencereli Gazebo** (varsayılan headless):
+```bash
+cd ~/projects/avci_sim && AVCI_TEMIZ=1 AVCI_GUI=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+```
+
+**Kapat** — her şeyi indirir (Gazebo + iki SITL + MAVProxy + panel):
+```bash
+cd ~/projects/avci_sim && bash scripts/kapat.sh
+```
+
+Kurulan: Gazebo + ArduCopter (avcı) + ArduPlane (hedef) + panel. **~90 sn.**
+Panel: **http://127.0.0.1:8000**
+
+Satırın `; tail -1 …` kısmı kurulumun parçası değildir — logun son satırını
+okur. `sim hazır HH:MM:SS` yazıyorsa hazırdır. **Çıkış kodu:** 0 = hazır ·
+1 = kurulamadı, son satır sebebini söyler. Kör "hazır" yok.
+
+| değişken | ne yapar |
+|---|---|
+| `AVCI_TEMIZ=1` | önce `kapat.sh`, süreçler ve 8000 portu boşalınca kurar |
+| `AVCI_GUI=1` | Gazebo penceresini açar (varsayılan `--headless-rendering`) |
+| `[etiket]` | 1. argüman; log adlarına ek (`gz_m.log`). Varsayılan `m` |
+
+> ⚠ `AVCI_TEMIZ` varsayılan olarak **kapalı**: koşan bir kampanyayı ya da
+> havadaki aracı sessizce düşürmesin diye susturma isteyerek yazılır.
+
+> ⚠ `mkur.sh`'i **boruya bağlamayın** (`| tail`, `| grep`). Arka plandaki sim
+> süreçleri yüzünden boru EOF almaz, script asılı kalır ve uçuş komutu hiç
+> gönderilmez. Çıktıyı dosyaya yazın — yukarıdaki satırlarda `>` sonrası ayrı
+> komutla `tail` alınmasının sebebi budur.
+
+> ⚠ `mkur.sh` **14551'e yönlendirme yapmaz** — Mission Planner kullanacaksanız
+> aşağıdaki elle çalıştırma yolunu izleyin.
+
+### Elle çalıştırma (5 terminal)
+
+Her komut **ayrı bir terminalde**. Sırayla başlatın (önce Gazebo). Her adımın
+hazır işaretini görmeden sonrakine geçmeyin.
 
 **Temizlik** (boş bir terminalde):
 ```bash
-cd ~/projects/hamidiyesim
-bash scripts/start_harmonic.sh stop     # öldürür + DOĞRULAR
+cd ~/projects/avci_sim
+bash scripts/kapat.sh                   # her şeyi indirir + DOĞRULAR
 bash scripts/start_harmonic.sh durum    # ne kaldı? (hiçbir şeyi öldürmez)
 ```
 
@@ -121,51 +173,67 @@ bash scripts/start_harmonic.sh durum    # ne kaldı? (hiçbir şeyi öldürmez)
 > **kaldırıldı**: `pkill -f` deseni çağıran kabuğun komut satırında da arıyor,
 > o satırda da aynı kelimeler geçtiği için pkill kendi kabuğunu öldürüyordu —
 > ardındaki komutlar hiç çalışmıyor, süreçlerin bir kısmı ayakta kalıyordu.
-> Ayrıntı: [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md).
+> Kendi scriptinizde öldürme deseni yazacaksanız deseni köşeli parantezle
+> kırın (`gz [s]im`) ya da komutu ayrı bir script dosyasına alın.
 
 **Terminal 1 — Gazebo Harmonic** (açılması ~15 sn)
 ```bash
-cd ~/projects/hamidiyesim
+cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
-gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+unset DISPLAY
+gz sim -s -r --headless-rendering -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf
 ```
+> `-s` yalnız sunucu · `-r` duraklatmadan başlat · `--headless-rendering`
+> pencere yok ama **kameralar render edilir** (görsel güdümün şartı).
+> Gazebo penceresini istiyorsanız `unset DISPLAY` satırını çıkarın ve son
+> satırı `gz sim -r -v4 sim/gazebo_harmonic/worlds/avci_harmonic.sdf` yapın.
 
 **Terminal 2 — ArduCopter (avcı iris, FDM 9002)**
 ```bash
 cd ~/ardupilot
 APT=$HOME/ardupilot/Tools/autotest
 python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
-  -I0 --sysid 5 --no-rebuild \
+  -I0 --sysid 5 --no-rebuild -w \
   --add-param-file=$APT/default_params/copter.parm \
   --add-param-file=$APT/default_params/gazebo-iris.parm \
-  --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_copter.parm \
+  --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_copter.parm \
   --out udp:127.0.0.1:14541 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 \
   --mavproxy-args="--streamrate=25"
 ```
-> İlk iki `--add-param-file` zorunlu — yoksa `FRAME_CLASS`/`FRAME_TYPE` tanımsız
-> kalır, `AP: Frame: UNSUPPORTED` çıkar ve iris kalkamaz. Ayrıntı:
-> [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) Terminal 2.
+> `-w` EEPROM'u siler, parametre dosyaları temiz uygulansın diye.
+>
+> Üç `--add-param-file` de zorunlu ve **sıra önemli**; `avci_copter.parm` en
+> sonda kalmalı. İlk ikisi olmadan `FRAME_CLASS`/`FRAME_TYPE` tanımsız kalır,
+> `AP: Frame: UNSUPPORTED` çıkar ve iris kalkamaz.
 
 **Terminal 3 — ArduPlane (hedef Talon, FDM 9012)**
 ```bash
 cd ~/ardupilot
-python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/hamidiyesim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
+python3 Tools/autotest/sim_vehicle.py -v ArduPlane -f plane --model JSON:127.0.0.1:9012 -I1 --sysid 2 --no-rebuild --add-param-file=$HOME/projects/avci_sim/sim/ardupilot_params/avci_plane.parm --out udp:127.0.0.1:14542 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14551 --mavproxy-args="--streamrate=25"
 ```
 
 **Terminal 4 — GCS Server (kamera + web arayüz + görev)**
 ```bash
-cd ~/projects/hamidiyesim
+cd ~/projects/avci_sim
 source /opt/ros/humble/setup.bash
 export AVCI_GORSEL=on          # görsel faz; varsayılan off (yalnız GPS güdümü)
 export AVCI_GZ_CAMERA=1
 python3 -m control.gcs_server
 ```
+> ⚠ **Ekransız (headless/SSH) oturumda `export AVCI_NO_BROWSER=1` ekleyin.**
+> Sunucu açılıştan 2 sn sonra `http://localhost:8000`'i tarayıcıda açmayı
+> dener; ekran yoksa bu çağrı **kilitler**. Masaüstünde çalışıyorsanız
+> gerekmez — panel kendiliğinden açılsın diye vermeyin.
+>
+> `AVCI_GZ_CHASE_CAM=0` verilirse dış görüş (chase) kameraları hiç açılmaz —
+> iki ek 640×480@15 Hz render; zayıf GPU'da kapatmak isteyebilirsiniz.
+> Varsayılan açık.
 
 **Terminal 5 — Mission Planner**
 ```bash
-cd ~/projects/hamidiyesim/tools/mission_planner
+cd ~/projects/avci_sim/tools/mission_planner
 export LD_LIBRARY_PATH="$PWD/native_libs:$LD_LIBRARY_PATH"
 mono MissionPlanner.exe    # UDP 14551
 ```
@@ -177,14 +245,27 @@ mono MissionPlanner.exe    # UDP 14551
 ## Kullanım
 
 1. `http://localhost:8000` otomatik açılır (YKİ — Taktik Saha Ekranı).
+   `AVCI_NO_BROWSER=1` verdiyseniz adresi elle açın.
 2. Kamera görünümü: **AVCI DRONE** sekmesi = iris kamerası, **HEDEF İHA** sekmesi = Talon burun kamerası.
 3. **Kare / Daire / Agresif** → Talon kalkıp seçilen rotayı çizer. **Manuel Mod** → RC benzeri kontrol.
-4. iris kamerası hedefi görünce YOLO tespiti + pose keypoint overlay'i çizilir.
-5. **Takip Başlat** → hibrit güdüm devreye girer (GPS fazı → görsel faz → vuruş).
-   Her uçuş `logs/gps_guidance_*.csv` ve `logs/visual_lead_*.csv` üretir;
+4. iris kamerası hedefi görünce YOLO tespiti (bbox) çizilir.
+   ⚠ **Pose keypoint overlay'i varsayılanda ÇİZİLMEZ**: `AVCI_POSE_KAYNAK`
+   varsayılanı `gercek`'tir ve o modda keypoint hiç üretilmez. Eski görsel
+   zinciri istiyorsanız `AVCI_POSE_KAYNAK=pose` verin.
+5. **Takip Modu — Otonom** → hibrit güdüm devreye girer (GPS fazı → görsel faz → vuruş).
+   Her uçuş şu logları üretir:
+   - `logs/bbox_ibvs_*.csv` — **görsel güdümün ana logu**, 20 Hz. Ölçüm ve
+     analiz buradan yapılır.
+   - `logs/gps_guidance_*.csv` — GPS fazı.
+   - `logs/visual_lead_*.csv` — eski görsel faz döngüsü.
+
    `python3 tools/gps_log_viz.py --last 6 --open` ile tarayıcıda incelenir.
+   ⚠ Faz her GPS↔görsel geçişinde YENİ log açar — koşu başına tek dosya yoktur.
 6. **GPS Karıştırma** kaydırıcısı video/telemetri bozulmasını simüle eder — GPS
    düşerse supervisor görsel faza geçerek jamming'e karşı yedek sağlar.
+7. **AYAR KONSOLU** — 56 ayar, 8 grup. Güdüm parametreleri **uçuş sırasında,
+   yeniden başlatmadan** kaydırma çubuklarıyla değiştirilir. Kayıt:
+   `control/ayar_konsolu.py`.
 
 ---
 
@@ -195,8 +276,13 @@ mono MissionPlanner.exe    # UDP 14551
 | 9002 / 9012 | Gazebo ↔ SITL FDM (iris / Talon) |
 | 14541 / 14542 | iris / Talon kontrol (pymavlink) |
 | 14550 | gcs_server telemetri (udpin) |
-| 14551 | Mission Planner |
+| 14551 | Mission Planner — **yalnız elle çalıştırmada** |
 | 8000 | Web arayüz + MJPEG |
+
+> ⚠ `scripts/mkur.sh` (tek komut) SITL çıktılarını yalnız 14541/14542/14550'e
+> yönlendirir; **14551 açılmaz.** Mission Planner kullanacaksanız 5 terminali
+> elle başlatın — yukarıdaki Terminal 2 ve 3 komutlarında `--out udp:127.0.0.1:14551`
+> var.
 
 ---
 
@@ -213,12 +299,17 @@ avci_sim/
 │   ├── arm_diag.py                 # ARM reddi teşhis aracı
 │   ├── gcs_server.py               # FastAPI + gz-transport kamera + görev API
 │   ├── gcs_ui/                     # Web arayüzü (HTML/CSS/JS)
+│   ├── ayar_konsolu.py             # 56 ayar / 8 grup — uçuş sırasında canlı tune
 │   ├── guidance/                   # HİBRİT GÜDÜM
+│   │   ├── bbox_ibvs.py                # ⭐ GÜNCEL görsel güdüm (yalnız bbox, 20 Hz log)
 │   │   ├── guidance_core.py            # IBVS lead pursuit çekirdeği (platformdan bağımsız)
 │   │   ├── adapter_copter.py           # Çekirdek çıktısı → copter hız+yaw komutu
 │   │   ├── visual_lead.py              # Görsel faz döngüsü (olay güdümlü)
 │   │   ├── gps_guidance.py             # GPS fazı (kadraj merkezleme)
 │   │   ├── supervisor.py               # GPS ↔ görsel faz geçişi (run_hybrid)
+│   │   ├── frpn.py / frpn_guidance.py  # Orantısal seyrüsefer (FRPN) güdümü
+│   │   ├── hedef_kestirim.py           # Hedef durum kestirimi
+│   │   ├── kurtarma.py                 # Görsel temas kaybında kurtarma
 │   │   └── common.py                   # Paylaşılan matematik + send_velocity
 │   └── demos/                      # Elle çalıştırılan bağımsız uçuş demoları
 ├── vision/                     # YOLO tespit + YOLO-pose keypoint + veri/eğitim
@@ -250,8 +341,15 @@ avci_sim/
   yukarıdaki kurulum adımlarıyla ayrıca kurulur.
 - iris ve Talon **ayrı FDM portları** (9002/9012) kullanır — aynı world'de çakışmaz.
 - Talon V-kuyruk servo eşlemesi (SERVO2/4 = Sol/Sağ V-Tail) `avci_plane.parm`'dadır.
-- Kod değiştirmeden önce Gazebo'suz kabul testlerini çalıştırın:
-  `python3 -m tests.test_visual_lead` ve `python3 -m tests.test_gps_guidance`.
+- Kod değiştirmeden önce Gazebo'suz kabul testlerini çalıştırın (depo kökünden):
+  ```bash
+  python3 -m tests.test_bbox_ibvs      # ⭐ güncel görsel güdümün bekçisi (62 test)
+  python3 -m tests.test_visual_lead
+  python3 -m tests.test_gps_guidance
+  ```
+  ⚠ `python3 tests/test_bbox_ibvs.py` diye **doğrudan çağırmayın** —
+  `ModuleNotFoundError: vision` verir. Ya yukarıdaki `-m` biçimini kullanın
+  ya da `PYTHONPATH=. python3 tests/test_bbox_ibvs.py` yazın.
 
 ### Dokümanlar
 
@@ -262,8 +360,12 @@ avci_sim/
 
 | Doküman | İçerik |
 |---------|--------|
+| **[CLAUDE.md](CLAUDE.md)** | **Güdüm geliştirmenin kuralları** — test mekanizması, senaryo tasarımı, deney disiplini, ölçüm hatalarına karşı kontrol listesi. Bu depoda çalışan herkes (insan ya da yapay zekâ) buna uyar |
 | **[DEVAM.md](DEVAM.md)** | **Başka makinede/dalda kaldığın yerden devam** — dal senkronu, başlatma, ölçüm araçları, tekrar denenmeyecekler |
 | **[UYGULANACAK.md](UYGULANACAK.md)** | **Güncel iş listesi ve DURUM** — hangi madde bitti, sırada ne var, son ölçümler |
+| [TODO.md](TODO.md) | Tiklenebilir görev listesi (son güncelleme 2026-08-02) |
+| [KARARLI_HAL.md](KARARLI_HAL.md) | GPS güdümünün uçuşta doğrulanmış en iyi hâli — bir şey bozulursa dönülecek nokta |
+| [AVCI_SIM_PROJE_YAPISI.md](AVCI_SIM_PROJE_YAPISI.md) | Proje yapısının ayrıntılı dökümü (30 Temmuz 2026 temizliği sonrası) |
 | [docs/SIMULASYON_CALISTIRMA.md](docs/SIMULASYON_CALISTIRMA.md) | Kopyala-yapıştır çalıştırma komutları (5 terminal) |
 | [docs/GUIDANCE.md](docs/GUIDANCE.md) | Güdüm mimarisi — kodda şu an çalışan sistem |
 | [docs/GUIDANCE_ROADMAP.md](docs/GUIDANCE_ROADMAP.md) | Güdüm yol haritası (plan/vizyon) |
@@ -276,7 +378,7 @@ avci_sim/
 ## 🤖 Claude Code ile Sıfırdan Otomatik Kurulum
 
 Elle kurulumla uğraşmak istemiyorsanız: temiz bir **Ubuntu 22.04** makinede bu depoyu
-`~/projects/hamidiyesim`'e klonlayın, sonra aşağıdaki prompt'u **Claude Code**'a yapıştırın.
+`~/projects/avci_sim`'e klonlayın, sonra aşağıdaki prompt'u **Claude Code**'a yapıştırın.
 Claude Code bütün bağımlılıkları (ROS 2, Gazebo Harmonic, ArduPilot, ardupilot_gazebo,
 Python paketleri, Mission Planner) kurar, her adımı doğrular ve sistemi çalıştırır.
 Sizin tek yapmanız gereken, istendiğinde **sudo şifrenizi** girmek.
@@ -300,9 +402,9 @@ mevcutsa) tekrar kurma, atla.
 
 --- ADIM 0: DEPOYU KLONLA ---
 Depo yoksa klonla, varsa güncelle:
-[ -d ~/projects/hamidiyesim/.git ] && (cd ~/projects/hamidiyesim && git pull) || git clone https://github.com/kayranecatikara/hamidiyesim.git ~/projects/hamidiyesim
-cd ~/projects/hamidiyesim
-DOĞRULA: ls ~/projects/hamidiyesim/control/gcs_server.py çıktı vermeli.
+[ -d ~/projects/avci_sim/.git ] && (cd ~/projects/avci_sim && git pull) || git clone https://github.com/kayranecatikara/hamidiyesim.git ~/projects/avci_sim
+cd ~/projects/avci_sim
+DOĞRULA: ls ~/projects/avci_sim/control/gcs_server.py çıktı vermeli.
 
 --- ADIM 1: SİSTEM PAKETLERİ ---
 sudo apt-get update
@@ -342,26 +444,26 @@ make -j$(nproc)
 DOĞRULA: ls ~/ardupilot_gazebo/build/libArduPilotPlugin.so
 
 --- ADIM 6: PYTHON PAKETLERİ ---
-cd ~/projects/hamidiyesim
+cd ~/projects/avci_sim
 pip install -r requirements.txt
 DOĞRULA: python3 -c "import cv2,numpy,fastapi,uvicorn,pymavlink; print('PY OK')"
 
 --- ADIM 7: MISSION PLANNER ---
 sudo apt-get install -y mono-complete libgdiplus
-bash ~/projects/hamidiyesim/scripts/setup_mission_planner.sh
-DOĞRULA: ls ~/projects/hamidiyesim/tools/mission_planner/MissionPlanner.exe
+bash ~/projects/avci_sim/scripts/setup_mission_planner.sh
+DOĞRULA: ls ~/projects/avci_sim/tools/mission_planner/MissionPlanner.exe
 
 --- ADIM 8: ORTAM DEĞİŞKENLERİ ---
 ~/.bashrc'de yoksa şu iki satırı ekle:
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$HOME/projects/hamidiyesim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
+export GZ_SIM_RESOURCE_PATH=$HOME/projects/avci_sim/sim/gazebo_harmonic/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds
 
 --- ADIM 9: KURULUM DOĞRULAMASI (kanıtla) ---
 Ortam değişkenlerini export ettikten ve /opt/ros/humble/setup.bash source ettikten sonra:
 (a) Gazebo world + iki kamera:
     gz sim'i arka planda başlat (gz sim -s -r <world> &), 9 sn bekle,
     gz topic -l | grep -E 'iris_cam/image|talon_cam/image'  -> İKİSİ de görünmeli.
-    (world: ~/projects/hamidiyesim/sim/gazebo_harmonic/worlds/avci_harmonic.sdf)
+    (world: ~/projects/avci_sim/sim/gazebo_harmonic/worlds/avci_harmonic.sdf)
     ÖNEMLİ: gz sim'i öldürürken 'kill <PID>' kullan; gz sim'i başlatan komutun içinde
     'pkill -f "gz sim"' KULLANMA — pkill komut satırında 'gz sim' geçtiği için kendi
     shell'ini de öldürür.
@@ -371,10 +473,13 @@ Ortam değişkenlerini export ettikten ve /opt/ros/humble/setup.bash source etti
     "Iris kamerasından ilk görüntü" ve "Talon kamerasından ilk görüntü" satırlarını gör.
 
 --- BİTİRİŞ ---
-docs/SIMULASYON_CALISTIRMA.md dosyasındaki 5 terminali sırayla başlat ve
-http://localhost:8000 arayüzünde HEM "AVCI DRONE" HEM "HEDEF İHA" sekmelerinde
-kamera görüntüsünün geldiğini doğrula. Kullanıcıya kısa bir kurulum özeti + neyin
-doğrulandığını raporla. Son olarak kullanıcıya şunu söyle: "Bundan sonra TÜM
-sistemi docs/SIMULASYON_CALISTIRMA.md dosyasındaki komutlarla çalıştırabilirsiniz —
-her terminal bloğu orada sırasıyla yazılıdır."
+Simülasyonu tek komutla ayağa kaldır ve son satırın "sim hazır" dediğini gör:
+cd ~/projects/avci_sim && AVCI_TEMIZ=1 bash scripts/mkur.sh m > ~/.avci_sim/log/kur_m.log 2>&1; tail -1 ~/.avci_sim/log/kur_m.log
+Sonra http://localhost:8000 arayüzünde HEM "AVCI DRONE" HEM "HEDEF İHA"
+sekmelerinde kamera görüntüsünün geldiğini doğrula. Kullanıcıya kısa bir kurulum
+özeti + neyin doğrulandığını raporla. Son olarak kullanıcıya şunu söyle:
+"Bundan sonra sistemi tek komutla kurabilirsiniz:
+AVCI_TEMIZ=1 bash scripts/mkur.sh m   ·   kapatmak için: bash scripts/kapat.sh
+Bileşenleri tek tek görmek isterseniz README'deki 'Elle çalıştırma (5 terminal)'
+bölümündeki komutları sırayla kullanın."
 ````
