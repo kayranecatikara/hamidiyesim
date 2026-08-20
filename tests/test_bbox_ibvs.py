@@ -539,6 +539,27 @@ def main():
             not (set(_imza) & _yasak),
             f"hedefe dair tek veri kutu (cx, cy, w, h); yasak ad yok")
 
+    # C1b: ⭐⭐ İKİ KATMANIN GÜVEN EŞİĞİ TUTARLI OLMALI
+    # 2026-08-20'de ölçüldü: supervisor 0.0 (eşiksiz) ile görsel faza
+    # giriyor, bbox 0.35 altını reddediyor → komut DONUYOR → 20 kare sonra
+    # GPS'e dönülüyor → GPS istasyona gitmek için FREN yapıyor.
+    # Kullanıcının üç ayrı şikâyeti (alttan kaçırma, faz zıplaması,
+    # geçişte ani fren) TEK KÖKTEN geliyordu.
+    # Ölçüm: tespit güveninin %30-42'si 0.35 altında; güdüm karelerinin
+    # %28-43'ü KUTU_YOK — araç üçte bir KÖR uçuyor.
+    from control.guidance import supervisor as _sup
+    kontrol("C1b ⭐⭐ giriş eşiği = kullanma eşiği (faz zıplaması kalkanı)",
+            abs(_sup.SupCfg.POSE_CONF_MIN - C.CONF_MIN) < 1e-9,
+            f"supervisor.POSE_CONF_MIN={_sup.SupCfg.POSE_CONF_MIN} = "
+            f"bbox.CONF_MIN={C.CONF_MIN} — supervisor'ın 'görsel' dediği "
+            "her kareyi güdüm KULLANABİLİR")
+
+    # C1c: histerezis var — girmek ve çıkmak farklı şart
+    kontrol("C1c faz histerezisi: girmek ≠ çıkmak (çatırdama kalkanı)",
+            _sup.SupCfg.KILIT_N >= 5 and _sup.SupCfg.KAYIP_M >= _sup.SupCfg.KILIT_N,
+            f"girmek {_sup.SupCfg.KILIT_N} ardışık GÜVENİLİR kare, "
+            f"çıkmak {_sup.SupCfg.KAYIP_M} ardışık kutusuz kare")
+
     # C2: düşük güven kutusu elenir
     kontrol("C2 CONF_MIN altındaki kutu elenir",
             ib._kutu_gecerli({"conf": C.CONF_MIN - 0.01, "bbox": (10, 10, 40, 40)},

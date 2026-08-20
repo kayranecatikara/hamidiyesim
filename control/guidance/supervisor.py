@@ -113,7 +113,32 @@ class SupCfg:
     # TUTARLI. Yarışma kuralı açısından da temiz: bbox 0.35 altını zaten
     # "tespit yok" sayıyor.
     # AVCI_HYBRID_CONF ile değiştirilebilir; 0.0 = eski (tutarsız) davranış.
-    POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.0))
+    # ⭐⭐ 2026-08-20 · 0.0 → bbox_ibvs.Cfg.CONF_MIN (0.35). KÖK NEDEN DÜZELTMESİ.
+    #
+    # İKİ KATMAN FARKLI EŞİK KULLANIYORDU:
+    #   supervisor.POSE_CONF_MIN = 0.0   → görsel faza GİRME kararı (eşik YOK)
+    #   bbox_ibvs.Cfg.CONF_MIN   = 0.35  → kutuyu KULLANMA kararı
+    # Arada kalan tespitlerde supervisor "görsel" diyor, güdüm kutuyu
+    # reddediyor, komut DONUYOR, 20 kare sonra GPS'e dönülüyor. GPS de
+    # istasyona gitmek için FREN yapıyor (kullanıcının gördüğü burun kalkması).
+    #
+    # ÖLÇÜLDÜ (kullanıcı uçuşları 20260820_170647 ve 170322):
+    #   tespit güveninin %30-42'si 0.35'in ALTINDA
+    #   güdüm karelerinin %28-43'ü KUTU_YOK  → araç üçte bir KÖR uçuyor
+    #   faz değişimi 5 ve 19 kez · her ikisinde de isabet YOK
+    # Kare kare: 37 m'den 8 m'ye kadar dikey ofset −2.7…−3.3 m'de SABİT
+    # kaldı (düzeltilmedi, çünkü komut donuktu), sonra son 8 metrede
+    # kapatılmaya çalışıldı ve yetişmedi → temasta 0.57 m ALTTAN ıska.
+    #
+    # ⚠ ÜÇ ŞİKÂYET TEK KÖKTEN: (1) alttan kaçırma, (2) faz zıplaması,
+    # (3) geçişteki ani fren. Hepsi bu eşik uyuşmazlığından.
+    #
+    # HİSTEREZİS DOĞAL: girmek KILIT_N=10 ardışık GÜVENİLİR kare ister,
+    # çıkmak KAYIP_M=20 ardışık kutusuz kare ister. Eşikler eşitlenince
+    # "girip hemen çıkma" çevrimi kapanır.
+    #
+    # AVCI_HYBRID_CONF=0 ile eski (eşiksiz) davranış geri gelir.
+    POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.35))
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
     #
