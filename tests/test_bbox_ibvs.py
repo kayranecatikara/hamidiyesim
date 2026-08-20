@@ -130,6 +130,138 @@ def main():
 
     # ══════════════════════════════════════════════════════════════════
     print("=" * 62)
+    print("H · YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ")
+
+    class _Yav(ib.Cfg):
+        YAVASLAMA = True
+
+    def _kutu_R(R, cfg):
+        """R metrede beklenen kutuyu (w,h) olarak üret (talon en/boy 4.48)."""
+        return _kutu_uret(ib.menzil_sabiti(cfg) / R, cfg)
+
+    # H1: ⭐ KAPALIYKEN BİT BİT AYNI — taban davranış korunur
+    _n, _enb = 0, 0.0
+    for _R in (2.0, 5.0, 12.0, 30.0):
+        _w, _h = _kutu_R(_R, C)
+        for _I in (0.0, 12.0, 15.1, 24.0):
+            for _kap in (None, 0.5, 3.0, 8.0):
+                _a = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, _I, 0.05, C,
+                              kapanma=_kap)
+                _b = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, _I, 0.05,
+                              ib.Cfg, kapanma=_kap)
+                _n += 1
+                for _i in range(5):
+                    _enb = max(_enb, abs(_a[_i] - _b[_i]))
+    kontrol("H1 ⭐ YAVAŞLAMA varsayılan KAPALI, taban bit bit korunur",
+            (not C.YAVASLAMA) and _enb < 1e-12,
+            f"Cfg.YAVASLAMA={C.YAVASLAMA}; {_n} kombinasyonda fark {_enb:.2e}")
+
+    # H2: ⭐ PROFİL MENZİLLE DOĞRUSAL İNER (kutuyla DEĞİL)
+    # Kutu 1/R gittiği için kutu-orantılı profil temas anında ani fren olurdu.
+    _prof = []
+    for _R in (30.0, 20.0, 10.0, 5.0, 2.0):
+        _w, _h = _kutu_R(_R, _Yav)
+        _r = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05, _Yav,
+                      kapanma=3.0)
+        _prof.append((_R, _r[5]["kapanma_hedefi"]))
+    # tavan/taban dışında kalan bant doğrusal olmalı: hedef/R sabit = 1/T_GO
+    _orta = [(R, k) for R, k in _prof
+             if _Yav.KAPANMA_TABAN + 1e-6 < k < _Yav.KAPANMA_TAVAN - 1e-6]
+    _sabit = [k / R for R, k in _orta]
+    kontrol("H2 ⭐ profil MENZİLLE doğrusal (kutuyla değil)",
+            len(_orta) >= 2
+            and max(_sabit) - min(_sabit) < 1e-9
+            and abs(_sabit[0] - 1.0 / _Yav.T_GO) < 1e-9,
+            "  ".join(f"{R:.0f} m→{k:.2f}" for R, k in _prof)
+            + f"   (kapanma/R = {_sabit[0]:.4f} = 1/T_GO)")
+
+    # H3: TABAN — Zenon kalkanı. Taban olmasa R→0'da kapanma→0 olur ve
+    # araç hedefe ASLA değmezdi.
+    _yakin = []
+    for _R in (3.0, 1.5, 0.8, 0.4):
+        _w, _h = _kutu_R(_R, _Yav)
+        _yakin.append(ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05,
+                               _Yav, kapanma=1.5)[5]["kapanma_hedefi"])
+    kontrol("H3 ⭐ ZENON KALKANI: kapanma tabanın altına inmez",
+            all(abs(k - _Yav.KAPANMA_TABAN) < 1e-9 for k in _yakin),
+            f"R 3.0→0.4 m: " + " ".join(f"{k:.2f}" for k in _yakin)
+            + f"  (taban {_Yav.KAPANMA_TABAN:.1f} m/s) — temas garanti")
+
+    # H4: TAVAN — uzakta imkânsız hız istenmez
+    _w, _h = _kutu_R(200.0, _Yav)
+    _uzak = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05, _Yav,
+                     kapanma=3.0)[5]["kapanma_hedefi"]
+    kontrol("H4 kapanma tavanı bağlar (uzakta imkânsız hız istenmez)",
+            abs(_uzak - _Yav.KAPANMA_TAVAN) < 1e-9,
+            f"R=200 m → kapanma_hedefi {_uzak:.2f} = tavan "
+            f"{_Yav.KAPANMA_TAVAN:.1f}")
+
+    # H5: ⭐ İNTEGRAL DOĞRU YÖNE ÖĞRENİR
+    # Ölçülen kapanma HEDEFTEN BÜYÜKSE, hız tahminimiz yüksek demektir →
+    # kestirim DÜŞMELİ. Tersi de.
+    _w, _h = _kutu_R(10.0, _Yav)          # kapanma_hedefi = 2.5
+    _hizli = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.0, 0.05, _Yav,
+                      kapanma=6.0)[4]     # çok hızlı kapanıyoruz
+    _yavas = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.0, 0.05, _Yav,
+                      kapanma=0.5)[4]     # çok yavaş
+    kontrol("H5 ⭐ kestirim doğru yöne öğrenir",
+            _hizli < 15.0 - 1e-9 and _yavas > 15.0 + 1e-9,
+            f"hedef 2.50 m/s iken: ölçülen 6.0 → kestirim {_hizli:.4f} (düştü), "
+            f"ölçülen 0.5 → {_yavas:.4f} (yükseldi); başlangıç 15.0")
+
+    # H6: ⭐ KUTU YOKKEN İNTEGRAL DONAR (bayat ölçümle sürüklenmesin)
+    _w, _h = _kutu_R(10.0, _Yav)
+    _don = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.0, 0.05, _Yav,
+                    kapanma=None)[4]
+    kontrol("H6 ⭐ kapanma ölçümü yokken kestirim DONAR",
+            abs(_don - 15.0) < 1e-12,
+            f"kapanma=None → kestirim {_don:.6f} (girişle aynı) — bayat "
+            "veriyle sürüklenmiyor")
+
+    # H7: DENGE — ölçülen = hedef ise kestirim kıpırdamaz
+    _w, _h = _kutu_R(10.0, _Yav)
+    _hd = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.0, 0.05, _Yav,
+                   kapanma=3.0)[5]["kapanma_hedefi"]
+    _dng = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.0, 0.05, _Yav,
+                    kapanma=_hd)[4]
+    kontrol("H7 denge noktası: ölçülen = hedef → kestirim sabit",
+            abs(_dng - 15.0) < 1e-12,
+            f"kapanma = hedef = {_hd:.2f} → kestirim {_dng:.6f}")
+
+    # H8: v_los = kestirim + profil, V_HUCUM tavanıyla
+    _w, _h = _kutu_R(6.0, _Yav)
+    # ⚠ kapanma = hedef verilir ki integral KIPIRDAMASIN; yoksa v_los,
+    # güncellenmiş kestirimle hesaplanır ve eşitlik tutmaz.
+    _hd8 = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05, _Yav,
+                    kapanma=3.0)[5]["kapanma_hedefi"]
+    _r8 = ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 15.1, 0.05, _Yav,
+                   kapanma=_hd8)
+    kontrol("H8 v_los = hedef hızı kestirimi + kapanma profili",
+            abs(_r8[5]["v_los"] - min(_Yav.V_HUCUM, 15.1 + _hd8)) < 1e-9
+            and abs(_r8[4] - 15.1) < 1e-12,
+            f"kestirim 15.1 (dengede, sabit) + profil {_hd8:.2f} → "
+            f"v_los {_r8[5]['v_los']:.2f} (tavan {_Yav.V_HUCUM:.0f})")
+
+    # H9: hız V_HUCUM tavanını AŞMAZ
+    _hepsi = []
+    for _R in (2.0, 8.0, 25.0, 80.0):
+        _w, _h = _kutu_R(_R, _Yav)
+        _hepsi.append(ib.komut(CX, _cy_icin(0.0), _w, _h, 0.0, 24.0, 0.05,
+                               _Yav, kapanma=1.0)[5]["v_los"])
+    kontrol("H9 v_los V_HUCUM tavanını aşmaz",
+            all(v <= _Yav.V_HUCUM + 1e-9 for v in _hepsi),
+            f"R 2…80 m, kestirim doygun (24) → "
+            + " ".join(f"{v:.1f}" for v in _hepsi)
+            + f"  (tavan {_Yav.V_HUCUM:.0f})")
+
+    # H10: mekanizma sütunları CSV'de var
+    kontrol("H10 mekanizma sütunları CSV'de (§5.1 ölçülebilsin)",
+            "kapanma_hedefi" in ib._CSV_ALANLAR
+            and "kapanma_olculen" in ib._CSV_ALANLAR,
+            f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun")
+
+    # ══════════════════════════════════════════════════════════════════
+    print("=" * 62)
     print("G · KUTU → MENZİL ÖLÇÜSÜ (çarpım ↔ köşegen)")
 
     class _Kos(ib.Cfg):

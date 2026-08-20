@@ -496,6 +496,62 @@ class Cfg:
     YAVASLA = _env_f("AVCI_IBVS_YAVASLA", 1.0) >= 0.5
     V_HUCUM_MIN = _env_f("AVCI_IBVS_VHUCUM_MIN", 12.0)   # m/s; yavaşlama tabanı
 
+    # ═══════════════════════════════════════════════════════════════════
+    # YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ (2026-08-19, kullanıcı fikri)
+    # ═══════════════════════════════════════════════════════════════════
+    # KULLANICI: *"Hedefin kadrajda büyümesiyle orantılı şekilde avcı dronun
+    # hızını azaltma gibi bir şey yapabilir miyiz? Çünkü hedef araca
+    # çarparken hedef araç ile yakın hızlarda olmak aracı kaçırma riskini
+    # minimuma indirir, daha dengeli yaklaşmayı mümkün kılar."*
+    #
+    # ⛔ "KUTU BOYUTUYLA ORANTILI" YAPILMADI — kasıtlı. Kutu 1/R ile gider:
+    #   menzil 30→5 m (25 metre!) → kutu hatası 155→128, yani %17 değişim
+    #   menzil  2→1 m (tek metre) → kutu hatası  80→  0, yani %100 değişim
+    # Yani kutu-orantılı yavaşlama, TAM TEMAS ANINDA ANİ FREN demektir. Ani
+    # fren de burnu kaldırıp hedefi kadrajdan çıkarır — sildiğimiz terminal
+    # fazının kök nedeni tam buydu. Bunun yerine MENZİLLE DOĞRUSAL profil.
+    #
+    # YASA — ileri besleme + integral:
+    #   kapanma_hedefi = clamp(R / T_GO, KAPANMA_MIN, KAPANMA_MAX)
+    #   v_hedef_I     += K_I_KAP · (kapanma_hedefi − kapanma_ölçülen) · dt
+    #   v_los          = clamp(v_hedef_I + kapanma_hedefi, V_MIN, V_HUCUM)
+    #
+    # NEDEN BU BİÇİM: profil DOĞRUDAN eklenir (gecikmesiz, menzille iner);
+    # integral yalnız BİLİNMEYENİ öğrenir — hedefin hızı. Dengede
+    # kapanma_ölçülen = kapanma_hedefi ve v_hedef_I = hedefin gerçek hızı.
+    #
+    # ⚠ GÜRÜLTÜ: `kapanma` kutu büyüme hızından gelir ve gürültülüdür
+    # (ölçüldü: ardışık kare değişimi p90 %17.5, gerçek değişim ~%2.5 —
+    # yedi kat). Bu yüzden YALNIZ İNTEGRAL yolunda kullanılır; integratör
+    # zaten alçak geçiren filtredir. Oransal yola konsaydı komut titrerdi.
+    #
+    # ⚠ ZENON: taban olmasaydı R→0 iken kapanma→0 olur ve ARAÇ HEDEFE ASLA
+    # DEĞMEZDİ. KAPANMA_MIN bunu engeller.
+    #
+    # ⚠ ÖLÇÜLMÜŞ RİSK: yavaş kapanma hedefe kaçma zamanı verir. V_TERMINAL=16
+    # (kapanma 0.9 m/s) ile araç 8 SANİYE 6 metrede asılı kalmış ve hiç
+    # yaklaşamamıştı. Taban ve T_GO bunun ayarıdır.
+    #
+    # AVCI_IBVS_YAVASLAMA=1 → açık. Varsayılan KAPALI (ölçülmeden girmez).
+    YAVASLAMA = _env_f("AVCI_IBVS_YAVASLAMA", 0.0) >= 0.5
+
+    # Profilin zaman sabiti: kapanma = R / T_GO.
+    # 4 s → 20 m'de 5.0 m/s · 10 m'de 2.5 · 5 m'de 1.25 · 2 m'de 0.50
+    T_GO = _env_f("AVCI_IBVS_TGO", 4.0)                  # s
+
+    # Kapanma tabanı — TEMASI GARANTİ EDER (Zenon kalkanı).
+    # ⚠ AD SEÇİMİ: "KAPANMA_MIN" DEĞİL. O ad silinen terminal fazının
+    # "kapanma ölçeği tabanı" alanına aitti; aynı adı farklı anlamla geri
+    # getirmek §5.12'nin uyardığı karışıklığı üretirdi (birim testi B1
+    # zaten yakaladı).
+    KAPANMA_TABAN = _env_f("AVCI_IBVS_KAPANMA_TABAN", 1.5)  # m/s
+    # Kapanma tavanı — uzakta imkânsız hız istenmesin.
+    KAPANMA_TAVAN = _env_f("AVCI_IBVS_KAPANMA_TAVAN", 6.0)  # m/s
+
+    # Hedef hızı kestiriminin öğrenme hızı. Düşük = sakin ama geç;
+    # yüksek = çevik ama gürültüyü içeri alır ve salınabilir.
+    K_I_KAP = _env_f("AVCI_IBVS_KI_KAP", 0.8)            # (m/s)/(m/s·s)
+
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
 
@@ -510,7 +566,7 @@ _CSV_ALANLAR = [
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
-    "elev_atalet_deg",
+    "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen",
 ]
 
 
@@ -648,14 +704,30 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
     # Denge kutusu = TEMAS kutusu. Piksel karşılığı ölçüye göre kendiliğinden
     # ölçeklenir (HUCUM_MENZIL_M metre olarak sabit kalır).
     hata = (_C / cfg.HUCUM_MENZIL_M) - boyut    # px; + = uzak
-    hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
-    # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
-    # hızı ANINDA artır — integralin 5 saniyesini bekleme.
     kacis_ek = 0.0
-    if cfg.KACIS_KD > 0.0 and kapanma is not None and kapanma < 0.0:
-        kacis_ek = min(cfg.KACIS_KD * (-kapanma), cfg.KACIS_MAX)
-    v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
-                  cfg.V_MIN, cfg.V_HUCUM)
+    kapanma_hedefi = None
+    if cfg.YAVASLAMA:
+        # ── YAVAŞLAMA PROFİLİ + HEDEF HIZI KESTİRİMİ (bkz. Cfg.YAVASLAMA) ──
+        # `hiz_I` burada ARTIK "hız integrali" değil, HEDEFİN HIZI
+        # KESTİRİMİDİR. İsim aynı kaldı çünkü çağıran onu taşıyor.
+        _R = _C / boyut if boyut > 1e-6 else cfg.KAPANMA_TAVAN * cfg.T_GO
+        kapanma_hedefi = clamp(_R / cfg.T_GO,
+                               cfg.KAPANMA_TABAN, cfg.KAPANMA_TAVAN)
+        # İntegral YALNIZ ölçüm varken güncellenir. Kutu kaybolunca `kapanma`
+        # bayat kalır; sürüklenmesin diye DONDURULUR.
+        if kapanma is not None:
+            hiz_I = clamp(hiz_I + cfg.K_I_KAP
+                          * (kapanma_hedefi - kapanma) * dt,
+                          cfg.I_MIN, cfg.I_MAX)
+        v_los = clamp(hiz_I + kapanma_hedefi, cfg.V_MIN, cfg.V_HUCUM)
+    else:
+        hiz_I = clamp(hiz_I + cfg.K_I * hata * dt, cfg.I_MIN, cfg.I_MAX)
+        # Ö1 KAÇIŞ TELAFİSİ (bkz. Cfg.KACIS_KD): hedef uzaklaşıyorsa (ṙ<0)
+        # hızı ANINDA artır — integralin 5 saniyesini bekleme.
+        if cfg.KACIS_KD > 0.0 and kapanma is not None and kapanma < 0.0:
+            kacis_ek = min(cfg.KACIS_KD * (-kapanma), cfg.KACIS_MAX)
+        v_los = clamp(hiz_I + cfg.K_FWD * hata + kacis_ek,
+                      cfg.V_MIN, cfg.V_HUCUM)
 
     # Ö5 DÖNÜŞ TAVANI (bkz. Cfg.DONUS_A): gereken yanal ivme V·λ̇ aracın
     # tavanını aşıyorsa hızı kıs — yarıçap V² ile düştüğü için dönüş sıkışır.
@@ -732,6 +804,7 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
+            "kapanma_hedefi": kapanma_hedefi,
             "nisan_elev": nisan_elev,
             "elev_atalet": elev_atalet}
     return vx_ned, vy_ned, vz, yaw_cmd, hiz_I, tani
@@ -1001,6 +1074,11 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "iris_yaw_deg": round(math.degrees(iyaw), 1),
                 "boyut_hata": round(tani["hata"], 1),
                 "hiz_I": round(hiz_I, 2), "v_los": round(tani["v_los"], 2),
+                # MEKANİZMA SÜTUNLARI (§5.1): yavaşlama profili çalıştı mı?
+                "kapanma_hedefi": ("" if tani["kapanma_hedefi"] is None
+                                   else round(tani["kapanma_hedefi"], 2)),
+                "kapanma_olculen": ("" if kapanma is None
+                                    else round(kapanma, 2)),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "gecikme_s": (round(gecikme_s, 4)
                               if gecikme_s is not None else ""),
