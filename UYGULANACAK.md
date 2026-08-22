@@ -1,5 +1,324 @@
 # UYGULANACAK — teker teker, ölçerek
 
+## ⚑⚑⚑ SIRADAKİ İŞLER — 2026-08-22'de DURDURULDU, buradan devam
+
+Kullanıcı 2026-08-22'de "D" dedi: **dur, kaydet.** Sistem `circle_xl`/`circle_l`
+(yarıçap ≥ 45 m) için 9/9 çalışıyor. Aşağıdakiler SIRADA, hiçbiri denenmedi.
+
+| # | aday | ne yapar | neden sırada | maliyet |
+|---|---|---|---|---|
+| **1** | **ÖC'ye VURUŞ FAZI** | "içeri yerleş → tetik → dışa atıl ve kes" | ÖC yerleşmeyi BAŞARDI (çemberin 9-11.5 m içine girdi) ama vuruş fazı olmadığı için orada oturdu. Teşhis net, eksik parça tek bir tetik. `circle_s`'te en yakın 2.00 m verdi (15 kontrol koşusunun en iyisi 2.1'di). | kod + 8 uçuş |
+| **2** | **Lever A · dikey ivme gürültüsü** | dikey kanalın ivme israfını kıs | ÖLÇÜLDÜ: hedefi takip etmek 0.12-0.24 m/s² gerektiriyor, avcı 2.00-5.99 m/s² harcıyor (~20 kat). `MAX_ACCEL` TEK kasa olduğu için bu doğrudan viraj bütçesinden çalıyor. | kod + 8 uçuş |
+| **3** | **Lever B · denetleyici ayarı** | `PSC_VELXY_P`, `ATC_RAT_*` | ÖLÇÜLDÜ: komut 16.88 m/s → gerçekleşen 15.52 (%8 açık). Ne kadarı ayar, ne kadarı sürükleme bilinmiyor. ARAÇ PARAMETRESİ sınıfı, gövde değil. | 8 uçuş |
+| **4** | **Gövde** (sürükleme ↓ / itki ↑) | asıl kısıtı kaldırır | ÖLÇÜLDÜ ve gerekçelendi: manevrada avcı 1.82 m/s kaybediyor, hedef (sabit kanat) 0.20 m/s — 9 kat. ⚠ Bütün geçmiş ölçümleri sıfırlar, `circle_xl`'de YENİ TABAN kampanyası gerekir. | pahalı |
+
+**ZARF HARİTASI = TABAN ÇİZGİSİ.** Yukarıdakilerden biri denendiğinde
+başarı ölçütü tek cümle: **"sınır 45 metreden kaça indi?"**
+
+    yarıçap ≥ 45 m   GÜVENİLİR   9/9    (circle_xl 6/6+, circle_l 3/3)
+    yarıçap 35-45 m  SINIRDA     1/4    (circle — hep 1-2 m'ye geliyor, bitiremiyor)
+    yarıçap ≤ 30 m   ZARF DIŞI   0/23   (circle_s)
+
+⚠ Regresyon kapısı her zaman: `circle_xl` + `circle_l` isabeti DÜŞMEYECEK.
+
+
+## ⛔ F KAMPANYASI · ÖC "İÇ YERLEŞME" · 8 UÇUŞ (2026-08-22) — **ELENDİ (regresyon kapısı)**
+
+`AVCI_IBVS_IC=1`. Hedef ısrarla tek yöne dönerken hız vektörünü yayın İÇİNE
+kaydırır ve derin kestikçe YATAY hızı kısar. Tetik ṙ değil, λ̇ işaretinin
+yavaş EMA'sı (ölçüldü: duz %1 · circle_xl %96 · circle_s %100).
+
+### MEKANİZMA KUSURSUZ ÇALIŞTI — hedeflenen geometri birebir üretildi
+
+| koşu | kol | tetik | kesme β | **r_p − R_t** | V_avcı | en yakın | sonuç |
+|---|---|---|---|---|---|---|---|
+| F01_K_s | K | %0 | 0° | **+1.32** dışarıda | 15.87 | 5.50 m | ıska |
+| F02_D_s | ÖC | %50 | 53.9° | **−0.90 İÇERİDE** | 8.62 | **2.00 m** | ıska |
+| F03_D_s | ÖC | %50 | 53.4° | +1.58 | 8.86 | 3.50 m | ıska |
+| F04_K_m | K | %0 | 0° | +0.45 | 14.81 | **1.00 m** | ıska |
+| F05_D_m | ÖC | %57 | 54.6° | **−8.24 İÇERİDE** | 8.81 | 5.90 m | ıska |
+| F06_D_m | ÖC | %58 | 58.0° | **−11.54 İÇERİDE** | 10.07 | 4.20 m | ıska |
+| F07_K_xl | K | %0 | 0° | +1.37 | 17.22 | 1.30 m | **İSABET** |
+| F08_D_xl | ÖC | %53 | 42.1° | −9.88 | 12.90 | **10.70 m** | **ıska** |
+
+### ⛔ REGRESYON KAPISI ÇÖKTÜ — karar kuralı tetiklendi
+`circle_xl`: **7/7 → 0/1**, en yakın **1.30 → 10.70 m**, temas %84.5 → %50.7.
+Kural "circle_xl isabeti düşmeyecek" diyordu. ÖC VARSAYILAN YAPILAMAZ.
+
+### KÖK NEDEN — tasarım hatası, ölçümle teşhis edildi
+Döngü: *"ṙ hedefin altındaysa daha çok kes."* Ama kesmek YAVAŞLATIYOR
+(IC_HIZ_K, kasıtlı) → yavaşlayınca ṙ daha da düşüyor → daha çok kesiyor.
+**Ters yönde pozitif geri besleme.** Tam kesmede (β≈60°, V≈8.6 m/s)
+kilitleniyor; hedefin 14.9 m/s'sine karşı ṙ hiçbir zaman 2.0'a ulaşamıyor,
+yani kesme HİÇ SERBEST BIRAKILMIYOR. Araç içeride sonsuza kadar oturuyor.
+
+**Eksik olan bir VURUŞ FAZI:** "içeri yerleştim, şimdi dışa atıl ve kes."
+ÖC yalnız yerleşme yarısını yapıyor. İki fazlı bir tasarım gerekiyor ve
+o §0.2 gereği ayrı bir özellik olarak, ayrı ölçülmeli.
+
+### YİNE DE KAYDA DEĞER
+`circle_s`'te en yakın **2.00 m** — 15 kontrol koşusunun en iyisi 2.1 m'ydi.
+Yani "içeri gir" fikri hedefi gerçekten yaklaştırıyor; bitiremiyor.
+
+⚠ Ayarlar konsolda DURUYOR (kullanıcı kuralı: silme yok). Varsayılan kapalı,
+açıklamalarına ölçülen sonuç yazıldı.
+
+
+## ⚑⚑⚑ E KAMPANYASI · ZARF HARİTASI · 6 UÇUŞ (2026-08-22) — **SINIR ÖLÇÜLDÜ**
+
+Aradaki iki yarıçap tamamlandı. Tüm koşular VARSAYILAN ayarla
+(MAX_ACCEL 12, V_HUCUM 18, ÖA/ÖB kapalı). R_t her koşuda hedefin
+konumuna çember uydurularak ÖLÇÜLDÜ (tablodaki nominal değer değil).
+
+| senaryo | **R_t** (çap) | avcı hızı | eş-dönüş için gerek | **KAPANMA PAYI** | en yakın | **İSABET** |
+|---|---|---|---|---|---|---|
+| `circle_xl` | 65.6 m (131 m) | 17.25 | 14.82 | **+2.59** | 1.40 m | **6/6** |
+| `circle_l` | 47.5 m (95 m) | 16.59 | 14.30 | **+2.54** | 1.50 m | **3/3** |
+| `circle` | 35.4 m (71 m) | 16.29 | 15.03 | **+1.40** | 1.90 m | **1/4** |
+| `circle_s` | 24.9 m (50 m) | 15.74 | 15.65 | **+0.07** | 5.50 m | **0/13** |
+
+### KAPANMA PAYI İSABETİ BİREBİR ÖNGÖRÜYOR
+
+    pay ≥ +2.5 m/s  →  9/9   isabet  (%100)
+    pay ≈ +1.4 m/s  →  1/4   isabet  (%25)
+    pay ≈ +0.1 m/s  →  0/13  isabet  (%0)
+
+`circle`'ın dört koşusunun DÖRDÜ de 1.5-2.0 m'ye kadar geliyor ama yalnız
+biri bitiriyor — sınır tam orada. Güvenilir isabet için gereken eşik
+**pay ≥ ~2 m/s**, bu da **R_t ≈ 41-45 m**'ye denk geliyor.
+
+### ⇒ BU ARACIN ZARFI
+
+    R_t ≥ 45 m   GÜVENİLİR     (9/9)
+    R_t 35-45 m  SINIRDA       (1/4 — hep yaklaşıyor, bitiremiyor)
+    R_t ≤ 30 m   ZARF DIŞI     (0/13)
+
+Gövde değişirse iyileşme İŞTE BU TABLOYA karşı ölçülür.
+
+## ⚑ GÖVDEYE DOKUNMADAN KALAN ÜÇ KALDIRAÇ (2026-08-22, ölçümle bulundu)
+
+### A · DİKEY KANAL VİRAJ BÜTÇESİNİ ÇALIYOR — hiç denenmedi
+`MAX_ACCEL` TEK kasadır; yatay ve dikey aynı 12 m/s²'yi paylaşır.
+Ölçüldü (`circle_s`, 9 kontrol koşusu):
+
+    yatay ivme  p50 11.80  p90 12.02   ← tavana yapışık
+    DİKEY ivme  p50  2.00  p90  5.99
+    dikeyin bütçedeki payı: p50 %17   p90 %50
+
+Hedef SABİT İRTİFADA uçarken karelerin en kötü %10'unda bütçenin YARISI
+dikeye gidiyor. Kaynağı menzil gürültüsünün dikey nişan açısına dönüşmesi.
+⇒ Dikeyi kısmak viraja BEDAVA bütçe açar. ÖA'da yatay AÇILMIŞTI (kaybettik);
+**tersi (dikeyi kısmak) hiç denenmedi.**
+
+### B · ARAÇ KOMUTU %8 EKSİK TAKİP EDİYOR
+    komut 16.88 m/s → gerçekleşen 15.52 m/s   (üç koşuda da aynı)
+Bir kısmı sürükleme (gövde), bir kısmı `PSC_VELXY_P` / `ATC_RAT_*` olabilir.
+Bunlar ARAÇ PARAMETRESİ sınıfı — gövde değil, hiç dokunulmadı.
+
+### C · SALDIRI GEOMETRİSİ: kuyruğu kovalama, ÇEMBERİN İÇİNE OTUR
+Kuyruk kovalamak dar dairede matematiksel olarak kaybeden oyun: hedefin
+yayının DIŞINDA kaldığın için daha uzun yolu daha hızlı koşman gerekiyor.
+
+    bugün  (1.4 m dışarıda) : gereken hız 15.7 m/s = yapabildiğinin TAVANI,
+                              yay vergisi 9.5 m/s² = bütçenin %100, menzil 20 m
+    12 m yarıçapta İÇERİDE  : gereken hız  7.2 m/s (yarısı!),
+                              yay vergisi 4.3 m/s² = bütçenin %36, menzil 13 m
+
+Mekanizma ZATEN KODDA: ÖB avcıyı +1.4 m dışarıdan −1.0 m içeriye taşımıştı.
+**Yön doğruydu, şiddet ~10 kat eksikti** (PAYI_MAX_DEG 35° ve hız hep tam
+gazdı; içeri yerleşmek için derin kesme + yerleşince YAVAŞLAMA gerekiyor).
+D0 temiz: hepsi kutudan (LOS dönme hızının işareti).
+
+**SIRA: A (ucuz, ölçülmüş %50 israf) → C (fizik en çok bunu destekliyor)
+→ B → gövde.**
+
+
+## ⚑⚑ C + D KAMPANYALARI · 16 UÇUŞ (2026-08-22) — **HER İKİ KALDIRAÇ DA ELENDİ**
+
+### C · `MAX_ACCEL_YATAY` TARAMASI (8 uçuş, `circle_s`)
+Kontrol havuzu n=11 (T/A/B/C kampanyalarının tüm `circle_s` kontrol koşuları,
+hepsi birebir aynı kod yolu). Mekanizma dört kolda da tam çalıştı
+(ölçülen yatay ivme 12.0 / 15.0 / 10.0 / 8.0).
+
+| YATAY | medyan | <15m s | <25m s | en yakın | temas | isabet |
+|---|---|---|---|---|---|---|
+| **0 = KONTROL (n=11)** | **21.2 m** | 43.0 | **176.5** | 5.40 m | **%83.5** | 0/11 |
+| 15 (n=2) | 21.6 | 47.8 | 144.8 | 4.40 | %71.1 | 0/2 |
+| 10 (n=2) | 32.8 | 12.0 | 32.5 | 3.10 | %72.4 | 0/2 |
+| 8 (n=2) | 39.0 | 18.0 | 38.5 | 3.20 | %69.1 | 0/2 |
+
+⇒ **12 zaten optimum.** Üstü (15,18) temas kaybettiriyor; altı (10,8) aracın
+yayı çevirmesini engelliyor (medyan 21 → 33-39 m).
+⚠ İlk blokta 15 "kazanmış" göründü; kontrolün kendi en-yakın dağılımı
+2.1-7.3 m olduğu için 4.40 tam gürültünün içinde. n=11 havuzu bunu yakaladı.
+
+### D · `V_HUCUM` TARAMASI (8 uçuş)
+
+| V_HUCUM | gerçekleşen hız | medyan | <15m s | <25m s | temas | isabet |
+|---|---|---|---|---|---|---|
+| **18 KONTROL (n=13)** | 15.74 | **21.1 m** | **43.0** | **183.5** | %84.2 | 0/13 |
+| 20 (n=2) | **16.41** ↑ | 24.1 | 7.8 | 130.5 | %84.0 | 0/2 |
+| 22 (n=2) | **14.00** ↓ | 36.9 | 11.8 | 30.8 | %71.7 | 0/2 |
+
+⇒ 20'de hız gerçekten arttı ama araç DAHA GENİŞ yay çizdi; fazla hız
+kapanmaya değil yola gitti. 22'de komut doydu ve çöktü.
+**ÖNGÖRÜLEN SINIR DOĞRULANDI:** yay vergisi V·V_t/R_t = MAX_ACCEL'e tam
+V = 12·24.9/14.92 = **20.0 m/s**'de eşitleniyor. 22 bunun üstünde.
+
+`circle_xl` regresyon: 18 → ISABET (2.50 m), 20 → ISABET (1.90 m). Kapı ✅.
+
+### ⛔ DÖRT KAMPANYANIN ORTAK SONUCU — `circle_s` ZARF DIŞINDA
+
+`circle_s` (R_t = 24.9 m) için denenen HER kaldıraç, geometrinin kendisi
+tarafından yutuldu:
+
+| kaldıraç | ne oldu |
+|---|---|
+| viraj yetkisi ↑ (ÖA 15/16/18) | araç YAVAŞLADI, temas %84 → %70 |
+| viraj yetkisi ↓ (8, 10) | yayı hiç çeviremedi, medyan 21 → 39 m |
+| yolu kısalt (ÖB) | geometri düzeldi ama hız 15.6 → 13.6 düştü |
+| hız ↑ (20) | hız arttı ama YAY GENİŞLEDİ, net kazanç yok |
+| hız ↑↑ (22) | komut doydu, çöktü |
+
+**`circle_s`: 0/23 isabet, hiçbir ayarla.**
+**`circle_xl` (R_t ≈ 65 m): 6/6 isabet, varsayılan ayarla.**
+
+Kalan tek gerçek kaldıraç GÖVDE (sürükleme ↓ / itki ↑) — ama o
+`UYGULANACAK.md`'deki bütün ölçümleri sıfırlar. Alternatif: zarfın nerede
+bittiğini ÖLÇMEK (circle_l R_t=46.5 ve circle R_t=35.4 hiç n≥2 ile
+koşulmadı; T07_orta 35.4 m'de 1.90 m'ye kadar gelmişti).
+
+
+## ⚑ AŞAMA 1a · ÖA (yatay ivme tavanı 12→18) · 8 UÇUŞ · **ELENDİ + SİLİNDİ** (2026-08-21)
+
+Mekanizma ÇALIŞTI: gerçekleşen yatay ivme p50 11.8 (kontrol, 12'de doymuş)
+→ 18.0 (deney). Ama sonuç TERS:
+
+| ölçüt | K n=3 | D n=3 | ilan edilen eşik | |
+|---|---|---|---|---|
+| kapanma payı | +0.07 | +0.44 | ≥+0.80 | ❌ |
+| görsel temas | %86.8 | **%64.4** | ≥%73.8 | ❌ İHLAL |
+| en yakın menzil | 4.40 m | 5.40 m | — | kötüleşti |
+| isabet | 0/3 | 0/3 | — | — |
+| `circle_xl` hız | 17.25 | **15.01** | — | −2.24 m/s |
+
+KÖK NEDEN: komut slew'ini açmak, aracın eğim yetkisini İLERİ HIZDAN alıp
+yön değiştirmeye harcatıyor. Her iki senaryoda da araç YAVAŞLADI. Bu,
+"MAX_ACCEL 26 terminali bozdu" bulgusunun üçüncü, aynı yöndeki kanıtı.
+**`MAX_ACCEL = 12` kapanma payını kısıtlamıyordu, KORUYORDU.**
+§5.12 uyarınca tamamen silindi; bit bit denklik doğrulandı (20000/20000,
+en büyük fark 0.000e+00).
+
+## ⚑ AŞAMA 1b · ÖB (garantili kapanma payı) · 8 UÇUŞ · **NÖTR — KARAR KULLANICIDA**
+
+`AVCI_IBVS_KAPANMA_PAYI` (varsayılan 0 = kapalı; denenen 1.5 m/s).
+ṙ hedefin altına düşünce hız vektörü yayın İÇİNE kaydırılır. β YALNIZ
+`hiz_yonu`na girer, `yaw_cmd`'ye GİRMEZ → kamera yapısal olarak korunur
+(birim testi: yaw_cmd 20000/20000 birebir aynı).
+
+| ölçüt | K n=3 | ÖB n=3 | eşik | |
+|---|---|---|---|---|
+| **mekanizma** β≠0 oranı | %0.0 | **%64-65** | >%30 | ✅ |
+| **hedeflenen geometri** r_p−R_t | **+1.16…+1.61** (dışarıda) | **−0.78…−1.20** (İÇERİDE) | — | ✅ tam istenen |
+| görsel temas (geçerlilik eşi) | %81.1 | %79.4 | ≥%68.9 | ✅ |
+| **en yakın menzil** | 5.00 m | **3.60 m** (−%28) | — | ✅ ama dağılımlar iç içe |
+| kapanma payı (birincil) | −0.16 | −0.82 | ≥+0.80 | ❌ |
+| medyan mesafe | 21.1 m | 24.6 m | — | ❌ |
+| 15 m altında süre | 44.5 s | 12.5 s | — | ❌ |
+| **isabet** | **0/3** | **0/3** | — | değişmedi |
+| `circle_xl` regresyon | ISABET 1.20 m | ISABET 1.20 m | düşmeyecek | ✅ |
+
+ÖB hedeflediği geometrik değişimi ÜRETTİ (avcı artık `circle_xl`'deki
+kazanan konumda, çemberin içinde) ama uçuş sonucunu değiştirmedi.
+Kod duruyor, varsayılan KAPALI, panelde düğmesi var.
+
+### İKİ ADAYIN ORTAK DERSİ — asıl kısıt burada
+
+Her iki tasarım da aynı duvara çarptı: **manevra yaparken araç hız
+kaybediyor ve hedefin 14.9 m/s'sine karşı pay bırakmıyor.**
+
+    duz        : 17.57 m/s   (komut 18.0 — neredeyse tam)
+    circle_xl  : 17.25 m/s
+    circle_s K : 15.62 m/s   ← pay +0.7 m/s
+    circle_s ÖA: 15.00 m/s
+    circle_s ÖB: 13.63 m/s
+
+39° yatışta itki mg/cosθ = 1.29×hover'a gidiyor ve g·tanθ = 7.9 m/s²
+dönüşe ayrılıyor; sürüklenmeyi yenmeye kalan ileri itki azalıyor.
+Güdüm yasasıyla çözülebilir bir şey DEĞİL — R_t ≈ 25 m'de araç gerçek bir
+zarf sınırında. Sıradaki aday bu yüzden GÜDÜM değil ZARF tarafında olmalı.
+
+
+## ⚑⚑ T KAMPANYASI · DAİRE TEŞHİSİ · 8 UÇUŞ (2026-08-21) — **KÖK NEDEN BULUNDU**
+
+Kullanıcı isteği: *"çap küçüldükçe vuramıyor, küçük çaplı dairelerde de
+vursun — 96 m'deki mevcut başarıyı bozmadan."*
+
+### SONUÇ TABLOSU (kol yok; tek değişken hedefin dönüş yarıçapı)
+
+| koşu | senaryo | **ölçülen R_t** | avcı hızı | eş-dönüş için gereken | **kapanma payı** | en yakın | sonuç |
+|---|---|---|---|---|---|---|---|
+| T08_duz | `duz` | ∞ | 17.57 | — | **+2.45** | 2.10 m | **İSABET** |
+| T01_xl | `circle_xl` | 66.8 m | 16.10 | 13.27 | **+2.83** | 0.70 m | **İSABET** |
+| T03_xl | `circle_xl` | 65.0 m | 17.42 | 14.86 | **+2.56** | 2.50 m | **İSABET** |
+| T05_xl | `circle_xl` | 64.2 m | 17.30 | 14.75 | **+2.55** | 1.90 m | **İSABET** |
+| T07_orta | `circle` | 35.4 m | 16.56 | 15.18 | **+1.38** | 1.90 m | ıska (kıl payı) |
+| T02_s | `circle_s` | 24.9 m | 15.79 | 15.72 | **+0.07** | 7.30 m | ISKA |
+| T04_s | `circle_s` | 24.9 m | 15.57 | 15.47 | **+0.10** | 5.40 m | ISKA |
+| T06_s | `circle_s` | 24.9 m | 15.74 | 15.64 | **+0.10** | 6.00 m | ISKA |
+
+`circle_xl` **3/3 isabet** · `circle_s` **0/3** · isabetler hedefin irtifa
+çöküşüyle doğrulandı (temas sonrası 14 kare içinde 20 m altına düşüş).
+
+### 1 · TABLO HATASI — beş kampanyayı yanlış tabana oturtmuş
+
+`run_plane_scenario.py` "roll=1000 ≈ 45°" varsayıyordu; SITL dökümünde
+`ROLL_LIMIT_DEG = 65.0`. Yarıçaplar **~2 kat** yanlış yazılıydı
+(`circle_s` "41 m" sanılıyordu, gerçek **24.9 m**). Yorum düzeltildi;
+roll komutları ve davranış DEĞİŞMEDİ.
+
+### 2 · KÖK NEDEN — dar dairede araç HIZINI kaybediyor, hedefi değil
+
+Üç teşhis kapısının **ÜÇÜ DE** kapalı kaldı (eşikler koşudan önce ilan
+edilmişti) — yani üç hipotezimin üçü de yanlıştı:
+
+| aday | eşik | `circle_s` ölçüm | fire? |
+|---|---|---|---|
+| ivme bütçesi doyuyor | >%15 | **%0.4-1.1** | ✗ |
+| lead doyuyor | >%25 | **%10.4-13.8** | ✗ |
+| algı kaybediyor | temas yarıya iner | **%48 → %86 ARTTI** | ✗ |
+
+GERÇEK MEKANİZMA — zincirin her halkası ölçüldü:
+1. Yayı takip etmenin ivme vergisi `a = V²/R_t`. `circle_s`'te güdümün
+   `MAX_ACCEL = 12 m/s²` bütçesinin **%90'ı**.
+2. Araç tavana DAYANMIYOR; onun yerine **hız kaybediyor**: 18 m/s komut,
+   **15.6-15.8 m/s** gerçekleşme (`duz`'da 17.6).
+3. Kalan hızda yay vergisi `15.79·14.92/24.9 = 9.46 m/s²` — ölçülen yanal
+   ivme p90 **9.37-9.44**. Kendi kendine dengeye oturuyor.
+4. Hedef 14.92 m/s ⇒ **kapanma payı 0.07-0.10 m/s.** Araç hedefin
+   çemberinin 0.9-1.3 m dışında, tam eş-dönüş dengesinde kilitli.
+
+### 3 · GÖRSEL KANIT (§2 adım 4, kareler tek tek)
+
+`circle_s` f0200 → f0230 → f0260 (30 s): ufuk **45° yatık** (sürekli),
+hedef **tam merkezde**, kutu **14-16 px'te DONMUŞ** (conf 0.51→0.60).
+Kutu boyutu 30 s'lik dilimlerde: `12.5 · 14.4 · 14.2 · 15.6` — 2.5 dakika
+boyunca büyümüyor. **Klasik "gölge etme".**
+`circle_xl` f0155 → f0160 (2.5 s): kutu 35 px → tüm kadraj. Ufuk 25-30°.
+
+### 4 · KARAR KURALI NE DİYOR
+
+Üç kapı da kapalı ⇒ önceden ilan edildiği gibi **Aşama 1 bu hâliyle
+başlamaz.** Ö-D1 (menzile orantılı lead) ve Ö-D2 (bütçe ayırma) bu arızayı
+ÇÖZMEZ — ikisi de doymayan bir kanalı hedefliyordu.
+
+**Doğru kaldıraç: kapanma payını geri kazanmak.** İki yol var, ikisi de
+`R_t,min = V_p·V_t/a_max` denkleminden çıkıyor:
+  (a) `MAX_ACCEL`'i yalnız YATAY kanalda açmak — araç 27 m/s² yapabiliyor,
+      güdüm 12'de kesiyor. ⚠ 26 denenmiş ve terminali bozmuştu.
+  (b) Hedefin hızına göre kapanma payını GARANTİ eden bir hız tavanı.
+
+
 Aşağıdakiler **tek tek** uygulanacak; her maddeden sonra uçulup ölçülecek,
 sonuç maddenin altına yazılacak. Bir madde bitmeden diğerine geçilmeyecek.
 

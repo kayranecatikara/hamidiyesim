@@ -361,6 +361,80 @@ AYARLAR = [
      "denendi ve ÖLÇÜLDÜ: en yakın menzil 1.79 → 2.92 m, KÖTÜLEŞTİ.",
      "Komut yumuşar; ani kaçamakta geç kalınır."),
 
+
+    # ÖA — 18.0'da ölçüldü ve elendi (A kampanyası). Ayar KALIR: kullanıcı
+    # kuralı 2026-08-21 "ayar konsolundan hiçbir şey silme". Tarama için durur.
+    ("MAX_ACCEL_YATAY", "MAX_ACCEL_YATAY", "ÖA · yatay ivme bütçesi (AYRI)",
+     "G3", "sayi", "m/s²", 0.0, 30.0, 1.0,
+     "0 = KAPALI (tek 3B tavan = MAX_ACCEL, bugünkü hâl). >0 ise yatay ivme "
+     "bu tavana, dikey MAX_ACCEL'e ayrı bağlanır.",
+     "⚠ 18.0 ÖLÇÜLDÜ: hız 15.78→15.00, görsel temas %86.8→%64.4, en yakın "
+     "menzil 4.40→5.40 m — ÜÇÜ DE KÖTÜLEŞTİ. Komut slew'ini açmak eğim "
+     "yetkisini ileri hızdan alıp yön değiştirmeye harcatıyor.",
+     "0 = bugünkü davranış, birebir. 12'nin ALTI hiç denenmedi."),
+
+    # ⭐⭐ ÖC — 46 uçuşun (T/A/B/C/D/E) çıktısı. KARARI BEKLEYEN ÖZELLİK.
+    ("IC_YERLESME", "IC_YERLESME", "⭐ ÖC · iç yerleşme (yayın içine gir)",
+     "G3", "bool", "", None, None, None,
+     "Hedef sürekli tek yöne dönerken (yay) hız vektörünü yayın İÇİNE kaydırır "
+     "ve derin kestikçe YATAY hızı kısar. NEDEN: ölçüldü — circle_s'te avcı "
+     "hedefin çemberinin 1 m DIŞINDA kalıyor, tur başına 8.2 m fazla yol "
+     "koşuyor ve kapanma payı 0.07 m/s'ye iniyor. circle_xl'de İÇERİDE ve "
+     "6/6 vuruyor. Tetik ṙ değil, λ̇ işaretinin yavaş EMA'sı (duz'da %1).",
+     "⛔ ÖLÇÜLDÜ VE ELENDİ (F kampanyası, 8 uçuş, 2026-08-22). MEKANİZMA "
+     "KUSURSUZ ÇALIŞTI: kesme 42-58°, avcı çemberin 9-11.5 m İÇİNE girdi. "
+     "AMA REGRESYON KAPISI ÇÖKTÜ: circle_xl 7/7 → 0/1, en yakın 1.30 → "
+     "10.70 m, temas %84.5 → %50.7. KÖK NEDEN: 'ṙ düşükse daha çok kes' "
+     "döngüsü, kesince YAVAŞLADIĞI için ṙ'yi daha da düşürüyor — ters yönde "
+     "pozitif geri besleme. Tam kesmede kilitlenip içeride oturuyor, hiç "
+     "vurmuyor. Eksik olan bir VURUŞ FAZI (dışa atılma tetiği).",
+     "Bugünkü davranış (kuyruk kovalama). Düz uçuşta zaten fark yok."),
+
+    ("IC_KESME_MAX_DEG", "IC_KESME_MAX_DEG", "⭐ ÖC · kesme tavanı",
+     "G3", "sayi", "°", 0.0, 80.0, 5.0,
+     "Hız vektörünün LOS'tan en fazla ne kadar içeri kayabileceği.",
+     "Daha derin girer. ⚠ Fazlası avcıyı hedefin ÖNÜNE düşürür "
+     "(DAIRE_TESHIS'in ölçtüğü 130-170° arızası).",
+     "Sığ kesme; dar dairede yetmez."),
+
+    ("IC_HIZ_K", "IC_HIZ_K", "⭐ ÖC · derin kesme → yavaşlama",
+     "G3", "sayi", "", 0.0, 1.0, 0.05,
+     "Kesme derinleştikçe YATAY hızın ne kadar kısılacağı. 0.6'da tam "
+     "kesmede 18 → ~7.2 m/s (içeride eş dönmek için gereken hız). "
+     "⚠ Dikey kanala DOKUNMAZ — hedef ~1 m/s tırmanıyor, o takip sürmeli.",
+     "İçeride daha iyi tutunur; fazlası hedeften kopartır.",
+     "0 = hız kısma yok, sadece kesme (ÖB gibi davranır)."),
+
+    ("IC_KAPANMA_HEDEF", "IC_KAPANMA_HEDEF", "⭐ ÖC · istenen kapanma hızı",
+     "G3", "sayi", "m/s", 0.0, 5.0, 0.5,
+     "ṙ bu değerin altındaysa kesme büyür, üstündeyse kendiliğinden bırakır. "
+     "2.0 seçildi: zarf haritasında pay ≥ 2 m/s olan her koşu vurdu (9/9).",
+     "Daha ısrarcı keser.", "Erken bırakır."),
+
+    # ⭐ ÖB — T kampanyası + Aşama 1a'nın çıktısı. KARARI BEKLEYEN TEK ÖZELLİK.
+    ("KAPANMA_PAYI", "KAPANMA_PAYI", "⭐ ÖB · garantili kapanma payı",
+     "G3", "sayi", "m/s", 0.0, 4.0, 0.1,
+     "0 = KAPALI. >0 ise: kapanma hızı bu değerin altına düşünce hız vektörü "
+     "yayın İÇİNE kaydırılır (kiriş, yaydan kısadır). NEDEN: dar dairede avcı "
+     "hedefin çemberinin 1 m DIŞINDA kalıyor, hızının tamamı daha uzun yayı "
+     "çevirmeye gidiyor ve kapatmaya 0.07 m/s kalıyor. ⚠ Burun kanalına "
+     "DOKUNMAZ — kamera hedefte kalır (ÖA'yı deviren şey temas kaybıydı).",
+     "Daha erken/sert keser; kapanma payı artar. ⚠ Fazlası avcıyı hedefin "
+     "ÖNÜNE düşürür (DAIRE_TESHIS'in ölçtüğü 130-170° arızası).",
+     "Bugünkü davranış (0 = birebir eski yol). Düz uçuşta zaten etkisiz."),
+
+    ("PAYI_K", "PAYI_K", "⭐ ÖB · kesme kazancı", "G3", "sayi", "°/(m/s)",
+     0.0, 40.0, 1.0,
+     "Eksik kapanmanın kaç dereceye çevrileceği. β = PAYI_K × (hedef − ṙ).",
+     "Aynı eksikte daha sert keser; hızlı tepki ama ṙ gürültüsü komuta sızar.",
+     "Yumuşak; kesme geç kurulur."),
+
+    ("PAYI_MAX_DEG", "PAYI_MAX_DEG", "⭐ ÖB · kesme tavanı", "G3", "sayi", "°",
+     0.0, 60.0, 5.0,
+     "Hız vektörünün LOS'tan en fazla ne kadar sapabileceği.",
+     "Daha agresif kesme; ÖNE DÜŞME riski artar.",
+     "Güvenli ama dar dairede yetmeyebilir."),
+
     ("KACIS_KD", "KACIS_KD", "Ö1 · kaçış telafisi", "G3", "sayi", "",
      0.0, 5.0, 0.1,
      "Hedef UZAKLAŞIYORSA (kapanma < 0) hızı ANINDA artırır — "

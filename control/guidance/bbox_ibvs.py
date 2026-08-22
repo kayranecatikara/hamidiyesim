@@ -60,6 +60,7 @@ from vision import geometry as geo
 from control.guidance.guidance_core import Cfg as GeoCfg
 from control.guidance.common import (
     clamp, normalize_angle, send_velocity, limit_acceleration,
+    limit_acceleration_split,
 )
 from control.guidance.kurtarma import Kurtarma
 
@@ -255,6 +256,78 @@ class Cfg:
     # büyüdü diye bu kırpıcıyı da büyütmek TERMİNALİ BOZUYOR — takip ile
     # bitiriş ayrı problemler (bu oturumun tekrar eden bulgusu).
     MAX_ACCEL = _env_f("AVCI_IBVS_MAXACC", 12.0)   # m/s²; komut değişim sınırı
+
+    # ══ YATAY İVME BÜTÇESİNİ DİKEYDEN AYIR (ÖA) ══
+    # ⚠ 2026-08-21: ÖA 18.0 değeriyle ÖLÇÜLDÜ ve ELENDİ (8 uçuş, A kampanyası).
+    # Ama alan SİLİNMEZ — kullanıcı kuralı (2026-08-21): *"ayar konsolundan
+    # benim talebim haricinde hiçbir zaman hiçbir şey silme."* Bu kural
+    # CLAUDE.md §5.12'nin "elenen özellik tamamen çıkarılır" maddesini
+    # ayar konsolu yüzeyi için EZER. Alan tarama/keşif için durur.
+    #
+    # NE YAPAR: 0 iken tek 3B tavan (MAX_ACCEL) — bugünkü hâl, BİREBİR.
+    # >0 iken yatay ivme bu tavana, dikey MAX_ACCEL'e AYRI bağlanır.
+    #
+    # ÖLÇÜM (A kampanyası, circle_s R_t=24.9 m, n=3/kol, değer 18.0):
+    #     gerçekleşen yatay ivme p50   11.8 (kontrol, 12'de doymuş) → 18.0 ✓
+    #     gerçekleşen HIZ              15.78 → 15.00 m/s   KÖTÜLEŞTİ
+    #     görsel temas                 %86.8 → %64.4      KÖTÜLEŞTİ
+    #     en yakın menzil               4.40 → 5.40 m     KÖTÜLEŞTİ
+    #     circle_xl hız                17.25 → 15.01 m/s  KÖTÜLEŞTİ
+    # KÖK NEDEN: komut slew'ini açmak, aracın sonlu eğim yetkisini İLERİ
+    # HIZDAN alıp yön değiştirmeye harcatıyor. 12'lik sınır kapanma payını
+    # kısıtlamıyordu, KORUYORDU. (Aynı yönde üçüncü kanıt: MAX_ACCEL 26 da
+    # terminali bozmuştu, en yakın menzil 1.79 → 2.92 m.)
+    #
+    # ⚠ HENÜZ SINANMAMIŞ YÖN: 12'den AŞAĞISI. 12→18→26 üçlüsü hep aleyhte
+    # çıktı; eğilim "daha az slew = daha iyi" diyor ama 8-10 bandı hiç
+    # ölçülmedi. Bunun için MAX_ACCEL (tek 3B tavan) da konsolda duruyor.
+    MAX_ACCEL_YATAY = _env_f("AVCI_IBVS_MAXACC_YATAY", 0.0)  # m/s²; 0 = kapalı
+
+    # ══ ÖB · GARANTİLİ KAPANMA PAYI — "yayı kes, dışından dolaşma" ══
+    # T KAMPANYASI (2026-08-21, 8 uçuş) + AŞAMA 1a (8 uçuş) birlikte şunu
+    # gösterdi: dar dairede arıza NİŞANDA ya da ALGIDA değil, YOLDA.
+    #
+    # ÖLÇÜLDÜ — avcının ve hedefin daire merkezine uzaklığı (çember uydurma):
+    #     circle_xl (R_t≈65 m) : r_p − R_t = −0.7 … −7.3 m  → avcı İÇERİDE
+    #                            kapanma payı +2.55 … +2.83 m/s   → isabet 3/3
+    #     circle_s  (R_t=24.9) : r_p − R_t = +0.9 … +1.3 m  → avcı DIŞARIDA
+    #                            kapanma payı +0.01 … +0.25 m/s   → isabet 0/6
+    # Dışarıdaki avcı, aynı açısal hızda kalmak için hedeften HIZLI uçmak
+    # zorunda: V_gerekli = V_t·r_p/R_t = 15.7 m/s. Gerçekleşen 15.8 m/s.
+    # Yani hızının TAMAMI daha uzun yayı çevirmeye gidiyor; kapatmaya
+    # 0.07 m/s kalıyor. 19 m'de 100 saniye asılı kalmanın sebebi bu.
+    #
+    # ⛔ ÖA (yatay ivme tavanını 12→18 açmak) BU SORUNU ÇÖZMEDİ VE ELENDİ:
+    # mekanizma çalıştı (ivme 11.8 → 18.0) ama araç YAVAŞLADI (15.78 → 15.00)
+    # ve görsel temas %86.8 → %64.4 düştü. Komut slew'ini açmak, eğim
+    # yetkisini ileri hızdan alıp yön değiştirmeye harcıyor.
+    #
+    # ÇÖZÜM — HIZI DEĞİL YOLU DEĞİŞTİR. Hız vektörünü yayın İÇİNE doğru
+    # kaydır: kiriş, yaydan kısadır. Var olan hıza kapanma payı böyle çıkar.
+    #     eksik  = max(0, KAPANMA_PAYI − ṙ)        ṙ = kutu büyümesinden
+    #     |β|    = min(PAYI_K·eksik, PAYI_MAX)
+    #     β      = işaret(los_hiz_az) · |β|         (LOS'un döndüğü yön = yayın içi)
+    # ve β YALNIZ `hiz_yonu`na eklenir.
+    #
+    # ⚠ YAPISAL GARANTİ — KAMERA KORUNUR: β `yaw_cmd`'ye GİRMEZ. Burun tam
+    # hedefte kalır, yalnız gövde yayın içine kayar. ÖA'yı deviren şey görsel
+    # temas kaybıydı (%64); bu tasarımda nişan kanalı hiç dokunulmamış olur.
+    # Birim testi B-ÖB2 bunu bekçiler (yaw_cmd iki kolda birebir aynı).
+    #
+    # ⚠ DÜZ UÇUŞTA YAPISAL OLARAK ETKİSİZ: `duz`da ṙ ≈ 2.4-2.9 m/s ölçüldü,
+    # KAPANMA_PAYI 1.5'in üstünde ⇒ eksik = 0 ⇒ β = 0. Ayrıca los_hiz_az ≈ 0.
+    # Yani §5.10'un taban koşusu tanım gereği bozulamaz.
+    #
+    # ⚠ RİSK: fazla kesmek avcıyı hedefin ÖNÜNE düşürür — DAIRE_TESHIS'in
+    # ölçtüğü 130-170° kuyruk açısı arızası. PAYI_MAX_DEG tavanı bunun freni.
+    # ⚠ GÜRÜLTÜ: ṙ kutu büyümesinden gelir ve gürültülüdür (ardışık kare
+    # değişimi p90 %17.5, gerçek ~%2.5). KAPANMA_EMA=0.20 ile yumuşatılmış
+    # hâli kullanılır; oransal yolda olduğu için titreme riski VAR, ölçülecek.
+    #
+    # AVCI_IBVS_KAPANMA_PAYI=0 → KAPALI (varsayılan, eski yol BİREBİR).
+    KAPANMA_PAYI = _env_f("AVCI_IBVS_KAPANMA_PAYI", 0.0)   # m/s; 0 = kapalı
+    PAYI_K = _env_f("AVCI_IBVS_PAYI_K", 12.0)              # °/(m/s)
+    PAYI_MAX_DEG = _env_f("AVCI_IBVS_PAYI_MAX", 35.0)      # °; kesme tavanı
 
     # ══ YATAY AÇI ROLL/PITCH TELAFİSİ — T1a (2026-08-09) ══
     # KULLANICI GÖZLEMİ: "düz uçuşta ıskalamıyor, hedef manevra yapınca görsel
@@ -597,6 +670,68 @@ class Cfg:
     DIKEY_KAPANMA = _env_f("AVCI_IBVS_DIKEY_KAPANMA", 0.0) >= 0.5
     DIKEY_KAP_TABAN = _env_f("AVCI_IBVS_DIKEY_KAP_TABAN", 1.5)   # m/s
 
+    # ══════════════════════════════════════════════════════════════════
+    # ÖC · İÇ YERLEŞME — "kuyruğu kovalama, yayın İÇİNE gir"
+    # ══════════════════════════════════════════════════════════════════
+    # NEDEN (T/A/B/C/D/E kampanyaları, 46 uçuş): dar dairede avcının hız
+    # üstünlüğü dört adımda eriyor —
+    #     1. düz uçuşta üstünlük            +2.45 m/s  (17.57 vs 15.12)
+    #     2. sert virajda kayıp (multirotor 1.82, sabit kanat 0.20) → +0.83
+    #     3. hedefin DIŞINDAKİ daire tur başına 8.2 m fazla yol      → +0.07
+    #     4. kalan pay 0.07 m/s ⇒ 19 metre 209 saniyede kapanır (uçuş 240 s)
+    # Adım 2 gövde meselesi; ADIM 3 TAMAMEN GÜDÜM MESELESİ ve üstünlüğün
+    # %92'sini tek başına yiyor.
+    #
+    # ÖLÇÜLDÜ (çember uydurma, koşunun ikinci yarısı):
+    #     circle_s  : avcı hedefin çemberinin +0.9…+1.3 m DIŞINDA → isabet 0/13
+    #     circle_xl : avcı −0.7…−7.3 m İÇERİDE                    → isabet 6/6
+    # Kazanan geometri İÇERİDE olmak. İçeride eş dönmek için gereken hız
+    # ω·r ile küçülür: 12 m yarıçapta 7.2 m/s (bugün 15.7 m/s = tavan).
+    #
+    # ⛔ ÖB BU YÖNDE ÇALIŞTI AMA YETMEDİ (8 uçuş): avcıyı +1.4 m dışarıdan
+    # −1.0 m içeriye taşıdı (yön DOĞRU) ama tam gazda kaldığı için içeride
+    # tutunamadı, açıda geri düştü. Eksik olan iki şey: DERİN kesme ve
+    # içeri yerleşince YAVAŞLAMA.
+    #
+    # ── TETİK: "yay var mı?" — ṙ DEĞİL ──
+    # İlk tasarım ṙ eşiğine bağlanacaktı; ÖLÇÜM ÇÜRÜTTÜ: ṙ çok gürültülü
+    # (duz'da p10 −8.09 / p90 +8.13 m/s) ve karelerin %50'sinde 2.0'ın
+    # altında — düz uçuşta da ateşlerdi.
+    # DOĞRU SİNYAL: λ̇'nın İŞARETİNİN yavaş EMA'sı = "ısrarla tek yöne mi
+    # dönüyoruz". Ölçüldü (|EMA|, α=0.03 ≈ 1.7 s):
+    #     duz %1  ·  circle_xl %96  ·  circle %90  ·  circle_s %100
+    # Düz uçuşta YAPISAL OLARAK ETKİSİZ; yay yoksa özellik yoktur.
+    #
+    # ── YASA ──
+    #     yay    = |EMA(işaret(λ̇))|            0..1, çağıran taşır
+    #     w      = clamp((yay − EŞİK)/(1 − EŞİK), 0, 1)      yumuşak geçiş
+    #     eksik  = max(0, IC_KAPANMA_HEDEF − ṙ)
+    #     |β|    = w · min(IC_KESME_K·eksik, IC_KESME_MAX)
+    #     β      = işaret(λ̇) · |β|              → yayın İÇİNE
+    #     ölçek  = 1 − IC_HIZ_K·(|β|/IC_KESME_MAX)   → derin kesme = yavaş
+    #
+    # ⚠ YAPISAL GARANTİ 1 — KAMERA: β yalnız `hiz_yonu`na girer, `yaw_cmd`ye
+    #   GİRMEZ. Burun hedefte kalır. (ÖA'yı deviren şey temas kaybıydı.)
+    # ⚠ YAPISAL GARANTİ 2 — DİKEY: ölçek yalnız YATAY büyüklüğe (`_yat`)
+    #   uygulanır, `v_los`a değil. Hedef ~1 m/s TIRMANIYOR (ölçüldü, her
+    #   senaryoda) ve dikey kanalın onu takip etmesi gerekiyor; hız kısma
+    #   dikeye bulaşmaz.
+    # ⚠ KENDİ KENDİNİ BIRAKIR: ṙ hedefe ulaşınca eksik→0, β→0, ölçek→1.
+    #   circle_xl'de ṙ zaten +0.92 olduğu için kesme sığ kalır ve terminale
+    #   girerken tamamen serbest bırakır.
+    # ⚠ RİSK: fazla kesmek avcıyı hedefin ÖNÜNE düşürür (DAIRE_TESHIS'in
+    #   ölçtüğü 130-170° arızası). IC_KESME_MAX tavanı bunun freni.
+    #
+    # AVCI_IBVS_IC=0 → KAPALI (varsayılan, eski yol BİREBİR).
+    IC_YERLESME = _env_f("AVCI_IBVS_IC", 0.0) >= 0.5
+    IC_YAY_ESIK = _env_f("AVCI_IBVS_IC_YAY", 0.60)        # yay tespiti eşiği
+    IC_KAPANMA_HEDEF = _env_f("AVCI_IBVS_IC_HEDEF", 2.0)  # m/s; istenen ṙ
+    IC_KESME_K = _env_f("AVCI_IBVS_IC_K", 30.0)           # °/(m/s)
+    IC_KESME_MAX_DEG = _env_f("AVCI_IBVS_IC_MAX", 60.0)   # °; kesme tavanı
+    IC_HIZ_K = _env_f("AVCI_IBVS_IC_HIZK", 0.6)           # kesme→hız kısma
+    IC_V_MIN = _env_f("AVCI_IBVS_IC_VMIN", 7.0)           # m/s; yatay taban
+    IC_YAY_EMA = _env_f("AVCI_IBVS_IC_EMA", 0.03)         # yay tespiti EMA'sı
+
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
     BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
 
@@ -612,6 +747,7 @@ _CSV_ALANLAR = [
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
     "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
+    "pay_ek_deg", "ic_olcek", "ic_yay",
 ]
 
 
@@ -690,7 +826,7 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0, yay=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -816,8 +952,31 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
                        0.0, 1.0)
             eps_hiz = eps_yaw + _w * (_eps_eff - eps_yaw)
 
+    # ── ÖC / ÖB · YAYIN İÇİNE KESME (bkz. Cfg.IC_YERLESME, Cfg.KAPANMA_PAYI) ──
+    # YALNIZ hız vektörüne girer; yaw_cmd yukarıda kuruldu ve DOKUNULMAZ.
+    # ÖC açıksa ÖB'nin yerine geçer (ikisi aynı kanalı sürer; üst üste binmez).
+    pay_ek = 0.0
+    ic_olcek = 1.0
+    if cfg.IC_YERLESME and kapanma is not None and los_hiz[0] != 0.0:
+        _w = clamp((yay - cfg.IC_YAY_ESIK) / max(1.0 - cfg.IC_YAY_ESIK, 1e-6),
+                   0.0, 1.0)
+        if _w > 0.0:
+            _eksik = max(0.0, cfg.IC_KAPANMA_HEDEF - kapanma)
+            _buyuk = _w * min(math.radians(cfg.IC_KESME_K) * _eksik,
+                              math.radians(cfg.IC_KESME_MAX_DEG))
+            pay_ek = math.copysign(_buyuk, los_hiz[0])
+            # DERİN KESME = YAVAŞ: içeride eş dönmek için gereken hız ω·r ile
+            # küçülür. Yalnız YATAY büyüklüğe uygulanır (dikey kanal serbest).
+            ic_olcek = 1.0 - cfg.IC_HIZ_K * (abs(_buyuk)
+                                             / math.radians(cfg.IC_KESME_MAX_DEG))
+    elif cfg.KAPANMA_PAYI > 0.0 and kapanma is not None and los_hiz[0] != 0.0:
+        _eksik = max(0.0, cfg.KAPANMA_PAYI - kapanma)
+        _buyuk = min(math.radians(cfg.PAYI_K) * _eksik,
+                     math.radians(cfg.PAYI_MAX_DEG))
+        pay_ek = math.copysign(_buyuk, los_hiz[0])
     # SAF TAKİP: hız LOS yönünde — ama yönü eps_hiz belirler
-    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum + lead_az)
+    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum
+                               + lead_az + pay_ek)
     vx_ned = v_los * math.cos(hiz_yonu)
     vy_ned = v_los * math.sin(hiz_yonu)
 
@@ -864,12 +1023,16 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
                -cfg.VZ_MAX, cfg.VZ_MAX)
     # |v| = v_los KORUNSUN: dikey ne kadar aldıysa gerisi yatayadır.
     _yat = math.sqrt(max(v_los * v_los - vz * vz, 0.0))
+    if ic_olcek < 1.0:
+        # YALNIZ KISAR ve IC_V_MIN altına inmez (hedeften büsbütün kopmayalım).
+        _yat = max(_yat * ic_olcek, min(_yat, cfg.IC_V_MIN))
     vx_ned = _yat * math.cos(hiz_yonu)
     vy_ned = _yat * math.sin(hiz_yonu)
 
     tani = {"boyut": boyut, "eps_yaw": eps_yaw, "eps_yaw_ham": eps_yaw_ham,
             "hata": hata, "v_los": v_los,
-            "eps_hiz": eps_hiz, "sonum": sonum,
+            "eps_hiz": eps_hiz, "sonum": sonum, "pay_ek": pay_ek,
+            "ic_olcek": ic_olcek, "yay": yay,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
@@ -946,6 +1109,13 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
     # LOS (atalet) açıları ve hızları — lead nişanı için
     los_az_onceki = los_el_onceki = None
     los_hiz = [0.0, 0.0]      # [azimut, yükseliş] rad/s, EMA'lı
+    # ── YAY TESPİTİ (ÖC, bkz. Cfg.IC_YERLESME) ──
+    # λ̇'nın İŞARETİNİN yavaş EMA'sı: "ısrarla tek yöne mi dönüyoruz?"
+    # 0 = düz uçuş / rastgele salınım · ±1 = sürekli tek yönlü yay.
+    # ⚠ Neden ṙ değil: ṙ çok gürültülü (duz'da p10 −8.09 / p90 +8.13 m/s) ve
+    # karelerin %50'si 2.0 altında — düz uçuşta da ateşlerdi. Bu sinyal
+    # ölçümde ayırıyor: duz %1 · circle_xl %96 · circle_s %100.
+    yay_ema = [0.0]
     boyut_onceki = None       # kapanma hızı için (bkz. Cfg.KAPANMA)
     kapanma = None            # m/s; görüntüden ölçülen kapanma hızı, EMA'lı
     iyaw_onceki = None        # Ö9 sönümlemesi için yaw türevi (bkz. Cfg.SONUM_T)
@@ -1081,6 +1251,11 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 los_hiz[1] = (a_ * ((los_el - los_el_onceki) / dt)
                               + (1 - a_) * los_hiz[1])
             los_az_onceki, los_el_onceki = los_az, los_el
+            # yay tespitini güncelle (yalnız anlamlı bir dönüş varken sayılır)
+            if abs(los_hiz[0]) > 1e-4:
+                _isaret = math.copysign(1.0, los_hiz[0])
+                _a = cfg.IC_YAY_EMA
+                yay_ema[0] = _a * _isaret + (1.0 - _a) * yay_ema[0]
 
             # ── KAPANMA HIZI, GÖRÜNTÜDEN (bkz. Cfg.KAPANMA) ──
             # R = MENZIL_PX_M/boyut  ⇒  ṙ = −dR/dt = R·(dboyut/dt)/boyut
@@ -1101,7 +1276,7 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 cx, cy, bw, bh, iyaw, hiz_I, dt, cfg,
                 tuple(los_hiz), ipitch,
                 float(iris.get("vz", 0.0) or 0.0),
-                kapanma, iroll, yaw_hizi)
+                kapanma, iroll, yaw_hizi, abs(yay_ema[0]))
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -1121,8 +1296,14 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
             yaw_cmd = cmd_yaw
 
             # ivme sınırı (komut hızı sıçramasın)
-            vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,
-                                            cfg.MAX_ACCEL, dt)
+            if cfg.MAX_ACCEL_YATAY > 0.0:
+                # Yatay ayrı tavan (açık); dikey MAX_ACCEL'de kalır.
+                vx, vy, vz = limit_acceleration_split(
+                    vx, vy, vz, vx_p, vy_p, vz_p,
+                    cfg.MAX_ACCEL_YATAY, cfg.MAX_ACCEL, dt)
+            else:
+                vx, vy, vz = limit_acceleration(vx, vy, vz, vx_p, vy_p, vz_p,
+                                                cfg.MAX_ACCEL, dt)
             vx_p, vy_p, vz_p = vx, vy, vz
             son_v_cmd = (vx, vy, vz, yaw_cmd)
             send_velocity(conn, vx, vy, vz, yaw_cmd)
@@ -1150,6 +1331,9 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "kapanma_olculen": ("" if kapanma is None
                                     else round(kapanma, 2)),
                 "dikey_olcek": round(tani["dikey_olcek"], 2),
+                "pay_ek_deg": round(math.degrees(tani["pay_ek"]), 2),
+                "ic_olcek": round(tani["ic_olcek"], 3),
+                "ic_yay": round(tani["yay"], 3),
                 "kacis_ek": round(tani["kacis_ek"], 2),
                 "gecikme_s": (round(gecikme_s, 4)
                               if gecikme_s is not None else ""),

@@ -297,16 +297,37 @@ def scenario_square(conn):
         i += 1
 
 
-# ── DAİRE ÇAPLARI (2026-08-05) ──
-# Yarıçap yatış açısıyla belirlenir: R = v²/(g·tanθ). Roll komutu FBWA'da
-# yatış hedefine ölçeklenir (roll=1000 ≈ 45°). v≈15 m/s için:
-#     roll   yatış   yarıçap   yük faktörü   stall hızı×
-#      300     14°      96 m       1.03         1.01
-#      400     18°      71 m       1.05         1.03
-#      500     22°      55 m       1.08         1.04   ← eski tek daire
-#      650     29°      41 m       1.15         1.07
-#      800     36°      32 m       1.24         1.11
-# 40°+ eklenmedi: AIRSPEED_MIN=12 / CRUISE=15 ile stall payı daralıyor.
+# ── DAİRE YARIÇAPLARI ──
+# ⛔⛔ 2026-08-21 · BU TABLO 2026-08-05'TEN BERİ YANLIŞTI — DÜZELTİLDİ.
+#
+# Eski tablo "roll=1000 ≈ 45°" varsayıyordu. SITL param dökümü (mav_2_1.parm,
+# ArduPlane) bunu ÇÜRÜTÜYOR:
+#     ROLL_LIMIT_DEG   65.000000
+# Yani roll komutu 65°'ye ölçekleniyor, 45°'ye değil — 1.44 kat fark. Yarıçap
+# tanθ ile ters orantılı olduğu için hata yarıçaplarda ~2 KAT büyüyordu.
+#
+# ÖLÇÜLDÜ (T kampanyası, 2026-08-21, 8 uçuş): iki aracın GPS konumundan hedefin
+# yörüngesine en küçük kareler çemberi uyduruldu (koşunun ikinci yarısı):
+#     circle_xl → 66.8 / 65.0 / 64.2 m   (tablo "96 m" diyordu)
+#     circle    → 35.4 m                  (tablo "55 m" diyordu)
+#     circle_s  → 24.9 / 24.9 / 24.9 m    (tablo "41 m" diyordu)
+#   circle_s saçılması p10-p90 = 24.7-25.0 m — uyum kusursuz.
+#
+# DOĞRU TABLO — yatış = roll/1000 × ROLL_LIMIT_DEG(65°), v ≈ 14.9 m/s:
+#     roll   yatış    R = v²/(g·tanθ)    ÖLÇÜLEN     senaryo
+#      300   19.5°        64.1 m         64-67 m     circle_xl
+#      400   26.0°        46.5 m           —         circle_l
+#      500   32.5°        35.6 m         35.4 m      circle
+#      650   42.3°        25.0 m         24.9 m      circle_s
+#      800   52.0°        17.7 m           —         circle_xs
+#
+# ⚠ ADLAR YARIÇAPTIR, ÇAP DEĞİL. "circle_xl" = yarıçap ~64 m, çap ~128 m.
+#
+# ⚠ NEYİ BOZDU: Ö5/Ö11/Ö-B/Ö-J kampanyalarının hepsi bu tabloya bakarak
+# "hedef 41 m yarıçapta dönüyor" sanıyordu; gerçek 25 m'ydi. Yani avcının
+# zorlandığı geometri, sanılandan %60 daha sert. Bu tablo yanlış olduğu için
+# o kampanyaların "neden yakınsayamıyoruz" teşhisleri de yanlış tabana oturdu.
+# Yalnız YORUM düzeltildi; roll komutları ve davranış DEĞİŞMEDİ.
 #
 # NEDEN VAR: iç daire nişanının yarıçap-oranlı sürümünü sınamak için hedefin
 # FARKLI yarıçaplarda dönmesi gerekiyor. Sabit-metre sürüm (14 m) yalnız
@@ -320,11 +341,24 @@ DAIRE_CAPLARI = {
     "circle_l":  (400, "geniş (~71 m)"),
     "circle":    (500, "orta (~55 m) — referans"),
     "circle_s":  (650, "dar (~41 m)"),
-    # ⌀32 (roll 800) KALDIRILDI (2026-08-06, kullanıcı kararı): o kadar sert ve
-    # SÜREKLİ bir manevra gerçekçi bir hedef davranışı değil; ayrıca avcı drone
-    # orada ivme tavanına dayanıp kontrolü kaybediyordu (v_sürdürülebilir =
-    # a_max/ω = 8/0.564 = 14.2 m/s, hedefin hızına eşit → sıfır pay).
-    # Geri eklemek gerekirse: "circle_xs": (800, "çok dar (~32 m)")
+    # ⌀32 (roll 800) — 2026-08-06'da KALDIRILMIŞTI, 2026-08-21'de GERİ AÇILDI.
+    #
+    # KALDIRMA GEREKÇESİ (2026-08-06): "avcı drone orada ivme tavanına dayanıp
+    # kontrolü kaybediyordu (v_sürdürülebilir = a_max/ω = 8/0.564 = 14.2 m/s,
+    # hedefin hızına eşit → sıfır pay)."
+    #
+    # NEDEN GERİ AÇILDI: o hesap ESKİ zarfa aitti (a_max = 8 m/s², WPNAV_ACCEL
+    # 800). Bugün araç tarafında a_max = 26-27 m/s² ve güdüm tarafında
+    # MAX_ACCEL = 12 m/s². Yeni sayı: v_sürdürülebilir = 12/0.469 = 25.6 m/s —
+    # hedefin 15 m/s'sine göre %70 pay var. Yani "sıfır pay" savı artık geçerli
+    # değil.
+    #
+    # AMA HÂLÂ ZARFIN SINIRI: yayı takip etmenin ivme vergisi
+    # a_hold = V_p·V_t/R_t = 18·15/32 = 8.44 m/s² — MAX_ACCEL'in %70'i.
+    # Bu senaryo bir "isabet beklentisi" değil, ZARF SINIRI ÖLÇÜMÜ içindir.
+    # Kuyruk açısı 31 m menzilde asin(31/32) = 75.6°, yani hedef neredeyse
+    # tam YANDAN görünür — dedektör 0-15° görüş açısında kalibreli.
+    "circle_xs": (800, "çok dar (~32 m) — ZARF SINIRI"),
 }
 
 

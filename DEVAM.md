@@ -1,5 +1,63 @@
 # DEVAM — başka bir makinede kaldığın yerden
 
+## ⚠⚠ TALON MODELİNİ DEĞİŞTİRECEKSEN ÖNCE BUNU OKU (2026-08-22)
+
+Kullanıcı Gazebo'daki Talon'un ölçülerini gerçek Talon'a göre düzeltecek.
+**Bu değişiklik ÜÇ yeri birden bozar.** Hiçbiri kendiliğinden düzelmez.
+
+### Bugünkü model değerleri (değiştirmeden önce not al)
+
+    sim/gazebo_harmonic/models/mini_talon_vtail/model.sdf
+        kütle            1.8 kg   (satır 37)
+    collision mesh'ten ölçülen:
+        kanat açıklığı   1.280 m
+        gövde boyu       0.814 m
+        yükseklik        0.286 m
+
+### 1 · MENZİL KALİBRASYONU BOZULUR ⛔ (en kritik)
+
+`control/guidance/bbox_ibvs.py`:
+
+    MENZIL_PX_M_CARPIM  = 185.7   px·m
+    MENZIL_PX_M_KOSEGEN = 296.8   px·m
+
+Bunlar TAHMİN DEĞİL, **8 uçuş / 5812 kareden ölçülmüş** sabitler:
+`R = C / kutu_boyutu`. C, hedefin GÖRÜNEN BÜYÜKLÜĞÜYLE doğru orantılıdır.
+Kanat açıklığını 1.28 → 1.50 m yaparsan C de ~%17 büyür ve düzeltilmezse
+**güdüm bütün menzilleri %17 yanlış görür.**
+
+Menzile bağlı olan her şey birlikte kayar: `LEAD_SONUM`, `YAVASLAMA`,
+`DIKEY_KAPANMA`, `YANAL_MENZIL`, `HUCUM_MENZIL_M`, `LEAD_MENZIL_M`.
+
+**Yapılacak:** model değiştikten sonra C yeniden ölçülür — birkaç uçuşta
+`bbox_ibvs` kutusu ile telemetriden gelen gerçek menzil eşleştirilip
+`C = medyan(kutu_boyutu × gerçek_menzil)` (0-15° görüş açısı bandında).
+
+### 2 · HEDEFİN UÇUŞ DAVRANIŞI DEĞİŞİR → ZARF HARİTASI GEÇERSİZLEŞİR
+
+Kütle ve kanat açıklığı hedefin dönüş yarıçapını, hızını ve tırmanmasını
+değiştirir. `UYGULANACAK.md`'deki zarf haritası (yarıçap 24.9 / 35.4 /
+47.5 / 65.6 m) **bu gövdeyle** ölçüldü.
+
+**Yapılacak:** her senaryoda R_t yeniden ölçülür (çember uydurma, koşunun
+ikinci yarısı) ve `circle_xl` + `circle_l` taban koşuları tekrarlanır.
+
+### 3 · TESPİT MODELİ (YOLO) bu görünüşle eğitildi
+
+Silueti belirgin değiştirirsen `conf` düşebilir. `vision/geometry.py` de
+collision mesh'leri okuyor (satır 31, 122) — mesh adları değişirse kırılır.
+
+**Yapılacak:** ilk uçuşta `conf` dağılımına bak; `CONF_MIN`=0.35 altına
+düşen kare oranı artmışsa dedektör yeniden eğitilmeli.
+
+### ⇒ ÖZET
+Talon değişikliği, avcı gövdesini değiştirmekle **aynı sınıfta** bir iştir:
+ölçüm tabanını sıfırlar. Değişiklikten sonra ilk iş **C sabitini yeniden
+ölçmek**, ikinci iş **`circle_xl`/`circle_l` tabanını tekrar koşmak.**
+
+---
+
+
 Bu dosya "yarın laptop'ta açtım, ne yapacaktım?" sorusunun cevabı.
 Asıl iş listesi **[UYGULANACAK.md](UYGULANACAK.md)**; oradaki **DURUM**
 bölümü her zaman güncel tutulur. Bu dosya ona nasıl ulaşacağını anlatır.
