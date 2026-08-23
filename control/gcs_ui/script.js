@@ -56,7 +56,7 @@ const st = {
 };
 const SCN_LBL = {
   duz: 'DÜZ', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF',
-  elips_gorev: 'ELİPS',
+  kare_gorev: 'KARE GÖREVİ', elips_gorev: 'ELİPS',
   circle_xl: 'DAİRE ⌀96', circle_l: 'DAİRE ⌀71', circle_s: 'DAİRE ⌀41',
 };
 
@@ -897,15 +897,20 @@ function markScenario(){
   });
   $('oMode').textContent = st.manual ? 'MANUEL' : (lbl || 'BEKLEME');
 }
+// kare_gorev SONLU: kalkış + kare + iniş; bitince süreç kapanır, buton
+// /api/scenario_status yoklamasıyla kendiliğinden BEKLEME'ye döner.
 async function startScenario(name){
   if (st.manual) await exitManual();
-  addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (kalkış + desen)...');
+  const akis = (name === 'kare_gorev') ? 'kalkış + kare + iniş' : 'kalkış + desen';
+  addLog('sys', 'CMD', SCN_LBL[name] + ' senaryosu gönderiliyor (' + akis + ')...');
   scnBtns.forEach(b => b.disabled = true);
   try {
     const r = await (await fetch('/api/command/plane/scenario/' + name, { method: 'POST' })).json();
     if (r.status === 'success'){
       st.scenario = name;
-      addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — hedef kalkıp deseni uçacak.');
+      addLog('sys', 'SYS', '✓ ' + SCN_LBL[name] + ' aktif — ' + (name === 'kare_gorev'
+        ? 'hedef kalkacak, kareyi çizecek ve kalkış noktasına inecek.'
+        : 'hedef kalkıp deseni uçacak.'));
     } else addLog('err', 'HATA', 'Senaryo reddedildi: ' + r.message);
   } catch (e){ addLog('err', 'HATA', 'Bağlantı hatası: ' + e); }
   scnBtns.forEach(b => b.disabled = false);
