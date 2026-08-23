@@ -149,8 +149,8 @@ class Cfg:
     # şu: kutu eksen-hizalı olduğu için, İNCE BİR ÇUBUK kadrajda θ kadar
     # dönerse  w = L·|cosθ|,  h = L·|sinθ|  olur ve
     #     sqrt(w² + h²) = L·sqrt(cos²θ + sin²θ) = L      → YATIŞTAN BAĞIMSIZ
-    # Talon arkadan bakınca büyük ölçüde "ince çubuk"tur (kanat 1.280 m,
-    # kuyruk yüksekliği 0.286 m).
+    # Talon arkadan bakınca büyük ölçüde "ince çubuk"tur (kanat 1.718 m,
+    # kuyruk yüksekliği 0.383 m).
     #
     # ÖLÇÜLDÜ (8 uçuş, 5812 kare; gerçek menzil telem'den, YALNIZ ANALİZDE):
     #   görüş açısı dağılımı: %91'i 0-15° (tam arkadan), medyan 1°
@@ -159,13 +159,15 @@ class Cfg:
     #     sqrt(w·h)  %22        ← bugünkü
     #     KÖŞEGEN    %14        ← %36 daha iyi
     #     w tek başına %12      ← en iyi AMA 30-60°'de %35'e fırlıyor
-    #   Teorik yatış duyarlılığı (0-90°, kanat 1.280 / kuyruk 0.286):
+    #   Teorik yatış duyarlılığı (0-90°, kanat/kuyruk ORANINDAN — ölçekten
+    #   bağımsız; o gün kanat 1.280 / kuyruk 0.286 idi, oran korundu):
     #     KÖŞEGEN %19  ·  sqrt(w·h) %83  ·  w %359
     #   ⇒ köşegen, hâkim rejimde kazancın çoğunu alıyor ve bozulduğunda
     #     zarifçe bozuluyor. `w` daha iyi ama kırılgan.
     #
-    # ⚠ MODEL ÖLÇÜLERİ (mini_talon_vtail collision mesh'ten, doğrulandı):
-    #   kanat açıklığı 1.280 m · gövde boyu 0.814 m · yükseklik 0.286 m
+    # ⚠ MODEL ÖLÇÜLERİ (mini_talon_vtail collision mesh'ten):
+    #   kanat açıklığı 1.718 m · gövde boyu 1.093 m · yükseklik 0.383 m
+    #   (2026-08-22 öncesi Mini Talon: 1.280 / 0.814 / 0.286)
     # Kalibre sabitleri MODELDEN DEĞİL ÖLÇÜMDEN alındı (kutu, görsel modeli
     # kaplıyor ve YOLO kutusu gevşek çiziliyor; ampirik sabit doğrusu).
     #
@@ -194,8 +196,17 @@ class Cfg:
     # Ölçüye göre kalibrasyon — C = medyan(p · R_gerçek), 0-15° bandında.
     # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller
     # %14 EKSİK tahmin ediliyordu (kendimizi olduğumuzdan yakın sanıyorduk).
-    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 185.7)   # px·m
-    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 296.8)  # px·m
+    #
+    # ⚠⚠ 2026-08-22 — HEDEF MODELİ BÜYÜDÜ, BU SAYILAR ÖLÇÜM DEĞİL TAHMİN.
+    # Gazebo'daki hedef, gerçek X-UAV **Mini** Talon (1300 mm) ölçülerindeydi;
+    # gerçek X-UAV **Talon**'a (1718 mm) ölçeklendi. Çarpan s = 1718/1280 =
+    # 1.3422. C = FX·S ve S (hedefin gerçek boyu) doğrusal büyüdüğü için:
+    #     185.7 × 1.3422 = 249.2      296.8 × 1.3422 = 398.4
+    # Eski değerler 8 uçuş / 5812 kareden ÖLÇÜLMÜŞTÜ; bunlar o ölçümün
+    # ölçeklenmiş hâli, YENİ BİR ÖLÇÜM DEĞİL. İlk iş taze uçuşla yeniden
+    # ölçmek:  python3 tools/menzil_olcu_kiyas.py <kacamak_dizini> ...
+    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 249.2)   # px·m
+    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 398.4)  # px·m
 
     # ── EŞİKLER ARTIK METRE ───────────────────────────────────────────
     # Ölçü değişince piksel eşikleri anlamını yitirir (köşegen ~1.6 kat

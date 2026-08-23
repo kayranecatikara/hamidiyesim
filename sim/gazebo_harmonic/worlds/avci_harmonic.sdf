@@ -172,7 +172,7 @@
     <include>
       <name>mini_talon</name>
       <uri>model://mini_talon_vtail</uri>
-      <pose degrees="true">12 0 0.195 0 0 90</pose>
+      <pose degrees="true">12 0 0.261727 0 0 90</pose>
     </include>
   </world>
 </sdf>

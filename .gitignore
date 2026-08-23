@@ -45,3 +45,6 @@ logs/visual_lead_*.csv
 # ============ Eğitim çıktıları (ağırlıklar vision/models altında tutulur) ============
 vision/runs_pose/
 vision/runs/
+
+# Talon mesh ölçekleme yedeği (13 MB) — orijinaller git tarihçesinde zaten var
+sim/gazebo_harmonic/models/_mesh_yedek/

@@ -8,7 +8,7 @@
     <static>true</static>
     <link name="body">
       <inertial>
-        <mass>1.5</mass>
+        <mass>2.75</mass>
         <inertia><ixx>0.05</ixx><iyy>0.08</iyy><izz>0.1</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
       </inertial>
 

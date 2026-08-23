@@ -26,11 +26,12 @@ import numpy as np
 
 from vision import geometry as geo
 
-# ══ Talon fiziksel boyutları (Gazebo collision mesh'ten ölçülmüş, doğrulanmış;
-#    fabrika X-UAV Mini Talon ile uyumlu) ══
-GOVDE_BOYU_M = 0.81        # X ekseni
-KANAT_ACIKLIGI_M = 1.28    # Y ekseni
-GOVDE_KANAT_ORANI = 0.633  # 0.81 / 1.28
+# ══ Talon fiziksel boyutları (Gazebo collision mesh'ten ölçülmüş) ══
+# 2026-08-22: hedef, gerçek X-UAV **Talon**'a (1718 mm) ölçeklendi.
+# Öncesi gerçek X-UAV **Mini** Talon'du: 0.81 / 1.28 / oran 0.633.
+GOVDE_BOYU_M = 1.093       # X ekseni  (gerçek Talon 1.100 m)
+KANAT_ACIKLIGI_M = 1.718   # Y ekseni  (gerçek Talon 1.718 m)
+GOVDE_KANAT_ORANI = 0.636  # 1.093 / 1.718 — ORAN, düzgün ölçekte değişmez
 
 
 def _env_f(name, default):
@@ -42,10 +43,13 @@ class Cfg:
     # ── çekirdek ──
     K_LEAD = _env_f("AVCI_IBVS_K_LEAD", 0.5)      # ≈ hedef_hızı/bizim_hız, tarama 0.0-1.0
     MAX_LEAD_DEG = 35.0
-    OLCEK_KAPALI_PX = 6.0    # olcek_px = fx·0.81/R = 134.9/R → 6 px ≈ R 22.5 m (lead yok)
-    OLCEK_TAM_PX = 14.0      #                                → 14 px ≈ R 9.6 m (tam lead)
+    # ⚠ PİKSEL eşikleri hedefin boyundan türer; hedef büyüyünce AYNI menzil
+    # daha çok piksel eder. Fiziksel menzilleri (22.5 / 9.6 m) korumak için
+    # eşikler s = 1.3422 ile birlikte büyütüldü (2026-08-22).
+    OLCEK_KAPALI_PX = 8.05   # olcek_px = fx·1.093/R = 182.1/R → R 22.6 m (lead yok)
+    OLCEK_TAM_PX = 18.79     #                                → R  9.7 m (tam lead)
     FILTRE_TAU_S = 0.12      # 30 Hz'te ~3.6 kare; pencere dar, uzun tutma
-    MIN_GOVDE_PX = 2.0
+    MIN_GOVDE_PX = 2.68     # ×s (2026-08-22): aynı fiziksel menzil eşiği
     FLIP_DT_TAVAN_S = 0.20   # 30 Hz'te 6 kare
     GECIKME_TAVAN_S = 0.12   # bundan bayat kare atlanır (döngü kullanır)
     YUKSELTI_DUZELT = True   # Adım 3: LOS yükselti düzeltmesi (alttan yaklaşma)

@@ -484,7 +484,7 @@ def main():
     kontrol("G6 kalibre sabitleri makul aralıkta",
             0.5 < _S_car < 2.5 and 1.0 < _S_kos < 3.0 and _S_kos > _S_car,
             f"ima edilen görünen boy: çarpım {_S_car:.2f} m, köşegen "
-            f"{_S_kos:.2f} m  (model: kanat 1.280, gövde 0.814, yük. 0.286)")
+            f"{_S_kos:.2f} m  (model: kanat 1.718, gövde 1.093, yük. 0.383)")
 
     # ══════════════════════════════════════════════════════════════════
     print("=" * 62)

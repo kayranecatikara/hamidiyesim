@@ -146,21 +146,32 @@ function camAnaKey(){ return ANA_KEY; }
 // görüntüsü):
 //     ┌───────────────────────┬─────────────────┐  üst sıra = alanın %64'ü
 //     │   AV  (takip ekranı)  │   KNM (konum)   │  genişlik %52 | %48
-//     ├───────────┬───────────┼─────────────────┤
-//     │    TL     │    AVD    │      TLD        │  alt sıra = kalan, üçe eşit
-//     └───────────┴───────────┴─────────────────┘
+//     ├───────────────────────┼────────┬────────┤
+//     │   AVD (avcı dış)      │   TL   │  TLD   │  alt sıra = kalan
+//     └───────────────────────┴────────┴────────┘
+//
+// 2026-08-22 (kullanıcı isteği): AVD tam AV'nin ALTINDA — ikisi de AVCI
+// aracına bakar, alt alta durunca aynı aracın iç/dış görüşü yan yana okunur.
+// TL ve TLD YAN YANA — ikisi de HEDEF Talon'a ait (burun kamerası + dış
+// görüş). Önceki düzende (TL | AVD | TLD) iki aracın görüşleri birbirine
+// karışıyordu.
 //
 // Kullanıcı bir pencereyi TAŞIR ya da BOYUTLANDIRIRSA yalnız o pencerenin
 // geometrisi localStorage'a yazılır ve sonraki açılışta o kullanılır.
 // Dokunulmayan pencereler varsayılanda kalır (böylece ekran boyu değişince
 // kendilerini yeniden ölçerler). Üst çubuktaki ⟲ dairesi kaydı siler.
-const DUZEN_ANAHTAR = 'avci.pencere.duzen.v1';
+// ⚠ SÜRÜM v2 (2026-08-22): alt sıra düzeni değişti. v1 kaydı taşıyan
+// pencerelere yol açıyordu (eski kademeli konumlar kaydedilmişti);
+// anahtarı yükseltmek o kaydı otomatik geçersiz kılar.
+const DUZEN_ANAHTAR = 'avci.pencere.duzen.v2';
 const FPV_KEY   = ANA_KEY;   // takip ekranı — kamera penceresi DEĞİL, panelin kendisi
 const POS_DOT   = '__pos';   // konum izleme paneli
 const DUZEN_DOT = '__duzen'; // "düzeni sıfırla" dairesi (kamera değil)
 const PEN_BOSLUK = 8;        // pencereler arası boşluk — .main grid gap'iyle aynı
-// Alt sıradaki üç küçük pencerenin anahtarları (soldan sağa).
-const DUZEN_ALT = ['plane', 'iris_chase', 'talon_chase'];
+// Alt sıradaki üç küçük pencerenin anahtarları (SOLDAN SAĞA):
+//   iris_chase (AVD) = avcı dış görüş — AV'nin altında
+//   plane (TL) + talon_chase (TLD) = Talon'un iki kamerası, yan yana
+const DUZEN_ALT = ['iris_chase', 'plane', 'talon_chase'];
 
 // Orta sütunun ekrandaki dikdörtgeni. Takip ekranı pencereye alınınca bu sütun
 // boşalır ama grid genişliğini/yüksekliğini KORUR (grid-template-columns'ta
@@ -181,16 +192,19 @@ function ortaAlan(){
 function varsayilanDuzen(){
   const a = ortaAlan(), g = PEN_BOSLUK;
   const ustH = Math.round((a.h - g) * 0.64);          // üst sıra: AV + KNM
-  const altH = a.h - g - ustH;                        // kalan: TL + AVD + TLD
-  const avW  = Math.round((a.w - g) * 0.52);
-  const kW   = Math.round((a.w - 2 * g) / 3);         // alt sıra üçe eşit bölünür
+  const altH = a.h - g - ustH;                        // kalan: AVD + TL + TLD
+  const avW  = Math.round((a.w - g) * 0.52);          // AV sütunu
+  const sagW = a.w - avW - g;                         // KNM sütunu
+  const tlW  = Math.round((sagW - g) / 2);            // Talon'un iki kamerası
   const altT = a.y + ustH + g;
   const d = {};
-  d[FPV_KEY]      = { l: a.x,                 t: a.y,  w: avW,             h: ustH };
-  d[POS_DOT]      = { l: a.x + avW + g,       t: a.y,  w: a.w - avW - g,   h: ustH };
-  d[DUZEN_ALT[0]] = { l: a.x,                 t: altT, w: kW,              h: altH };
-  d[DUZEN_ALT[1]] = { l: a.x + kW + g,        t: altT, w: kW,              h: altH };
-  d[DUZEN_ALT[2]] = { l: a.x + 2 * (kW + g),  t: altT, w: a.w - 2*(kW+g),  h: altH };
+  d[FPV_KEY]      = { l: a.x,                    t: a.y,  w: avW, h: ustH };
+  d[POS_DOT]      = { l: a.x + avW + g,          t: a.y,  w: sagW, h: ustH };
+  // AVD tam AV'nin altında ve AYNI GENİŞLİKTE — aynı araca bakan iki görüş.
+  d['iris_chase'] = { l: a.x,                    t: altT, w: avW, h: altH };
+  // TL + TLD yan yana, KNM sütununu paylaşır — ikisi de Talon'a ait.
+  d['plane']       = { l: a.x + avW + g,         t: altT, w: tlW, h: altH };
+  d['talon_chase'] = { l: a.x + avW + g + tlW + g, t: altT, w: sagW - tlW - g, h: altH };
   return d;
 }
 

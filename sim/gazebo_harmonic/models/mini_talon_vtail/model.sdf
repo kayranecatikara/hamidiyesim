@@ -1,7 +1,22 @@
 <?xml version="1.0"?>
 <sdf version="1.9">
   <!--
-    Mini-talon dimensions
+    X-UAV TALON (1718 mm) — 2026-08-22'de Mini Talon'dan ölçeklendi.
+
+    Ölçek çarpanı  s = 1718 / 1280 = 1.3421875   (düzgün/uniform)
+    Araç: tools/mesh_olcekle.py    Geri alma: bayrak `geri`
+    Orijinal (s=1.0) mesh'ler: models/_mesh_yedek/
+
+    GERÇEK X-UAV Talon (üretici) | BU MODEL (collision mesh'ten ölçülen)
+      kanat açıklığı  1.718 m    |  1.718 m
+      gövde boyu      1.100 m    |  1.093 m   (−%0.66; en/boy oranı korundu)
+      kanat alanı     0.60 m²    |  0.60 m²   (LiftDrag 2×0.30)
+      uçuş ağırlığı   2.5-3.0 kg |  2.75 kg   (toplam: gövde 2.64 + parçalar)
+
+    ⚠ AŞAĞIDAKİ ÖLÇÜLER ESKİ MİNİ TALON'A AİTTİR — ×1.3422 ile büyütüldü.
+      (tarihsel kayıt; canlı değer değil)
+
+    Mini-talon dimensions (s = 1.0, TARİHSEL)
 
     wing
     chord root: 0.248 m
@@ -33,15 +48,23 @@
 
     <link name="base_link">
       <inertial>
-        <pose>0 0 0 0 0 0</pose>
-        <mass>1.8</mass>
+        <!-- AĞIRLIK MERKEZİ (2026-08-22, gerçek araçtan):
+             batarya 900 g burundan ~10 cm geride (ÖNDE)
+             motor   207 g gövde arkasında x=-0.550 (ARKADA)
+             gerçek CG: kanat hücum kenarından 7.5 cm geride = x +0.0695
+             gerçek aerodinamik merkez (çeyrek-veter) = x +0.0748
+             → gerçek CG, aerodinamik merkezin 5.3 mm GERİSİNDE.
+             Modelin kanat cp'si x=0 olduğu için aynı bağıl denge
+             model CG = -0.0053 m demek. Toplam CG oraya oturtuldu. -->
+        <pose>0.050402 0 0 0 0 0</pose>
+        <mass>2.2263335</mass>
         <inertia>
-          <ixx>0.024607948</ixx>
+          <ixx>0.059107217</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>0.086155637</iyy>
+          <iyy>0.20694208</iyy>
           <iyz>0</iyz>
-          <izz>0.103828985</izz>
+          <izz>0.24939269</izz>
         </inertia>
       </inertial>
 
@@ -252,7 +275,7 @@
       </visual>
 
       <visual name="motor_plate_visual">
-        <pose degrees="true">-0.41 0 -0.03 0 90 0</pose>
+        <pose degrees="true">-0.55029688 0 -0.040265625 0 90 0</pose>
         <geometry>
           <mesh>
             <uri>model://mini_talon_vtail/meshes/propdrive_3536_frontplate.dae</uri>
@@ -271,10 +294,10 @@
 
       <!-- leave for debugging lift-drag CoP -->
       <!-- <visual name="cp_left_wing_visual">
-        <pose degrees="true">0 0.27 0.029 0 0 0</pose>
+        <pose degrees="true">0 0.36239063 0.038923438 0 0 0</pose>
         <geometry>
           <sphere>
-            <radius>0.015</radius>
+            <radius>0.020132812</radius>
           </sphere>
         </geometry>
         <material>
@@ -285,10 +308,10 @@
       </visual>
 
       <visual name="cp_right_wing_visual">
-        <pose degrees="true">0 -0.27 0.029 0 0 0</pose>
+        <pose degrees="true">0 -0.36239063 0.038923438 0 0 0</pose>
         <geometry>
           <sphere>
-            <radius>0.015</radius>
+            <radius>0.020132812</radius>
           </sphere>
         </geometry>
         <material>
@@ -299,10 +322,10 @@
       </visual>
 
       <visual name="cp_left_vtail_visual">
-        <pose degrees="true">-0.33 0.08 0.051 0 0 0</pose>
+        <pose degrees="true">-0.44292188 0.107375 0.068451562 0 0 0</pose>
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -313,10 +336,10 @@
       </visual>
 
       <visual name="cp_right_vtail_visual">
-        <pose degrees="true">-0.33 -0.08 0.051 0 0 0</pose>
+        <pose degrees="true">-0.44292188 -0.107375 0.068451562 0 0 0</pose>
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -340,7 +363,7 @@
            Burunda, ileriye + hafif aşağı bakar (ufuk + zemin). -->
       <sensor name="talon_camera" type="camera">
         <gz_frame_id>base_link</gz_frame_id>
-        <pose>0.35 0 0.05 0 -0.15 0</pose>
+        <pose>0.46976563 0 0.067109375 0 -0.15 0</pose>
         <always_on>1</always_on>
         <update_rate>30</update_rate>
         <visualize>1</visualize>
@@ -368,7 +391,7 @@
            gz-transport topic: talon_chase/image -->
       <sensor name="chase_camera" type="camera">
         <gz_frame_id>base_link</gz_frame_id>
-        <pose>-2.5 0 0.8 0 0.31 0</pose>
+        <pose>-3.3554688 0 1.07375 0 0.31 0</pose>
         <always_on>1</always_on>
         <update_rate>15</update_rate>
         <visualize>0</visualize>
@@ -414,16 +437,16 @@
     </link>
 
     <link name="main_wheel_link">
-      <pose degrees="true">0.302018 0 -0.097974 90 0 0</pose>
+      <pose degrees="true">0.40536478 0 -0.13149948 90 0 0</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.013333334</mass>
         <inertia>
-          <ixx>1.01896E-06</ixx>
+          <ixx>2.4474975e-06</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>1.01896E-06</iyy>
+          <iyy>2.4474975e-06</iyy>
           <iyz>0</iyz>
-          <izz>1.71125E-06</izz>
+          <izz>4.1103478e-06</izz>
         </inertia>
       </inertial>
       <collision name="main_wheel_collision">
@@ -468,16 +491,16 @@
     </joint>
 
     <link name="left_aileron_link">
-      <pose degrees="true">-0.107 0.371 0.0174 0 0 0</pose>
+      <pose degrees="true">-0.14361406 0.49795156 0.023354063 0 0 0</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.013333334</mass>
         <inertia>
-          <ixx>4.68283E-05</ixx>
+          <ixx>0.00011247954</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>2.54167E-06</iyy>
+          <iyy>6.1049805e-06</iyy>
           <iyz>0</iyz>
-          <izz>4.93283E-05</izz>
+          <izz>0.00011848443</izz>
         </inertia>
       </inertial>
       <collision name="left_aileron_collision">
@@ -507,7 +530,7 @@
       <!-- <visual name="cp_left_aileron_visual">
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -518,7 +541,7 @@
       </visual> -->
     </link>
     <joint name="left_aileron_joint" type="revolute">
-      <pose degrees="true">0.015 0 0 0 0 0</pose>
+      <pose degrees="true">0.020132812 0 0 0 0 0</pose>
       <parent>base_link</parent>
       <child>left_aileron_link</child>
       <axis>
@@ -534,20 +557,20 @@
     </joint>
 
     <link name="right_aileron_link">
-      <pose degrees="true">-0.107 -0.371 0.0174 0 0 0</pose>
+      <pose degrees="true">-0.14361406 -0.49795156 0.023354063 0 0 0</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.013333334</mass>
         <inertia>
-          <ixx>4.68283E-05</ixx>
+          <ixx>0.00011247954</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>2.54167E-06</iyy>
+          <iyy>6.1049805e-06</iyy>
           <iyz>0</iyz>
-          <izz>4.93283E-05</izz>
+          <izz>0.00011848443</izz>
         </inertia>
       </inertial>
       <collision name="right_aileron_collision">
-        <pose degrees="true">0.005 -0.002 0 0 0 0</pose>
+        <pose degrees="true">0.0067109375 -0.002684375 0 0 0 0</pose>
         <geometry>
           <mesh>
             <uri>model://mini_talon_vtail/meshes/mini_talon_right_aileron.dae</uri>
@@ -555,7 +578,7 @@
         </geometry>
       </collision>
       <visual name="right_aileron_visual">
-        <pose degrees="true">0.005 -0.002 0 0 0 0</pose>
+        <pose degrees="true">0.0067109375 -0.002684375 0 0 0 0</pose>
         <geometry>
           <mesh>
             <uri>model://mini_talon_vtail/meshes/mini_talon_right_aileron.dae</uri>
@@ -575,7 +598,7 @@
       <!-- <visual name="cp_right_aileron_visual">
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -586,7 +609,7 @@
       </visual> -->
     </link>
     <joint name="right_aileron_joint" type="revolute">
-      <pose degrees="true">0.015 0 0 0 0 0</pose>
+      <pose degrees="true">0.020132812 0 0 0 0 0</pose>
       <parent>base_link</parent>
       <child>right_aileron_link</child>
       <axis>
@@ -602,16 +625,16 @@
     </joint>
 
     <link name="left_ruddervator_link">
-      <pose degrees="true">-0.365 0.077 0.045 45 -10 6</pose>
+      <pose degrees="true">-0.48989844 0.10334844 0.060398437 45 -10 6</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.013333334</mass>
         <inertia>
-          <ixx>1.97842E-05</ixx>
+          <ixx>4.7520785e-05</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>3.02083E-06</iyy>
+          <iyy>7.2559019e-06</iyy>
           <iyz>0</iyz>
-          <izz>2.27633E-05</izz>
+          <izz>5.4676454e-05</izz>
         </inertia>
       </inertial>
       <collision name="left_ruddervator_collision">
@@ -641,7 +664,7 @@
       <!-- <visual name="cp_left_ruddervator_visual">
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -652,14 +675,14 @@
       </visual> -->
     </link>
     <joint name="left_ruddervator_joint" type="revolute">
-      <pose degrees="true">0.01 0 0 0 0 0</pose>
+      <pose degrees="true">0.013421875 0 0 0 0 0</pose>
       <parent>base_link</parent>
       <child>left_ruddervator_link</child>
       <axis>
         <xyz>0 1 0</xyz>
         <limit>
-          <lower>-0.523599</lower>
-          <upper>0.523599</upper>
+          <lower>-0.5934</lower>
+          <upper>0.5934</upper>
         </limit>
         <dynamics>
           <damping>0.01</damping>
@@ -668,16 +691,16 @@
     </joint>
 
     <link name="right_ruddervator_link">
-      <pose degrees="true">-0.365 -0.077 0.045 -45 -10 -6</pose>
+      <pose degrees="true">-0.48989844 -0.10334844 0.060398437 -45 -10 -6</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.013333334</mass>
         <inertia>
-          <ixx>1.97842E-05</ixx>
+          <ixx>4.7520785e-05</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>3.02083E-06</iyy>
+          <iyy>7.2559019e-06</iyy>
           <iyz>0</iyz>
-          <izz>2.27633E-05</izz>
+          <izz>5.4676454e-05</izz>
         </inertia>
       </inertial>
       <collision name="right_ruddervator_collision">
@@ -707,7 +730,7 @@
       <!-- <visual name="cp_right_ruddervator_visual">
         <geometry>
           <sphere>
-            <radius>0.01</radius>
+            <radius>0.013421875</radius>
           </sphere>
         </geometry>
         <material>
@@ -718,14 +741,14 @@
       </visual> -->
     </link>
     <joint name="right_ruddervator_joint" type="revolute">
-      <pose degrees="true">0.01 0 0 0 0 0</pose>
+      <pose degrees="true">0.013421875 0 0 0 0 0</pose>
       <parent>base_link</parent>
       <child>right_ruddervator_link</child>
       <axis>
         <xyz>0 1 0</xyz>
         <limit>
-          <lower>-0.523599</lower>
-          <upper>0.523599</upper>
+          <lower>-0.5934</lower>
+          <upper>0.5934</upper>
         </limit>
         <dynamics>
           <damping>0.01</damping>
@@ -734,25 +757,25 @@
     </joint>
 
     <link name="motor_link">
-      <pose degrees="true">-0.41 0 -0.03 0 90 0</pose>
+      <pose degrees="true">-0.55029688 0 -0.040265625 0 90 0</pose>
       <inertial>
-        <!-- <mass>0.106</mass>
+        <!-- <mass>0.096363636</mass>
         <inertia>
-          <ixx>1.95636E-05</ixx>
+          <ixx>0.00021</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>1.95636E-05</iyy>
+          <iyy>0.00021</iyy>
           <iyz>0</iyz>
-          <izz>1.62313E-05</izz>
+          <izz>0.00042</izz>
         </inertia> -->
-        <mass>0.025</mass>
+        <mass>0.207</mass>
         <inertia>
-          <ixx>9.75e-06</ixx>
+          <ixx>0.00021</ixx>
           <ixy>0</ixy>
           <ixz>0</ixz>
-          <iyy>0.000166704</iyy>
+          <iyy>0.00021</iyy>
           <iyz>0</iyz>
-          <izz>0.000167604</izz>
+          <izz>0.00042</izz>
         </inertia>
       </inertial>
 
@@ -765,15 +788,18 @@
           </cylinder>
         </geometry>
       </collision>
-      <collision name="propeller_collision">
-        <pose degrees="true">0 0 -0.005 0 0 0</pose>
-        <geometry>
-          <cylinder>
-            <radius>0.1</radius>
-            <length>0.005</length>
-          </cylinder>
-        </geometry>
-      </collision>
+      <!-- ⛔ propeller_collision KALDIRILDI (2026-08-22) — KALKIŞI ENGELLİYORDU.
+           13.7" pervanenin çarpışma diski yarıçapı 0.174 m; motor_link z = −0.040
+           olduğu için diskin altı −0.214 m'ye iniyordu. Gövde altı ise −0.1995 m.
+           Uçak gövdesine oturunca DÖNEN DİSK yere 1.5 cm GÖMÜLÜYORDU → uçak yerde
+           dönüp durdu, tam gazda 60 s'de hava hızı 1.88 m/s'yi geçemedi
+           (kara kutu 00000300.BIN).
+           Neden silmek doğru: bu çarpışma gövdesi HİÇBİR temas sensöründe kayıtlı
+           değil (temas_sensoru ve carpisma_sensoru yalnız gövde/kanat/kuyruk
+           collision'larını sayar) — yani isabet tespitine katkısı YOK. Dönen bir
+           pervaneyi katı çarpışma cismi yapmak zaten bu patolojiyi üretiyor.
+           ⚠ GERÇEK ARAÇTA: 13.7" pervane itici (pusher) yerleşimde yerden kalkışta
+           yere değer; gerçek Talon el ile fırlatılır. -->
       <visual name="motor_visual">
         <geometry>
           <mesh>
@@ -786,6 +812,9 @@
         <geometry>
           <mesh>
             <uri>model://mini_talon_vtail/meshes/iris_prop_cw.dae</uri>
+            <!-- mesh 10.2" — gerçek pervane 13.7": 0.174/0.1295 = 1.3432.
+                 YALNIZ GÖRSEL; vision/geometry.py collision STL okur, etkilenmez. -->
+            <scale>1.2749 1.2749 1.2749</scale>
           </mesh>
         </geometry>
         <material>
@@ -883,7 +912,7 @@
     <!-- motor_joint cw -->
     <plugin filename="gz-sim-lift-drag-system"
         name="gz::sim::systems::LiftDrag">
-      <a0>0.3</a0>
+      <a0>0.2247</a0>
       <alpha_stall>1.4</alpha_stall>
       <cla>4.25</cla>
       <cda>0.10</cda>
@@ -891,16 +920,16 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.02</area>
+      <area>0.002146</area>
       <air_density>1.2041</air_density>
-      <cp>0.084 0 0</cp>
+      <cp>0.1238 0 0</cp>
       <forward>0 -1 0</forward>
       <upward>0 0 1</upward>
       <link_name>motor_link</link_name>
     </plugin>
     <plugin filename="gz-sim-lift-drag-system"
         name="gz::sim::systems::LiftDrag">
-      <a0>0.3</a0>
+      <a0>0.2247</a0>
       <alpha_stall>1.4</alpha_stall>
       <cla>4.25</cla>
       <cda>0.10</cda>
@@ -908,9 +937,9 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.02</area>
+      <area>0.002146</area>
       <air_density>1.2041</air_density>
-      <cp>-0.084 0 0</cp>
+      <cp>-0.1238 0 0</cp>
       <forward>0 1 0</forward>
       <upward>0 0 1</upward>
       <link_name>motor_link</link_name>
@@ -927,8 +956,8 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.9233984055</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>0 0.27 0.029</cp>
-      <area>0.16</area>
+      <cp>0 0.36239063 0.038923438</cp>
+      <area>0.3</area>
       <air_density>1.2041</air_density>
       <forward>1 0 0</forward>
       <upward>0 0 1</upward>
@@ -948,8 +977,8 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.9233984055</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>0 -0.27 0.029</cp>
-      <area>0.16</area>
+      <cp>0 -0.36239063 0.038923438</cp>
+      <area>0.3</area>
       <air_density>1.2041</air_density>
       <forward>1 0 0</forward>
       <upward>0 0 1</upward>
@@ -969,8 +998,8 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.9233984055</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>-0.33 0.08 0.051</cp>
-      <area>0.025</area>
+      <cp>-0.44292188 0.107375 0.068451562</cp>
+      <area>0.046875</area>
       <air_density>1.2041</air_density>
       <forward>1 0 0</forward>
       <upward>0 1 1</upward>
@@ -990,8 +1019,8 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.9233984055</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>-0.33 -0.08 0.051</cp>
-      <area>0.025</area>
+      <cp>-0.44292188 -0.107375 0.068451562</cp>
+      <area>0.046875</area>
       <air_density>1.2041</air_density>
       <forward>1 0 0</forward>
       <upward>0 -1 1</upward>
@@ -1056,7 +1085,7 @@
        -->
       <control channel="1">
         <jointName>left_ruddervator_joint</jointName>
-        <multiplier>1.0471976</multiplier>
+        <multiplier>1.1868239</multiplier>
         <offset>-0.5</offset>
         <servo_min>1000</servo_min>
         <servo_max>2000</servo_max>
@@ -1073,7 +1102,11 @@
        -->
       <control channel="2"> 
         <jointName>motor_joint</jointName>
-        <multiplier>1000</multiplier>
+        <!-- 2026-08-22: 1000 → 1080 rad/s = 10313 RPM. İki bağımsız kestirim:
+             (a) 4500 gf statik itki + 13" pervane, Ct=0.095 → 10716 RPM
+             (b) SunnySky X3520 528 KV × 25 V (6S) = 13200 boşta, yükte %75 → 9900
+             Ortalaması. -->
+        <multiplier>1080</multiplier>
         <offset>0</offset>
         <servo_min>1000</servo_min>
         <servo_max>2000</servo_max>
@@ -1101,7 +1134,7 @@
        -->
       <control channel="3">
         <jointName>right_ruddervator_joint</jointName>
-        <multiplier>1.0471976</multiplier>
+        <multiplier>1.1868239</multiplier>
         <offset>-0.5</offset>
         <servo_min>1000</servo_min>
         <servo_max>2000</servo_max>

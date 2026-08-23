@@ -51,7 +51,8 @@ CONTROL_RATE = 0.1      # saniye — kontrol loop hızı
 
 # manual_control sınırları: -1000..+1000 (pitch/roll/yaw), 0..1000 (throttle)
 THROTTLE_IDLE = 0
-THROTTLE_CRUISE = 600
+THROTTLE_CRUISE = 575   # → ~15.0 m/s ÖLÇÜLDÜ (X3520 528KV + 13x7 + 6S, 2.5 kg).
+                        # Gerekçe ve gaz→hız tablosu: gcs_server._plane_throttle
 THROTTLE_FULL = 900
 
 

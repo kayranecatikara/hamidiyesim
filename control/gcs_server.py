@@ -152,7 +152,21 @@ _scenario_proc = None
 _scenario_name = None
 
 # Uçak throttle seviyesi — slider ile ayarlanır (0-1000 aralığı, MANUAL_CONTROL)
-_plane_throttle = 600   # default = THROTTLE_CRUISE
+# ══ GAZ VARSAYILANI — 0-1000 ölçek (panelde %0-100 gösterilir) ══
+# 2026-08-22, kullanıcının GERÇEK güç sistemine göre (SunnySky X3520 528KV,
+# 13.7" pervane, 6S/25 V, 4500 gf statik itki) yeniden ölçüldü:
+# ⚠ AŞAĞIDAKİ TABLO ÖLÇÜMDÜR, TAHMİN DEĞİL — 8 uçuşun kara kutusundan
+# (00000287..00000305), düz kesitlerde (|yatış|<8°), hava hızı medyanı:
+#     gaz 600 → 15.64 m/s (n=618)   ·   620 → 16.00 m/s (n=149)
+#     gaz 1000 → 26.63 m/s (n=835)
+# Kaba bağıntı: hız ≈ 26.2 × (gaz/1000) m/s
+# 575 SEÇİLDİ → ~15.0 m/s. Gerekçe: zarf haritası (dönüş yarıçapları
+# 24.9/35.4/47.5/65.6 m) 14.9 m/s'de ölçüldü; 15.0 onu GEÇERLİ tutar.
+# 16 m/s (gerçek Talon seyrine yakın) isteniyorsa gaz 620.
+# ⚠ Önceki kuramsal tahminim (620 → 15.0) %7 DÜŞÜKTÜ. Sebebi: Gazebo
+# modelinde gövde/parazit sürtünmesi YOK (LiftDrag'da cd = cda·alpha, yani
+# alpha=0'da sıfır). Model gerçek Talon'dan daha az sürtünüyor.
+_plane_throttle = 575   # = THROTTLE_CRUISE → ~15.0 m/s (ÖLÇÜLDÜ)
 
 # Video parazit simülasyonu — iris kamera akışına uygulanır
 _video_noise_level = 0.0   # 0.0 = temiz, 1.0 = tamamen parazitli

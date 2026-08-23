@@ -100,8 +100,8 @@ AYARLAR = [
      "FX = odak uzaklığı (166.58 px), S = hedefin görünen boyu, p = kutunun "
      "kadrajdaki boyu. ⚠ S'nin SABİT olduğu varsayılır — ama bir uçağın "
      "görünen boyu yatışına ve bakış açısına göre değişir. `p` olarak neyi "
-     "aldığın bu hatayı belirler. MODEL: kanat 1.280 m, gövde 0.814 m, "
-     "yükseklik 0.286 m (collision mesh'ten doğrulandı).",
+     "aldığın bu hatayı belirler. MODEL (X-UAV Talon, 2026-08-22 ölçekleme): "
+     "kanat 1.718 m, gövde 1.093 m, yükseklik 0.383 m (collision mesh'ten).",
      None, None),
 
     ("BOYUT_OLCU", "BOYUT_OLCU", "⭐ Menzil ölçüsü", "GM", "secim",
@@ -118,18 +118,20 @@ AYARLAR = [
 
     ("MENZIL_PX_M_CARPIM", "MENZIL_PX_M_CARPIM", "Kalibre C — çarpım", "GM",
      "sayi", "px·m", 80.0, 400.0, 1.0,
-     "R = C / sqrt(w·h). ⚠ 2026-08-19'a kadar 160.0 kullanılıyordu; gerçek "
-     "loglardan ölçülen 185.7 (medyan p·R, 0-15° bandı, n=5274). Yani "
-     "menziller %14 EKSİK tahmin ediliyordu — kendimizi olduğumuzdan yakın "
-     "sanıyorduk.",
+     "R = C / sqrt(w·h). 8 uçuş / 5274 karede ÖLÇÜLEN değer 185.7 idi "
+     "(medyan p·R, 0-15° bandı). ⚠ 2026-08-22'de hedef Mini Talon'dan "
+     "gerçek Talon'a (1718 mm) ölçeklendi; C = FX·S doğrusal olduğu için "
+     "185.7 × 1.3422 = 249.2 kondu. BU BİR TAHMİN — taze uçuşla yeniden "
+     "ölçülmeli (tools/menzil_olcu_kiyas.py).",
      "Menzil tahmini büyür (kendimizi daha uzak sanırız).",
      "Menzil tahmini küçülür."),
 
     ("MENZIL_PX_M_KOSEGEN", "MENZIL_PX_M_KOSEGEN", "Kalibre C — köşegen",
      "GM", "sayi", "px·m", 120.0, 600.0, 1.0,
-     "R = C / sqrt(w²+h²). Ölçülen 296.8 (aynı yöntem). İma ettiği görünen "
-     "boy 1.78 m — model köşegeni 1.31 m'den büyük, çünkü YOLO kutusu "
-     "görsel modeli gevşek sarıyor. Ampirik sabit doğrusudur.",
+     "R = C / sqrt(w²+h²). Mini Talon'da ölçülen 296.8; ×1.3422 ile 398.4 "
+     "kondu (2026-08-22 ölçekleme) — TAHMİN, ölçüm değil. İma ettiği "
+     "görünen boy 2.39 m; model köşegeni 2.04 m'den büyük, çünkü YOLO "
+     "kutusu görsel modeli gevşek sarıyor. Ampirik sabit doğrusudur.",
      "Menzil tahmini büyür.", "Menzil tahmini küçülür."),
 
     ("HUCUM_MENZIL_M", "HUCUM_MENZIL_M", "PI'nın sıfır noktası", "GM",

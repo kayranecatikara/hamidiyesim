@@ -94,7 +94,7 @@ def main():
 
     # ── model tabanlı beklenti (mini_talon_vtail collision mesh) ──
     FX = 166.58
-    KANAT, BOY, YUK = 1.280, 0.814, 0.286
+    KANAT, BOY, YUK = 1.718, 1.093, 0.383   # X-UAV Talon (2026-08-22 ölçekleme)
     print("MODEL ÖLÇÜLERİ (collision mesh'ten):")
     print(f"  kanat açıklığı {KANAT:.3f} m · gövde boyu {BOY:.3f} m · "
           f"yükseklik {YUK:.3f} m")
