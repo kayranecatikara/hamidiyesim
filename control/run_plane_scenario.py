@@ -26,6 +26,7 @@ import math
 import os
 import random
 import signal
+import subprocess
 import sys
 import time
 import urllib.request
@@ -475,6 +476,115 @@ def takeoff(conn, climb_time=8.0, hedef_alt=None):
     hold(conn, 2.0)
 
 
+
+# ---------------------------------------------------------------------------
+# ELLE FIRLATMA İLE KALKIŞ — X-UAV Talon'un GERÇEK kalkış yöntemi
+# ---------------------------------------------------------------------------
+# ⚠ NEDEN YERDEN KALKIŞ DEĞİL (2026-08-23, canlı SITL'de ölçüldü):
+#   Gerçek X-UAV Talon'un iniş takımı yoktur; elden fırlatılarak kalkar.
+#   Simdeki tek burun tekerleği + kuyruk kızağı dekoratif: uçak kızağının
+#   üstünde duruyor ve TAM GAZDA bile ivme yalnız 1.4 m/s² ölçüldü (≈40 N
+#   direnç), 30 saniyelik kalkış penceresinde burun hiç kalkmadı (pitch
+#   -2.9°'de çakılı). `square` senaryosu da aynı şekilde havalanamıyor —
+#   yani kusur bu görevde değil, yerden kalkış varsayımında.
+#   (Önceki gövde bunu 23 kgf'lik fiziksel olmayan itkiyle eziyordu; Kübra'nın
+#    df46d6a'daki 4497 gf'lik itkisi DOĞRU, sorun kalkış yöntemiydi.)
+#
+# Fırlatma, Gazebo'nun apply-link-wrench eklentisiyle gövdeye kısa bir
+# ileri+yukarı itiş uygulayarak yapılır (aynı yöntem 80cb120'de kanıtlandı).
+# Uçağın kütle/aerodinamik/itki değerlerinin HİÇBİRİNE dokunulmaz.
+_FIRLAT_ILERI  = float(os.environ.get("AVCI_FIRLAT_ILERI", 45.0))   # N, burun yönünde
+_FIRLAT_YUKARI = float(os.environ.get("AVCI_FIRLAT_YUKARI", 35.0))  # N, yukarı
+_FIRLAT_SN     = float(os.environ.get("AVCI_FIRLAT_SN", 0.7))       # itiş süresi
+_FIRLAT_DENEME = int(os.environ.get("AVCI_FIRLAT_DENEME", 3))       # tekrar hakkı
+_FIRLAT_BEKLE  = float(os.environ.get("AVCI_FIRLAT_BEKLE", 8.0))    # denemeler arası
+_FIRLAT_TETIK_ALT = float(os.environ.get("AVCI_FIRLAT_TETIK_ALT", 3.0))
+_GZ_WORLD = os.environ.get("AVCI_GZ_WORLD", "avci")
+_GZ_LINK  = os.environ.get("AVCI_GZ_LINK", "mini_talon::base_link")
+
+
+def _wrench(fx, fy, fz):
+    """Gövdeye kalıcı kuvvet uygula (Gazebo ENU: x=doğu, y=kuzey, z=yukarı)."""
+    subprocess.run(
+        ["gz", "topic", "-t", "/world/%s/wrench/persistent" % _GZ_WORLD,
+         "-m", "gz.msgs.EntityWrench",
+         "-p", 'entity {name:"%s" type:LINK} wrench {force {x:%g y:%g z:%g}}'
+               % (_GZ_LINK, fx, fy, fz)],
+        timeout=5, capture_output=True)
+
+
+def _wrench_temizle():
+    subprocess.run(
+        ["gz", "topic", "-t", "/world/%s/wrench/clear" % _GZ_WORLD,
+         "-m", "gz.msgs.Entity", "-p", 'name:"%s" type:LINK' % _GZ_LINK],
+        timeout=5, capture_output=True)
+
+
+def firlat(conn):
+    """Tek fırlatma: uçağın BURUN YÖNÜNDE ileri + yukarı kısa itiş, sonra bırak.
+
+    İtiş yönü sabit değil, o anki yaw'dan hesaplanır: uçak hangi yöne bakıyorsa
+    oraya fırlatılır (pistin yönüne bağlı kalmasın). NED yaw ψ için burun
+    ENU'da (sin ψ, cos ψ) yönündedir.
+    """
+    _pump(conn)
+    yaw = _att["yaw"] if _att["ok"] else 0.0
+    fx = _FIRLAT_ILERI * math.sin(yaw)      # doğu bileşeni
+    fy = _FIRLAT_ILERI * math.cos(yaw)      # kuzey bileşeni
+    print(f"[FIRLAT] Fırlatılıyor — burun {math.degrees(yaw):+.0f}°, "
+          f"itiş {_FIRLAT_ILERI:.0f} N ileri / {_FIRLAT_YUKARI:.0f} N yukarı, "
+          f"{_FIRLAT_SN:.1f} s")
+    _wrench(fx, fy, _FIRLAT_YUKARI)
+    t0 = time.time()
+    while time.time() - t0 < _FIRLAT_SN:
+        _pump(conn)
+        time.sleep(0.05)
+    _wrench_temizle()
+    print("[FIRLAT] İtiş bırakıldı — uçak serbest")
+
+
+def firlatarak_kalkis(conn, hedef_alt, climb_time=8.0):
+    """TAKEOFF modu + elle fırlatma ile kalkış; hedef_alt'a çıkınca FBWA.
+
+    Akış: TAKEOFF moduna geç (gaz açılır) → mod otursun diye kısa bekle →
+    fırlat → tırmanışı izle. Tek fırlatma bazen tutmuyor (uçak yere geri
+    oturuyor); irtifa hâlâ yerdeyse _FIRLAT_DENEME kadar tekrarlanır.
+    """
+    ust_sure = max(climb_time, 45.0)
+    print(f"[SCN] ELLE FIRLATMA ile kalkış (hedef ~{hedef_alt:.0f} m) — "
+          f"Talon'un iniş takımı yok, yerden kalkamaz")
+    set_mode(conn, PLANE_MODE_TAKEOFF)
+    # Mod otursun ve gaz açılsın; hemen fırlatırsak kalkış tetiklenmiyor.
+    t0 = time.time()
+    while not _abort and time.time() - t0 < 3.0:
+        _pump(conn)
+        time.sleep(0.1)
+
+    deneme = 0
+    son_firlat = 0.0
+    t0 = time.time()
+    while not _abort and time.time() - t0 < ust_sure:
+        _pump(conn)
+        irtifa = -_pos["z"]
+        if irtifa >= hedef_alt:
+            break
+        if (irtifa < _FIRLAT_TETIK_ALT
+                and time.time() - son_firlat > _FIRLAT_BEKLE
+                and deneme < _FIRLAT_DENEME):
+            deneme += 1
+            print(f"[SCN] Fırlatma denemesi {deneme}/{_FIRLAT_DENEME} "
+                  f"(irtifa {irtifa:.1f} m)")
+            firlat(conn)
+            son_firlat = time.time()
+        time.sleep(0.2)
+
+    _wrench_temizle()                  # her ihtimale karşı: kalıcı kuvvet kalmasın
+    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f} m, "
+          f"{deneme} fırlatma) → FBWA")
+    set_mode(conn, PLANE_MODE_FBWA)
+    hold(conn, 2.0)
+
+
 # ---------------------------------------------------------------------------
 # OTONOM İNİŞ — motorlu alçalma + flare + disarm
 # ---------------------------------------------------------------------------
@@ -523,7 +633,10 @@ _INIS_SINK       = float(os.environ.get("AVCI_INIS_SINK", 0.8))       # yaklaşm
 _INIS_SON_SINK   = float(os.environ.get("AVCI_INIS_SON_SINK", 0.4))   # son yaklaşma
 _INIS_FLARE_SINK = float(os.environ.get("AVCI_INIS_FLARE_SINK", 0.15)) # flare
 _INIS_SON_ALT    = float(os.environ.get("AVCI_INIS_SON_ALT", 15.0))
-_INIS_FLARE_ALT  = float(os.environ.get("AVCI_INIS_FLARE_ALT", 5.0))
+# FLARE 5.0 → 3.0 m (2026-08-23): Kübra'nın gövdesinde 5 m'de başlayan flare
+# uçağı havada TUTUYORDU — kayıtta irtifa 5.0 m'de çakılı kaldı, faz SON
+# YAKLAŞMA ↔ FLARE arasında gidip geldi ve iniş 240 s'de tamamlanamadı.
+_INIS_FLARE_ALT  = float(os.environ.get("AVCI_INIS_FLARE_ALT", 3.0))
 # ⚠ YAKLAŞMA HIZI (ölçüldü 2026-08-13): 15.0 ile uçak flare'e 11.7 m/s ile
 # girdi — AIRSPEED_MIN 12'nin ALTI. Burun yukarı komutu orada stall'a çevirdi:
 # burun 1 saniyede -26.8°'ye çöktü ve model yere çakılıp araziden geçti.
@@ -535,8 +648,36 @@ _INIS_STALL_HIZ  = float(os.environ.get("AVCI_INIS_STALL_HIZ", 12.5)) # altında
 # hız denetimi burnu aşağı alıyor ve yaklaşma dalışa dönüyor. Düz uçuş ~%60 gaz
 # istiyor; yumuşak (~1 m/s) alçalma için gaz onun BİRAZ altında tutulmalı, bu
 # yüzden yaklaşmada gaz tabanı 450'nin altına indirilmez.
-_INIS_GAZ_TABAN  = int(os.environ.get("AVCI_INIS_GAZ", 500))
-_INIS_GAZ_ALT_SINIR = int(os.environ.get("AVCI_INIS_GAZ_MIN", 450))
+# ⚠ GAZ BANDI YENİDEN KALİBRE EDİLDİ (2026-08-23) — GÖVDE DEĞİŞTİ.
+# Eski değerler (taban 500, alt sınır 450) eski Talon gövdesine göreydi; o
+# gövdenin pervanesi tam gazda 23 kgf üretiyordu (itki/ağırlık 12.4, fiziksel
+# değil). Kübra'nın df46d6a'daki gövdesi GERÇEK: 4497 gf, itki/ağırlık 1.80.
+# Aynı gaz komutu artık çok daha az itki demek DEĞİL — tersine, bandın TAMAMI
+# seviye uçuş gereğinin ÜSTÜNDE kaldı ve uçak süzülmek yerine TIRMANDI:
+#   ölçüm 2026-08-23 — yaklaşma fazında (taban 420) "alçalma -0.7 m/s",
+#   iniş 252 s'de tamamlanamadı, uçak 79 m'ye çıktı.
+# Ölçümden kalibrasyon: 420 gaz = 7.7 N itki, uçak 0.7 m/s tırmanıyor →
+# 15 m/s'te sürükleme ≈ 6.6 N. Süzülüş için gereken itki:
+#   sink 0.8 m/s → 5.3 N (gaz ~347) | sink 3 m/s → 1.7 N (gaz ~196)
+# Bandın altı bu yüzden 150'ye indi; taban 360 seviye uçuşun hemen altı.
+# Tavanlar korundu: fazla alçalırsa denetleyici gaz ekleyebilsin.
+_INIS_GAZ_TABAN  = int(os.environ.get("AVCI_INIS_GAZ", 360))
+_INIS_GAZ_ALT_SINIR = int(os.environ.get("AVCI_INIS_GAZ_MIN", 150))
+# ⚠ YAKLAŞMADA BURUN ARTIK SABİT DEĞİL, HIZ DENETLEYİCİSİ (2026-08-23).
+# Eski sabit hedefler (60 / 100 ≈ 1-2° yukarı) eski gövdeye göreydi ve burun
+# komutu -60'ta sınırlıydı, yani uçak DALAMIYORDU. Kübra'nın gövdesinde bu,
+# yaklaşmada hızın 11.9 m/s'e düşmesine yol açtı (AIRSPEED_MIN 12): stall
+# koruması gaz ekledi, alçalma durdu, uçak 14 m'ye inip 20 m'ye geri tırmandı
+# ve iniş 252 s'de tamamlanamadı (ölçüm 2026-08-23).
+# Klasik "speed on pitch": GAZ alçalma hızını, BURUN hızı tutar. Yavaşsa burun
+# aşağı, hızlıysa yukarı. Gövdeden bağımsızdır — itki/ağırlık değişse de çalışır.
+_INIS_HIZ_KP    = float(os.environ.get("AVCI_INIS_HIZ_KP", 60.0))   # komut/(m/s)
+# DALIŞ YETKİSİ -700 (ölçüldü 2026-08-23): _rc komutu 1000 = tam stick =
+# LIM_PITCH (~20°), yani -350 yalnız ~-7°'dir ve 12.5 m/s'te 1.5 m/s süzülüş
+# verir. Ölçülen tam olarak buydu (1.1 m/s) ve uçak süzülüş hattının üstünde
+# kalıp hedefi aşıyordu. Yaklaşma geometrisi 39 m / 194 m = 11.5° istiyor,
+# yani ~3 m/s → ~-14° → komut -700.
+_INIS_BURUN_MIN = int(os.environ.get("AVCI_INIS_BURUN_MIN", -700))
 # ⚠ FLARE BURUN KOMUTU (ölçüldü 2026-08-13): 260 yetmedi — temas -11.6° burun
 # AŞAĞI oldu. Sebep FBWA ölçeklemesi: komut 1000 = tam stick = LIM_PITCH_MAX
 # (~20°), yani 260 yalnız ~5°'lik bir HEDEF demek ve alçalan uçak onu bile
@@ -552,7 +693,8 @@ _INIS_FLARE_PITCH = int(os.environ.get("AVCI_INIS_FLARE_PITCH", 450))
 # başlaması gövdenin önce değmesini sağlıyor. Tepe 520'de tutuluyor — 700
 # denenmişti ve uçağı stall'a sokup burnu -26.8°'ye düşürmüştü.
 _INIS_FLARE_PITCH_BAS = int(os.environ.get("AVCI_INIS_FLARE_PITCH_BAS", 200))
-_INIS_ZAMAN_ASIMI = float(os.environ.get("AVCI_INIS_ZAMAN_ASIMI", 240.0))
+# Yaklaşma girişi 194 → ~434 m'ye uzadığı için iniş penceresi de büyütüldü.
+_INIS_ZAMAN_ASIMI = float(os.environ.get("AVCI_INIS_ZAMAN_ASIMI", 360.0))
 # Yaklaşma giriş mesafesi: 30 m irtifayı 13 m/s'de indirmek için gereken yol
 # ~1:13 eğimde 400 m. Daha kısa alınırsa süzülüş dikleşir, daha uzun alınırsa
 # uçak gereksiz yol yapar.
@@ -561,6 +703,11 @@ _INIS_ZAMAN_ASIMI = float(os.environ.get("AVCI_INIS_ZAMAN_ASIMI", 240.0))
 # doğru ~200 m daha uçup 180° dönüyordu — saf kayıp. Gereken mesafe basitçe
 # irtifa / tan(süzülüş açısı); uçak o mesafenin dışındaysa dışarı çıkmaya gerek
 # yoktur, doğrudan süzülüşe geçilir.
+# SÜZÜLÜŞ EĞİMİ 8° → 5° (ölçüldü 2026-08-23). Kübra'nın gövdesi motorlu
+# alçalmada ancak ~5° tutabiliyor (12.6 m/s'te 1.1 m/s = 5.0°); 8°'lik hat
+# istenince uçak hattın ÜSTÜNDE kalıp nişanı aşıyor ve 72 m ötede iniyordu.
+# Eğim uçağın yapabildiğine eşitlenince yaklaşma girişi uzuyor (38 m için
+# 434 m) ama uçak hattı gerçekten tutuyor ve nişana iniyor.
 _INIS_EGIM_DEG   = float(os.environ.get("AVCI_INIS_EGIM_DEG", 8.0))
 _INIS_GIRIS_MIN  = float(os.environ.get("AVCI_INIS_GIRIS_MIN", 150.0))
 _INIS_GIRIS_MAX  = float(os.environ.get("AVCI_INIS_GIRIS_MAX", 600.0))
@@ -597,7 +744,12 @@ _KARE_IRTIFA     = float(os.environ.get("AVCI_KARE_IRTIFA", 20.0))
 # (Tarihçe: nişan kaydırması bir dönem 40 m'ydi ve o zaman FLARE SÜZÜLMESİNİ
 # telafi ediyordu; süzülüş hattı flare'e taşınınca gereksizleşip 0'a çekilmişti.
 # Şimdi bambaşka bir sebeple, YER KAYMASI için geri geliyor.)
-_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 0.0))
+# ⚠ NİŞAN KAYDIRMASI 0 → 70 m (ölçüldü 2026-08-23, Kübra'nın gövdesi).
+# Bu gövde flare'de (3 m'den itibaren) ~90 m süzülüyor ve nişan doğrudan
+# kalkış noktasına konunca temas 67-72 m ÖTEDE oluyor (iki bağımsız koşu:
+# 72 m ve 67 m). Nişan, ölçülen aşım kadar geri alınır — knob'un tarihçesinde
+# yazdığı gibi bu telafi flare süzülmesi içindir ve gövdeye göre değişir.
+_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 100.0))
 
 
 def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
@@ -690,11 +842,15 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
 
         # ── kademe: (hedef alçalma, burun hedefi, gaz bandı) ──
         if irtifa > _INIS_SON_ALT:
-            yeni_faz, hedef_sink, burun_hedef = "YAKLAŞMA", _INIS_SINK, 60
-            gaz_alt, gaz_ust = 420, 650
+            yeni_faz, hedef_sink = "YAKLAŞMA", _INIS_SINK
+            burun_hedef = int(_kelepce(_INIS_HIZ_KP * (hiz_f - _INIS_HIZ),
+                                       _INIS_BURUN_MIN, 200))
+            gaz_alt, gaz_ust = _INIS_GAZ_ALT_SINIR, 650
         elif irtifa > _INIS_FLARE_ALT:
-            yeni_faz, hedef_sink, burun_hedef = "SON YAKLAŞMA", _INIS_SON_SINK, 100
-            gaz_alt, gaz_ust = 400, 620
+            yeni_faz, hedef_sink = "SON YAKLAŞMA", _INIS_SON_SINK
+            burun_hedef = int(_kelepce(_INIS_HIZ_KP * (hiz_f - _INIS_HIZ),
+                                       _INIS_BURUN_MIN, 250))
+            gaz_alt, gaz_ust = _INIS_GAZ_ALT_SINIR, 620
         else:
             yeni_faz, hedef_sink = "FLARE", _INIS_FLARE_SINK
             oran = _kelepce(irtifa / _INIS_FLARE_ALT, 0.0, 1.0)      # 1 → 0
@@ -718,7 +874,7 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
             # Tavan 550: alçalma denetleyicisi düz hat için 505-528 istiyor,
             # 500'de tavana takılıp hattı tutamıyor ve 2.2 m/s'ye dalıyordu
             # (ölçüldü 2026-08-13). Kesme yine 1 m altında.
-            gaz_alt = 0 if irtifa < 1.0 else 350
+            gaz_alt = 0 if irtifa < 1.0 else _INIS_GAZ_ALT_SINIR
             gaz_ust = 0 if irtifa < 1.0 else 550
         if hedefli_sink is not None:
             hedef_sink = hedefli_sink
@@ -737,15 +893,19 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
         # 216'dan 69'a düştü ve uçak son metrede -18.1° burun aşağı geldi.
         if hiz_f < _INIS_STALL_HIZ and gaz_ust > 0 and yeni_faz != "FLARE":
             gaz_alt = min(gaz_ust, gaz_alt + 120)
-            burun_hedef = int(burun_hedef * _kelepce(
-                (hiz_f - (_INIS_STALL_HIZ - 1.5)) / 1.5, 0.0, 1.0))
+            # Yalnız burun-YUKARI talebi kısılır. Burun zaten aşağıdaysa (hız
+            # denetleyicisi dalış istiyorsa) kısmak hızı daha da düşürürdü.
+            if burun_hedef > 0:
+                burun_hedef = int(burun_hedef * _kelepce(
+                    (hiz_f - (_INIS_STALL_HIZ - 1.5)) / 1.5, 0.0, 1.0))
 
         # ── GAZ: süzülmüş alçalma hızı denetimi, düşük kazanç ──
         gaz = int(_kelepce(_INIS_GAZ_TABAN + 80 * (vz_f - hedef_sink),
                            gaz_alt, gaz_ust))
         # ── BURUN: hedefe HIZ SINIRLI yaklaş (adım başına ±15) ──
         burun += int(_kelepce(burun_hedef - burun, -15, 15))
-        _rc(conn, roll=yatis, pitch=int(_kelepce(burun, -60, 800)), throttle=gaz)
+        _rc(conn, roll=yatis, pitch=int(_kelepce(burun, _INIS_BURUN_MIN, 800)),
+            throttle=gaz)
         # FLARE TANILAMA (2 Hz): komut ile GERÇEKLEŞEN açıyı yan yana bas.
         # Burun komutu büyükken uçak düz kalıyorsa sınır otopilottadır (FBWA
         # düşük hızda burun-yukarı talebini kısar), kodda değil.
@@ -1284,6 +1444,22 @@ def _kalkis_hedefi(name):
     return _KARE_IRTIFA if name == "kare_gorev" else None
 
 
+# FIRLATMA GEREKTİRENLER: Talon yerden kalkamıyor (bkz. firlatarak_kalkis
+# başlığındaki ölçüm). Kampanya senaryoları eski yerden-kalkışta BIRAKILDI —
+# ölçüm geçmişleri kıyaslanabilir kalsın; onları değiştirmek bu işin kapsamı
+# dışında. AVCI_FIRLATARAK=0 ile kare_gorev de eski yola döner.
+_FIRLATARAK = os.environ.get("AVCI_FIRLATARAK", "1") == "1"
+
+
+def _kalkis_yap(conn, name):
+    """Senaryoya göre kalkış: kare_gorev fırlatılarak, diğerleri yerden."""
+    hedef = _kalkis_hedefi(name)
+    if _FIRLATARAK and name in _DONUS_GEREKTIREN:
+        firlatarak_kalkis(conn, hedef if hedef else _KARE_IRTIFA)
+    else:
+        takeoff(conn, hedef_alt=hedef)
+
+
 def main():
     name = sys.argv[1] if len(sys.argv) > 1 else "square"
     if name not in SCENARIOS:
@@ -1329,13 +1505,13 @@ def main():
         hold(conn, 1.0)                           # düz uçuşla kısa stabilizasyon
     elif armed:
         print(f"[SCN] Armlı ama yerde (irtifa {alt:.0f}m) — doğrudan kalkış")
-        takeoff(conn, hedef_alt=_kalkis_hedefi(name))
+        _kalkis_yap(conn, name)
     else:
         result = arm_plane(warmup_duration=3.0)
         if result is None or result[1] != 0:
             print("[SCN] ARM başarısız!")
             return
-        takeoff(conn, hedef_alt=_kalkis_hedefi(name))
+        _kalkis_yap(conn, name)
 
     SCENARIOS[name](conn)
 

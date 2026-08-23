@@ -17,6 +17,14 @@
     <plugin filename="gz-sim-user-commands-system"
       name="gz::sim::systems::UserCommands">
     </plugin>
+    <!-- ELLE FIRLATMA (2026-08-23): X-UAV Talon'un iniş takımı yoktur, gerçekte
+         ELDEN FIRLATILARAK kalkar. Bu eklenti /world/avci/wrench topic'iyle
+         gövdeye kısa bir ileri+yukarı itiş uygulamayı sağlar = fırlatma.
+         Yalnız kalkış anında kullanılır; uçuşu, güdümü ve uçağın hiçbir
+         fiziksel değerini etkilemez. (Aynı eklenti 80cb120'de de kullanıldı.) -->
+    <plugin filename="gz-sim-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench">
+    </plugin>
     <plugin filename="gz-sim-scene-broadcaster-system"
       name="gz::sim::systems::SceneBroadcaster">
     </plugin>
