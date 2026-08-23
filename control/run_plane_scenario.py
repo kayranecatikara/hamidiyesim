@@ -46,6 +46,7 @@ from control.plane_functions import (
 from control.mav_common import (
     set_mode,
     disarm,
+    PLANE_MODE_MANUAL,
     PLANE_MODE_TAKEOFF,
     PLANE_MODE_FBWA,
 )
@@ -67,6 +68,12 @@ _pos = {"x": 0.0, "y": 0.0, "z": 0.0,      # x=kuzey, y=doğu (NED, m)
         "t": 0.0}                          # t = son mesajın saati (tazelik)
 # İniş raporu için arm durumu (temas sonrası force disarm doğrulanır).
 _hb = {"armed": False, "mode": None, "ok": False}
+
+# İVMEÖLÇER — elle fırlatma (serbest düşüş) algılaması için.
+# g: özgül kuvvetin BÜYÜKLÜĞÜ. Uçak elde/yerde dururken ivmeölçer yer
+# çekimine karşı tepki kuvvetini ölçer ve 1.00 g okur; BIRAKILDIĞI an araç
+# ağırlıksız kalır ve okuma ~0 g'ye düşer. Fırlatma tetiği budur.
+_imu = {"g": 1.0, "t": 0.0}
 
 # KALKIŞ / FIRLATMA NOKTASI (yerel NED x=kuzey, y=doğu). Kaynağı için
 # _ev_noktasi()'ye bak — varsayılan otopilotun HOME'udur.
@@ -115,6 +122,11 @@ def _pump(conn):
         elif t == "HOME_POSITION":
             _home.update(lat=msg.latitude / 1e7, lon=msg.longitude / 1e7,
                          t=time.time())
+        elif t in ("RAW_IMU", "SCALED_IMU2"):
+            # mG cinsinden gelir; SCALED_IMU3 bu araçta hep 0 döndüğü için
+            # kullanılmaz. Büyüklük alınır: uçağın nasıl tutulduğu önemsiz.
+            _imu["g"] = math.sqrt(msg.xacc**2 + msg.yacc**2 + msg.zacc**2) / 1000.0
+            _imu["t"] = time.time()
         elif t == "HEARTBEAT" and msg.get_srcSystem() == conn.target_system:
             _hb.update(ok=True, mode=msg.custom_mode, armed=bool(
                 msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED))
@@ -511,6 +523,31 @@ _FIRLAT_TETIK_ALT = float(os.environ.get("AVCI_FIRLAT_TETIK_ALT", 3.0))
 _GZ_WORLD = os.environ.get("AVCI_GZ_WORLD", "avci")
 _GZ_LINK  = os.environ.get("AVCI_GZ_LINK", "mini_talon::base_link")
 
+# ── FIRLATMA MODU ──────────────────────────────────────────────────────────
+#   "wrench" (varsayılan): itiş Gazebo'nun apply-link-wrench eklentisiyle
+#       otomatik uygulanır. Headless çalışır, tekrarlanabilir, kampanya için.
+#   "elle": KULLANICI uçağı Gazebo penceresinde fareyle tutup kaldırır ve
+#       BIRAKIR. Kod hiçbir kuvvet uygulamaz; yalnız IMU'yu dinler ve serbest
+#       düşüşü görünce görevi başlatır. Gazebo GUI şart (AVCI_GUI=1).
+_FIRLATMA_MODU = os.environ.get("AVCI_FIRLATMA_MODU", "wrench").strip().lower()
+# Serbest düşüş eşiği. ÖLÇÜLDÜ (2026-08-23, canlı SITL, RAW_IMU 25 Hz):
+#   duruyor/tutuluyor : 1.000 g   (saniyelerce, salınım ±0.001)
+#   BIRAKILDI         : 0.007 g   ← ilk örnekte
+#   düşerken          : 0.05 → 0.11 → 0.20 → 0.46 → 0.93 g (sürükleme arttıkça)
+#   yere değdi        : 1.000 g
+# Eşiğin altında ~1.5 s kalınıyor = 25 Hz'de ~37 örnek. 0.35 g iki hâlin
+# ortasında ve her iki yönde de geniş paylı.
+_FIRLAT_ESIK_G   = float(os.environ.get("AVCI_FIRLAT_ESIK_G", 0.35))
+# Ardışık örnek şartı: tek bir gürültü darbesi görevi başlatmasın.
+_FIRLAT_ARDISIK  = int(os.environ.get("AVCI_FIRLAT_ARDISIK", 4))
+# Elle fırlatma için kullanıcıyı ne kadar bekleyelim.
+_FIRLAT_BEKLE_SN = float(os.environ.get("AVCI_FIRLAT_BEKLE_SN", 300.0))
+# Asgari irtifa kapısı — VARSAYILAN KAPALI (0). Denendi ve kapatıldı: araç
+# Gazebo'da elle taşınınca EKF irtifası bozuluyor (teleport sonrası -7.4 m
+# okundu) ve kapı gerçek fırlatmayı BLOKE ediyordu. Zaten gereksiz: yerde
+# duran araç kararlı 1.000 g okur, yanlış tetikleme riski yok.
+_FIRLAT_MIN_ALT  = float(os.environ.get("AVCI_FIRLAT_MIN_ALT", 0.0))
+
 
 def _wrench(fx, fy, fz):
     """Gövdeye kalıcı kuvvet uygula (Gazebo ENU: x=doğu, y=kuzey, z=yukarı)."""
@@ -552,6 +589,64 @@ def firlat(conn):
     print("[FIRLAT] İtiş bırakıldı — uçak serbest")
 
 
+def firlatma_bekle(conn, timeout=None):
+    """ELLE FIRLATMA: kullanıcının aracı bırakmasını IMU'dan algıla.
+
+    Fizik: ivmeölçer ÖZGÜL KUVVETİ ölçer, ivmeyi değil. Araç elde tutulurken
+    (ya da yerde dururken) yer çekimine karşı bir tepki kuvveti vardır ve
+    okuma 1.00 g'dir — bu araçta birebir ölçüldü. Araç BIRAKILDIĞI an tek
+    kuvvet yer çekimi kalır, araç ağırlıksız düşer ve okuma ~0 g'ye iner.
+    Eşiğin altında _FIRLAT_ARDISIK örnek üst üste görülünce fırlatma sayılır.
+
+    Beklerken motor KAPALI tutulur (MANUAL + gaz 0): kullanıcı aracı elleyip
+    kaldırırken pervane dönmemeli.
+
+    Dönüş: True = fırlatıldı · False = zaman aşımı / iptal
+    """
+    timeout = _FIRLAT_BEKLE_SN if timeout is None else timeout
+    # Ham sensör akışını iste — RAW_IMU varsayılan akışta seyrek geliyor.
+    try:
+        conn.mav.request_data_stream_send(
+            conn.target_system, conn.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS, 25, 1)
+    except Exception:
+        pass
+    set_mode(conn, PLANE_MODE_MANUAL)
+    print("=" * 64)
+    print("[FIRLAT] ELLE FIRLATMA MODU — motor KAPALI, araç sizi bekliyor.")
+    print("[FIRLAT] Gazebo penceresinde uçağı fareyle TUTUP KALDIRIN, sonra")
+    print("[FIRLAT] BIRAKIN. Serbest düşüş algılanınca görev kendiliğinden")
+    print(f"[FIRLAT] başlar. (eşik {_FIRLAT_ESIK_G:.2f} g · asgari irtifa "
+          f"{_FIRLAT_MIN_ALT:.1f} m · {timeout:.0f} s süreniz var)")
+    print("=" * 64)
+
+    t0 = time.time()
+    ardisik = 0
+    son_bilgi = 0.0
+    en_dusuk = 9.9
+    while not _abort and time.time() - t0 < timeout:
+        _pump(conn)
+        _rc(conn, throttle=0)                 # motor KAPALI kalsın
+        g = _imu["g"]
+        irtifa = -_pos["z"]
+        en_dusuk = min(en_dusuk, g)
+        if _imu["t"] > 0 and g < _FIRLAT_ESIK_G and irtifa >= _FIRLAT_MIN_ALT:
+            ardisik += 1
+            if ardisik >= _FIRLAT_ARDISIK:
+                print(f"[FIRLAT] ✓ SERBEST DÜŞÜŞ ALGILANDI — ivme {g:.2f} g, "
+                      f"irtifa {irtifa:.1f} m. Görev başlıyor!")
+                return True
+        else:
+            ardisik = 0
+        if time.time() - son_bilgi > 4.0:
+            son_bilgi = time.time()
+            print(f"[FIRLAT] bekleniyor… ivme {g:.2f} g (en düşük {en_dusuk:.2f}), "
+                  f"irtifa {irtifa:.1f} m")
+        time.sleep(0.02)
+    print("[FIRLAT] ⚠ Fırlatma algılanmadı — zaman aşımı, görev başlatılmıyor.")
+    return False
+
+
 def firlatarak_kalkis(conn, hedef_alt, climb_time=8.0):
     """TAKEOFF modu + elle fırlatma ile kalkış; hedef_alt'a çıkınca FBWA.
 
@@ -560,7 +655,25 @@ def firlatarak_kalkis(conn, hedef_alt, climb_time=8.0):
     oturuyor); irtifa hâlâ yerdeyse _FIRLAT_DENEME kadar tekrarlanır.
     """
     ust_sure = max(climb_time, 45.0)
-    print(f"[SCN] ELLE FIRLATMA ile kalkış (hedef ~{hedef_alt:.0f} m) — "
+
+    # ── ELLE MOD: kuvvet UYGULANMAZ, kullanıcının bırakması beklenir ──
+    if _FIRLATMA_MODU == "elle":
+        if not firlatma_bekle(conn):
+            return False
+        print(f"[SCN] Fırlatma alındı — TAKEOFF + tırmanış (hedef ~{hedef_alt:.0f} m)")
+        set_mode(conn, PLANE_MODE_TAKEOFF)
+        t0 = time.time()
+        while not _abort and time.time() - t0 < ust_sure:
+            _pump(conn)
+            if -_pos["z"] >= hedef_alt:
+                break
+            time.sleep(0.2)
+        print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f} m, elle fırlatma) → FBWA")
+        set_mode(conn, PLANE_MODE_FBWA)
+        hold(conn, 2.0)
+        return True
+
+    print(f"[SCN] FIRLATMA ile kalkış (hedef ~{hedef_alt:.0f} m) — "
           f"Talon'un iniş takımı yok, yerden kalkamaz")
     set_mode(conn, PLANE_MODE_TAKEOFF)
     # Mod otursun ve gaz açılsın; hemen fırlatırsak kalkış tetiklenmiyor.
@@ -592,6 +705,7 @@ def firlatarak_kalkis(conn, hedef_alt, climb_time=8.0):
           f"{deneme} fırlatma) → FBWA")
     set_mode(conn, PLANE_MODE_FBWA)
     hold(conn, 2.0)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1513,9 +1627,9 @@ def _kalkis_yap(conn, name):
     """Senaryoya göre kalkış: kare_gorev fırlatılarak, diğerleri yerden."""
     hedef = _kalkis_hedefi(name)
     if _FIRLATARAK and name in _DONUS_GEREKTIREN:
-        firlatarak_kalkis(conn, hedef if hedef else _KARE_IRTIFA)
-    else:
-        takeoff(conn, hedef_alt=hedef)
+        return firlatarak_kalkis(conn, hedef if hedef else _KARE_IRTIFA)
+    takeoff(conn, hedef_alt=hedef)
+    return True
 
 
 def main():
@@ -1563,13 +1677,19 @@ def main():
         hold(conn, 1.0)                           # düz uçuşla kısa stabilizasyon
     elif armed:
         print(f"[SCN] Armlı ama yerde (irtifa {alt:.0f}m) — doğrudan kalkış")
-        _kalkis_yap(conn, name)
+        if not _kalkis_yap(conn, name):
+            stop_gcs_keepalive()
+            print("[SCN] Kalkış gerçekleşmedi — görev başlatılmadı.")
+            return
     else:
         result = arm_plane(warmup_duration=3.0)
         if result is None or result[1] != 0:
             print("[SCN] ARM başarısız!")
             return
-        _kalkis_yap(conn, name)
+        if not _kalkis_yap(conn, name):
+            stop_gcs_keepalive()
+            print("[SCN] Kalkış gerçekleşmedi — görev başlatılmadı.")
+            return
 
     SCENARIOS[name](conn)
 
