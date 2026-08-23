@@ -776,7 +776,7 @@ _KARE_IRTIFA     = float(os.environ.get("AVCI_KARE_IRTIFA", 20.0))
 # girişi 269 m, eğim 5°) süzülüş hattı isabetli: uçak 3 m'ye kalkış noktasına
 # 14 m kala geliyor. Kalan hata tek kaynaklı — flare'de 88 m ilerliyor.
 # Nişan tam o kadar geri alınır ki temas kalkış noktasına düşsün.
-_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 100.0))
+_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 94.0))
 
 
 def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
@@ -812,6 +812,7 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
     faz = ""
     temas_t0 = None
     flare_kilit = False   # FLARE'e bir kez girilince geri dönülmez (aşağıda)
+    flare_min_irt = None  # flare boyunca görülen EN DÜŞÜK irtifa (rampa için)
     hiz_f = None          # süzülmüş yer hızı (yalnız stall tabanı için)
     vz_f = None           # süzülmüş alçalma hızı (gaz döngüsü)
     burun = 0             # hız sınırlı burun komutu (salınım olmasın)
@@ -892,8 +893,23 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
             gaz_alt, gaz_ust = _INIS_GAZ_ALT_SINIR, 620
         else:
             yeni_faz, hedef_sink = "FLARE", _INIS_FLARE_SINK
+            # ⚠ RAMPA ANLIK İRTİFAYA BAĞLANAMAZ — PORPOISE (2026-08-23, ölçüldü).
+            # oran = irtifa/3 iken döngü kendini besliyordu: uçak balon yapınca
+            # oran büyüyüp burun hedefi DÜŞÜYOR, dalınca oran küçülüp hedef
+            # YÜKSELİYOR. Kayıtta alçalma -0.70 → +2.87 m/s arası salındı, burun
+            # komutu +200..+416 iken GERÇEK açı -5°..-10.8° kaldı ve uçak
+            # flare'i hiç yakalayamadan 10 m/s ile yere değdi.
+            # Rampa artık GÖRÜLEN EN DÜŞÜK irtifaya bağlı: tek yönlü, geri
+            # gitmiyor, uçak balon yapsa bile flare talebi azalmıyor.
+            if flare_min_irt is None:
+                flare_min_irt = irtifa
+                # Girişte burun, yaklaşmanın dalış komutunda (-700'e kadar)
+                # olabiliyor; 15'er adımla +200'e çıkmak 1.4 s sürüyor ve o
+                # sürede uçak dalıyordu. Flare başlarken komut doğrudan oturur.
+                burun = _INIS_FLARE_PITCH_BAS
+            flare_min_irt = min(flare_min_irt, irtifa)
             flare_kilit = True
-            oran = _kelepce(irtifa / _INIS_FLARE_ALT, 0.0, 1.0)      # 1 → 0
+            oran = _kelepce(flare_min_irt / _INIS_FLARE_ALT, 0.0, 1.0)  # 1 → 0
             burun_hedef = int(_INIS_FLARE_PITCH_BAS
                               + (_INIS_FLARE_PITCH - _INIS_FLARE_PITCH_BAS)
                               * (1.0 - oran))
