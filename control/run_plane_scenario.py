@@ -367,13 +367,22 @@ def git_noktaya(conn, hx, hy, varis_m=60.0, bank=650, timeout=180.0,
         _pump(conn)
         mesafe, kerteriz = _hedefe(hx, hy)
         irtifa = -_pos["z"]
+        # ⚠ VARIŞ ARTIK İRTİFA BANDINI DA İSTER (2026-08-23): eskiden yalnız
+        # "irtifa >= hedef-2" aranıyordu, yani uçak hedefin ÜSTÜNDEYSE de varmış
+        # sayılıyordu. Dönüş 30 m hedeflenirken uçak 39-41 m'de giriyordu ve
+        # süzülüş daha başlamadan 10 m fazla irtifayla başlıyordu.
         if mesafe <= varis_m and (hedef_irtifa is None
-                                  or irtifa >= hedef_irtifa - 2.0):
+                                  or abs(irtifa - hedef_irtifa) <= 3.0):
             break
         hata = _angdiff(kerteriz, _att["yaw"])
         oran = _kelepce(hata / math.radians(45.0), -1.0, 1.0)
         if hedef_irtifa is not None and irtifa < hedef_irtifa - 2.0:
             burun, gaz = 250, 850                 # tırmanış
+        elif hedef_irtifa is not None and irtifa > hedef_irtifa + 2.0:
+            # ALÇALMA (2026-08-23 eklendi): fonksiyon yalnız tırmanıyordu.
+            # Desen 20 m'de uçulup 39 m'ye sürüklenince dönüş bacağı o irtifayı
+            # koruyordu ve süzülüş imkânsız bir eğim istiyordu.
+            burun, gaz = -250, 300
         else:
             burun, gaz = (100 if abs(oran) > 0.3 else 0), gcs_throttle()
         _rc(conn, roll=int(bank * oran), pitch=burun, throttle=gaz)
@@ -688,6 +697,17 @@ _INIS_BURUN_MIN = int(os.environ.get("AVCI_INIS_BURUN_MIN", -700))
 # kaldı (düşük hızda otopilot burun-yukarı talebini kısıyor). Gaz 0.4 m'de
 # kesilince biriken talep boşalıp burnu +24.5°'ye fırlattı, hız 12.6→9.5 m/s.
 # Uçağın izleyebileceği bir komut + kademeli gaz kesme ile bu sıçrama kalkar.
+# ⚠ FLARE 450 → 80 (ölçüldü 2026-08-23, Kübra'nın gövdesi). 450 (~9°) bu
+# kanatta taşımayı ağırlığın 2.6 katına çıkarıyor: uçak 0.9 m'ye inip kalkış
+# noktasına 15 m kalmışken BALON yapıp 2.3 m'ye tırmandı ve 75 m daha süzüldü
+# (izde t=196 → t=214). Kanadın a0'ı zaten 0.13 rad (7.4°) olduğu için bu
+# gövde 12.8 m/s'te seviye uçuş için ~-1° istiyor; pozitif her komut balondur.
+# ⚠ FLARE 450'DE KALIYOR — YUMUŞATMA DENENDİ VE GERİ ALINDI (2026-08-23).
+# 80'e indirilince uçak balon yapmadı ama HIZI DA KESMEDİ: yere 10-11 m/s ile
+# değip ~100 m sürüklendi ve duruş noktası nişan kaydırmasına duyarsız kaldı
+# (kaydırma 0 → 88 yapıldı, duruş yalnız 2 m oynadı). 450 ile uçak hızı
+# irtifaya çevirip 0.2-2.4 m/s'te temas ediyor ve hemen duruyor. Bu gövde
+# iniş takımsız, gövdesi üstüne iniyor — enerjiyi flare'de bırakmak şart.
 _INIS_FLARE_PITCH = int(os.environ.get("AVCI_INIS_FLARE_PITCH", 450))
 # 200 → 260: temas -2.9° (hafif burun aşağı) ölçülüyordu; rotasyonun daha ERKEN
 # başlaması gövdenin önce değmesini sağlıyor. Tepe 520'de tutuluyor — 700
@@ -708,7 +728,7 @@ _INIS_ZAMAN_ASIMI = float(os.environ.get("AVCI_INIS_ZAMAN_ASIMI", 360.0))
 # istenince uçak hattın ÜSTÜNDE kalıp nişanı aşıyor ve 72 m ötede iniyordu.
 # Eğim uçağın yapabildiğine eşitlenince yaklaşma girişi uzuyor (38 m için
 # 434 m) ama uçak hattı gerçekten tutuyor ve nişana iniyor.
-_INIS_EGIM_DEG   = float(os.environ.get("AVCI_INIS_EGIM_DEG", 8.0))
+_INIS_EGIM_DEG   = float(os.environ.get("AVCI_INIS_EGIM_DEG", 5.0))
 _INIS_GIRIS_MIN  = float(os.environ.get("AVCI_INIS_GIRIS_MIN", 150.0))
 _INIS_GIRIS_MAX  = float(os.environ.get("AVCI_INIS_GIRIS_MAX", 600.0))
 # Kare bitince tırmanılacak dönüş irtifası (0 = tırmanma).
@@ -720,7 +740,9 @@ _INIS_GIRIS_MAX  = float(os.environ.get("AVCI_INIS_GIRIS_MAX", 600.0))
 #   dönüş YOK  → flare hedefe 199 m kala → temas 29 m (irtifa erken tükeniyor,
 #                son 200 m sürünerek geliniyor ve uçak kısa kalıyor)
 # 30 m ile yaklaşma yolu 467 → 253 m'ye, en uzak nokta 462 → 233 m'ye iniyor.
-_DONUS_IRTIFA    = float(os.environ.get("AVCI_DONUS_IRTIFA", 30.0))
+# 30 → 20 m (2026-08-23): desen zaten 20 m'de uçuluyor. 30 m, 5°'lik süzülüş
+# için 383 m'lik giriş demekti; 20 m ile 269 m yetiyor ve görev kısalıyor.
+_DONUS_IRTIFA    = float(os.environ.get("AVCI_DONUS_IRTIFA", 20.0))
 # kare_gorev'e ÖZEL desen irtifası. Kampanya senaryoları (duz/square/circle/
 # aggressive) AVCI_TKOFF_HEDEF=30 ile uçmaya devam eder — ölçüm geçmişi bozulmasın.
 # 20 m: kullanıcı isteği ("iniş için bu kadar yükseğe çıkmaya gerek yok");
@@ -749,6 +771,11 @@ _KARE_IRTIFA     = float(os.environ.get("AVCI_KARE_IRTIFA", 20.0))
 # kalkış noktasına konunca temas 67-72 m ÖTEDE oluyor (iki bağımsız koşu:
 # 72 m ve 67 m). Nişan, ölçülen aşım kadar geri alınır — knob'un tarihçesinde
 # yazdığı gibi bu telafi flare süzülmesi içindir ve gövdeye göre değişir.
+# ⚠ NİŞAN KAYDIRMASI = ÖLÇÜLEN FLARE SÜZÜLMESİ (2026-08-23).
+# Geometri düzeltildikten sonra (dönüş bacağı 20 m'ye ALÇALIYOR, yaklaşma
+# girişi 269 m, eğim 5°) süzülüş hattı isabetli: uçak 3 m'ye kalkış noktasına
+# 14 m kala geliyor. Kalan hata tek kaynaklı — flare'de 88 m ilerliyor.
+# Nişan tam o kadar geri alınır ki temas kalkış noktasına düşsün.
 _INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 100.0))
 
 
@@ -784,6 +811,7 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
     t0 = time.time()
     faz = ""
     temas_t0 = None
+    flare_kilit = False   # FLARE'e bir kez girilince geri dönülmez (aşağıda)
     hiz_f = None          # süzülmüş yer hızı (yalnız stall tabanı için)
     vz_f = None           # süzülmüş alçalma hızı (gaz döngüsü)
     burun = 0             # hız sınırlı burun komutu (salınım olmasın)
@@ -841,18 +869,30 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
                 hedefli_sink = _kelepce(gereken, 0.15, 0.8)
 
         # ── kademe: (hedef alçalma, burun hedefi, gaz bandı) ──
-        if irtifa > _INIS_SON_ALT:
+        # ⚠ FLARE MANDALI (2026-08-23, ölçümle bulundu): uçak 3 m sınırında
+        # FLARE ↔ SON YAKLAŞMA arasında gidip geliyordu (kayıtta üç kez) ve her
+        # dönüşte flare burun rampası sıfırlanıyordu. Sonuç ikili davranış:
+        # rampa yetişirse uçak hızı 0.0-0.1 m/s'e düşürüp 15-24 m'de duruyor,
+        # yetişmezse 10 m/s ile değip 55-61 m sürükleniyor. Aynı ayarla iki
+        # farklı sonuç = tekrarlanabilirlik yok. Flare bir kez başladıysa
+        # bitene kadar sürer.
+        if flare_kilit:
+            irtifa_faz = min(irtifa, _INIS_FLARE_ALT)
+        else:
+            irtifa_faz = irtifa
+        if irtifa_faz > _INIS_SON_ALT:
             yeni_faz, hedef_sink = "YAKLAŞMA", _INIS_SINK
             burun_hedef = int(_kelepce(_INIS_HIZ_KP * (hiz_f - _INIS_HIZ),
                                        _INIS_BURUN_MIN, 200))
             gaz_alt, gaz_ust = _INIS_GAZ_ALT_SINIR, 650
-        elif irtifa > _INIS_FLARE_ALT:
+        elif irtifa_faz > _INIS_FLARE_ALT:
             yeni_faz, hedef_sink = "SON YAKLAŞMA", _INIS_SON_SINK
             burun_hedef = int(_kelepce(_INIS_HIZ_KP * (hiz_f - _INIS_HIZ),
                                        _INIS_BURUN_MIN, 250))
             gaz_alt, gaz_ust = _INIS_GAZ_ALT_SINIR, 620
         else:
             yeni_faz, hedef_sink = "FLARE", _INIS_FLARE_SINK
+            flare_kilit = True
             oran = _kelepce(irtifa / _INIS_FLARE_ALT, 0.0, 1.0)      # 1 → 0
             burun_hedef = int(_INIS_FLARE_PITCH_BAS
                               + (_INIS_FLARE_PITCH - _INIS_FLARE_PITCH_BAS)
@@ -1103,7 +1143,9 @@ def scenario_kare_gorev(conn):
         print(f"[SCN] Yaklaşma girişine ÇIKMAYA GEREK YOK ({mes:.0f} ≥ "
               f"{giris_m:.0f} m, irtifa yeterli) — süzülüş buradan başlıyor")
     else:
-        git_noktaya(conn, g_x, g_y, varis_m=60.0, hedef_irtifa=hedef_irtifa)
+        # varis_m 60 → 20 (2026-08-23): 60 m tolerans, hesaplanan 253 m'lik
+        # yaklaşma girişini fiilen 194 m'ye indiriyordu.
+        git_noktaya(conn, g_x, g_y, varis_m=20.0, hedef_irtifa=hedef_irtifa)
     if _abort:
         return
     print(f"[SCN] Yaklaşma girişindeyiz (eve {_hedefe(ev_x, ev_y)[0]:.0f} m) — "
