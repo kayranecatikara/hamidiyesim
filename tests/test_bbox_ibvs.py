@@ -803,6 +803,126 @@ def main():
             and "elev_atalet_deg" in ib._CSV_ALANLAR,
             f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun")
 
+    # ══ Ö-PN · ORANTISAL SEYRÜSEFER ÖNDELİĞİ (CLAUDE.md §5.10) ══════════
+    # Kullanıcı fikri 2026-08-24: "kutunun oynama miktarının iki katı kadar,
+    # kutunun döndüğü yöne dön." Aşağıdaki dört test YAPISAL GARANTİdir.
+    _pn_eski = ib.Cfg.PN_K
+    try:
+        import itertools as _it
+        _grid = list(_it.product(
+            (120.0, 320.0, 520.0),          # cx
+            (150.0, 240.0, 330.0),          # cy
+            (14.0, 45.0),                   # w
+            (12.0, 40.0),                   # h
+            (0.0, 1.2),                     # iris_yaw
+            (-0.35, 0.0, 0.4),              # iris_roll
+            (-0.2, 0.25),                   # iris_pitch
+            (-1.0, -0.35, 0.0, 0.6, 1.4),   # los_hiz[0] = λ̇ (rad/s)
+            (-6.0, 0.0, 3.0),               # kapanma
+        ))
+
+        def _cagir(g, K):
+            cx, cy, w, h, iy, ir, ip, lam, kap = g
+            ib.Cfg.PN_K = K
+            return ib.komut(cx, cy, w, h, iy, 3.0, 0.05, ib.Cfg,
+                            los_hiz=(lam, 0.0), iris_pitch=ip, iris_vz=-1.0,
+                            kapanma=kap, iris_roll=ir, yaw_hizi=0.3)
+
+        # B70: PN KAPALI (PN_K=0) → pn_ek tam olarak 0.0, her girdide.
+        ib.Cfg.PN_K = 0.0
+        _b70 = all(_cagir(g, 0.0)[5]["pn_ek"] == 0.0 for g in _grid)
+        kontrol("B70 PN kapalıyken pn_ek bit bit 0.0",
+                _b70, f"{len(_grid)} girdi kombinasyonu")
+
+        # B71: λ̇ = 0 (düz uçuş) → PN ne olursa olsun pn_ek = 0.0.
+        # Düz takipte davranış DEĞİŞEMEZ — regresyon yapısal olarak imkânsız.
+        _duz = [g for g in _grid if g[7] == 0.0]
+        _b71 = all(_cagir(g, K)[5]["pn_ek"] == 0.0
+                   for g in _duz for K in (0.0, 1.0, 2.0, 4.0))
+        kontrol("B71 λ̇=0 iken pn_ek=0 (düz uçuş dokunulmaz)",
+                _b71, f"{len(_duz)} düz girdi × 4 kazanç")
+
+        # B72: İŞARET — kutu sağa kayıyorsa (λ̇>0) öndelik de SAĞA.
+        # Kullanıcının "kutunun döndüğü yöne" şartı.
+        _b72 = True
+        _b72_det = "tamam"
+        for g in _grid:
+            if g[7] == 0.0:
+                continue
+            _pn = _cagir(g, 2.0)[5]["pn_ek"]
+            if _pn != 0.0 and (_pn > 0) != (g[7] > 0):
+                _b72 = False
+                _b72_det = f"λ̇={g[7]:+.2f} → pn_ek={math.degrees(_pn):+.1f}°"
+                break
+        kontrol("B72 öndelik kutunun kaydığı YÖNE (işaret doğru)",
+                _b72, _b72_det)
+
+        # B73: YAPISAL GARANTİ — PN, BURNA (yaw_cmd) dokunamaz.
+        # Kamera hedefi izlemeye devam eder → PN görsel temasi koparamaz.
+        # Bu, §5.2 geçerlilik eşinin kod seviyesinde kanıtıdır.
+        _b73 = True
+        _b73_det = "fark 0.000e+00"
+        _enb = 0.0
+        for g in _grid:
+            _y0 = _cagir(g, 0.0)[3]
+            for K in (1.0, 2.0, 4.0):
+                _d = abs(_cagir(g, K)[3] - _y0)
+                _enb = max(_enb, _d)
+        if _enb != 0.0:
+            _b73 = False
+            _b73_det = f"yaw_cmd DEĞİŞTİ, en büyük fark {_enb:.3e} rad"
+        kontrol("B73 PN yaw_cmd'yi DEĞİŞTİREMEZ (yapısal garanti)",
+                _b73, f"{len(_grid)} girdi × 3 kazanç, {_b73_det}")
+
+        # B74: öndelik PN_MAX_DEG tavanını asla aşmaz.
+        _tav = math.radians(ib.Cfg.PN_MAX_DEG) + 1e-12
+        _b74 = all(abs(_cagir(g, 4.0)[5]["pn_ek"]) <= _tav for g in _grid)
+        kontrol("B74 |pn_ek| ≤ PN_MAX_DEG",
+                _b74, f"tavan {ib.Cfg.PN_MAX_DEG:.0f}°, kazanç 4.0'da sınandı")
+
+        # B76: KAPALI DÖNGÜ — PN_K=1 TAM çarpışma üçgenine yerleşir.
+        # v1'de kalıcı hata vardı (gerekenin yalnız K/(1+K) katı uygulanıyordu:
+        # K=1→%50, K=2→%67). v2 kendi dik hızını geri ekleyerek bunu kaldırdı.
+        # Bu test o düzeltmenin BEKÇİSİdir — bozulursa burada yakalanır.
+        _Cpn = ib.menzil_sabiti(ib.Cfg)
+        _tav_eski = ib.Cfg.PN_MAX_DEG
+        ib.Cfg.PN_MAX_DEG = 55.0
+        _b76 = True
+        _b76_det = []
+        try:
+            for _Vd in (3.0, 6.0, 9.0):
+                _R, _v = 16.5, 18.0
+                _bo = _Cpn / _R
+                _sig = 0.0
+                ib.Cfg.PN_K = 1.0
+                for _ in range(140):
+                    _lam = (_Vd - _v * math.sin(_sig)) / _R
+                    _t = ib.komut(320.0, 240.0, _bo / math.sqrt(2),
+                                  _bo / math.sqrt(2), 0.0, 3.0, 0.05, ib.Cfg,
+                                  los_hiz=(_lam, 0.0), iris_pitch=0.0,
+                                  iris_vz=0.0, kapanma=3.0, iris_roll=0.0,
+                                  yaw_hizi=0.0,
+                                  iris_vx=_v * math.cos(_sig),
+                                  iris_vy=_v * math.sin(_sig))[5]
+                    _sig = 0.5 * _sig + 0.5 * _t["pn_ek"]
+                _ger = math.asin(_Vd / _v)
+                _hata = abs(math.degrees(_sig - _ger))
+                _b76_det.append(f"V⊥={_Vd:.0f}: {math.degrees(_sig):.1f}° "
+                                f"(gereken {math.degrees(_ger):.1f}°)")
+                if _hata > 0.5:
+                    _b76 = False
+        finally:
+            ib.Cfg.PN_MAX_DEG = _tav_eski
+        kontrol("B76 PN_K=1 TAM çarpışma üçgenine yerleşir (kalıcı hata yok)",
+                _b76, "; ".join(_b76_det))
+
+        # B75: mekanizma kapısı sütunu CSV'de var (§5.1).
+        kontrol("B75 pn_ek_deg CSV sütunu mevcut",
+                "pn_ek_deg" in ib._CSV_ALANLAR,
+                f"_CSV_ALANLAR {len(ib._CSV_ALANLAR)} sütun")
+    finally:
+        ib.Cfg.PN_K = _pn_eski
+
     print("=" * 62)
     fails = [ad for ad, ok, _ in _sonuclar if not ok]
     print(f"SONUÇ: {len(_sonuclar) - len(fails)}/{len(_sonuclar)} geçti"

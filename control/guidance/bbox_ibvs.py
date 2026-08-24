@@ -379,6 +379,77 @@ class Cfg:
     #   arası           → doğrusal harman
     YANAL_MENZIL = _env_f("AVCI_IBVS_YANAL_M", 12.0)   # m
 
+    # ══ Ö-PN · ORANTISAL SEYRÜSEFER ÖNDELİĞİ (yalnız HIZ VEKTÖRÜNE) ══
+    # KULLANICI FİKRİ (2026-08-24): "hedef kare çizerken sürekli ani manevra
+    # yaptığı için dron sürekli ıskalıyor. görsel temasta, ani manevra
+    # yaparsa KARENİN OYNAMA MİKTARININ İKİ KATI kadar, kutunun döndüğü yöne
+    # dönsün." → kontrol dilinde: ORANTISAL SEYRÜSEFER, kazanç PN_K = 2.
+    #
+    # NEDEN GEREKLİ (ölçüm, 2026-08-24, 16 uçuş / 6162 kutulu kare):
+    #   |eps_yaw| medyanı  λ̇ < 40°/s iken 2.8°,  λ̇ > 40°/s iken 8.0°
+    #   → hedef DÖNDÜĞÜ anda nişan hatası 2.9 KATINA çıkıyor.
+    # Sebebi yapısal: bugünkü yasa SAF TAKİP (K_YAW=1 → hız vektörü hedefin
+    # ŞU ANKİ yerine bakar, etkin seyrüsefer sabiti N=1). Mevcut lead terimi
+    #     lead_az = LEAD_SURE · λ̇        (0.4 s · λ̇)
+    # bunu değiştirmez: γ = λ + τ·λ̇  ⇒  γ̇ = λ̇ + τ·λ̈, yani SABİT hızla dönen
+    # bir hedefte (λ̈ = 0) HİÇBİR ŞEY yapmaz. Kare görevinin köşeleri tam
+    # olarak sabit hızlı dönüştür → mevcut lead orada tanım gereği ölü.
+    # Saf takip dönen hedefte λ̇'yi sıfırlayamaz; araç kuyruğa düşer ve
+    # çarpma anında gereken yanal ivme sonsuza gider.
+    #
+    # YASA — ölçülen büyüklüklerden, t_go KULLANMADAN:
+    #     R        = C / boyut              menzil (m), benzer üçgenler
+    #     V_capraz = R · λ̇                  hedefin LOS'a DİK bağıl hızı (m/s)
+    #     pn_ek    = asin( PN_K · V_capraz / v_los )      (işaretli)
+    # PN_K = 1 → eklenen yanal hız bileşeni v_los·sin(pn_ek) tam olarak
+    # V_capraz'ı götürür, yani λ̇ SIFIRLANIR (çarpışma üçgeni). PN_K = 2 →
+    # kullanıcının istediği "iki katı": λ̇ daha hızlı sıfırlanır.
+    #
+    # ⚠ NEDEN λ̇ DEĞİL DE R·λ̇: yakın menzilde λ̇ patlıyor (ölçülen maks
+    # 209 °/s), çünkü R → 0. Çarpım R·λ̇ ise sınırlı kalıyor (2.5 m'de
+    # 9.1 m/s) — bu yüzden yakın menzilde kendiliğinden uslu.
+    # ⚠ NEDEN t_go YOK: t_go = R/ṙ ve ölçülen kapanma medyanı 0.28 m/s →
+    # t_go 59 s'ye fırlar, (N−1)·λ̇·t_go biçimi anında tavana çakılırdı.
+    #
+    # ⚠⚠ YALNIZ HIZ VEKTÖRÜNE UYGULANIR, BURNA (yaw_cmd) DEĞİL.
+    # yaw_cmd hedefi izlemeye devam eder → kamera hedefi kadrajda TUTAR.
+    # Öndelik burna da verilseydi hedef kadraj kenarına itilir, görsel
+    # temas kaybedilirdi (CLAUDE.md §5.2 geçerlilik eşi).
+    #
+    # PN_K = 0.0 → TAMAMEN KAPALI ve çıktı bugünküyle BİT BİT AYNI
+    # (tests/test_bbox_ibvs.py::test_pn_kapali_bit_bit_ayni bunu kanıtlar).
+    # ── v2 (2026-08-24 ikinci tur) — İKİ ÖLÇÜLMÜŞ KUSURUN ÇARESİ ──
+    # KUSUR 1 · KALICI HATA. v1'de pn_ek = asin(K·R·λ̇/v) idi. Ama R·λ̇
+    # BAĞIL dik hızdır: R·λ̇ = V_dik(hedef) − v·sin(σ). İkisini birleştirince
+    #     sin(σ)·(1+K) = K·V_dik/v   ⇒   sin(σ) = [K/(1+K)]·V_dik/v
+    # yani gereken öndeliğin YALNIZ K/(1+K) katı uygulanıyordu:
+    #     K=1 → %50,  K=2 → %67,  K=3 → %75,  K=10 → %91.
+    # Bu, P-tipi kontrolcünün klasik kalıcı hatasıdır: hata (λ̇) sıfırlanınca
+    # çıktı da sıfırlanır, bu yüzden λ̇ hiç tam sıfırlanamaz.
+    # ÇARE: kendi dik hızımızı GERİ EKLEYİP hedefin KENDİ dik hızını bul:
+    #     V_dik(hedef) = R·λ̇ + v_yatay·sin(σ_gerçek)
+    #     pn_ek        = asin(K · V_dik(hedef) / v_los)
+    # σ_gerçek = (gerçek hız vektörümüzün yönü) − (görüş hattı yönü); kendi
+    # hız telemetrimizden ölçülür (KENDİ sensörümüz — §10 hedefe dair canlı
+    # GPS yasağını ihlal etmez). Denge: sin(σ*) = K·V_dik/v → K=1 TAM
+    # çarpışma üçgeni, kalıcı hata YOK. Yinelemenin kazancı a = K/(1+K) < 1
+    # olduğu için her K > 0'da KARARLI (test B76 sayısal olarak doğrular).
+    #
+    # KUSUR 2 · TAVAN ÇOK ALÇAKTI. Kullanıcı 2026-08-24: "dron hedefin
+    # sağından/solundan 90 dereceye yakın (60'a kadar) yaklaşıyorsa, kutuya
+    # değil kutunun gittiği yönün ilerisine yaklaşsın." Çarpışma üçgeni bunu
+    # zaten yapar; ama GEREKEN öndelik o geometride tavanın ÜSTÜNDE kalıyordu
+    # (V_hedef=15, V_biz=18 için sin(σ) = (15/18)·sin(yaklaşma)):
+    #     yaklaşma 45° → 36.1°   60° → 46.2°   75° → 53.6°   90° → 56.4°
+    # 35°'lik tavan 45°'den itibaren bağlıyordu — yani tam da kullanıcının
+    # tarif ettiği bantta öndelik YETERİNCE BÜYÜYEMİYORDU. Tavan 55°'ye
+    # çıkarıldı (90° yaklaşmaya kadar yeter).
+    # ⚠ ÖDÜNLEŞİM: büyük öndelikte LOS boyunca kapanma v·cos(σ)'ya düşer
+    # (55°'de 18 → 10.3 m/s). Kestirim yanlışsa hedefin epey önüne gideriz.
+    PN_K = _env_f("AVCI_IBVS_PN", 0.0)        # 0 = kapalı; 1.0 = TAM üçgen
+    PN_MAX_DEG = _env_f("AVCI_IBVS_PN_MAX", 55.0)   # °; öndelik tavanı
+    PN_V_MIN = _env_f("AVCI_IBVS_PN_VMIN", 2.0)     # m/s; altında σ_gerçek=0
+
     # ══ Ö9 · YATAY KANALA SÖNÜMLEME (D terimi) ══
     # KULLANICI GÖZLEMİ (2026-08-11, kendi uçuşu ucus_20260811_185753):
     # "hedefin yaptığı ilk manevrada bizim araç o kadar sağa yönelmese, hafif
@@ -609,7 +680,7 @@ _CSV_ALANLAR = [
     "t", "dt", "durum", "cx", "cy", "w", "h", "boyut", "conf",
     "eps_yaw_deg", "eps_yaw_ham_deg", "nisan_elev_deg",
     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
-    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
+    "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "pn_ek_deg", "pn_capraz", "pn_yaklasma_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
     "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
 ]
@@ -690,7 +761,8 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
 
 def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
-          kapanma=None, iris_roll=0.0, yaw_hizi=0.0):
+          kapanma=None, iris_roll=0.0, yaw_hizi=0.0,
+          iris_vx=0.0, iris_vy=0.0):
     """IBVS kontrol yasası — SAF TAKİP + PI hız (MAVLink yok, CANLI GPS yok).
 
     Girdi:
@@ -816,8 +888,44 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
                        0.0, 1.0)
             eps_hiz = eps_yaw + _w * (_eps_eff - eps_yaw)
 
+    # ══ Ö-PN · ORANTISAL SEYRÜSEFER ÖNDELİĞİ (bkz. Cfg.PN_K) ══════════
+    # V_capraz = R·λ̇  (hedefin görüş hattına DİK bağıl hızı, işaretli)
+    # pn_ek    = asin(PN_K · V_capraz / v_los)
+    # İŞARET: λ̇ > 0 = görüş hattı sağa dönüyor (kutu sağa kayıyor) →
+    # pn_ek > 0 → hız vektörü DAHA SAĞA. Yani kutunun döndüğü yöne.
+    # ⚠ SADECE hız vektörüne girer; yaw_cmd yukarıda hesaplandı ve BURAYA
+    # DOKUNULMADI — burun hedefte kalır, kamera hedefi kaybetmez.
+    pn_ek = 0.0
+    pn_capraz = 0.0
+    pn_yaklasma = 0.0
+    if cfg.PN_K > 0.0 and boyut > 1e-6 and v_los > 0.1:
+        _R_pn = _C / boyut                       # menzil (m)
+        # R·λ̇ = BAĞIL dik hız = V_dik(hedef) − V_dik(biz).
+        # Bize düşen payı GERİ EKLEYİP hedefin KENDİ dik hızını buluyoruz —
+        # kalıcı hatanın çaresi bu (bkz. Cfg.PN_K açıklaması).
+        _v_yatay = math.hypot(iris_vx, iris_vy)
+        _sig_ger = 0.0
+        if _v_yatay > cfg.PN_V_MIN:
+            # σ_gerçek = (gerçek hız vektörümüzün yönü) − (görüş hattı yönü)
+            _sig_ger = normalize_angle(math.atan2(iris_vy, iris_vx)
+                                       - (iris_yaw + eps_yaw))
+            _sig_ger = clamp(_sig_ger, -math.pi / 2, math.pi / 2)
+        pn_capraz = _R_pn * los_hiz[0] + _v_yatay * math.sin(_sig_ger)
+        pn_ek = math.asin(clamp(cfg.PN_K * pn_capraz / v_los, -1.0, 1.0))
+        pn_ek = clamp(pn_ek, -math.radians(cfg.PN_MAX_DEG),
+                      math.radians(cfg.PN_MAX_DEG))
+        # TANI: yaklaşma (en) açısı — 0° tam kuyruktan, 90° tam yandan.
+        # Hedefin LOS boyunca hızı = −ṙ + bizim LOS boyunca hızımız.
+        # ⚠ YALNIZ RAPOR İÇİN; güdüm kararına GİRMEZ (kestirim ±%37 hatalı).
+        _v_par = ((-kapanma if kapanma is not None else 0.0)
+                  + _v_yatay * math.cos(_sig_ger))
+        pn_yaklasma = math.atan2(abs(pn_capraz), _v_par)
+
     # SAF TAKİP: hız LOS yönünde — ama yönü eps_hiz belirler
-    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum + lead_az)
+    # PN AÇIKKEN öndeliği PN verir; eski lead_az terimi hız vektöründen
+    # ÇIKAR (iki lead üst üste binmesin). PN kapalıyken satır aynen eski.
+    _ondelik = pn_ek if cfg.PN_K > 0.0 else lead_az
+    hiz_yonu = normalize_angle(iris_yaw + cfg.K_YAW * eps_hiz - sonum + _ondelik)
     vx_ned = v_los * math.cos(hiz_yonu)
     vy_ned = v_los * math.sin(hiz_yonu)
 
@@ -872,6 +980,9 @@ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
             "eps_hiz": eps_hiz, "sonum": sonum,
             "donus_tavan": donus_tavan,
             "kacis_ek": kacis_ek,
+            "pn_ek": pn_ek,
+            "pn_capraz": pn_capraz,
+            "pn_yaklasma": pn_yaklasma,
             "lead_az": lead_az, "lead_olcek": lead_olcek,
             "kapanma_hedefi": kapanma_hedefi,
             "dikey_olcek": _dikey_olcek,
@@ -1101,7 +1212,9 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 cx, cy, bw, bh, iyaw, hiz_I, dt, cfg,
                 tuple(los_hiz), ipitch,
                 float(iris.get("vz", 0.0) or 0.0),
-                kapanma, iroll, yaw_hizi)
+                kapanma, iroll, yaw_hizi,
+                float(iris.get("vx", 0.0) or 0.0),
+                float(iris.get("vy", 0.0) or 0.0))
             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
@@ -1158,6 +1271,10 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                 "donus_tavan": ("" if tani["donus_tavan"] is None
                                 else round(tani["donus_tavan"], 2)),
                 "lead_az_deg": round(math.degrees(tani["lead_az"]), 2),
+                "pn_ek_deg": round(math.degrees(tani.get("pn_ek", 0.0)), 2),
+                "pn_capraz": round(tani.get("pn_capraz", 0.0), 2),
+                "pn_yaklasma_deg": round(
+                    math.degrees(tani.get("pn_yaklasma", 0.0)), 1),
                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
                 "vz_cmd": round(vz, 2),

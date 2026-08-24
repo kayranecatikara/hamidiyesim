@@ -278,6 +278,27 @@ AYARLAR = [
      "Daha uzaktan kestirmeye başlar.",
      "Yalnız çok yakında çalışır."),
 
+    ("PN_K", "PN_K", "⭐ Orantısal seyrüsefer öndeliği (Ö-PN)", "G1", "sayi",
+     "", 0.0, 6.0, 0.25,
+     "KULLANICI FİKRİ (2026-08-24): 'kutunun oynama miktarının İKİ KATI "
+     "kadar, kutunun döndüğü yöne dön.' Yasa: V_capraz = R·λ̇ (hedefin "
+     "görüş hattına dik bağıl hızı), öndelik = asin(PN_K·V_capraz/v_los). "
+     "PN_K=1 TAM çarpışma üçgeni (kalıcı hata yok), PN_K=2 kullanıcının "
+     "istediği iki kat. YALNIZ hız vektörüne girer, burna DEĞİL — kamera "
+     "hedefi kadrajda tutmaya devam eder. Açıkken eski lead terimi hız "
+     "vektöründen çıkar (çift öndelik olmasın).",
+     "Hedefin önünü daha çok keser; dönen hedefte nişan hatası düşer. "
+     "⚠ Çok yüksekte aşırı kestirme + salınım riski.",
+     "0 = KAPALI; saf takip (hedefin bulunduğu yere gidilir), bugünkü "
+     "davranış bit bit aynı."),
+
+    ("PN_MAX_DEG", "PN_MAX_DEG", "Ö-PN öndelik tavanı", "G1", "sayi", "°",
+     5.0, 75.0, 1.0,
+     "Yukarıdaki öndeliğin kırpıldığı en büyük açı. Hız vektörünün görüş "
+     "hattından en fazla ne kadar sapabileceği.",
+     "Daha agresif kestirme yapabilir; hız vektörü hedeften çok sapar.",
+     "Öndelik erken doyar → PN kazancı etkisizleşir."),
+
     # ═════════════════════════════════════════════════════════════════════
     ("GD", None, "⭐ DİKEY KOMUT ÖLÇEĞİ — salınımın kök nedeni", None,
      "grup", None, None, None, None,
