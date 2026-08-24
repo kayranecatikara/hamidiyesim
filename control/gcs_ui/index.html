@@ -116,6 +116,19 @@
                 <div class="slrow"><span class="sk">Throttle</span><span class="sv" id="thrV">60%</span></div>
                 <input type="range" id="thrSl" min="0" max="100" value="60" aria-label="Gaz ayarı">
                 <div class="scale"><span>Rölanti</span><span>Yavaş</span><span>Cruise</span><span>Hızlı</span><span>Max</span></div>
+                <div class="sig" id="thrSig"><span class="d"></span><span id="thrSigTxt">ham gaz — FBWA / manuel modda geçerli</span></div>
+              </div>
+
+              <!-- Hedef hava hızı — FBWB/CRUISE modunda geçerli. GAZ AYARINDAN
+                   AYRIDIR: mod değişince kullanıcının gaz ayarı bozulmasın diye
+                   iki kumanda ayrı tutulur. Hangisinin etkili olduğunu MOD
+                   belirler (bkz. run_plane_scenario.ch3). -->
+              <div class="sec">
+                <span class="slabel">🎯 Hedef Hava Hızı</span>
+                <div class="slrow"><span class="sk">Airspeed</span><span class="sv" id="hizV">15.0 m/s</span></div>
+                <input type="range" id="hizSl" min="120" max="220" step="5" value="150" aria-label="Hedef hava hizi">
+                <div class="scale"><span>12</span><span>14</span><span>17</span><span>19</span><span>22</span></div>
+                <div class="sig" id="hizSig"><span class="d"></span><span id="hizSigTxt">FBWB modunda geçerli — otopilot gazı kendi ayarlar</span></div>
               </div>
               <div class="sec">
                 <span class="slabel">⚡ GPS Karıştırma</span>

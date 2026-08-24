@@ -51,7 +51,9 @@ CONTROL_RATE = 0.1      # saniye — kontrol loop hızı
 
 # manual_control sınırları: -1000..+1000 (pitch/roll/yaw), 0..1000 (throttle)
 THROTTLE_IDLE = 0
-THROTTLE_CRUISE = 575   # → ~15.0 m/s ÖLÇÜLDÜ (X3520 528KV + 13x7 + 6S, 2.5 kg).
+THROTTLE_CRUISE = 668   # HAM GAZ → ~15.0 m/s (OLCULDU 00000308.BIN).
+                        # FBWB'de gaz yerine hedef hiz kullanilir:
+                        # bkz. gcs_server /api/plane_airspeed
                         # Gerekçe ve gaz→hız tablosu: gcs_server._plane_throttle
 THROTTLE_FULL = 900
 

@@ -1029,6 +1029,50 @@
       <control_joint_rad_to_cl>-2.0</control_joint_rad_to_cl>
     </plugin>
 
+    <!-- ══════════════════════════════════════════════════════════════
+         GÖVDE (PARAZİT) SÜRTÜNMESİ — 2026-08-23
+         ══════════════════════════════════════════════════════════════
+         NEDEN VAR: gz LiftDrag'da sürtünme katsayısı cd = cda·alpha'dır,
+         yani hücum açısı sıfırken sürtünme de SIFIR. Bu yüzden modelde
+         gövde, kablolar, iniş takımı, anten — hiçbiri sürtünmüyordu ve
+         uçak gerçeğinin ~1/4'ü kadar sürtünüyordu.
+         ÖLÇÜLDÜ (8 uçuş): aynı gazda gerçeğinden %7 hızlı; ayrıca fazla
+         itki tırmanmaya gidiyordu (tam gazda +2.98 m/s, 3 dakikada 507 m —
+         CLAUDE.md §4'teki 20-250 m geçerlilik bandını deliyordu).
+
+         NASIL ÇALIŞIYOR: cla=0 → kaldırma ÜRETMEZ, yalnız sürtünme.
+         a0=0.3 sabit taban açısı verir, böylece uçak düz uçarken bile
+         cd = |cda·a0| = 0.56 × 0.3 = 0.168 kalır (sıfıra düşmez).
+             D = q · alan · cd = q · 0.10 · 0.168 = q · 0.0168
+         Kanat alanına (0.60 m²) indirgenmiş karşılığı CD0 = 0.028.
+         Bu, süzülme oranı L/D ≈ 10.8 demek — Talon sınıfı bir EPO FPV
+         uçağı için literatürdeki 10-12 bandının içinde.
+
+         cp = (0,0,0): ağırlık merkezi -0.0053'te, 5 mm fark → yunuslama
+         momenti 0.015 N·m, ihmal edilebilir.
+
+         ⛔ GERİ ALMAK İÇİN: bu <plugin> bloğunu yorum içine al ve simi
+         yeniden kur. Canlı aç/kapa YOK — SDF eklentisi uçuş sırasında
+         değiştirilemez, A/B için tam restart gerekir (CLAUDE.md §6 notu).
+         ══════════════════════════════════════════════════════════════ -->
+    <plugin filename="gz-sim-lift-drag-system"
+        name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0>
+      <cla>0.0</cla>
+      <cda>0.56</cda>
+      <cma>0</cma>
+      <alpha_stall>1.5</alpha_stall>
+      <cla_stall>0</cla_stall>
+      <cda_stall>0</cda_stall>
+      <cma_stall>0</cma_stall>
+      <cp>0 0 0</cp>
+      <area>0.10</area>
+      <air_density>1.2041</air_density>
+      <forward>1 0 0</forward>
+      <upward>0 0 1</upward>
+      <link_name>base_link</link_name>
+    </plugin>
+
     <plugin name="ArduPilotPlugin"
       filename="ArduPilotPlugin">
       <!-- Port settings. iris 9002 kullaniyor; Talon -I1 icin 9012. -->

@@ -45,7 +45,45 @@ from control.mav_common import (
     set_mode,
     PLANE_MODE_TAKEOFF,
     PLANE_MODE_FBWA,
+    PLANE_MODE_FBWB,
 )
+
+# ══════════════════════════════════════════════════════════════════════
+# SEYİR MODU — 2026-08-23, kullanıcı kararı: FBWA → FBWB
+# ══════════════════════════════════════════════════════════════════════
+# SORUN: FBWA'da nötr elevator "YUNUSLAMA 0° tut" demektir, "irtifa tut"
+# değil. Kanadın sıfır-kaldırma açısı a0 = 7.45° olduğu için yunuslama
+# 0 iken uçak 7.45° hücum açısıyla uçuyor ve ağırlığından %60 fazla
+# kaldırma üretiyordu → SÜREKLİ TIRMANIYORDU.
+# ÖLÇÜLDÜ (00000308.BIN): 249 s'de +307 m, tam gazda +2.98 m/s.
+#
+# NEDEN FBWB "UYDURMA" DEĞİL: gerçek Talon'u kim uçurursa uçursun —
+# pilot çubukla ya da otopilot AUTO/CRUISE/FBWB ile — irtifayı TUTAR.
+# Hiçbir gerçek uçuşta uçak 4 dakika kontrolsüz tırmanmaz. Yani
+# gerçekçi OLMAYAN şey tırmanmaydı. FBWB, ArduPlane'in KENDİ modu;
+# dışarıdan hiçbir kontrolcü eklemiyoruz.
+#
+# FBWB'DE KUMANDA ANLAMLARI DEĞİŞİR:
+#   CH2 (elevator) nötr → İRTİFAYI TUTAR. Tam çubuk = ±FBWB_CLIMB_RATE
+#                         (uçuştan okundu: 2.0 m/s)
+#   CH3 (gaz)           → HAM GAZ DEĞİL, HEDEF HAVA HIZI.
+#                         V = AIRSPEED_MIN + (gaz/1000)·(MAX − MIN)
+#                         Uçuştan okundu: MIN 12, MAX 22 m/s, ARSPD_USE=1
+#                         → gaz 300 = 15 m/s · gaz 500 = 17 m/s
+#   CH1 (aileron)       → FBWA ile AYNI (ROLL_LIMIT_DEG 65°)
+#                         ⇒ dönüş yarıçapları DEĞİŞMEZ
+#
+# GERİ DÖNÜŞ: AVCI_PLANE_MODE=FBWA  → eski davranış birebir.
+_MOD_ADI = os.environ.get("AVCI_PLANE_MODE", "FBWB").strip().upper()
+SEYIR_MODU = PLANE_MODE_FBWB if _MOD_ADI == "FBWB" else PLANE_MODE_FBWA
+FBWB_AKTIF = (SEYIR_MODU == PLANE_MODE_FBWB)
+
+
+def _irtifa_pitch(fbwa_degeri):
+    """FBWB irtifayı KENDİ tutar → elevator NÖTR olmalı. FBWA'da ise
+    eski 'irtifa kaybını azaltan hafif up-elevator' telafisi geçerli.
+    FBWB'de bu telafi bırakılırsa tırmanma KOMUTU olur."""
+    return 0 if FBWB_AKTIF else fbwa_degeri
 
 # Havada devralma eşiği: bu irtifanın üstünde armlıysak kalkış ATLANIR.
 AIRBORNE_ALT_M = 15.0
@@ -127,12 +165,48 @@ def gcs_throttle():
     return _thr_cache["val"]
 
 
+_hiz_cache = {"val": 15.0, "t": 0.0}
+
+
+def gcs_hiz():
+    """GCS'ten HEDEF HAVA HIZI oku (m/s). Gaz kaydırıcısından AYRI kumanda."""
+    now = time.time()
+    if now - _hiz_cache["t"] > 0.5:
+        _hiz_cache["t"] = now
+        try:
+            req = urllib.request.urlopen(
+                "http://127.0.0.1:8000/api/plane_airspeed", timeout=0.2)
+            _hiz_cache["val"] = json.loads(req.read().decode()).get("airspeed", 15.0)
+        except Exception:
+            pass
+    return _hiz_cache["val"]
+
+
+# ArduPlane FBWB: gaz çubuğu hedef hava hızını verir (AIRSPEED_MIN..MAX arası).
+AS_MIN, AS_MAX = 12.0, 22.0
+
+
+def ch3():
+    """CH3'e YAZILACAK değer — moda göre anlamı değişir.
+
+    FBWA / manuel : HAM GAZ           → gaz kaydırıcısı (/api/plane_throttle)
+    FBWB          : HEDEF HAVA HIZI   → hız kaydırıcısı (/api/plane_airspeed)
+
+    İki kaydırıcı AYRI durur; hangisinin geçerli olduğunu MOD belirler.
+    Böylece mod değişince kullanıcının gaz ayarı bozulmaz.
+    """
+    if not FBWB_AKTIF:
+        return gcs_throttle()
+    V = max(AS_MIN, min(AS_MAX, gcs_hiz()))
+    return int(round((V - AS_MIN) / (AS_MAX - AS_MIN) * 1000))
+
+
 def hold(conn, duration, roll=0, pitch=0, throttle=None, yaw=0):
     """duration boyunca sabit komut uygula (throttle=None → GCS slider)."""
     t0 = time.time()
     while not _abort and time.time() - t0 < duration:
         _pump(conn)
-        thr = gcs_throttle() if throttle is None else throttle
+        thr = ch3() if throttle is None else throttle
         _rc(conn, roll=roll, pitch=pitch, throttle=thr, yaw=yaw)
         time.sleep(CONTROL_RATE)
 
@@ -201,7 +275,7 @@ def turn_by(conn, deg, bank=650, timeout=20.0):
         _pump(conn)
         if _att["ok"] and abs(_angdiff(target, _att["yaw"])) < math.radians(10):
             break
-        _rc(conn, roll=roll_cmd, pitch=180, throttle=gcs_throttle())
+        _rc(conn, roll=roll_cmd, pitch=_irtifa_pitch(180), throttle=ch3())
         time.sleep(CONTROL_RATE)
 
 
@@ -237,17 +311,35 @@ def _read_vehicle_state(conn, wait=1.5):
     return armed, -_pos["z"]
 
 
-def takeoff(conn, climb_time=8.0):
-    """Otonom kalkış: TAKEOFF modu motoru açıp TKOFF_ALT'a tırmandırır,
-    ardından FBWA'ya geçilip kısa düz uçuşla stabilize edilir."""
-    print("[SCN] Otonom kalkış (TAKEOFF modu)...")
+# Seyre geçmeden önce ulaşılması gereken irtifa.
+# ⛔ NEDEN VAR (2026-08-23, ÖLÇÜLDÜ 00000319.BIN): eskiden kalkış SABİT 8 s
+# sürüyordu ve o an hangi irtifadaysa oradan seyre geçiliyordu. FBWA'da
+# önemsizdi (uçak zaten tırmanmaya devam ediyordu), ama FBWB O İRTİFAYI
+# KİLİTLER. Sonuç: hedef 400 saniye boyunca 14.6 m'de uçtu — bekçinin
+# 20 m alt sınırının bile ALTINDA. Artık süre değil İRTİFA beklenir.
+SEYIR_IRTIFA_M = float(os.environ.get("AVCI_SEYIR_IRTIFA", 45.0))
+
+
+def takeoff(conn, climb_time=40.0):
+    """Otonom kalkış: TAKEOFF modu ile SEYIR_IRTIFA_M'ye tırman, sonra seyre geç.
+
+    climb_time artık ZAMAN AŞIMI (emniyet), hedef değil — irtifaya ulaşınca
+    beklemeden çıkar."""
+    print(f"[SCN] Otonom kalkış (TAKEOFF modu) → hedef {SEYIR_IRTIFA_M:.0f} m")
     set_mode(conn, PLANE_MODE_TAKEOFF)
     t0 = time.time()
     while not _abort and time.time() - t0 < climb_time:
         _pump(conn)
+        if -_pos["z"] >= SEYIR_IRTIFA_M:
+            print(f"[SCN] {SEYIR_IRTIFA_M:.0f} m'ye ulaşıldı "
+                  f"({time.time()-t0:.0f} s)")
+            break
         time.sleep(0.2)
-    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → FBWA")
-    set_mode(conn, PLANE_MODE_FBWA)
+    else:
+        print(f"[SCN] ⚠ zaman aşımı: {climb_time:.0f} s'de yalnız "
+              f"{-_pos['z']:.0f} m — yine de seyre geçiliyor")
+    print(f"[SCN] Kalkış bitti (irtifa ~{-_pos['z']:.0f}m) → {_MOD_ADI}")
+    set_mode(conn, SEYIR_MODU)
     hold(conn, 2.0)
 
 
@@ -370,7 +462,7 @@ def _daire_sureli(conn, roll_cmd, sure_s):
     pitch_cmd = int(150 * (1.0 / _m.cos(_m.radians(yatis_deg))))
     t0 = _t.time()
     while not _abort and (_t.time() - t0) < sure_s:
-        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
+        hold(conn, 0.5, roll=roll_cmd, pitch=_irtifa_pitch(pitch_cmd))
 
 
 def _daire(conn, roll_cmd, etiket):
@@ -381,14 +473,16 @@ def _daire(conn, roll_cmd, etiket):
     print(f"[SCN] DAİRE {etiket} — roll={roll_cmd} (~{yatis_deg:.0f}° yatış), "
           f"pitch={pitch_cmd}")
     while not _abort:
-        hold(conn, 0.5, roll=roll_cmd, pitch=pitch_cmd)
+        hold(conn, 0.5, roll=roll_cmd, pitch=_irtifa_pitch(pitch_cmd))
 
 
 def scenario_circle(conn):
     _daire(conn, *DAIRE_CAPLARI["circle"])
 
 
-TIRMANIS_MIN_THR = 600      # tırmanış/spiral için taban gaz (= THROTTLE_CRUISE)
+AGRESIF_GAZ = 668           # FBWA HAM GAZ — ölçüldü: 668 → 15.0 m/s
+                            # (00000308.BIN, gövde sürtünmesi eklendikten sonra)
+TIRMANIS_MIN_THR = 600      # tırmanış/spiral için taban gaz
 
 
 def tirmanis_throttle():
@@ -403,7 +497,18 @@ def tirmanis_throttle():
 
 
 def scenario_aggressive(conn):
-    print("[SCN] AGRESİF — rastgele manevralar (gaz: GCS slider'ı)")
+    # ⚠ BU SENARYO FBWA'DA KALIR. Sebebi: manevraları YUNUSLAMA AÇISI
+    # komutlarıyla kuruyor (pitch 500-800 = 12-20° burun yukarı). FBWB'de
+    # aynı komut TIRMANMA HIZI demek olurdu ve FBWB_CLIMB_RATE=2.0 m/s
+    # tavanına takılıp manevra etkisiz kalırdı.
+    # ⚠ Gaz da slider'dan ALINMAZ: FBWB'de slider hava hızı demek (300 =
+    # 15 m/s); FBWA'da ham gaz olarak 300 verilirse uçak perdövitese girer.
+    # Ölçülmüş FBWA seyir gazı kullanılır.
+    if FBWB_AKTIF:
+        print("[SCN] AGRESİF — yunuslama komutları için FBWA'ya geçiliyor")
+        set_mode(conn, PLANE_MODE_FBWA)
+        hold(conn, 1.0, throttle=AGRESIF_GAZ)
+    print("[SCN] AGRESİF — rastgele manevralar")
     maneuvers = ["climb", "dive", "bank_l", "bank_r", "s_turn", "spiral"]
     while not _abort:
         m = random.choice(maneuvers)
@@ -425,18 +530,18 @@ def scenario_aggressive(conn):
         elif m in ("bank_l", "bank_r"):
             s = -1 if m == "bank_l" else 1
             print("[SCN] Sert yatışlı dönüş" + (" (sol)" if s < 0 else " (sağ)"))
-            hold(conn, random.uniform(1.5, 3.0),
-                 roll=s * random.randint(600, 900), pitch=200)   # throttle=None → slider
+            hold(conn, random.uniform(1.5, 3.0), throttle=AGRESIF_GAZ,
+                 roll=s * random.randint(600, 900), pitch=200)
         elif m == "s_turn":
             print("[SCN] Keskin S-dönüşü")
-            hold(conn, 1.5, roll=-750, pitch=200)                # throttle=None → slider
-            hold(conn, 1.5, roll=750, pitch=200)
+            hold(conn, 1.5, roll=-750, pitch=200, throttle=AGRESIF_GAZ)
+            hold(conn, 1.5, roll=750, pitch=200, throttle=AGRESIF_GAZ)
         elif m == "spiral":
             print("[SCN] Spiral tırmanış")
             hold(conn, random.uniform(3.0, 5.0),
                  roll=450, pitch=450, throttle=tirmanis_throttle())
-        # toparlanma: kısa düz uçuş (gaz: slider)
-        hold(conn, random.uniform(1.0, 2.0))
+        # toparlanma: kısa düz uçuş
+        hold(conn, random.uniform(1.0, 2.0), throttle=AGRESIF_GAZ)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -643,9 +748,9 @@ def main():
         # HAVADA DEVRALMA — önceki senaryodan/manuelden geçiş. Kalkış YOK;
         # önceki RC override 3 sn içinde düşmeden FBWA + desen devralır.
         print(f"[SCN] Araç zaten havada (irtifa {alt:.0f}m, armlı) — "
-              "kalkış atlanıyor, doğrudan FBWA + desen")
-        _rc(conn, throttle=gcs_throttle())        # override akışı hemen başlasın
-        set_mode(conn, PLANE_MODE_FBWA, confirm_timeout=0)
+              f"kalkış atlanıyor, doğrudan {_MOD_ADI} + desen")
+        _rc(conn, throttle=ch3())                 # override akışı hemen başlasın
+        set_mode(conn, SEYIR_MODU, confirm_timeout=0)
         hold(conn, 1.0)                           # düz uçuşla kısa stabilizasyon
     elif armed:
         print(f"[SCN] Armlı ama yerde (irtifa {alt:.0f}m) — doğrudan kalkış")

@@ -1055,6 +1055,65 @@ manBtn.addEventListener('click', () => { st.manual ? exitManual() : enterManual(
 // ══ GAZ AYARI ══════════════════════════════════════════════════════════
 // Her modda geçerli: senaryo modunda hedefin gazını, manuel modda doğrudan
 // gazı sürer. Açılışta sunucudaki GERÇEK değer okunur.
+// ══ HEDEF HAVA HIZI ⇄ GAZ — İKİSİ BİRLİKTE HAREKET EDER ════════════════
+// 2026-08-23, kullanıcı isteği: "hızda değişiklik yaptığımda throttle'da da
+// o değişikliğe göre değişiklik olsun ve tam tersi de olsun."
+//
+// DÖNÜŞÜM ÖLÇÜMDEN GELİYOR (kara kutu 00000308.BIN, gövde sürtünmesi ekli,
+// FBWA ham gaz ile düz uçuş):
+//     gaz 640 → 14.52 m/s      gaz 700 → 15.53 m/s
+// Orantısal uydurma:  hız ≈ 0.022437 × gaz   ⇔   gaz ≈ 44.57 × hız
+//     12 m/s → 535 · 15 m/s → 669 · 18 m/s → 802 · 22 m/s → 980
+//
+// ⚠ HANGİSİ GERÇEKTEN ETKİLİ, MODA BAĞLI (run_plane_scenario.ch3):
+//     FBWA / manuel → GAZ etkili, hız yalnız gösterge
+//     FBWB          → HIZ etkili, gaz yalnız gösterge ("bu hız kabaca şu
+//                     gaza denk" bilgisi)
+// Bağlama bir KOLAYLIKTIR; iki kaydırıcı sunucuda ayrı ayrı saklanır.
+const HIZ_PER_GAZ = 0.022437;          // m/s / gaz-birimi (0-1000 ölçeği)
+const AS_MIN_MS = 12.0, AS_MAX_MS = 22.0;
+const kis = (v, a, b) => Math.max(a, Math.min(b, v));
+
+const hizSl = $('hizSl');
+
+function hizGoster(ms){
+  if (hizSl){
+    $('hizV').textContent = ms.toFixed(1) + ' m/s';
+    hizSl.value = Math.round(ms * 10);
+  }
+}
+function gazGoster(pct){
+  const el = $('thrSl');
+  if (el){ el.value = pct; $('thrV').textContent = pct + '%'; }
+}
+function gazGonder(pct){
+  fetch('/api/plane_throttle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ throttle: Math.round(pct * 10) }),
+  }).catch(() => {});
+}
+function hizGonder(ms){
+  fetch('/api/plane_airspeed', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ airspeed: ms }),
+  }).catch(() => {});
+}
+
+if (hizSl){
+  fetch('/api/plane_airspeed').then(r => r.json())
+    .then(d => hizGoster(typeof d.airspeed === 'number' ? d.airspeed : 15.0))
+    .catch(() => {});
+  // HIZ oynatılınca → gazı da karşılığına taşı
+  hizSl.addEventListener('input', () => {
+    const ms = kis(parseInt(hizSl.value, 10) / 10, AS_MIN_MS, AS_MAX_MS);
+    $('hizV').textContent = ms.toFixed(1) + ' m/s';
+    const pct = kis(Math.round(ms / HIZ_PER_GAZ / 10), 0, 100);
+    gazGoster(pct);
+    if (st.manual) mThr = pct;
+    hizGonder(ms); gazGonder(pct);
+  });
+}
+
 const thrSl = $('thrSl');
 let thrTimer = null;
 function syncThrSlider(pct){
@@ -1069,13 +1128,11 @@ thrSl.addEventListener('input', () => {
   const pct = parseInt(thrSl.value, 10);
   $('thrV').textContent = pct + '%';
   if (st.manual) mThr = pct;
+  // GAZ oynatılınca → hızı da karşılığına taşı (bkz. HIZ_PER_GAZ notu)
+  const ms = kis(pct * 10 * HIZ_PER_GAZ, AS_MIN_MS, AS_MAX_MS);
+  hizGoster(ms);
   clearTimeout(thrTimer);
-  thrTimer = setTimeout(() => {
-    fetch('/api/plane_throttle', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ throttle: Math.round(pct * 10) }),   // 0-100 → 0-1000
-    }).catch(() => {});
-  }, 100);
+  thrTimer = setTimeout(() => { gazGonder(pct); hizGonder(ms); }, 100);
 });
 
 // ══ GPS KARIŞTIRMA ═════════════════════════════════════════════════════

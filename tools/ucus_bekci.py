@@ -16,7 +16,10 @@ Kullanım:
 
 Sağlık bandı (3 ardışık örnekte = ~6 s süreklilik aranır, tekil sıçrama
 alarm ürettirmez):
-    hedef irtifa   20..250 m     hedef hız   6..25 m/s
+    hedef irtifa   > 20 m        hedef hız   6..25 m/s
+                   (üst sınır 2026-08-23'te KALDIRILDI — Gazebo hava
+                    yoğunluğu irtifayla değişmiyor, üst sınırın fiziksel
+                    gerekçesi yoktu)
     drone irtifa   > 4 m (takip aktifken)
     mesafe         < 150 m (takip aktifken)
     API            10 s'den uzun cevapsız kalmamalı
@@ -73,16 +76,34 @@ def main():
         mesafe = chase.get("distance") or 0.0
 
         # her koşulda geçerli "aşırı" sınırlar (kalkış payında da)
-        if p_alt < -5 or p_alt > 400:
-            ihlal("hedef-irtifa-asiri", f"{p_alt:.0f} m (yer altı/kaçmış)")
+        # ⚠ 400 m ÜST SINIRI KALDIRILDI (2026-08-23) — bkz. aşağıdaki not.
+        # Yalnız "yerin altına savrulma" (SITL fiziği patladı) kaldı.
+        if p_alt < -5:
+            ihlal("hedef-irtifa-asiri", f"{p_alt:.0f} m (YER ALTI — SITL fiziği bozuk)")
         else:
             temiz("hedef-irtifa-asiri")
 
         if gecti < gecikme:
             continue
 
-        if not (20.0 <= p_alt <= 250.0):
-            ihlal("hedef-irtifa", f"{p_alt:.0f} m (bant 20-250)")
+        # ═══ ÜST İRTİFA SINIRI KALDIRILDI — 2026-08-23, kullanıcı kararı ═══
+        # ESKİ KURAL: 20 ≤ irtifa ≤ 250 m. Üst sınırın gerekçesi
+        # "koşular karşılaştırılabilir olsun" diye savunulmuştu. ÖLÇÜLDÜ VE
+        # ÇÜRÜTÜLDÜ: model.sdf'teki 7 LiftDrag eklentisinin hepsinde
+        # <air_density>1.2041</air_density> SABİT — Gazebo yoğunluğu irtifayla
+        # değiştirmiyor. Yani simde 45 m'deki uçuş ile 900 m'deki uçuş
+        # aerodinamik olarak BİREBİR AYNI. Karşılaştırılabilirlik savı geçersiz.
+        #
+        # KULLANICI GEREKÇESİ: "yarışmada hedefin nasıl uçacağını bilmiyoruz,
+        # avcı bütün ihtimallere dayanıklı olmalı." Yüksekte uçan bir hedef
+        # GEÇERLİ bir senaryodur; yapay bir tavanla onu test dışı bırakmak
+        # avcıyı gerçek göreve hazırlıksız bırakır.
+        #
+        # ALT SINIR 20 m DURUYOR — gerçek tehlike: hedef alçalırsa avcı drone
+        # peşinden yere çarpar (2026-08-08'de yaşandı, bu bekçinin varlık
+        # sebebi de o).
+        if p_alt < 20.0:
+            ihlal("hedef-irtifa", f"{p_alt:.0f} m (alt sınır 20 m)")
         else:
             temiz("hedef-irtifa")
         if not (6.0 <= p_spd <= 25.0):

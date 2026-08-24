@@ -160,13 +160,24 @@ _scenario_name = None
 #     gaz 600 → 15.64 m/s (n=618)   ·   620 → 16.00 m/s (n=149)
 #     gaz 1000 → 26.63 m/s (n=835)
 # Kaba bağıntı: hız ≈ 26.2 × (gaz/1000) m/s
-# 575 SEÇİLDİ → ~15.0 m/s. Gerekçe: zarf haritası (dönüş yarıçapları
-# 24.9/35.4/47.5/65.6 m) 14.9 m/s'de ölçüldü; 15.0 onu GEÇERLİ tutar.
-# 16 m/s (gerçek Talon seyrine yakın) isteniyorsa gaz 620.
-# ⚠ Önceki kuramsal tahminim (620 → 15.0) %7 DÜŞÜKTÜ. Sebebi: Gazebo
-# modelinde gövde/parazit sürtünmesi YOK (LiftDrag'da cd = cda·alpha, yani
-# alpha=0'da sıfır). Model gerçek Talon'dan daha az sürtünüyor.
-_plane_throttle = 575   # = THROTTLE_CRUISE → ~15.0 m/s (ÖLÇÜLDÜ)
+# ⚠ 2026-08-23 · KULLANICI UYARISI ÜZERİNE GERİ ALINDI:
+# Bir ara bu kaydırıcının anlamını "hedef hava hızı"na çevirmiştim — YANLIŞTI,
+# mevcut bir kumandanın anlamı sorulmadan değiştirilmez. GAZ yine GAZ.
+# Hız için AYRI kumanda eklendi: _plane_airspeed_ms / /api/plane_airspeed
+#
+# HAM GAZ (FBWA'da ve manuel modda geçerli) — ÖLÇÜLDÜ (00000308.BIN):
+#     gaz 640 → 14.52 m/s · gaz 700 → 15.53 m/s → 15.0 m/s için 668
+#     gerçek uçakla çapraz doğrulama %1.5-1.7 (arkadaşın itki tablosu)
+_plane_throttle = 668   # ham gaz 0-1000 → FBWA'da ~15.0 m/s
+
+# ══ HEDEF HAVA HIZI — FBWB/CRUISE modunda geçerli ══
+# FBWB'de gaz çubuğu ham gaz DEĞİL, hedef hava hızı komutudur:
+#     CH3 = (V − AIRSPEED_MIN) / (AIRSPEED_MAX − AIRSPEED_MIN) × 1000
+# Uçuştan okunan sınırlar: AIRSPEED_MIN 12 · AIRSPEED_MAX 22 m/s (ARSPD_USE 1)
+# Bu yüzden AYRI tutuluyor: gaz kaydırıcısı bozulmasın, mod değişince
+# hangi kumandanın geçerli olduğu belli olsun.
+_plane_airspeed_ms = 15.0   # m/s
+PLANE_AS_MIN, PLANE_AS_MAX = 12.0, 22.0
 
 # Video parazit simülasyonu — iris kamera akışına uygulanır
 _video_noise_level = 0.0   # 0.0 = temiz, 1.0 = tamamen parazitli
@@ -504,6 +515,24 @@ def set_plane_throttle(cmd: ThrottleCmd):
     _plane_throttle = max(0, min(1000, cmd.throttle))
     print(f"[GCS] Uçak throttle: {_plane_throttle}")
     return {"status": "success", "throttle": _plane_throttle}
+
+class AirspeedCmd(BaseModel):
+    airspeed: float  # m/s
+
+@app.post("/api/plane_airspeed")
+def set_plane_airspeed(cmd: AirspeedCmd):
+    """FBWB/CRUISE modunda hedef hava hızı. Gaz kaydırıcısından AYRIDIR."""
+    global _plane_airspeed_ms
+    _plane_airspeed_ms = max(PLANE_AS_MIN, min(PLANE_AS_MAX, float(cmd.airspeed)))
+    print(f"[GCS] Ucak hedef hava hizi: {_plane_airspeed_ms:.1f} m/s")
+    return {"status": "success", "airspeed": _plane_airspeed_ms}
+
+@app.get("/api/plane_airspeed")
+def get_plane_airspeed():
+    return {"airspeed": _plane_airspeed_ms,
+            "min": PLANE_AS_MIN, "max": PLANE_AS_MAX,
+            "ch3": round((_plane_airspeed_ms - PLANE_AS_MIN)
+                         / (PLANE_AS_MAX - PLANE_AS_MIN) * 1000)}
 
 @app.get("/api/plane_throttle")
 def get_plane_throttle():
