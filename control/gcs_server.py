@@ -184,8 +184,12 @@ def id_to_name(sysid):
 # -----------------------------------------------------------------------
 # Daire çapları (run_plane_scenario.DAIRE_CAPLARI ile aynı adlar) — yarıçap-oranlı
 # iç daire nişanını farklı yarıçaplarda sınayabilmek için.
-_SCENARIO_NAMES = ("duz", "square", "elips_gorev", "circle", "aggressive",
-                   "circle_xl", "circle_l", "circle_s")
+# kare_gorev: arayüzdeki "Kalkış → Kare → İniş" butonu (2026-08-23,
+# kalkis_kare_inis dalından taşındı). Diğerlerinden farkı SONLU olması —
+# kare turu bitince uçak fırlatma noktasına inip süreç kendi kapanıyor
+# (buton /api/scenario_status ile kendiliğinden BEKLEME'ye döner).
+_SCENARIO_NAMES = ("duz", "square", "kare_gorev", "elips_gorev", "circle",
+                   "aggressive", "circle_xl", "circle_l", "circle_s")
 
 
 def _stop_scenario_proc():

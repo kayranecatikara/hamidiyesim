@@ -56,7 +56,7 @@ const st = {
 };
 const SCN_LBL = {
   duz: 'DÜZ', square: 'KARE', circle: 'DAİRE', aggressive: 'AGRESİF',
-  elips_gorev: 'ELİPS',
+  elips_gorev: 'ELİPS', kare_gorev: 'KARE GÖREVİ',
   circle_xl: 'DAİRE ⌀96', circle_l: 'DAİRE ⌀71', circle_s: 'DAİRE ⌀41',
 };
 

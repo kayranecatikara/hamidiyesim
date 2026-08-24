@@ -61,6 +61,16 @@
                 <button data-scn="duz" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12 H21" stroke-width="2" stroke-linecap="round"/><path d="M17 8 L21 12 L17 16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Düz Uç</span></button>
                 <button data-scn="square" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" stroke-width="2"/></svg><span>Kare Çiz</span></button>
                 <button data-scn="circle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg><span>Daire Çiz</span></button>
+                <!-- KALKIŞ → KARE → İNİŞ: SONLU görev (2026-08-23,
+                     kalkis_kare_inis dalından). `square`den farkı bitmesi —
+                     tur dolunca uçak FIRLATMA NOKTASINA iner ve süreç kapanır.
+                     ⚠ İniş ArduPlane'in NAV_LAND'iyle DEĞİL, motoru açık tutan
+                     kendi alçalma döngümüzle yapılır: mini_talon'un motorsuz
+                     süzülme oranı ~1.4:1 ve otopilotun iniş profili gazı
+                     kestiği için uçak çakılıyordu (ölçüldü, BIN 00000461).
+                     Ayarlar: AVCI_KARE_TUR / AVCI_KARE_KENAR_M / AVCI_KARE_BANK.
+                     Sunucudaki senaryo adı `kare_gorev` (_SCENARIO_NAMES). -->
+                <button data-scn="kare_gorev" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="3" width="14" height="13" stroke-width="2"/><path d="M12 16 V21" stroke-width="2" stroke-linecap="round"/><path d="M9 18 L12 21 L15 18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kalkış→Kare→İniş</span></button>
                 <!-- ELİPS: sonsuz desen (iniş YOK). 344 × 150 m, uçlarda 45°
                      yatış; ölçü/irtifa AVCI_ELIPS_* env'leriyle değişir.
                      Sunucudaki senaryo adı `elips_gorev` (_SCENARIO_NAMES). -->
