@@ -87,7 +87,11 @@ _M_PER_DEG = 111319.4907          # metre / enlem derecesi
 # Fırlatma noktası kaynağı: "home" (otopilotun HOME'u) | "yerel" (eski davranış:
 # script başlarkenki LOCAL_POSITION_NED). Kıyas/geri dönüş için env ile seçilir.
 _EV_KAYNAK  = os.environ.get("AVCI_EV_KAYNAK", "home")
-_EV_TIMEOUT = float(os.environ.get("AVCI_EV_TIMEOUT", "8.0"))
+# 8 → 4 s (2026-08-23). Bu bir ÜST SINIR; veriler tazeyse fonksiyon zaten
+# hemen dönüyor. Ama SITL'de nadiren tamamı harcanıyordu ve butona bastıktan
+# sonra uçağın fırlatılmaya hazır olması 14 saniyeyi buluyordu (kullanıcı
+# itirazı). 4 s hâlâ 1 Hz'lik HOME isteğinin dört denemesi demek.
+_EV_TIMEOUT = float(os.environ.get("AVCI_EV_TIMEOUT", "4.0"))
 
 
 def _sig_handler(_sig, _frame):
@@ -547,6 +551,17 @@ _FIRLAT_BEKLE_SN = float(os.environ.get("AVCI_FIRLAT_BEKLE_SN", 300.0))
 # okundu) ve kapı gerçek fırlatmayı BLOKE ediyordu. Zaten gereksiz: yerde
 # duran araç kararlı 1.000 g okur, yanlış tetikleme riski yok.
 _FIRLAT_MIN_ALT  = float(os.environ.get("AVCI_FIRLAT_MIN_ALT", 0.0))
+# ⚠ MOTOR ATIŞTAN ÖNCE AÇILIR (2026-08-23, kullanıcı itirazı: "fırlatma neden
+# bu kadar geç çıkıyor"). İlk sürümde motor bırakılana kadar KAPALI tutuluyordu
+# (kullanıcı uçağı ellerken pervane dönmesin diye) ve serbest düşüş görülünce
+# açılıyordu. Ama motorun sıfırdan tam devre (10 100 rpm) çıkması ÖLÇÜLDÜ:
+# ~4 saniye. Uçak o 4 saniye boyunca motorsuz düşüyordu.
+# Gerçek elden fırlatma böyle değildir: pilot uçağı tutar, ÖNCE gazı açar,
+# SONRA fırlatır — motor atış anında zaten tam devirdedir.
+# Artık iki kademe var, ikisini de aynı ivmeölçer görüyor:
+#   1) uçak ELLENİNCE (|ivme-1g| > eşik, kaldırılıp taşınırken) motor açılır
+#   2) BIRAKILINCA (ivme < 0.35 g) görev başlar — uçak zaten itkili
+_FIRLAT_ELLEME_G = float(os.environ.get("AVCI_FIRLAT_ELLEME_G", 0.15))
 
 
 def _wrench(fx, fy, fz):
@@ -624,10 +639,19 @@ def firlatma_bekle(conn, timeout=None):
     ardisik = 0
     son_bilgi = 0.0
     en_dusuk = 9.9
+    ellendi = False
     while not _abort and time.time() - t0 < timeout:
         _pump(conn)
-        _rc(conn, throttle=0)                 # motor KAPALI kalsın
         g = _imu["g"]
+        # 1. KADEME — uçak ellenip kaldırıldı mı? Yerde duran araç 1.000 g'yi
+        # ±0.001 ile okuyor; elleme bunu belirgin biçimde bozar.
+        if not ellendi and _imu["t"] > 0 and abs(g - 1.0) > _FIRLAT_ELLEME_G:
+            ellendi = True
+            print(f"[FIRLAT] ✋ Uçak ellendi (ivme {g:.2f} g) — MOTOR AÇILIYOR. "
+                  f"Gerçek fırlatmada da motor atıştan ÖNCE çalışır; böylece "
+                  f"bıraktığınızda itki hazır olur (motorun tam devre çıkması "
+                  f"~4 s sürüyor).")
+        _rc(conn, throttle=(1000 if ellendi else 0))
         irtifa = -_pos["z"]
         en_dusuk = min(en_dusuk, g)
         if _imu["t"] > 0 and g < _FIRLAT_ESIK_G and irtifa >= _FIRLAT_MIN_ALT:
