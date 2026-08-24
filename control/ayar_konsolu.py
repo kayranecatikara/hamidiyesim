@@ -118,20 +118,20 @@ AYARLAR = [
 
     ("MENZIL_PX_M_CARPIM", "MENZIL_PX_M_CARPIM", "Kalibre C — çarpım", "GM",
      "sayi", "px·m", 80.0, 400.0, 1.0,
-     "R = C / sqrt(w·h). 8 uçuş / 5274 karede ÖLÇÜLEN değer 185.7 idi "
-     "(medyan p·R, 0-15° bandı). ⚠ 2026-08-22'de hedef Mini Talon'dan "
-     "gerçek Talon'a (1718 mm) ölçeklendi; C = FX·S doğrusal olduğu için "
-     "185.7 × 1.3422 = 249.2 kondu. BU BİR TAHMİN — taze uçuşla yeniden "
-     "ölçülmeli (tools/menzil_olcu_kiyas.py).",
+     "R = C / sqrt(w·h). ⭐ 2026-08-24'te YENİ hedefle (X-UAV Talon 1718 mm) "
+     "yeniden ÖLÇÜLDÜ: 229.6 (T kampanyası, 4 uçuş, 1371 örnek, 0-15° "
+     "bandı). Önce ×1.3422 ile 249.2 diye TAHMİN edilmişti; tahmin %8.5 "
+     "yüksekmiş. Bağıl menzil hatası p50 %19 — köşegenden kötü.",
      "Menzil tahmini büyür (kendimizi daha uzak sanırız).",
      "Menzil tahmini küçülür."),
 
     ("MENZIL_PX_M_KOSEGEN", "MENZIL_PX_M_KOSEGEN", "Kalibre C — köşegen",
      "GM", "sayi", "px·m", 120.0, 600.0, 1.0,
-     "R = C / sqrt(w²+h²). Mini Talon'da ölçülen 296.8; ×1.3422 ile 398.4 "
-     "kondu (2026-08-22 ölçekleme) — TAHMİN, ölçüm değil. İma ettiği "
-     "görünen boy 2.39 m; model köşegeni 2.04 m'den büyük, çünkü YOLO "
-     "kutusu görsel modeli gevşek sarıyor. Ampirik sabit doğrusudur.",
+     "R = C / sqrt(w²+h²). ⭐ 2026-08-24'te ÖLÇÜLDÜ: 372.7 (4 uçuş, 1371 "
+     "örnek, 0-15° bandı). Tahmin 398.4 idi, %6.9 yüksekmiş. Yakınsama "
+     "n=1→377.5, n=2→369.8, n=4→372.7. Bağıl hata p50 %11 — çarpımın "
+     "%19'undan %42 daha iyi. İma ettiği görünen boy 2.24 m; model "
+     "köşegeni 1.76 m'den büyük, çünkü YOLO kutusu gevşek sarıyor.",
      "Menzil tahmini büyür.", "Menzil tahmini küçülür."),
 
     ("HUCUM_MENZIL_M", "HUCUM_MENZIL_M", "PI'nın sıfır noktası", "GM",

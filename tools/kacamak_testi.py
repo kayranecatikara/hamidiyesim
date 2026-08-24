@@ -207,6 +207,19 @@ def main():
             "plane_spd": round(p.get("speed") or 0.0, 2),
             "iris_alt": round(-(i.get("z") or 0.0), 1),
             "plane_alt": round(-(p.get("z") or 0.0), 1),
+            # ── 2026-08-23 eklendi: MENZİL KALİBRASYONU için gerekli ──
+            # tools/menzil_olcu_kiyas.py, C = medyan(kutu_boyutu × gerçek_menzil)
+            # hesabı için hem DUVAR SAATİNE (bbox logunu hizalamak) hem de HAM
+            # KONUMLARA ihtiyaç duyuyor. Bunlar yazılmadığı için araç bugünkü
+            # veriyle çalışmıyordu. ⚠ Bu sütunlar YALNIZ ANALİZDE kullanılır;
+            # güdüm onları görmez (CLAUDE.md §10).
+            "wall_t": round(time.time(), 3),
+            "iris_x": None if i.get("x") is None else round(i["x"], 3),
+            "iris_y": None if i.get("y") is None else round(i["y"], 3),
+            "iris_z": None if i.get("z") is None else round(i["z"], 3),
+            "plane_x": None if p.get("x") is None else round(p["x"], 3),
+            "plane_y": None if p.get("y") is None else round(p["y"], 3),
+            "plane_z": None if p.get("z") is None else round(p["z"], 3),
         })
         time.sleep(0.1)
 

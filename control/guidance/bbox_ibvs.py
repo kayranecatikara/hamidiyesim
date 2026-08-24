@@ -197,16 +197,25 @@ class Cfg:
     # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller
     # %14 EKSİK tahmin ediliyordu (kendimizi olduğumuzdan yakın sanıyorduk).
     #
-    # ⚠⚠ 2026-08-22 — HEDEF MODELİ BÜYÜDÜ, BU SAYILAR ÖLÇÜM DEĞİL TAHMİN.
-    # Gazebo'daki hedef, gerçek X-UAV **Mini** Talon (1300 mm) ölçülerindeydi;
-    # gerçek X-UAV **Talon**'a (1718 mm) ölçeklendi. Çarpan s = 1718/1280 =
-    # 1.3422. C = FX·S ve S (hedefin gerçek boyu) doğrusal büyüdüğü için:
-    #     185.7 × 1.3422 = 249.2      296.8 × 1.3422 = 398.4
-    # Eski değerler 8 uçuş / 5812 kareden ÖLÇÜLMÜŞTÜ; bunlar o ölçümün
-    # ölçeklenmiş hâli, YENİ BİR ÖLÇÜM DEĞİL. İlk iş taze uçuşla yeniden
-    # ölçmek:  python3 tools/menzil_olcu_kiyas.py <kacamak_dizini> ...
-    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 249.2)   # px·m
-    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 398.4)  # px·m
+    # ⭐ 2026-08-24 — YENİDEN ÖLÇÜLDÜ (T kampanyası, 4 uçuş, n=1371 örnek).
+    # ÖNCESİ: hedef gerçek X-UAV Talon'a (1718 mm) ölçeklenince sabitler
+    # geçici olarak ×1.3422 ile TAHMİN edilmişti (249.2 / 398.4). O tahmin
+    # şimdi ölçümle değiştirildi.
+    #
+    # YÖNTEM: C = medyan(kutu_boyutu × gerçek_menzil), 0-15° bakış açısı
+    # bandında (ham 1515 örneğin %90'ı bu bantta). Gerçek menzil iki aracın
+    # GPS konumundan; ⚠ YALNIZ ANALİZDE, güdüm görmez (§10).
+    # Araç: python3 tools/menzil_olcu_kiyas.py logs/kacamak/T01_duz ...
+    #
+    # ÖLÇÜM (T01 düz · T02 düz · T03 yatay · T04 capraz, 4/4 imha):
+    #     KOSEGEN  tahmin 398.4 → ÖLÇÜLEN 372.7   (tahmin %6.9 yüksekmiş)
+    #     CARPIM   tahmin 249.2 → ÖLÇÜLEN 229.6   (tahmin %8.5 yüksekmiş)
+    # Yakınsama: n=1 → 377.5 · n=2 → 369.8 · n=4 → 372.7  (±2 birim)
+    # Bakış açısına duyarsız: bandsız 374.9 (%0.6 fark) → sağlam.
+    # Bağıl menzil hatası p50: köşegen %11 · çarpım %19 → köşegen %42 daha iyi
+    # (2026-08-19'daki "kosegen" kararı yeni hedefte de doğru çıktı).
+    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 229.6)   # px·m ÖLÇÜLDÜ
+    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 372.7)  # px·m ÖLÇÜLDÜ
 
     # ── EŞİKLER ARTIK METRE ───────────────────────────────────────────
     # Ölçü değişince piksel eşikleri anlamını yitirir (köşegen ~1.6 kat

@@ -428,11 +428,26 @@ def scenario_square(conn):
 #
 # Pitch, yatışla birlikte artar: yatışta düşey kaldırma bileşeni azalır,
 # irtifayı korumak için burun biraz yukarı gerekir (kabaca 1/cosθ ile).
+# ⭐ 2026-08-24 · T KAMPANYASI — YENİ HEDEF MODELİYLE YENİDEN ÖLÇÜLDÜ
+# (Talon 1718 mm · 2.5 kg · gövde sürtünmesi · FBWB irtifa tutma · 15 m/s)
+# Yörüngeye en küçük kareler çemberi, koşunun ikinci yarısı, artık 0.2-3.0 m:
+#     circle_xl  67.0 m  (eski harita 65.6)   İMHA 1.28 m
+#     circle_l   49.2 m  (eski 47.5)          İMHA 1.69 m
+#     circle     37.7 m  (eski 35.4)          ıska 4.40 m
+#     circle_s   26.4 m  (eski 24.9)          ıska 17.05 m
+#     square     31.0 m  (dönüş kesitlerinden; roll 650 ama GEÇİŞ olduğu için
+#                         circle_s'in 26.4 m'sinden geniş)
+# Fark +2…+7%. İki sebebi var, ikisi de ölçüldü:
+#   1) hız 14.9 → 15.15 m/s  (R ∝ V²  →  +%3)
+#   2) gerçekleşen yatış komuttan 0.7-1.1° EKSİK — FBWB yatışta irtifayı
+#      korumak için yetkinin bir kısmını yunuslamaya ayırıyor
+#      (komut 19.5/26.0/32.5/42.2° → gerçekleşen 18.8/24.9/31.8/41.5°)
+# Hıza göre normalleştirilince kalan fark yalnız +1.5…+3.1%.
 DAIRE_CAPLARI = {
-    "circle_xl": (300, "çok geniş (~96 m)"),
-    "circle_l":  (400, "geniş (~71 m)"),
-    "circle":    (500, "orta (~55 m) — referans"),
-    "circle_s":  (650, "dar (~41 m)"),
+    "circle_xl": (300, "çok geniş (R=67 m)"),
+    "circle_l":  (400, "geniş (R=49 m)"),
+    "circle":    (500, "orta (R=38 m) — referans"),
+    "circle_s":  (650, "dar (R=26 m) — ZARF DIŞI, ıska 17 m"),
     # ⌀32 (roll 800) — 2026-08-06'da KALDIRILMIŞTI, 2026-08-21'de GERİ AÇILDI.
     #
     # KALDIRMA GEREKÇESİ (2026-08-06): "avcı drone orada ivme tavanına dayanıp

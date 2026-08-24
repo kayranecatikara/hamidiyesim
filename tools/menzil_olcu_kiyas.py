@@ -41,19 +41,48 @@ def ornekle(dizinler):
     """(gercek_menzil, w, h) uclulerini topla."""
     ornek = []
     for d in dizinler:
-        tp = os.path.join(d, "telem.csv")
-        if not os.path.exists(tp):
+        # 2026-08-23: kacamak_testi.py "kacamak.csv" yazıyor; eski koşularda
+        # dosya adı "telem.csv" idi. İkisi de kabul edilir.
+        tp = next((os.path.join(d, f) for f in ("telem.csv", "kacamak.csv")
+                   if os.path.exists(os.path.join(d, f))), None)
+        if tp is None:
+            print(f"  ⚠ {d}: telem.csv / kacamak.csv yok, atlanıyor")
             continue
         tel = []
         for x in csv.DictReader(open(tp)):
+            if "plane_x" not in x or "wall_t" not in x:
+                print(f"  ⚠ {tp}: wall_t/konum sütunları yok — bu koşu "
+                      f"2026-08-23 öncesi, kalibrasyon için kullanılamaz")
+                break
             p = (F(x["plane_x"]), F(x["plane_y"]), F(x["plane_z"]))
             i = (F(x["iris_x"]), F(x["iris_y"]), F(x["iris_z"]))
             t = F(x["wall_t"])
             if None in p + i or t is None:
                 continue
-            tel.append((t, math.dist(p, i)))
+            tel.append((t, math.dist(p, i), p, i))
         if not tel:
             continue
+        # ── BAKIŞ AÇISI (aspect) — 2026-08-24 eklendi ──
+        # Eski C sabitleri "0-15° görüş açısı bandında" ölçülmüştü (bkz.
+        # DEVAM.md ve bbox_ibvs yorumu). Bu araç bandı SÜZMÜYORDU, yani
+        # tüm açıları harmanlayıp FARKLI bir büyüklük veriyordu.
+        # Açı, hedefin HIZ YÖNÜNDEN türetilir (telemetride heading yok):
+        #     ileri = birim(konum[k+1] − konum[k−1])
+        #     los   = birim(avci − hedef)
+        #     aci   = açı(−ileri, los)      0° = TAM ARKADAN (kuyruk)
+        aci = []
+        for k in range(len(tel)):
+            a, b = max(0, k-1), min(len(tel)-1, k+1)
+            p0, p1 = tel[a][2], tel[b][2]
+            v = [p1[j]-p0[j] for j in range(3)]
+            nv = math.sqrt(sum(c*c for c in v))
+            los = [tel[k][3][j]-tel[k][2][j] for j in range(3)]
+            nl = math.sqrt(sum(c*c for c in los))
+            if nv < 1e-6 or nl < 1e-6:
+                aci.append(float("nan")); continue
+            # kuyruk ekseni = −ileri
+            cs = sum((-v[j]/nv)*(los[j]/nl) for j in range(3))
+            aci.append(math.degrees(math.acos(max(-1.0, min(1.0, cs)))))
         t0, t1 = tel[0][0], tel[-1][0]
         for lp in glob.glob("logs/bbox_ibvs_*.csv"):
             m = os.path.getmtime(lp)
@@ -77,7 +106,7 @@ def ornekle(dizinler):
                 k = min(range(len(tel)), key=lambda n: abs(tel[n][0] - tw))
                 if abs(tel[k][0] - tw) > 0.06:
                     continue
-                ornek.append((tel[k][1], w, h))
+                ornek.append((tel[k][1], w, h, aci[k]))
     return ornek
 
 
@@ -86,8 +115,19 @@ def main():
     if not dizinler:
         print(__doc__)
         return 1
+    # --tum-acilar verilirse band uygulanmaz (tarama/kıyas için)
+    band = "--tum-acilar" not in dizinler
+    dizinler = [d for d in dizinler if not d.startswith("--")]
     ornek = ornekle(dizinler)
-    print(f"{len(ornek)} eşleşmiş örnek (gerçek menzil ↔ kutu)\n")
+    ham = len(ornek)
+    if band:
+        ornek = [o for o in ornek if o[3] == o[3] and o[3] <= 15.0]
+        print(f"{ham} ham örnek → {len(ornek)} tanesi 0-15° BANDINDA "
+              f"(%{100*len(ornek)/max(1,ham):.0f})")
+        print("  ⚠ Eski C sabitleri bu bantta ölçülmüştü; kıyas ancak böyle "
+              "anlamlı.\n  Tüm açılar için: --tum-acilar\n")
+    else:
+        print(f"{len(ornek)} eşleşmiş örnek — TÜM AÇILAR (band yok)\n")
     if len(ornek) < 50:
         print("⛔ örnek az, kıyas anlamsız")
         return 1
@@ -107,8 +147,8 @@ def main():
     print("  " + "─" * 72)
     sonuc = {}
     for ad, fn in OLCULER.items():
-        p = [fn(w, h) for _, w, h in ornek]
-        R = [r for r, _, _ in ornek]
+        p = [fn(w, h) for _, w, h, _a in ornek]
+        R = [r for r, _, _, _a in ornek]
         # C = medyan(p·R) — her örnek kendi C'sini ima eder
         Cs = [pi * ri for pi, ri in zip(p, R)]
         C = st.median(Cs)
@@ -132,9 +172,28 @@ def main():
     print(f"  bugünkü p50 %{100*bug[1]:.0f} → köşegen p50 %{100*kos[1]:.0f}"
           f"   ({'İYİLEŞME' if kos[1] < bug[1] else 'KÖTÜLEŞME'} "
           f"%{100*abs(kos[1]-bug[1])/bug[1]:.0f})")
-    print(f"\n  ⚠ Bugün kullanılan sabit MENZIL_PX_M = 160.0; "
-          f"ölçülen kalibre {bug[0]:.1f} "
-          f"(%{100*(160.0-bug[0])/bug[0]:+.0f} sapma)")
+    # ⚠ 2026-08-24: burada "160.0" ELLE YAZILMIŞTI ve eskimişti (o değer
+    # 2026-08-19'da 185.7 olmuştu, sonra Talon ölçeklemesiyle 249.2).
+    # Artık kodun GERÇEK değerleri okunuyor — rapor kendiliğinden güncel kalır.
+    try:
+        import sys as _s
+        _s.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from control.guidance.bbox_ibvs import Cfg as _C
+        _kod_car, _kod_kos = _C.MENZIL_PX_M_CARPIM, _C.MENZIL_PX_M_KOSEGEN
+        _kul = _C.BOYUT_OLCU
+    except Exception:
+        _kod_car = _kod_kos = None
+        _kul = "?"
+    print("\n  ── KODDAKİ DEĞERLE KIYAS ──")
+    if _kod_car is None:
+        print("     (bbox_ibvs okunamadı)")
+    else:
+        for _ad, _kod, _olc in (("CARPIM", _kod_car, bug[0]),
+                                ("KOSEGEN", _kod_kos, kos[0])):
+            _yildiz = " ⭐ KULLANILAN" if _kul.upper() in _ad else ""
+            print(f"     MENZIL_PX_M_{_ad:7s} kod {_kod:7.1f} · ölçülen {_olc:7.1f}"
+                  f" → %{100*(_kod-_olc)/_olc:+5.1f} sapma{_yildiz}")
+        print("     (kod > ölçülen ⇒ güdüm hedefi olduğundan UZAK sanıyor)")
     return 0
 
 
