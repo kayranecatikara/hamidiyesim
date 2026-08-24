@@ -1,0 +1,1 @@
+f64e4fe8aba1ada4b7f11bf2f7103fd7e45fa55f 2026-08-20 21:06:38 +0300 README: yol adi avci_sim'e geri alindi + calistirma anlatimi guncellendi

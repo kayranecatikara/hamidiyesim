@@ -1,0 +1,6 @@
+ M control/gcs_server.py
+ M control/gcs_ui/index.html
+ M control/gcs_ui/script.js
+ M control/run_plane_scenario.py
+ M sim/ardupilot_params/avci_copter.parm
+?? yedek/
