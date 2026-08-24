@@ -760,12 +760,26 @@ _INIS_SON_ALT    = float(os.environ.get("AVCI_INIS_SON_ALT", 15.0))
 # uçağı havada TUTUYORDU — kayıtta irtifa 5.0 m'de çakılı kaldı, faz SON
 # YAKLAŞMA ↔ FLARE arasında gidip geldi ve iniş 240 s'de tamamlanamadı.
 _INIS_FLARE_ALT  = float(os.environ.get("AVCI_INIS_FLARE_ALT", 3.0))
+# ⚠ OTURMA HIZI — İNİŞİN ASIL ÖLÇÜTÜ (2026-08-23, eski uçuşla kıyasla bulundu).
+# Kanadın a0'ı 0.13 rad olduğu için uçak sıfır burun açısında bile taşıma
+# üretir. Uçak ancak taşıma ağırlığın ALTINA düştüğünde yere KONAR:
+#     V_oturma = sqrt(2W / (rho·S·cla·a0))
+#   ESKİ gövde  (1.875 kg, 0.32 m²) -> 14.0 m/s ; flare'de 12.7 m/s uçuyordu
+#                                      => zaten oturma hızının altında, HEMEN
+#                                      indi (o uçuş kalkış noktasına 6 m'ye indi)
+#   KÜBRA gövde (2.500 kg, 0.60 m²) -> 11.8 m/s ; flare'de 12.8 m/s uçuyor
+#                                      => HÂLÂ UÇUYOR, süzülüp gidiyordu
+# Yani sorun nişan kaydırmasında değil: uçak yere konmak için önce YAVAŞLAMALI.
+_INIS_GAZ_KES_ALT = float(os.environ.get("AVCI_INIS_GAZ_KES_ALT", 3.0))
 # ⚠ YAKLAŞMA HIZI (ölçüldü 2026-08-13): 15.0 ile uçak flare'e 11.7 m/s ile
 # girdi — AIRSPEED_MIN 12'nin ALTI. Burun yukarı komutu orada stall'a çevirdi:
 # burun 1 saniyede -26.8°'ye çöktü ve model yere çakılıp araziden geçti.
 # Gerçek uçakta yaklaşma hızı ~1.3 × stall alınır: 12 × 1.35 ≈ 16.5.
 _INIS_HIZ        = float(os.environ.get("AVCI_INIS_HIZ", 16.5))       # yaklaşma hızı m/s
-_INIS_STALL_HIZ  = float(os.environ.get("AVCI_INIS_STALL_HIZ", 12.5)) # altında flare kısılır
+# 12.5 → 11.0: oturma hızı 11.8 m/s. Koruma 12.5'te iken uçağın oturmak için
+# inmesi gereken hız aralığını "stall" sayıp gaz EKLİYOR ve inişi engelliyordu.
+# Gerçek stall hızı ~6.8 m/s (CL_max 1.44), 11.0 hâlâ geniş paylı.
+_INIS_STALL_HIZ  = float(os.environ.get("AVCI_INIS_STALL_HIZ", 11.0))
 # ⚠ GAZ TABANI (ölçüldü 2026-08-13): taban 350 ile alçalma hedefi 1.2 m/s iken
 # gerçekleşen 4.1 m/s oldu. Sebep bu modelin süzülme oranı (1.4:1): gaz düşünce
 # hız denetimi burnu aşağı alıyor ve yaklaşma dalışa dönüyor. Düz uçuş ~%60 gaz
@@ -890,7 +904,11 @@ _KARE_IRTIFA     = float(os.environ.get("AVCI_KARE_IRTIFA", 20.0))
 # girişi 269 m, eğim 5°) süzülüş hattı isabetli: uçak 3 m'ye kalkış noktasına
 # 14 m kala geliyor. Kalan hata tek kaynaklı — flare'de 88 m ilerliyor.
 # Nişan tam o kadar geri alınır ki temas kalkış noktasına düşsün.
-_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 94.0))
+# ⚠ 94 → 0 (2026-08-23). Kaydırma, uçağın flare'de SÜZÜLMESİNİ telafi etmek
+# için vardı. Gaz flare boyunca kesilip uçak gerçekten oturmaya başlayınca o
+# süzülme kalmadı; kaydırma saf sapmaya döndü. Kalkış noktasına 6 m'ye inen
+# ESKİ uçuşun ayarı da buydu: "nişan, uçuş yönünde 0 m geride".
+_INIS_NISAN_KAC  = float(os.environ.get("AVCI_INIS_NISAN_KAC", 58.0))
 
 
 def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
@@ -1044,8 +1062,14 @@ def inis(conn, hedef=None, rapor_hedef=None, kayma_m=0.0):
             # Tavan 550: alçalma denetleyicisi düz hat için 505-528 istiyor,
             # 500'de tavana takılıp hattı tutamıyor ve 2.2 m/s'ye dalıyordu
             # (ölçüldü 2026-08-13). Kesme yine 1 m altında.
-            gaz_alt = 0 if irtifa < 1.0 else _INIS_GAZ_ALT_SINIR
-            gaz_ust = 0 if irtifa < 1.0 else 550
+            # GAZ 1 m'de DEĞİL, FLARE'İN TAMAMINDA KESİLİR. 1 m'de kesmek eski
+            # gövde için yeterliydi (o zaten oturma hızının altındaydı).
+            # Kübra'nın gövdesi oturma hızının ÜSTÜNDE olduğu için son metrede
+            # kesmek yetmiyor; rölantide sürükleme ~6.6 N = 2.6 m/s² yavaşlama,
+            # 1 m/s'yi ~5 m'de bırakır, flare 3 m'den başlayınca zaman yeter.
+            kes = irtifa < _INIS_GAZ_KES_ALT
+            gaz_alt = 0 if kes else _INIS_GAZ_ALT_SINIR
+            gaz_ust = 0 if kes else 550
         if hedefli_sink is not None:
             hedef_sink = hedefli_sink
         if yeni_faz != faz:
