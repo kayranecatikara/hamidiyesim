@@ -775,7 +775,14 @@ _INIS_GAZ_KES_ALT = float(os.environ.get("AVCI_INIS_GAZ_KES_ALT", 3.0))
 # girdi — AIRSPEED_MIN 12'nin ALTI. Burun yukarı komutu orada stall'a çevirdi:
 # burun 1 saniyede -26.8°'ye çöktü ve model yere çakılıp araziden geçti.
 # Gerçek uçakta yaklaşma hızı ~1.3 × stall alınır: 12 × 1.35 ≈ 16.5.
-_INIS_HIZ        = float(os.environ.get("AVCI_INIS_HIZ", 16.5))       # yaklaşma hızı m/s
+# ⚠ 16.5 → 13.0 (2026-08-23). Bu, burun denetleyicisinin hedef hızı; uçak
+# yaklaşmada GERÇEKTE 12.8-13.1 m/s uçuyor. Hedef 16.5 iken fark HEP negatif
+# kalıyor, burun sürekli AŞAĞI komutlanıyor ve uçak süzülüş hattını tutmak
+# yerine daima azami hızla alçalıyor. Sonuç: alçalma hızı denetlenemiyor,
+# 3 m'ye nerede ulaşacağı şansa kalıyor (ölçüm: 26 m ile 144 m arası).
+# Gerçekten uçulan hız hedeflenirse burun nötre yakın kalır ve alçalmayı GAZ
+# yönetir — süzülüş hattı ancak o zaman denetlenebilir olur.
+_INIS_HIZ        = float(os.environ.get("AVCI_INIS_HIZ", 13.0))       # yaklaşma hızı m/s
 # 12.5 → 11.0: oturma hızı 11.8 m/s. Koruma 12.5'te iken uçağın oturmak için
 # inmesi gereken hız aralığını "stall" sayıp gaz EKLİYOR ve inişi engelliyordu.
 # Gerçek stall hızı ~6.8 m/s (CL_max 1.44), 11.0 hâlâ geniş paylı.
@@ -856,7 +863,15 @@ _INIS_ZAMAN_ASIMI = float(os.environ.get("AVCI_INIS_ZAMAN_ASIMI", 360.0))
 # istenince uçak hattın ÜSTÜNDE kalıp nişanı aşıyor ve 72 m ötede iniyordu.
 # Eğim uçağın yapabildiğine eşitlenince yaklaşma girişi uzuyor (38 m için
 # 434 m) ama uçak hattı gerçekten tutuyor ve nişana iniyor.
-_INIS_EGIM_DEG   = float(os.environ.get("AVCI_INIS_EGIM_DEG", 5.0))
+# 5.0 → 3.5° (2026-08-23, kullanıcı önerisi: "daha geriden gitmeye başlasa").
+# 5° PLANLANAN eğim, uçağın YAPABİLDİĞİ ise ~4.9° — yani hiç pay yok. Uçak
+# yaklaşmada birazcık savrulunca alçalma yolunu tüketiyor ve flare irtifasına
+# (3 m) çok geç ulaşıyor. Ölçüm bunu net gösterdi:
+#   3 m'ye hedefe 69-85 m kala gelen koşular -> temas  7-14 m
+#   3 m'ye hedefe    26 m kala gelen koşu    -> temas    36 m
+# 3.5° ile giriş 269 → 367 m'ye çıkıyor; uçak hattın ALTINDA kalıp gazla
+# tutunabiliyor, savrulsa bile alçalacak yolu kalıyor.
+_INIS_EGIM_DEG   = float(os.environ.get("AVCI_INIS_EGIM_DEG", 3.5))
 _INIS_GIRIS_MIN  = float(os.environ.get("AVCI_INIS_GIRIS_MIN", 150.0))
 _INIS_GIRIS_MAX  = float(os.environ.get("AVCI_INIS_GIRIS_MAX", 600.0))
 # Kare bitince tırmanılacak dönüş irtifası (0 = tırmanma).
@@ -1209,6 +1224,52 @@ def scenario_square(conn):
         i += 1
 
 
+def hatta_gir(conn, ev_x, ev_y, egim_deg, kayma_m, timeout=120.0):
+    """SÜZÜLÜŞ HATTINI YAKALA — kullanıcı önerisi (2026-08-23).
+
+    Eski akış: dönüş irtifası 20 m SABİT varsayılıyor, o irtifaya çıkılıyor ve
+    hattın gerektirdiği 348 m'lik giriş noktasına DIŞARI ÇIKILIYORDU. O uzun
+    bacak boyunca uçak savruluyor ve hatta her koşuda farklı yerden giriyordu.
+
+    Yeni akış: irtifa sabit değil, BULUNULAN MESAFEDEN hesaplanır —
+        gerekli_irtifa = (eve_mesafe - nişan_kaydırması) · tan(eğim)
+    Uçak eve doğru uçarken irtifasını bu değere çeker. Mesafe kapandıkça
+    gerekli irtifa da düştüğü için hedef kendiliğinden aşağı iner; uçak hattın
+    üstündeyse alçalır, altındaysa tırmanır ve hattı YAKALAR. Yakalayınca
+    (fark < 2 m) iniş devralır. Dışarı çıkma bacağı tamamen kalkar.
+
+    Dönüş: yakalandığı irtifa | None (zaman aşımı)
+    """
+    print(f"[SCN] SÜZÜLÜŞ HATTINA GİRİLİYOR — irtifa artık sabit değil, "
+          f"eve olan mesafeden hesaplanıyor ({egim_deg:.1f}° eğim)")
+    t0 = time.time()
+    son_bilgi = 0.0
+    while not _abort and time.time() - t0 < timeout:
+        _pump(conn)
+        mes, kerteriz = _hedefe(ev_x, ev_y)
+        gerek = max(0.0, mes - kayma_m) * math.tan(math.radians(egim_deg))
+        irtifa = -_pos["z"]
+        fark = irtifa - gerek
+        if abs(fark) < 2.0:
+            print(f"[SCN] HAT YAKALANDI — eve {mes:.0f} m, irtifa {irtifa:.1f} m "
+                  f"(gereken {gerek:.1f} m)")
+            return gerek
+        hata = _angdiff(kerteriz, _att["yaw"])
+        oran = _kelepce(hata / math.radians(45.0), -1.0, 1.0)
+        if fark > 0:
+            burun, gaz = -250, 250          # hattın ÜSTÜNDEYİZ → alçal
+        else:
+            burun, gaz = 250, 850           # hattın ALTINDAYIZ → tırman
+        _rc(conn, roll=int(650 * oran), pitch=burun, throttle=gaz)
+        if time.time() - son_bilgi > 5.0:
+            son_bilgi = time.time()
+            print(f"[SCN]   hat: eve {mes:.0f} m · irtifa {irtifa:.1f} m · "
+                  f"gereken {gerek:.1f} m · fark {fark:+.1f} m")
+        time.sleep(CONTROL_RATE)
+    print("[SCN] ⚠ Süzülüş hattı yakalanamadı (zaman aşımı)")
+    return None
+
+
 def scenario_kare_gorev(conn):
     """TEK TUŞLUK GÖSTERİ: (kalkış main'de) → N tam kare → otonom iniş.
 
@@ -1281,25 +1342,25 @@ def scenario_kare_gorev(conn):
     irtifa_su_an = -_pos["z"]
     # Dönüş irtifası: kare bittikten sonra bu irtifaya tırmanılır. Giriş
     # mesafesi de BU irtifadan hesaplanır, yoksa uçak yükseldikçe hat dikleşir.
-    hedef_irtifa = _DONUS_IRTIFA if _DONUS_IRTIFA > 0 else irtifa_su_an
-    gerekli = hedef_irtifa / math.tan(math.radians(_INIS_EGIM_DEG))
-    giris_m = _kelepce(gerekli + 40.0, _INIS_GIRIS_MIN, _INIS_GIRIS_MAX)
+    # ── HATTA GİRME (kullanıcı önerisi 2026-08-23) ──
+    # Eskiden: 20 m sabit irtifa + 348 m'lik DIŞARI ÇIKMA bacağı. O uzun bacak
+    # boyunca uçak savruluyordu ve hatta her koşuda başka yerden giriyordu
+    # (3 m'ye hedefe 26 m ile 144 m arasında değişen mesafelerde ulaştı).
+    # Şimdi: irtifa BULUNULAN MESAFEDEN hesaplanıyor, uçak eve doğru uçarken
+    # hattı yakalıyor. Dışarı çıkma yok, görev de kısalıyor.
+    # AVCI_DONUS_IRTIFA>0 ile eski davranışa dönülebilir.
     print(f"[SCN] EVE DÖNÜŞ — fırlatma noktasına {mes:.0f} m, irtifa "
-          f"{irtifa_su_an:.0f} → {hedef_irtifa:.0f} m, {_INIS_EGIM_DEG:.0f}° eğim "
-          f"için {giris_m:.0f} m gerek")
-    dx, dy = _pos["x"] - ev_x, _pos["y"] - ev_y
-    d = math.hypot(dx, dy)
-    if d < 1.0:
-        dx, dy, d = 1.0, 0.0, 1.0
-    g_x = ev_x + dx / d * giris_m
-    g_y = ev_y + dy / d * giris_m
-    if mes >= giris_m and irtifa_su_an >= hedef_irtifa - 2.0:
-        print(f"[SCN] Yaklaşma girişine ÇIKMAYA GEREK YOK ({mes:.0f} ≥ "
-              f"{giris_m:.0f} m, irtifa yeterli) — süzülüş buradan başlıyor")
+          f"{irtifa_su_an:.0f} m")
+    if _DONUS_IRTIFA > 0:
+        hedef_irtifa = _DONUS_IRTIFA
+        gerekli = hedef_irtifa / math.tan(math.radians(_INIS_EGIM_DEG))
+        giris_m = _kelepce(gerekli + 40.0, _INIS_GIRIS_MIN, _INIS_GIRIS_MAX)
+        dx, dy = _pos["x"] - ev_x, _pos["y"] - ev_y
+        d = math.hypot(dx, dy) or 1.0
+        git_noktaya(conn, ev_x + dx / d * giris_m, ev_y + dy / d * giris_m,
+                    varis_m=20.0, hedef_irtifa=hedef_irtifa)
     else:
-        # varis_m 60 → 20 (2026-08-23): 60 m tolerans, hesaplanan 253 m'lik
-        # yaklaşma girişini fiilen 194 m'ye indiriyordu.
-        git_noktaya(conn, g_x, g_y, varis_m=20.0, hedef_irtifa=hedef_irtifa)
+        hatta_gir(conn, ev_x, ev_y, _INIS_EGIM_DEG, _INIS_NISAN_KAC)
     if _abort:
         return
     print(f"[SCN] Yaklaşma girişindeyiz (eve {_hedefe(ev_x, ev_y)[0]:.0f} m) — "
