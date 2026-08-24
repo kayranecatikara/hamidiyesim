@@ -199,3 +199,71 @@ PSC_JERK_Z 40
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
 FS_GCS_ENABLE 0
 FS_THR_ENABLE 0
+
+# ═══════════════════════════════════════════════════════════════════════
+#  2026-08-22 · ArduCopter 4.7.0 KARARLI İÇİN İKİNCİ İSİM ŞEMASI
+# ═══════════════════════════════════════════════════════════════════════
+# Yukarıdaki bütün satırlar ESKİ (4.7.0-dev, 2025-06) şemasındadır ve orada
+# çalışmaya devam eder. ArduCopter 4.7.0 KARARLI (etiket Copter-4.7.0,
+# commit 1511f271, 2026-07-21) bu parametrelerin 12'sini YENİDEN ADLANDIRDI
+# ve çoğunun BİRİMİNİ centi-'den SI'ya çevirdi.
+#
+# ⚠ ArduPilot tanımadığı satırı SESSİZCE yok sayar — hata da uyarı da vermez.
+# Bu yüzden iki şema YAN YANA durur: hangi sürüm koşuyorsa kendi tanıdığını
+# uygular, diğerini atar. Böylece dosya HER İKİ sürümde de doğru uçurur.
+#
+# ⛔ AŞAĞIDAKİ SATIRLARI SİLMEYİN, YUKARIDAKİLERİ DE SİLMEYİN. Bu depoda
+# aynı tuzağa İKİ KEZ düşüldü (bkz. dosya başındaki 2026-08-04 notu): bir
+# şema diğeriyle DEĞİŞTİRİLDİĞİ için araç 63 dakika firmware varsayılanlarıyla
+# uçtu ve "avcı avından yavaştı".
+#
+# ÖLÇÜLEN OLAY (2026-08-22): Copter 4.7.0 kararlıya geçilince 21 parametrenin
+# 12'si düştü. Araç ANGLE_MAX 70° yerine 30° ile uçuyordu → dönüş yarıçapı
+# R = V²/(g·tanθ) ile 18 m/s'de 12 m yerine 57 m, yani 4.7 KAT.
+#
+# KAYNAK KANITI — GUIDED hız modunun 4.7.0'da okuduğu parametreler:
+#   ArduCopter/mode_guided.cpp:255
+#     pos_control->NE_set_max_speed_accel_m(wp_nav->get_default_speed_NE_ms(),
+#                                           wp_nav->get_wp_acceleration_mss())
+#   AC_WPNav.h:102  get_default_speed_NE_ms() → _wp_speed_ms     = WP_SPD
+#   AC_WPNav.h:134  get_wp_acceleration_mss() → _wp_accel_mss    = WP_ACC
+#   AC_PosControl.cpp:136/468  _shaping_jerk_ne_msss → _jerk_max_ne_msss
+#                                                      = PSC_JERK_NE
+#
+# ⚠ İSİM DOĞRULAMA (dosya başındaki zorunlu adım, her sürüm değişiminde):
+#     grep -iE "^<PARAM_ADI>" ~/ardupilot/mav_5_1.parm
+#   Çıktı boşsa o satır sessizce yok sayılmıştır.
+#
+#  eski ad (üstte)   →  yeni ad (altta)    birim değişimi
+#  ─────────────────────────────────────────────────────────────
+#  ANGLE_MAX 7000    →  ATC_ANGLE_MAX 70   centi-derece → derece
+#  WPNAV_SPEED 2500  →  WP_SPD 25          cm/s   → m/s
+#  WPNAV_SPEED_UP    →  WP_SPD_UP 20       cm/s   → m/s
+#  WPNAV_SPEED_DN    →  WP_SPD_DN 15       cm/s   → m/s
+#  WPNAV_ACCEL 2600  →  WP_ACC 26          cm/s²  → m/s²
+#  WPNAV_ACCEL_Z     →  WP_ACC_Z 20        cm/s²  → m/s²
+#  WPNAV_JERK 4      →  WP_JERK 4          (birim aynı: m/s³)
+#  PSC_VELXY_P 2.0   →  PSC_NE_VEL_P 2.0   (birimsiz kazanç)
+#  PSC_JERK_XY 40    →  PSC_JERK_NE 40     (birim aynı: m/s³)
+#  PSC_JERK_Z 40     →  PSC_JERK_D 40      (birim aynı: m/s³)
+#  ATC_ACCEL_R_MAX   →  ATC_ACC_R_MAX 2500 cdeg/s² → deg/s²
+#  ATC_ACCEL_P_MAX   →  ATC_ACC_P_MAX 2500 cdeg/s² → deg/s²
+#
+# ⚠ Üçü firmware'in @Range METADATA'sını aşıyor: WP_SPD (belge 0.1-20),
+#   WP_ACC (0.5-5), ATC_ACC_*_MAX (0-1800). @Range yalnız yer istasyonu
+#   kaydırıcısı içindir, firmware SINIR UYGULAMAZ — eski şemadaki karşılıkları
+#   da (2500 cm/s, 2600 cm/s², 250000 cdeg/s²) belgelenen aralığın üstündeydi
+#   ve araç kabul ediyordu. Yine de geri okuma ile teyit edilmeli.
+
+ATC_ANGLE_MAX 70
+WP_SPD 25
+WP_SPD_UP 20
+WP_SPD_DN 15
+WP_ACC 26
+WP_ACC_Z 20
+WP_JERK 4
+PSC_NE_VEL_P 2.0
+PSC_JERK_NE 40
+PSC_JERK_D 40
+ATC_ACC_R_MAX 2500
+ATC_ACC_P_MAX 2500
