@@ -1,0 +1,7 @@
+kosu,kol,imha,tetik_s,en_yakin_gps_m,kare,gorsel,gorsel_temas_pct,kf_aktif_pct,kf_dcx_med_px,salinim_per_s,bbox_log_sayisi,bbox_loglari
+F02_K_yatay_KF0,KONTROL,True,13.8,1.27,243,208,85.6,0.0,0.0,1.5,2,bbox_ibvs_20260828_142343.csv;bbox_ibvs_20260828_142437.csv
+F03_D_yatay_KF1,DENEY,True,14.0,1.46,463,329,71.1,98.2,1.28,1.5,3,bbox_ibvs_20260828_143122.csv;bbox_ibvs_20260828_143146.csv;bbox_ibvs_20260828_143153.csv
+F04_K_yatay_KF0,KONTROL,True,14.42,1.66,249,188,75.5,0.0,0.0,2.92,3,bbox_ibvs_20260828_143913.csv;bbox_ibvs_20260828_143921.csv;bbox_ibvs_20260828_143955.csv
+F05_D_yatay_KF1,DENEY,True,13.49,1.96,820,619,75.5,98.7,1.5,0.81,4,bbox_ibvs_20260828_144647.csv;bbox_ibvs_20260828_144719.csv;bbox_ibvs_20260828_144721.csv;bbox_ibvs_20260828_144737.csv
+F06_K_yatay_KF0,KONTROL,True,49.33,0.31,1272,1001,78.7,0.0,0.0,2.01,8,bbox_ibvs_20260828_145839.csv;bbox_ibvs_20260828_145855.csv;bbox_ibvs_20260828_145857.csv;bbox_ibvs_20260828_145927.csv;bbox_ibvs_20260828_145941.csv;bbox_ibvs_20260828_145944.csv;bbox_ibvs_20260828_150002.csv;bbox_ibvs_20260828_150004.csv
+F07_D_yatay_KF1,DENEY,True,14.19,1.53,511,361,70.6,97.8,0.97,2.05,5,bbox_ibvs_20260828_150607.csv;bbox_ibvs_20260828_150608.csv;bbox_ibvs_20260828_150611.csv;bbox_ibvs_20260828_150620.csv;bbox_ibvs_20260828_150628.csv

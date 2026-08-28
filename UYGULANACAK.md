@@ -95,7 +95,85 @@ tautolojiyi sınar (model gerçekle birebir aynı). **Gerçekçi koşulda** (2 g
 manevra + 0.5 m gürültü, test K6c) kazanım **%41**, %100 değil.
 ⚠ Bunların hiçbiri uçuş kanıtı değildir (§2): **Ö-KF henüz HİÇ UÇMADI.**
 
-### DURUM: uçuş bekliyor · varsayılan `AVCI_IBVS_KF = 0` (KAPALI)
+### A/B KAMPANYASI — 2026-08-28, 6 geçerli uçuş (3/kol) · SONUÇ: **NÖTR**
+
+Kullanıcı izniyle (§0.1 istisnası: *"istersen sen de dene"* → *"devam et
+2 uçuş daha koş"*) yapay zekâ koştu. Senaryo `duz` + `yatay` kaçamak,
+tetik 8 m, kol seçimi env + TAM RESTART (§4), dönüşümlü K,D,K,D,K,D.
+
+⚠ **GEÇERSİZ KOŞU:** F01, avcı hiç kalkamadığı için (`[DRONE] Kalkış
+timeout → [CHASE] Kalkış başarısız!`) atıldı. Sebep: bir önceki uçuş
+VURUŞLA bittiği için avcı SITL'de çarpma hâlinde kalmış. **Ders: her
+vuruştan sonra TAM RESTART şart**, yoksa sonraki koşu sessizce boşa gider.
+
+**MEKANİZMA KAPISI (§5.1) — TEMİZ GEÇTİ:** DENEY kolunda `kf_durum=AKTIF`
+%98.2 / %98.7 / %97.8; KONTROL kolunda %0.0. Kol ayrımı kusursuz.
+
+| koşu | kol | imha | tetik | GPS m | temas% | salınım | yatış p90 |
+|---|---|---|---|---|---|---|---|
+| F02 | K | ✓ | 13.8 s | 1.27 | 85.6 | 1.50 | 35.4 |
+| F03 | D | ✓ | 14.0 s | 1.46 | 71.1 | 1.50 | 28.4 |
+| F04 | K | ✓ | 14.4 s | 1.66 | 75.5 | 2.92 | 7.0 |
+| F05 | D | ✓ | 13.5 s | 1.96 | 75.5 | 0.81 | 33.8 |
+| F06 | K | ✓ | **49.3 s** | 0.31 | 78.7 | 2.01 | 35.9 |
+| F07 | D | ✓ | 14.2 s | 1.53 | 70.6 | 2.05 | 28.1 |
+
+**Birincil ölçüt berabere: 6/6 vuruş (3/3 – 3/3).** Kalan ölçütlerde
+aralıklar geniş biçimde örtüşüyor; hiçbiri tutarlı ve mekanizmayla
+desteklenen fark göstermiyor. → **NÖTR**, karar kullanıcıya (§2 adım 7).
+
+#### 🔴 ÖLÇÜT KİRLENMESİ — "en yakın menzil (bbox)" bu A/B'de GEÇERSİZ
+
+İki menzil ölçütü ÜÇ ÇİFTİN ÜÇÜNDE DE tam ters yön gösterdi (GPS hep
+KONTROL'ü, bbox hep DENEY'i önde saydı). Denetlendi:
+
+```
+|boyut(log) − C/kf_R|         medyan 0.027 px   ← süzgeç menzilinden türüyor
+|boyut(log) − ham hypot(w,h)| medyan 0.698 px   ← ham kutu DEĞİL
+```
+
+`komut()`'e filtrelenmiş kutu gittiği için `tani["boyut"]` da filtreli
+çıkıyor. Yani bu ölçüt DENEY kolunda **süzgecin kendi kestirimini**,
+KONTROL kolunda **ham tespiti** ölçüyor — iki kol aynı şeyi ölçmüyor.
+Süzgecin lehine görünmesi kazanım değil, kirlenme. §5.6 gereği lehe
+sayılmadı.
+
+**AÇIK EKSİK:** ham `boyut` ayrı sütuna loglanmıyor. Bir sonraki kampanya
+öncesi eklenmeli (log-only, güdüm davranışına dokunmaz), yoksa aynı ölçüt
+yine geçersiz olur.
+
+#### Çürütülen hipotez (kayda geçsin)
+
+"Süzgeç fazla öndelik verip hedefi kadraj kenarına itiyor, görsel temas
+bu yüzden düşük" diye şüphelenildi. ÖLÇÜLDÜ, ÇÜRÜDÜ: `|cx−320|` medyanı
+iki kolda da 4.0 px; kadraj kenarındaki kare oranı KONTROL %0.9, DENEY
+%0.2 — yani DENEY'de hedef kenara DAHA AZ gidiyor. Temas farkı eşleşince
+tutarsız (D: −14.5, **+2.3**, −4.1 puan) → koşular arası gürültü.
+
+#### Aykırı koşu — F06
+
+Tetik 49.3 s (diğerleri ~14 s), 8 ayrı görsel temas, 1001 kare: birden
+çok yaklaşma denemesi. KONTROL'ün GPS medyanını tek başına aşağı çekiyor.
+§5.9 gereği kolların bu koşu tipini eşit sayıda içermesi gerekirdi.
+
+#### Bilinen kusur — DÜZELTİLMEDİ (kullanıcı kararı)
+
+`kf_dcx` kare kare işaret değiştiriyor: F03 **7.89/s**, F05 **7.38/s**
+(ham `cx` ise 0.17-0.87/s). Genlik medyan 1.3-1.5 px, p90 24.7 px.
+Sebep `KF_HEDEF_IVME = 15 m/s²` cömert seçildi. Aday çare
+`AVCI_IBVS_KF_Q=6` — kullanıcı *"böyle iyi bir düzeltme yapma"* dedi,
+uygulanmadı.
+
+#### Sıradaki seçenekler (karar kullanıcıda)
+
+1. Ham `boyut`u ayrı sütuna logla + n=4'e tamamla (ölçüt kirlenmesi giderilir).
+2. **§5.13 — TASARIM ZARFI:** bu kampanyada τ 68-71 ms'ye düştü ve λ̇ görece
+   küçük kaldı. Gecikmenin ağır bastığı koşul `capraz` ya da `circle`;
+   kazanım ORADA aranmalı. `yatay`da aranması ölçümü baştan zayıflatmış
+   olabilir.
+3. Bırak — kod dalda, varsayılan kapalı, yedeği ve geri alma betiği hazır.
+
+### DURUM: A/B koşuldu (n=3/kol) → **NÖTR** · varsayılan `AVCI_IBVS_KF = 0` (KAPALI)
 
 ---
 
