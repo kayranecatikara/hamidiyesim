@@ -16,6 +16,89 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+## Ö-KF — GÖRÜNTÜ GECİKMESİ TELAFİSİ · **KODLANDI, HİÇ UÇMADI**
+
+**Kaynak:** Nguyen, Ohnishi, Wang, Fujimoto, Hori + Ito ve ark., *"Dual Rate
+Kalman Filter Considering Delayed Measurement and Its Application in Visual
+Servo"*, AMC2014 Yokohama. Kullanıcı isteği (2026-08-28): *"bu pdf'i
+kullanarak görüntü aktarım gecikmesine bir çözüm bulmanı istiyorum"* →
+*"bize uyan kısımlarını mevcut güdüm ve simülasyonu bozmayacak şekilde
+uygulayalım"*.
+
+### SORUN — ölçüldü, tahmin değil (47 uçuş / 8503 kare)
+
+| büyüklük | değer |
+|---|---|
+| kare yaşı (`gecikme_s`) medyan | **87.8 ms** (son oturum 109-118 ms) |
+| p90 / p99 / maks | 129.2 / 157.1 / **212.2 ms** |
+| seğirme (std) | **26.2 ms** |
+| döngü `dt` medyan | 61.8 ms → 16.2 Hz (hedef 20 Hz) |
+| `dt > 75 ms` (kare atlandı) | **%46.3** |
+
+Terminal fazda (R < 20 m, n=3272) LOS dönüş hızı medyan 16.5 °/s, p90 53 °/s.
+`gecikme × λ̇` = nişan hatası: medyan **1.15°**, p90 **3.99°**, p99 **8.41°**.
+Menzile vurunca yanal sapma medyan 0.30 m, p90 **0.90 m**, p99 **1.78 m**.
+Vuruş kararı fiziksel çarpışmadan geldiği için isabet zarfı gövde boyu
+(1-2 m) — yani **gecikme tek başına, karelerin ~%1'inde ıska ettiriyor.**
+
+Mevcut telafi `LEAD_SURE = 0.4 s` sabiti; (a) elle ayarlanmış, ölçülen
+gecikmenin 4 katı, (b) menzille sönüyor ama **gecikme sönmüyor** — tam
+vuruş anında telafi sıfırlanıyor, (c) seğirmeyi görmüyor.
+
+### MAKALEDEN ALINAN / ALINMAYAN
+
+| makale parçası | alındı mı | neden |
+|---|---|---|
+| Gecikmeli yeniliği DOĞRU ÇAĞLA eşleme (denk. 9-10) | ✅ ana fikir | problemimizin ta kendisi |
+| Bilinen girdiyi (`u` = kendi hızımız) modelden düşme (denk. 42) | ✅ | belirsizliği yarıya indiriyor |
+| Ölçümü lineer tutma (`C = [I 0]`, denk. 43) | ✅ | göreli KONUM ölçüyoruz, açı+menzil değil |
+| Ω/Ψ optimal kazanç özyinelemesi (denk. 24-40) | ⛔ **HAYIR** | tek dayanağı `N` ve `r`'nin SABİT olması; bizde σ_N=26 ms, `r` %46 sapıyor. **Yerine GERİ SAR-TEKRAR OYNAT** — bizde N≈2 adım olduğu için bedava ve *tam* optimal (makalenin cebri N=30'da maliyetten kaçmak içindi) |
+| Ara örnekleri doldurma | ⛔ bu adımda hayır | döngümüz kare ile sürülüyor; kareden bağımsız 20 Hz'e çevirmek komut kadansını değiştirir → **Ö-KF adım 2** |
+
+### TASARIM
+
+Durum `x = [p_göreli(3), v_hedef(3)]` NED; girdi `u` = drone'un kendi hızı;
+ölçüm = kutudan türetilen göreli konum vektörü, `C = [I₃ 0₃]`.
+Doğrusalsızlık ölçüm gürültüsüne taşındı: LOS boyunca `σ_R = R²σ_boyut/C`
+(18 m'de 1.6 m, 40 m'de 8.1 m), LOS'a dik `σ = R·σ_px/FX` (0.22 / 0.48 m).
+
+**Ayrıca düzeltildi:** kare ile telemetri aynı ana ait değildi (τ eski piksel,
+taze duruşla açıya çevriliyordu — `visual_lead.py:117-119`'da not edilmiş
+bilinen hata). Artık duruş tamponundan **o karenin anındaki** duruş okunuyor.
+
+**Kod:** `control/guidance/gecikme_kf.py` (yeni),
+`control/guidance/bbox_ibvs.py::kf_tazele()`. `komut()` DEĞİŞMEDİ.
+
+### BOZMAMA GARANTİLERİ
+
+- ⛔ **Yapısal (§5.10):** `KF_ACIK` kapalıyken `kf_tazele` girdileri **aynen**
+  döndürür — tek aritmetik işlem yok. Test **K3** (243 kombinasyon, 0 sapma)
+  ve **K14b** (gerçek döngü, sahte saatle, 45 komut bit bit aynı).
+- ⛔ **§10 yarışma kuralı:** hedef GPS'ine yapısal erişim yok — test **K4**.
+- **Süzgeç hatası uçuşu düşüremez:** `try/except` → devre dışı, ham yola dön.
+- **Hayalet hedef kalkanı:** `KF_UFUK_S = 0.30 s` ölçümsüz kalınca kestirim
+  GEÇERSİZ — test **K10**.
+- **Emniyet kilidi:** `KF_MAX_KAYMA_PX = 120` — sapıtmış süzgeç nişanı
+  savuramaz, test **K9**.
+- **Testler:** `tests/test_gecikme_kf.py` **22/22**; mevcut paket bozulmadı
+  (`test_bbox_ibvs.py` 69/69, tam pytest 18/18).
+
+### MEKANİZMA SÜTUNLARI (§5.1)
+
+`kf_durum, kf_tau_ms, kf_ileri_ms, kf_dcx, kf_dcy, kf_R, kf_kapanma,
+kf_lam_az, kf_P_iz, kf_yenilik`. **`kf_dcx` boş/sıfırsa koşu GEÇERSİZDİR.**
+
+### KAPALI KAPI: sentetik doğrulama ≠ uçuş kanıtı
+
+Gürültüsüz + sabit hızlı hedefte hata 0.000 m çıkıyor — bu süzgeci değil
+tautolojiyi sınar (model gerçekle birebir aynı). **Gerçekçi koşulda** (2 g
+manevra + 0.5 m gürültü, test K6c) kazanım **%41**, %100 değil.
+⚠ Bunların hiçbiri uçuş kanıtı değildir (§2): **Ö-KF henüz HİÇ UÇMADI.**
+
+### DURUM: uçuş bekliyor · varsayılan `AVCI_IBVS_KF = 0` (KAPALI)
+
+---
+
 ## S — YATAY SALINIM · 40 UÇUŞ · 3 DALGA · 5 ADAY · **ÇÖZÜLMEDİ**
 
 **Tam rapor:** `docs/kampanya/S_SALINIM.md` (ölçütler her dalgada koşmadan
