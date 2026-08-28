@@ -1,0 +1,319 @@
+diff --git a/UYGULANACAK.md b/UYGULANACAK.md
+index 83321be..e5737ce 100644
+--- a/UYGULANACAK.md
++++ b/UYGULANACAK.md
+@@ -16,6 +16,89 @@ edilemedi.
+ > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
+ > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
+ 
++## Ö-KF — GÖRÜNTÜ GECİKMESİ TELAFİSİ · **KODLANDI, HİÇ UÇMADI**
++
++**Kaynak:** Nguyen, Ohnishi, Wang, Fujimoto, Hori + Ito ve ark., *"Dual Rate
++Kalman Filter Considering Delayed Measurement and Its Application in Visual
++Servo"*, AMC2014 Yokohama. Kullanıcı isteği (2026-08-28): *"bu pdf'i
++kullanarak görüntü aktarım gecikmesine bir çözüm bulmanı istiyorum"* →
++*"bize uyan kısımlarını mevcut güdüm ve simülasyonu bozmayacak şekilde
++uygulayalım"*.
++
++### SORUN — ölçüldü, tahmin değil (47 uçuş / 8503 kare)
++
++| büyüklük | değer |
++|---|---|
++| kare yaşı (`gecikme_s`) medyan | **87.8 ms** (son oturum 109-118 ms) |
++| p90 / p99 / maks | 129.2 / 157.1 / **212.2 ms** |
++| seğirme (std) | **26.2 ms** |
++| döngü `dt` medyan | 61.8 ms → 16.2 Hz (hedef 20 Hz) |
++| `dt > 75 ms` (kare atlandı) | **%46.3** |
++
++Terminal fazda (R < 20 m, n=3272) LOS dönüş hızı medyan 16.5 °/s, p90 53 °/s.
++`gecikme × λ̇` = nişan hatası: medyan **1.15°**, p90 **3.99°**, p99 **8.41°**.
++Menzile vurunca yanal sapma medyan 0.30 m, p90 **0.90 m**, p99 **1.78 m**.
++Vuruş kararı fiziksel çarpışmadan geldiği için isabet zarfı gövde boyu
++(1-2 m) — yani **gecikme tek başına, karelerin ~%1'inde ıska ettiriyor.**
++
++Mevcut telafi `LEAD_SURE = 0.4 s` sabiti; (a) elle ayarlanmış, ölçülen
++gecikmenin 4 katı, (b) menzille sönüyor ama **gecikme sönmüyor** — tam
++vuruş anında telafi sıfırlanıyor, (c) seğirmeyi görmüyor.
++
++### MAKALEDEN ALINAN / ALINMAYAN
++
++| makale parçası | alındı mı | neden |
++|---|---|---|
++| Gecikmeli yeniliği DOĞRU ÇAĞLA eşleme (denk. 9-10) | ✅ ana fikir | problemimizin ta kendisi |
++| Bilinen girdiyi (`u` = kendi hızımız) modelden düşme (denk. 42) | ✅ | belirsizliği yarıya indiriyor |
++| Ölçümü lineer tutma (`C = [I 0]`, denk. 43) | ✅ | göreli KONUM ölçüyoruz, açı+menzil değil |
++| Ω/Ψ optimal kazanç özyinelemesi (denk. 24-40) | ⛔ **HAYIR** | tek dayanağı `N` ve `r`'nin SABİT olması; bizde σ_N=26 ms, `r` %46 sapıyor. **Yerine GERİ SAR-TEKRAR OYNAT** — bizde N≈2 adım olduğu için bedava ve *tam* optimal (makalenin cebri N=30'da maliyetten kaçmak içindi) |
++| Ara örnekleri doldurma | ⛔ bu adımda hayır | döngümüz kare ile sürülüyor; kareden bağımsız 20 Hz'e çevirmek komut kadansını değiştirir → **Ö-KF adım 2** |
++
++### TASARIM
++
++Durum `x = [p_göreli(3), v_hedef(3)]` NED; girdi `u` = drone'un kendi hızı;
++ölçüm = kutudan türetilen göreli konum vektörü, `C = [I₃ 0₃]`.
++Doğrusalsızlık ölçüm gürültüsüne taşındı: LOS boyunca `σ_R = R²σ_boyut/C`
++(18 m'de 1.6 m, 40 m'de 8.1 m), LOS'a dik `σ = R·σ_px/FX` (0.22 / 0.48 m).
++
++**Ayrıca düzeltildi:** kare ile telemetri aynı ana ait değildi (τ eski piksel,
++taze duruşla açıya çevriliyordu — `visual_lead.py:117-119`'da not edilmiş
++bilinen hata). Artık duruş tamponundan **o karenin anındaki** duruş okunuyor.
++
++**Kod:** `control/guidance/gecikme_kf.py` (yeni),
++`control/guidance/bbox_ibvs.py::kf_tazele()`. `komut()` DEĞİŞMEDİ.
++
++### BOZMAMA GARANTİLERİ
++
++- ⛔ **Yapısal (§5.10):** `KF_ACIK` kapalıyken `kf_tazele` girdileri **aynen**
++  döndürür — tek aritmetik işlem yok. Test **K3** (243 kombinasyon, 0 sapma)
++  ve **K14b** (gerçek döngü, sahte saatle, 45 komut bit bit aynı).
++- ⛔ **§10 yarışma kuralı:** hedef GPS'ine yapısal erişim yok — test **K4**.
++- **Süzgeç hatası uçuşu düşüremez:** `try/except` → devre dışı, ham yola dön.
++- **Hayalet hedef kalkanı:** `KF_UFUK_S = 0.30 s` ölçümsüz kalınca kestirim
++  GEÇERSİZ — test **K10**.
++- **Emniyet kilidi:** `KF_MAX_KAYMA_PX = 120` — sapıtmış süzgeç nişanı
++  savuramaz, test **K9**.
++- **Testler:** `tests/test_gecikme_kf.py` **22/22**; mevcut paket bozulmadı
++  (`test_bbox_ibvs.py` 69/69, tam pytest 18/18).
++
++### MEKANİZMA SÜTUNLARI (§5.1)
++
++`kf_durum, kf_tau_ms, kf_ileri_ms, kf_dcx, kf_dcy, kf_R, kf_kapanma,
++kf_lam_az, kf_P_iz, kf_yenilik`. **`kf_dcx` boş/sıfırsa koşu GEÇERSİZDİR.**
++
++### KAPALI KAPI: sentetik doğrulama ≠ uçuş kanıtı
++
++Gürültüsüz + sabit hızlı hedefte hata 0.000 m çıkıyor — bu süzgeci değil
++tautolojiyi sınar (model gerçekle birebir aynı). **Gerçekçi koşulda** (2 g
++manevra + 0.5 m gürültü, test K6c) kazanım **%41**, %100 değil.
++⚠ Bunların hiçbiri uçuş kanıtı değildir (§2): **Ö-KF henüz HİÇ UÇMADI.**
++
++### DURUM: uçuş bekliyor · varsayılan `AVCI_IBVS_KF = 0` (KAPALI)
++
++---
++
+ ## S — YATAY SALINIM · 40 UÇUŞ · 3 DALGA · 5 ADAY · **ÇÖZÜLMEDİ**
+ 
+ **Tam rapor:** `docs/kampanya/S_SALINIM.md` (ölçütler her dalgada koşmadan
+diff --git a/control/guidance/bbox_ibvs.py b/control/guidance/bbox_ibvs.py
+index f0606eb..ac36559 100644
+--- a/control/guidance/bbox_ibvs.py
++++ b/control/guidance/bbox_ibvs.py
+@@ -62,6 +62,7 @@ from control.guidance.common import (
+     clamp, normalize_angle, send_velocity, limit_acceleration,
+ )
+ from control.guidance.kurtarma import Kurtarma
++from control.guidance import gecikme_kf as gkf
+ 
+ 
+ def _env_f(name, default):
+@@ -232,6 +233,34 @@ class Cfg:
+     LEAD_EMA = 0.25                              # LOS hızı yumuşatması
+     LEAD_MAX_DEG = 25.0                          # °; lead açısı tavanı
+ 
++    # ── Ö-KF · GÖRÜNTÜ GECİKMESİ TELAFİSİ (bkz. gecikme_kf.py) ──────────
++    # SORUN (ölçüldü, 47 uçuş / 8503 kare): kamera karesi güdüme ulaştığında
++    # medyan 88 ms, p90 129 ms, maks 212 ms ESKİ. Terminal fazda LOS medyan
++    # 16.5 °/s, p90 53 °/s süpürüyor. Gecikme × LOS hızı = nişan hatası:
++    # medyan 1.15°, p90 3.99°, p99 8.41°. Menzile vurunca (R<20 m) yanal
++    # sapma p90 0.90 m, p99 1.78 m — isabet zarfı (gövde boyu) MERTEBESİNDE.
++    # Yani gecikme tek başına, karelerin ~%1'inde ıska ettirmeye yetiyor.
++    #
++    # ÇÖZÜM: kutuyu ham okumak yerine, gecikmeli ölçümü DOĞRU ÇAĞA oturtan
++    # bir Kalman süzgecinden geçir ve kestirimi KOMUT ANINA taşı. Süzgeç
++    # ayrıca λ̇'yı durum olarak taşır — şu anki λ̇ iki karenin farkı üstüne
++    # EMA(0.25), o da ~3 kare (≈150 ms) EK gecikme demek.
++    #
++    # ⚠ KAPALIYKEN GÜDÜM YOLU BİT BİT AYNIDIR (test B77). Süzgeç yalnız
++    # `komut()`e giden ÖLÇÜMLERİ değiştirir; kontrol yasasına dokunmaz.
++    KF_ACIK = _env_f("AVCI_IBVS_KF", 0.0) >= 0.5
++    # s; bu kadar ölçümsüz kalınırsa kestirim GEÇERSİZ (hayalet hedef kalkanı)
++    KF_UFUK_S = _env_f("AVCI_IBVS_KF_UFUK", 0.30)
++    # m/s²; hedefin manevra kabiliyeti = süreç gürültüsü. Küçük olursa süzgeç
++    # manevrada GERİDE KALIR; büyük olursa ölçüme çok güvenir (az süzme).
++    KF_HEDEF_IVME = _env_f("AVCI_IBVS_KF_Q", 15.0)
++    KF_PIKSEL_SIGMA = _env_f("AVCI_IBVS_KF_SPX", 2.0)    # px; kutu merkezi gürültüsü
++    KF_BOYUT_SIGMA = _env_f("AVCI_IBVS_KF_SBOY", 1.5)    # px; kutu boyutu gürültüsü
++    # s; `wall_recv` Gazebo render+ağ süresini KAPSAMAZ; ölçülürse buraya
++    KF_TAU_OFSET_S = _env_f("AVCI_IBVS_KF_TAU0", 0.0)
++    # px; telafi tavanı — sapıtmış süzgeç nişanı savuramasın (emniyet kilidi)
++    KF_MAX_KAYMA_PX = _env_f("AVCI_IBVS_KF_DMAX", 120.0)
++
+ 
+ 
+ 
+@@ -681,6 +710,7 @@ _CSV_ALANLAR = [
+     "eps_yaw_deg", "eps_yaw_ham_deg", "nisan_elev_deg",
+     "iris_roll_deg", "iris_pitch_deg", "iris_yaw_deg",
+     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "pn_ek_deg", "pn_capraz", "pn_yaklasma_deg", "los_hiz_az", "los_hiz_el",
++    "kf_durum", "kf_tau_ms", "kf_ileri_ms", "kf_dcx", "kf_dcy", "kf_R", "kf_kapanma", "kf_lam_az", "kf_P_iz", "kf_yenilik",
+     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
+     "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
+ ]
+@@ -759,6 +789,91 @@ def los_seviye(cx, cy, roll, pitch, cfg=Cfg):
+     return math.atan2(y1, x2), math.atan2(-z2, math.hypot(x2, y1))
+ 
+ 
++def kf_tazele(cx, cy, bw, bh, boyut, iroll, ipitch, iyaw, ivx, ivy, ivz,
++              now, gecikme_s, los_hiz, kapanma, cfg=Cfg, suzgec=None,
++              tampon=None):
++    """Ö-KF: gecikmeli kutu ölçümünü KOMUT ANINA taşı (bkz. gecikme_kf.py).
++
++    Güdüme giden ÖLÇÜMLERİ tazeler; kontrol yasasına (`komut()`) DOKUNMAZ.
++
++    ⚠ YAPISAL GARANTİ: `cfg.KF_ACIK` yanlışsa girdiler AYNEN geri döner —
++    tek bir aritmetik işlem bile yapılmaz. Test B77 bunu sınar.
++
++    Dönüş: (cx, cy, bw, bh, los_hiz, kapanma, bilgi)
++    """
++    bilgi = {"durum": "", "tau_ms": "", "ileri_ms": "", "dcx": "", "dcy": "",
++             "R": "", "kapanma": "", "lam_az": "", "P_iz": "", "yenilik": ""}
++    if tampon is not None:
++        tampon.ekle(now, iroll, ipitch, iyaw, ivx, ivy, ivz)
++    if not cfg.KF_ACIK or suzgec is None or boyut <= 1e-6:
++        if cfg.KF_ACIK:
++            bilgi["durum"] = "YOK"
++        return cx, cy, bw, bh, los_hiz, kapanma, bilgi
++
++    _C = menzil_sabiti(cfg)
++    tilt = math.radians(GeoCfg.KAMERA_TILT_DEG)
++    # ① karenin YAŞI — ölçülen, tahmin edilen değil
++    tau = clamp((gecikme_s or 0.0) + cfg.KF_TAU_OFSET_S, 0.0, 0.5)
++    t_olc = now - tau
++    # ② O KARENİN ANINDAKİ duruşla açıya çevir. Kare ile telemetri AYNI ANA
++    #    AİT DEĞİLDİR; taze duruşla eski pikseli birleştirmek kendi başına
++    #    bir hata kaynağıdır (visual_lead.py:117-119'da da not edilmiş).
++    tel = tampon.oku(t_olc) if tampon is not None else None
++    r_m, p_m, y_m = (tel[0], tel[1], tel[2]) if tel else (iroll, ipitch, iyaw)
++    if cfg.ROLL_TELAFI:
++        az_m, el_m = los_seviye(cx, cy, r_m, p_m, cfg)
++    else:
++        az_m = math.atan((cx - cfg.CX_NISAN) / geo.FX)
++        el_m = piksel_elev(cy, cfg) + p_m
++    az_I = normalize_angle(y_m + az_m)
++    R_m = _C / boyut
++    # ③ göreli KONUM vektörü (NED) — süzgecin ölçümü budur (C = [I 0])
++    ce = math.cos(el_m)
++    y_olc = [R_m * ce * math.cos(az_I), R_m * ce * math.sin(az_I),
++             -R_m * math.sin(el_m)]
++    # ④ gürültü: menzil R² ile, açı R ile büyür (türetme modül başlığında)
++    sig_R = R_m * R_m * cfg.KF_BOYUT_SIGMA / _C
++    sig_yan = R_m * cfg.KF_PIKSEL_SIGMA / geo.FX
++    Rned = gkf.olcum_kovaryansi(y_olc, R_m, sig_R, sig_yan)
++    u = (ivx, ivy, ivz)
++    # ⑤ tahmin → gecikmeli düzeltme (geri sar-tekrar oynat) → kestirim
++    suzgec.ilerlet(now, u)
++    suzgec.olcum(t_olc, y_olc, Rned, u)
++    est = suzgec.kestirim(now, u)
++    bilgi.update({"tau_ms": round(tau * 1000.0, 1),
++                  "ileri_ms": round(min(est["ileri_s"], 9.999) * 1000.0, 1),
++                  "R": round(est["R"], 2),
++                  "kapanma": round(est["kapanma"], 2),
++                  "lam_az": round(est["lam_az"], 3),
++                  "P_iz": round(est["P_iz"], 1),
++                  "yenilik": round(est["yenilik"], 2)})
++    if not est["gecerli"]:
++        # ISINMA = ilk kareler, UFUK = çok uzun ölçümsüz kalındı (hayalet
++        # hedef kalkanı). İkisinde de HAM ölçüme dönülür — güvenli taraf.
++        bilgi["durum"] = "UFUK" if suzgec.olcum_sayisi >= 3 else "ISINMA"
++        return cx, cy, bw, bh, los_hiz, kapanma, bilgi
++    # ⑥ kestirimi PİKSELE geri izdüşür — `komut()` ham kutu bekliyor
++    az_s = normalize_angle(est["az"] - iyaw)
++    if cfg.ROLL_TELAFI:
++        pk = gkf.seviye_to_piksel(az_s, est["el"], iroll, ipitch,
++                                  geo.FX, geo.FY, geo.CX, geo.CY, tilt)
++    else:
++        pk = (cfg.CX_NISAN + geo.FX * math.tan(clamp(az_s, -1.4, 1.4)),
++              gkf.govde_elev_to_cy(est["el"] - ipitch, geo.FY, geo.CY, tilt))
++    if pk is None or est["R"] <= 0.2:
++        bilgi["durum"] = "IZDUSUM_YOK"
++        return cx, cy, bw, bh, los_hiz, kapanma, bilgi
++    # ⑦ EMNİYET KİLİDİ: sapıtmış süzgeç nişanı savuramasın
++    dcx = clamp(pk[0] - cx, -cfg.KF_MAX_KAYMA_PX, cfg.KF_MAX_KAYMA_PX)
++    dcy = clamp(pk[1] - cy, -cfg.KF_MAX_KAYMA_PX, cfg.KF_MAX_KAYMA_PX)
++    k = clamp((_C / est["R"]) / boyut, 0.5, 2.0)
++    bilgi["durum"] = "AKTIF"
++    bilgi["dcx"] = round(dcx, 2)
++    bilgi["dcy"] = round(dcy, 2)
++    return (cx + dcx, cy + dcy, bw * k, bh * k,
++            (est["lam_az"], est["lam_el"]), est["kapanma"], bilgi)
++
++
+ def komut(cx, cy, w, h, iris_yaw, hiz_I, dt, cfg=Cfg,
+           los_hiz=(0.0, 0.0), iris_pitch=0.0, iris_vz=0.0,
+           kapanma=None, iris_roll=0.0, yaw_hizi=0.0,
+@@ -1062,6 +1177,21 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
+     iyaw_onceki = None        # Ö9 sönümlemesi için yaw türevi (bkz. Cfg.SONUM_T)
+     yaw_hizi = 0.0            # rad/s; aracın KENDİ dönüş hızı, EMA'lı
+ 
++    # ── Ö-KF kurulumu (bkz. Cfg.KF_ACIK, gecikme_kf.py) ─────────────────
++    # Süzgeç UÇUŞ BOYUNCA yaşar; panelden açılıp kapanabilsin diye nesne her
++    # hâlükârda kurulur, ama `Cfg.KF_ACIK` kapalıyken HİÇ ÇAĞRILMAZ.
++    kf_tampon = gkf.TelemetriTamponu(64) if gkf.KULLANILABILIR else None
++    kf_suzgec = None
++    kf_kapali_hata = False        # süzgeç hata verdiyse uçuş boyunca devre dışı
++    if gkf.KULLANILABILIR:
++        try:
++            kf_suzgec = gkf.GecikmeKF(hedef_ivme=cfg.KF_HEDEF_IVME,
++                                      ufuk_s=cfg.KF_UFUK_S)
++        except Exception as _e:
++            print(f"[IBVS] Ö-KF kurulamadı ({_e}) — ham yol kullanılacak")
++    else:
++        print("[IBVS] numpy yok → Ö-KF kullanılamaz, ham yol kullanılacak")
++
+     def _vuruldu():
+         if get_temas is None:
+             return False
+@@ -1208,13 +1338,34 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
+                            cfg.KAPANMA_EMA * _rdot
+                            + (1.0 - cfg.KAPANMA_EMA) * kapanma)
+             boyut_onceki = boyut_simdi
++
++            # ══ Ö-KF · GÖRÜNTÜ GECİKMESİ TELAFİSİ ═════════════════════════
++            # Güdüme giden ÖLÇÜMLER tazelenir; kontrol yasası DEĞİŞMEZ.
++            # Kapalıyken `kf_tazele` girdileri aynen döndürür (test B77).
++            ivx = float(iris.get("vx", 0.0) or 0.0)
++            ivy = float(iris.get("vy", 0.0) or 0.0)
++            ivz = float(iris.get("vz", 0.0) or 0.0)
++            try:
++                (g_cx, g_cy, g_bw, g_bh, g_los_hiz, g_kapanma,
++                 kf_bilgi) = kf_tazele(
++                    cx, cy, bw, bh, boyut_simdi, iroll, ipitch, iyaw,
++                    ivx, ivy, ivz, now, gecikme_s, tuple(los_hiz), kapanma,
++                    cfg, None if kf_kapali_hata else kf_suzgec, kf_tampon)
++            except Exception as _e:
++                # ⛔ SÜZGEÇ HATASI UÇUŞU DÜŞÜREMEZ: devre dışı bırak, ham yola
++                #    dön, uçuş sürsün. Bir kez olur, sonra hiç çağrılmaz.
++                kf_kapali_hata = True
++                g_cx, g_cy, g_bw, g_bh = cx, cy, bw, bh
++                g_los_hiz, g_kapanma = tuple(los_hiz), kapanma
++                kf_bilgi = {"durum": "HATA", "tau_ms": "", "ileri_ms": "",
++                            "dcx": "", "dcy": "", "R": "", "kapanma": "",
++                            "lam_az": "", "P_iz": "", "yenilik": ""}
++                print(f"[IBVS] ⚠ Ö-KF hata verdi, devre dışı: {_e}")
++
+             vx, vy, vz, yaw_hedef, hiz_I, tani = komut(
+-                cx, cy, bw, bh, iyaw, hiz_I, dt, cfg,
+-                tuple(los_hiz), ipitch,
+-                float(iris.get("vz", 0.0) or 0.0),
+-                kapanma, iroll, yaw_hizi,
+-                float(iris.get("vx", 0.0) or 0.0),
+-                float(iris.get("vy", 0.0) or 0.0))
++                g_cx, g_cy, g_bw, g_bh, iyaw, hiz_I, dt, cfg,
++                g_los_hiz, ipitch, ivz,
++                g_kapanma, iroll, yaw_hizi, ivx, ivy)
+             # ── YAW SLEW SINIRI (bkz. Cfg.YAW_RATE_MAX) ──
+             # HIZ (vx, vy) yaw_hedef'ten hesaplandı ve DEĞİŞMEZ: nişan hedefin
+             # gerçek yönünde kalır. Sınırlanan yalnız BURUNUN dönme hızı.
+@@ -1276,6 +1427,14 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
+                 "pn_yaklasma_deg": round(
+                     math.degrees(tani.get("pn_yaklasma", 0.0)), 1),
+                 "los_hiz_az": round(los_hiz[0], 3), "los_hiz_el": round(los_hiz[1], 3),
++                # Ö-KF MEKANİZMA SÜTUNLARI (§5.1): `kf_dcx` sıfır/boşsa
++                # süzgeç fiilen HİÇBİR ŞEY yapmamıştır → koşu GEÇERSİZ.
++                "kf_durum": kf_bilgi["durum"], "kf_tau_ms": kf_bilgi["tau_ms"],
++                "kf_ileri_ms": kf_bilgi["ileri_ms"],
++                "kf_dcx": kf_bilgi["dcx"], "kf_dcy": kf_bilgi["dcy"],
++                "kf_R": kf_bilgi["R"], "kf_kapanma": kf_bilgi["kapanma"],
++                "kf_lam_az": kf_bilgi["lam_az"], "kf_P_iz": kf_bilgi["P_iz"],
++                "kf_yenilik": kf_bilgi["yenilik"],
+                 "vx_cmd": round(vx, 2), "vy_cmd": round(vy, 2),
+                 "vz_cmd": round(vz, 2),
+                 "yaw_cmd_deg": round(math.degrees(yaw_cmd), 1),

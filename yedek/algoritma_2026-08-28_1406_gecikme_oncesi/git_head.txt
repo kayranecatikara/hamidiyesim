@@ -1,0 +1,2 @@
+147d57d3028e9fcad7e4e48593b1139963556049
+147d57d 2026-08-24 yedek: 2026-08-24 algoritma anlik goruntusu + geri alma betigi

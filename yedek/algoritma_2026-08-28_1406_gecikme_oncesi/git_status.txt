@@ -1,0 +1,5 @@
+ M UYGULANACAK.md
+ M control/guidance/bbox_ibvs.py
+?? control/guidance/gecikme_kf.py
+?? tests/test_gecikme_kf.py
+?? yedek/algoritma_2026-08-28_1406_gecikme_oncesi/
