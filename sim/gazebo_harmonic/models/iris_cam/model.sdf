@@ -632,7 +632,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -649,7 +649,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -667,7 +667,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -684,7 +684,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -702,7 +702,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -719,7 +719,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -737,7 +737,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -754,7 +754,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.002</area>
+      <area>0.00258</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -983,28 +983,71 @@
            Optik eksen +X (link ileri yönü). Tilt=0 iken düz ileri; taret
            yukarı bakınca kamera da yukarı bakar.
            Topic iris_cam/image AYNI kaldı (gcs_server bunu okuyor). -->
-      <sensor name="camera" type="camera">
+      <!-- ============================================================
+           KAMERA: Sony IMX477 (gercek arac)
+             Tam cozunurluk 4056x3040 (12.3 MP), 4:3, rolling shutter
+             Lens: 160 deg yatay gorus alanci = 2.79253 rad
+           SIM'de TAM COZUNURLUK kullaniliyor: 4056x3040 @ 30 Hz.
+           160 deg duz (pinhole) kamerayla render EDILEMEZ -> bu yuzden
+           sensor tipi "wideanglecamera" + equidistant lens.
+           PERFORMANS: bu ayar cok agirdir (kup haritasi 6 render gecisi
+           x 2048 px + 12.3 MP cikti). Sim gercek zamanli kalmazsa
+           once <env_texture_size> 2048 -> 1024, sonra <image> 2028x1520
+           yapin; FOV ve en-boy orani bozulmadan hafifler.
+           Yavas kalirsa asagidaki pinhole yedegine de donulebilir.
+           ============================================================ -->
+      <sensor name="camera" type="wideanglecamera">
         <gz_frame_id>turret_pitch_link</gz_frame_id>
         <!-- Namlu ucunu (~x=0.11) gececek sekilde biraz onde ki atis
-             mekanizmasi kadraja girmesin. -->
+             mekanizmasi kadraja girmesin. Gercekte de kamera taretin
+             uzerinde, namluyla ayni dogrultuda ve biraz yukarida. -->
         <pose>0.12 0 0.035 0 0 0</pose>
         <always_on>1</always_on>
         <update_rate>30</update_rate>
         <visualize>1</visualize>
         <topic>iris_cam/image</topic>
         <camera>
-          <horizontal_fov>2.18166</horizontal_fov>
+          <horizontal_fov>2.79253</horizontal_fov>
           <image>
-            <width>640</width>
-            <height>480</height>
+            <width>4056</width>
+            <height>3040</height>
             <format>R8G8B8</format>
           </image>
           <clip>
             <near>0.05</near>
             <far>1000</far>
           </clip>
+          <lens>
+            <type>equidistant</type>
+            <scale_to_hfov>true</scale_to_hfov>
+            <!-- 160 deg tam aci -> 80 deg yari aci = 1.39626 rad -->
+            <cutoff_angle>1.39626</cutoff_angle>
+            <env_texture_size>2048</env_texture_size>
+          </lens>
+          <!-- IMX477 gorsel gurultusu (ISO ~100-400 bandi) -->
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.007</stddev>
+          </noise>
         </camera>
       </sensor>
+
+      <!-- YEDEK (wideanglecamera agir gelirse bunu ac, ustunu kapat):
+      <sensor name="camera" type="camera">
+        <gz_frame_id>turret_pitch_link</gz_frame_id>
+        <pose>0.12 0 0.035 0 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>1</visualize>
+        <topic>iris_cam/image</topic>
+        <camera>
+          <horizontal_fov>2.09440</horizontal_fov>
+          <image><width>1280</width><height>960</height><format>R8G8B8</format></image>
+          <clip><near>0.05</near><far>1000</far></clip>
+        </camera>
+      </sensor>
+      DIKKAT: yedek sadece 120 deg verir, gercek 160 deg degildir. -->
     </link>
 
     <joint name="turret_pitch_joint" type="revolute">

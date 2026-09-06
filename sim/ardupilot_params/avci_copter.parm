@@ -24,3 +24,113 @@ PSC_VELXY_P 2.0
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
 FS_GCS_ENABLE 0
 FS_THR_ENABLE 0
+
+# =============================================================
+#  HAMIDIYE VAKKAS — GERCEK DONANIM ESLEMESI
+# =============================================================
+# Amac: simulasyondaki sensorler gercek donanimla ayni hata payi,
+# ayni frekans ve ayni gecikmeyle veri versin.
+# Donanim: Cube Orange+ (3x IMU, 2x baro) / Here4 GNSS / IMX477
+# Arac: 4.0 kg, toplam max itki 8.0 kg (T/W = 2.0)
+# ArduCopter 4.7.0-dev parametre adlandirmasina gore yazildi.
+
+# ---- Itki / hover ----
+# T/W = 2.0  ->  hover gazi ~ sqrt(1/2) = 0.707
+# Bu satir olmazsa ilk kalkista EKF hover gazini ogrenene kadar
+# arac zipralar. SDF'teki lift-drag area=0.00258 ile tutarli.
+MOT_THST_HOVER 0.70
+
+# ---- IMU: Cube Orange+ (3 adet, sensor fuzyonlu) ----
+# NOT: SITL'de beyaz gurultu SABIT kodlanmistir
+#      (accel 0.01 m/s^2, gyro 0.04 deg/s) — parametreyle degistirilemez.
+#      Bu degerler zaten iyi bir MEMS IMU'ya yakin, sorun degil.
+#      Asagidaki *_RND parametreleri MOTOR TITRESIMI genligidir
+#      (yalnizca gaz > SIM_INS_THR_MIN iken uygulanir).
+# Cube Orange+ karti titresim yalitimlidir -> orta seviye deger.
+# Uc IMU farkli cipler ve kart uzerinde farkli konumlarda:
+# bilerek birbirinden biraz farkli veriliyor (gercekte de oyle).
+SIM_ACC1_RND 0.50
+SIM_ACC2_RND 0.60
+SIM_ACC3_RND 0.40
+SIM_GYR1_RND 0.50
+SIM_GYR2_RND 0.60
+SIM_GYR3_RND 0.40
+SIM_INS_THR_MIN 0.1
+
+# Kalibrasyon sonrasi artik bias (gercekte hicbir zaman tam sifir olmaz)
+# ACC bias birimi m/s^2, GYR bias birimi rad/s
+SIM_ACC1_BIAS_X 0.03
+SIM_ACC1_BIAS_Y -0.02
+SIM_ACC1_BIAS_Z 0.04
+SIM_ACC2_BIAS_X -0.04
+SIM_ACC2_BIAS_Y 0.03
+SIM_ACC2_BIAS_Z -0.02
+SIM_ACC3_BIAS_X 0.02
+SIM_ACC3_BIAS_Y 0.04
+SIM_ACC3_BIAS_Z 0.03
+SIM_GYR1_BIAS_X 0.0005
+SIM_GYR1_BIAS_Y -0.0004
+SIM_GYR1_BIAS_Z 0.0006
+SIM_GYR2_BIAS_X -0.0006
+SIM_GYR2_BIAS_Y 0.0005
+SIM_GYR2_BIAS_Z -0.0004
+SIM_GYR3_BIAS_X 0.0004
+SIM_GYR3_BIAS_Y 0.0006
+SIM_GYR3_BIAS_Z 0.0005
+
+# Olcek faktoru hatasi (%0.1 mertebesi — iyi kalibre MEMS)
+SIM_ACC1_SCAL_X 1.001
+SIM_ACC1_SCAL_Y 0.999
+SIM_ACC1_SCAL_Z 1.002
+SIM_ACC2_SCAL_X 0.998
+SIM_ACC2_SCAL_Y 1.002
+SIM_ACC2_SCAL_Z 0.999
+
+# ---- Barometre: Cube Orange+ icinde 2 adet ----
+# MS5611 sinifi: ~0.1 m RMS gurultu, 10 cm cozunurluk
+SIM_BARO_RND 0.10
+SIM_BARO_DRIFT 0.0002
+SIM_BARO_DELAY 10
+SIM_BAR2_RND 0.12
+SIM_BAR2_DRIFT 0.0002
+SIM_BAR2_DELAY 10
+
+# ---- Pusula: Here4 (RM3100) ----
+SIM_MAG_RND 2.0
+SIM_MAG_DELAY 20
+SIM_MAG1_OFS_X 5
+SIM_MAG1_OFS_Y -4
+SIM_MAG1_OFS_Z 6
+
+# ---- GPS: Here4 / u-blox F9P — RTK YOK (saha gercegi) ----
+# Here4 DroneCAN uzerinden varsayilan 5 Hz yayin yapar.
+# Gecikme: DroneCAN + isleme ~200 ms.
+SIM_GPS1_TYPE 1
+SIM_GPS1_HZ 5
+SIM_GPS1_LAG_MS 200
+SIM_GPS1_NUMSATS 16
+# RTK'siz F9P PVT dogrulugu ~1.5 m CEP.
+# SIM_GPS1_ACC gercek konum hatasi EKLEMEZ; EKF'in GPS'e ne kadar
+# GUVENECEGINI belirler — guduma asil etki eden budur.
+SIM_GPS1_ACC 1.5
+# Irtifa hatasi genligi (m). Yatay eksende SITL beyaz gurultu
+# uretmez; bu bir SITL kisitidir, deger secimi degil.
+SIM_GPS1_NOISE 1.0
+SIM_GPS1_VERR_X 0.05
+SIM_GPS1_VERR_Y 0.05
+SIM_GPS1_VERR_Z 0.10
+
+# =============================================================
+#  UYARI — PID YENIDEN AYARI GEREKIR
+# =============================================================
+# base_link atalet degerleri yassi iris'ten (0.008/0.015/0.017)
+# yatay mermi govdesine (0.0273/0.2068/0.2289) cekildi.
+# Pitch ve yaw ataleti ~13 KAT artti. Varsayilan ATC PID'leri ile
+# arac ucar ama pitch/yaw'da tembel/salinimli olur.
+# Ilk ucustan sonra AUTOTUNE calistirin. Baslangic onerisi
+# (test edilmedi, denemek isterseniz acin):
+# ATC_RAT_PIT_P 0.25
+# ATC_RAT_PIT_I 0.25
+# ATC_RAT_PIT_D 0.010
+# ATC_RAT_YAW_P 0.30
+# ATC_ANG_PIT_P 5.0
