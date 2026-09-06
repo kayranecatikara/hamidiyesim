@@ -19,16 +19,14 @@ import math
 import subprocess
 import sys
 
-VARSAYILAN_MODEL = "avci_net_interceptor"
+VARSAYILAN_MODEL = "bullet_net_interceptor"
 YAW_LIMIT_DEG = 100.0
 TILT_MIN_DEG, TILT_MAX_DEG = -60.0, 30.0
 
 # Namlunun govde cercevesindeki konumu. Eklem limitleri iki govdede ayni,
 # ama namlu yeri farkli: --hedef ile nokta nisanlamasi bunu kullanir.
-#   avci_net_interceptor : yatay iris, taret BURUNDA   (20_build_interceptor.py)
-#   bullet_net_interceptor: dikey mermi, taret TEPEDE  (21_build_bullet_interceptor.py)
+#   bullet_net_interceptor: dikey mermi govde, taret TEPEDE
 NAMLU_KONUMU = {
-    "avci_net_interceptor": (0.27, 0.0, 0.245),
     "bullet_net_interceptor": (0.11, 0.0, 0.310),
 }
 

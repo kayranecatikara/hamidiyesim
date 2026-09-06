@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 
-VARSAYILAN_MODEL = "avci_net_interceptor"
+VARSAYILAN_MODEL = "bullet_net_interceptor"
 
 
 def blocks(txt: str):
@@ -44,7 +44,7 @@ def read_angles(world: str, model: str) -> dict[str, float]:
 
 
 def main() -> int:
-    world = sys.argv[1] if len(sys.argv) > 1 else "net_test"
+    world = sys.argv[1] if len(sys.argv) > 1 else "bullet_net_test"
     model = sys.argv[2] if len(sys.argv) > 2 else VARSAYILAN_MODEL
     try:
         angles = read_angles(world, model)

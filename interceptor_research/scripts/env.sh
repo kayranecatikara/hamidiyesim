@@ -12,14 +12,9 @@ _IR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export GZ_SIM_RESOURCE_PATH="\
 $_IR_ROOT/models/interceptors:\
-$_IR_ROOT/models/showcase:\
 $_IR_ROOT/models/net_launchers:\
 $_IR_ROOT/models/targets:\
-$_IR_ROOT/models/platforms:\
 $ARDUPILOT_GAZEBO_ROOT/models:\
-$_IR_ROOT/repos/mrs_uav_gazebo_simulator/models:\
-$_IR_ROOT/repos/d2dtracker_sim/models:\
-$_IR_ROOT/repos/iq_sim/models:\
 ${GZ_SIM_RESOURCE_PATH:-}"
 
 # ArduPilotPlugin + ParachutePlugin buradan geliyor;
@@ -30,5 +25,5 @@ $_IR_ROOT/plugins/build:\
 ${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
 
 export IR_ROOT="$_IR_ROOT"
-export IR_MODEL="avci_net_interceptor"
-export IR_WORLD="net_test"
+export IR_MODEL="bullet_net_interceptor"
+export IR_WORLD="bullet_net_test"

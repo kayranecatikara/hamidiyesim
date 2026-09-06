@@ -3,9 +3,8 @@
 `bullet_net_interceptor` — dikey mermi gövde, **tepesinde** 2 eksenli taret,
 namlu ileri bakar, ağ ileri atılır.
 
-Bu doküman **yalnızca bu drone'u** çalıştırmak içindir. Projenin geri kalanı
-(aday gövde kıyası, `repos/` altındaki 11 kaynak repo, showcase) **gerekmez** —
-`scripts/00_clone_all.sh` çalıştırmayın, 3 GB indirmenize gerek yok.
+Bu doküman **yalnızca bu drone'u** çalıştırmak içindir. Aday gövde kıyası,
+showcase ve skycat tarafı depodan çıkarıldı; ek bir indirme gerekmez.
 
 ---
 
@@ -51,13 +50,12 @@ source scripts/env.sh
 export ARDUPILOT_GAZEBO_ROOT=/yol/ardupilot_gazebo
 ```
 
-Model deposuda hazır geliyor; yeniden üretmek isterseniz:
-```bash
-python3 scripts/21_build_bullet_interceptor.py
-```
-Bu script `models/interceptors/cand_bullet/` (ham gövde, burnunda koni) alır,
-koniyi kaldırır, taret bloğunu enjekte eder ve
-`models/interceptors/bullet_net_interceptor/` üretir.
+Model depoda hazır geliyor: `models/interceptors/bullet_net_interceptor/`.
+
+> **Yeniden üretilemez.** Ham gövde (`cand_bullet`) ve üretici script
+> (`21_build_bullet_interceptor.py`) depo sadeleştirilirken çıkarıldı.
+> Değişiklik gerekirse `model.sdf` elle düzenlenir; ikisi de git geçmişinde
+> duruyor ve `git checkout <commit> -- <yol>` ile geri alınabilir.
 
 ---
 

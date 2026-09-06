@@ -58,7 +58,7 @@ def main() -> int:
     ap.add_argument("--kare", type=int, default=6, help="kac kare")
     ap.add_argument("--aralik", type=float, default=0.35, help="kareler arasi sn")
     ap.add_argument("--hiz", type=float, default=20.0, help="ag cikis hizi")
-    ap.add_argument("--model", default="avci_net_interceptor",
+    ap.add_argument("--model", default="bullet_net_interceptor",
                     help="ates topic'i bundan turetilir")
     ap.add_argument("--klasor", default=str(ROOT / "docs" / "goruntuler"))
     args = ap.parse_args()

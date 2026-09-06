@@ -90,7 +90,7 @@
         <muzzle_link>anchor_link</muzzle_link>
         <net_model>net_cone</net_model>
         <net_link>net_link</net_link>
-        <fire_topic>/avci_net_interceptor/net/fire</fire_topic>
+        <fire_topic>/bullet_net_interceptor/net/fire</fire_topic>
         <muzzle_speed>20.0</muzzle_speed>
         <launch_axis>1 0 0</launch_axis>
       </plugin>

@@ -1,3 +1,0 @@
-include edilen modeller: ['x500', 'RealSense_D435']
-d2dtracker deposunda BULUNMAYAN: ['x500']
--> bunlar PX4-Autopilot/Tools/simulation/gz'den gelir, depoda yok.

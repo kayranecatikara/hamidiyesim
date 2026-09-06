@@ -24,7 +24,7 @@ import time
 from gz.msgs10.double_pb2 import Double
 from gz.transport13 import Node
 
-VARSAYILAN_MODEL = "avci_net_interceptor"
+VARSAYILAN_MODEL = "bullet_net_interceptor"
 
 
 def main() -> int:

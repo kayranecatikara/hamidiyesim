@@ -41,7 +41,7 @@ class Tracker:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Ag yorunge izleyici")
-    ap.add_argument("--dunya", default="net_test")
+    ap.add_argument("--dunya", default="bullet_net_test")
     ap.add_argument("--model", default=NET_MODEL)
     ap.add_argument("--sure", type=float, default=6.0, help="izleme suresi (duvar saati, sn)")
     ap.add_argument("--csv", help="ornekleri CSV'ye yaz")
