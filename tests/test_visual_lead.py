@@ -19,6 +19,7 @@ from control.guidance.guidance_core import (
 from control.guidance.visual_lead import _cevap_anahtari, _vurus_oldu
 from control.guidance.common import normalize_angle as _norm
 from vision import geometry as geo
+from vision import geometry as _geo   # kadraj kenarları
 
 # Test CSV'leri GERÇEK uçuş loglarına karışmasın → tmp'ye yaz (2026-08-02)
 import tempfile as _tf
@@ -162,18 +163,36 @@ def main():
             f"pitch={r['pitch_hata_deg']:.2f}° yaw={r['yaw_hata_deg']:.2f}°")
 
     # ── T12: görüş zarfı (lead'i kapatarak saf yön dönüşümü test edilir) ──
+    # ⛔ 2026-09-06: bu test kadraj kenarlarını cy=0/480, cx=640 diye SABİT
+    #   yazıyordu ve beklenen açıları (+80.2 / −30.1 / +64.7) elle. Kamera
+    #   gerçek donanıma eşlenince (2028×1520, HFOV 128°) cx=640 artık SAĞ
+    #   KENAR değil, merkezin SOLU — test yanlış sebeple düştü.
+    #   Artık hem kenarlar hem beklenen açılar geo'dan TÜRETİLİYOR:
+    #       üst kenar   :  tilt + atan(CY/FY)
+    #       alt kenar   :  tilt − atan(CY/FY)
+    #       sağ kenar   :  atan(CX / (FX·cos(tilt)))
+    #   ⚠ Yatayda cos(tilt) BÖLENDE: yaw GÖVDE çerçevesinde ölçülür ve kamera
+    #     25° yukarı bakınca kadrajın yan kenarı gövdede daha geniş bir yaw'a
+    #     düşer. (Eski testteki 64.7° de tam bu düzeltmeyi içeriyordu:
+    #     atan(320/(166.58·cos25°)) = 64.74°, atan(320/166.58) = 62.50° değil.)
     cfg = cfg_copy(); cfg.K_LEAD = 0.0
+    _yari_v = math.degrees(math.atan(_geo.CY / _geo.FY))
+    _yari_h = math.degrees(math.atan(
+        _geo.CX / (_geo.FX * math.cos(math.radians(cfg.KAMERA_TILT_DEG)))))
+    _ust_bek = cfg.KAMERA_TILT_DEG + _yari_v
+    _alt_bek = cfg.KAMERA_TILT_DEG - _yari_v
     ust = tek_kare(cfg, make_pose(8, 90, cy=0), att=(0, 0, 0))
-    alt = tek_kare(cfg, make_pose(8, 90, cy=480), att=(0, 0, 0))
-    sag = tek_kare(cfg, make_pose(8, 90, cx=640), att=(0, 0, 0))
-    kontrol("T12 görüş zarfı üst kenar +80.2°",
-            abs(ust["pitch_hata_deg"] - 80.2) < 0.1, f"{ust['pitch_hata_deg']:.2f}°")
-    # Not: tam değer 25 − atan(240/166.6) = −30.24°; spec'teki −30.1 yuvarlama
-    # tutarsızlığı (üst kenarı 80.24→80.2 diye doğru vermiş) → tolerans 0.2.
-    kontrol("T12 görüş zarfı alt kenar -30.1°",
-            abs(alt["pitch_hata_deg"] + 30.1) < 0.2, f"{alt['pitch_hata_deg']:.2f}°")
-    kontrol("T12 görüş zarfı sağ kenar yaw +64.7°",
-            abs(sag["yaw_hata_deg"] - 64.7) < 0.1, f"{sag['yaw_hata_deg']:.2f}°")
+    alt = tek_kare(cfg, make_pose(8, 90, cy=_geo.IMG_H), att=(0, 0, 0))
+    sag = tek_kare(cfg, make_pose(8, 90, cx=_geo.IMG_W), att=(0, 0, 0))
+    kontrol("T12 görüş zarfı üst kenar %+.1f°" % _ust_bek,
+            abs(ust["pitch_hata_deg"] - _ust_bek) < 0.2,
+            f"{ust['pitch_hata_deg']:.2f}° (beklenen {_ust_bek:.2f}°)")
+    kontrol("T12 görüş zarfı alt kenar %+.1f°" % _alt_bek,
+            abs(alt["pitch_hata_deg"] - _alt_bek) < 0.2,
+            f"{alt['pitch_hata_deg']:.2f}° (beklenen {_alt_bek:.2f}°)")
+    kontrol("T12 görüş zarfı sağ kenar yaw %+.1f°" % _yari_h,
+            abs(sag["yaw_hata_deg"] - _yari_h) < 0.2,
+            f"{sag['yaw_hata_deg']:.2f}° (beklenen {_yari_h:.2f}°)")
 
     # ── T13: KAMERA_TILT_DEG=0 → merkez pitch_hata=0 (tilt kapsüllemesi) ──
     cfg = cfg_copy(); cfg.KAMERA_TILT_DEG = 0.0

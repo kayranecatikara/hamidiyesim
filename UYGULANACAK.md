@@ -16,6 +16,32 @@ edilemedi.
 > Başka bir makinede/dalda devam edeceksen önce **[DEVAM.md](DEVAM.md)**:
 > dal senkronu, sistem başlatma, ölçüm araçları, laptop'ta ayrıca gerekenler.
 
+---
+
+## ⭐ VAKKAS GEÇİŞİ — 2026-09-06 · **TAMAMLANDI, ÖLÇÜLDÜ**
+
+Sim aracı artık VAKKAS'ı temsil ediyor: **4.00 kg / 7.96 kgf ölçüldü
+(itki/ağırlık 1.99)**, üstünde 2 eksenli taret ve namluyla aynı doğrultuda
+IMX477 kamera. Eski sim aracının itki/ağırlığı **9.58** idi — yani zarf
+gerçek dışı bir araca göre açılmıştı ve baştan hesaplandı.
+
+**Tam rapor: [docs/VAKKAS_GECISI.md](docs/VAKKAS_GECISI.md)**
+
+Bu geçişten çıkan ve ÖNCEKİ kampanyaları da ilgilendiren iki bulgu:
+
+1. **EEPROM tuzağı** — `avci_copter.parm` eğim tavanı için 7000 diyordu,
+   araç 6000 uyguluyordu. `--add-param-file` yalnız VARSAYILANI değiştirir;
+   eeprom.bin'de kayıtlı değer kazanır ve dosya SESSİZCE yok sayılır.
+   Araç 2026-08-17'den beri 70° değil 60° ile uçmuş. Artık her başlatmada
+   `tools/param_dogrula.py --yaz` koşuyor.
+2. **Eski itki/ağırlık sayıları yanlıştı** — dosyada "6.4" ve "7.08"
+   yazıyordu, ölçülen 9.58.
+
+Ve bu oturumda kendi hipotezimden biri çürüdü: açısal PID kazançlarını
+itki/atalet oranıyla ×4.75 ölçeklemek aracı DÜŞÜRDÜ; ArduCopter fabrika
+değerleri (0.135) kusursuz uçurdu. Ayrıntı raporda §5.2.
+
+
 ## S — YATAY SALINIM · 40 UÇUŞ · 3 DALGA · 5 ADAY · **ÇÖZÜLMEDİ**
 
 **Tam rapor:** `docs/kampanya/S_SALINIM.md` (ölçütler her dalgada koşmadan

@@ -7,8 +7,9 @@ set_pose ile bilinen pozlardan Talon'un 2D bounding box'ını hesaplar:
   3. Kamera intrinsics + extrinsics ile 2D piksele projekte et
   4. Görünür köşelerin min/max'ı = 2D bbox
 
-Kamera (iris_with_standoffs/model.sdf): FOV 125°, 640×480; base_link'e göre pose
-(0.10, 0, 0.05), pitch −0.4363 rad (25° YUKARI). Gazebo/SDF ile birebir tutarlı.
+Kamera (2026-09-06'dan beri TARETTE — iris_cam/model.sdf turret_pitch_link):
+FOV 125°, 640×480. Artık gövdeye sabit DEĞİL; pan/tilt taretinin tilt linkinde
+duruyor ve namluyla aynı doğrultuya bakıyor. Gazebo/SDF ile birebir tutarlı.
 """
 
 import glob
@@ -17,14 +18,56 @@ import os
 
 import numpy as np
 
-# ══ Kamera parametreleri (SDF ile tutarlı) ══
-IMG_W, IMG_H = 640, 480
-HFOV_RAD = 2.18166                                # 125°
-FX = FY = (IMG_W / 2.0) / math.tan(HFOV_RAD / 2.0)  # ≈ 166.6
-CX, CY = IMG_W / 2.0, IMG_H / 2.0                 # 320, 240
+# ══ Kamera parametreleri — GERÇEK DONANIMLA EŞLEŞİR ══════════════════════
+# Waveshare IMX477-160 (ürün kodu 22232):
+#   sensör  Sony IMX477, 4056×3040 (12.3 MP), 7.857 × 5.895 mm (1/2.3")
+#   lens    balıkgöz, ilan edilen 160° KÖŞEGEN
+#
+# 160° köşegen → yatay: eş uzaklık (equidistant, r = f·θ) izdüşümünde açı
+# yarıçapla doğru orantılıdır, dolayısıyla FOV'lar sensör kenar oranlarıyla
+# ölçeklenir:  yatay = 160 × 7.857/9.823 = 128.0° ,  dikey = 96.0°
+# (Düz izdüşüm varsayılsaydı 155.1° çıkardı — yanlış model, 27° hata.)
+#
+# Çözünürlük 1352×1014 = sensörün tam 1/3'ü. İKİ ölçümle seçildi:
+#   render maliyeti  (tools/kamera_olcek_dene.py) → 3 MP'ye kadar bedava
+#   tespit maliyeti  (gcs_server.process_iris_frame) → 1014 ve 1352 AYNI
+#                     (28.6 ms), 2028 daha pahalı (32.9 ms)
+# Ve tespit modeli imgsz=1280 kullanıyor: 1352 o doyum noktasının hemen
+# üstü, yani ne bilgi uyduruluyor ne de boşa piksel ödeniyor.
+IMG_W, IMG_H = 1352, 1014
+HFOV_RAD = 2.23371                                # 128.0° yatay
+FX = FY = (IMG_W / 2.0) / math.tan(HFOV_RAD / 2.0)  # ≈ 329.7 px
+CX, CY = IMG_W / 2.0, IMG_H / 2.0                 # 676, 507
 
-CAM_OFFSET_POS = np.array([0.10, 0.0, 0.05])      # base_link'e göre kamera konumu
-CAM_TILT_RAD = -0.4363                            # kamera pitch (negatif = yukarı)
+# Güdümdeki piksel birimli sabitler bu referansa göre ölçeklenir. Değer,
+# sabitlerin ÖLÇÜLDÜĞÜ eski kameranın FX'idir (640×480 @ 125°).
+FX_OLCUM_REFERANSI = 166.58
+
+# ══ TARET GEOMETRİSİ (iris_cam/model.sdf ile BİREBİR tutulmalı) ══
+#
+# Kamera 2026-09-06'da gövdeden TARETE taşındı. Konumu artık taretin pan/tilt
+# açılarına bağlı. SDF'teki değerler:
+#   turret_pitch_link  <pose> 0 0 0.095      → pan ve tilt eksenlerinin kesişimi
+#   <sensor camera>    <pose> 0.12 0 0.035   → kamera, tilt linkine göre
+#   turret_pitch_joint <axis> 0 -1 0         → POZİTİF açı = namlu YUKARI
+#   turret_yaw_joint   <axis> 0 0 1          → POZİTİF açı = burun SOLA
+#
+# Pan ekseni Z'dir ve tilt linki tam Z ekseni üzerindedir (x=0,y=0); bu yüzden
+# pan dönmesi (0,0,0.095) noktasını YERİNDEN OYNATMAZ.
+TARET_EKSEN_MERKEZI = np.array([0.0, 0.0, 0.095])   # base_link'e göre
+KAMERA_TARET_OFSETI = np.array([0.12, 0.0, 0.035])  # tilt linkine göre
+
+# Taretin VARSAYILAN duruşu (SDF'teki <initial_position> ile aynı olmalı).
+# tilt = +25°: eski gövdeye-sabit kameranın baktığı yönün AYNISI — böylece
+# taret eklenmesi mevcut güdümü/tespiti değiştirmez.
+TARET_PAN_VARSAYILAN = 0.0        # rad
+TARET_TILT_VARSAYILAN = 0.4363    # rad = +25° yukarı
+
+
+# ⚠ kamera_ekstrinsik() ve ondan türeyen CAM_OFFSET_POS / CAM_TILT_RAD
+#   rotasyon matrislerine ihtiyaç duyduğu için AŞAĞIDA, rot_rpy'den
+#   hemen sonra tanımlıdır.
+
 
 _MESH_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -51,6 +94,58 @@ def _rot_x(a):
 def rot_rpy(roll, pitch, yaw):
     """Gazebo pose RPY (roll,pitch,yaw) → rotasyon matrisi: Rz(yaw)·Ry(pitch)·Rx(roll)."""
     return _rot_z(yaw) @ _rot_y(pitch) @ _rot_x(roll)
+
+
+def kamera_ekstrinsik(pan_rad=None, tilt_rad=None):
+    """Taret açılarından kamera (konum, rotasyon) — base_link çerçevesinde.
+
+    Taret hareket ettiğinde projeksiyonun doğru kalması için VARDIR. Taret
+    sürücüsü yazıldığında canlı açılar buraya verilir; verilmezse SDF'teki
+    varsayılan duruş kullanılır.
+
+    Dönüş:
+      pos (3,)  : kamera merkezinin base_link'e göre konumu, metre
+      R   (3,3) : kamera çerçevesinin base_link'e göre rotasyonu
+                  (kamera +X'i ileri bakar — namluyla aynı doğrultu)
+    """
+    pan = TARET_PAN_VARSAYILAN if pan_rad is None else float(pan_rad)
+    tilt = TARET_TILT_VARSAYILAN if tilt_rad is None else float(tilt_rad)
+    # tilt ekseni SDF'te (0,-1,0): +θ kadar −Y etrafında dönme
+    #   = −θ kadar +Y etrafında dönme  → _rot_y(-tilt)
+    R = _rot_z(pan) @ _rot_y(-tilt)
+    return TARET_EKSEN_MERKEZI + R @ KAMERA_TARET_OFSETI, R
+
+
+# ── NAMLU (ağ fırlatıcı çıkışı) ────────────────────────────────────────
+# Namlu da taretin tilt linkindedir ve KAMERAYLA AYNI DOĞRULTUYA bakar
+# (boresight). SDF'teki değerler (iris_cam/model.sdf):
+#   muzzle_link  <pose> 0.06 0 0.095   → model çerçevesinde namlunun MERKEZİ
+#   silindir uzunluğu 0.10 m           → uç, merkezden 0.05 m ileride
+# Tilt linkinin orijini (0,0,0.095) olduğu için namlu merkezi o çerçevede
+# (0.06, 0, 0), ucu (0.11, 0, 0).
+NAMLU_UC_OFSETI = np.array([0.11, 0.0, 0.0])      # tilt linkine göre, metre
+
+
+def namlu_ekstrinsik(pan_rad=None, tilt_rad=None):
+    """Namlu UCUNUN konumu ve ATIŞ DOĞRULTUSU — base_link çerçevesinde.
+
+    Kamerayla aynı rotasyonu paylaşır (boresight); yalnız orijin farklıdır.
+    Dönüş:
+      uc  (3,) : namlu ucunun base_link'e göre konumu, metre
+      yon (3,) : birim atış doğrultusu (taretin +X'i)
+    """
+    pan = TARET_PAN_VARSAYILAN if pan_rad is None else float(pan_rad)
+    tilt = TARET_TILT_VARSAYILAN if tilt_rad is None else float(tilt_rad)
+    R = _rot_z(pan) @ _rot_y(-tilt)
+    return TARET_EKSEN_MERKEZI + R @ NAMLU_UC_OFSETI, R @ np.array([1.0, 0.0, 0.0])
+
+
+# Geriye dönük uyumluluk: modül düzeyindeki sabitler, taret VARSAYILAN
+# duruşundaki değerlerdir. (Eski: konum (0.10, 0, 0.05) — gövdeye sabitken.
+#  Yeni: (0.094, 0, 0.177) — taret 12.7 cm daha yukarıda. Bakış YÖNÜ aynı.)
+CAM_OFFSET_POS = TARET_EKSEN_MERKEZI + (
+    _rot_y(-TARET_TILT_VARSAYILAN) @ KAMERA_TARET_OFSETI)
+CAM_TILT_RAD = -TARET_TILT_VARSAYILAN             # kamera pitch (negatif = yukarı)
 
 
 # ── Talon 3D kutu (collision STL'lerden) ──
@@ -239,15 +334,22 @@ def rot_gt_goruntu(hedef_pos, hedef_rpy, iris_pos, iris_rpy):
     return {"d_birim": d_birim, "yandanlik": min(1.0, yandanlik), "menzil": menzil}
 
 
-def camera_world_pose(iris_pos, iris_rpy):
+def camera_world_pose(iris_pos, iris_rpy, taret_pan=None, taret_tilt=None):
     """iris (drone) world poz + rpy'den kamera world (konum, rotasyon matrisi).
-    iris_rpy = (roll, pitch, yaw) radyan — drone gövde oryantasyonu.
-    Kamera 25° yukarı tilt'i drone gövde çerçevesinde uygulanır."""
+
+    iris_rpy   = (roll, pitch, yaw) radyan — drone GÖVDE oryantasyonu
+    taret_pan  = taret pan açısı (rad, sola +); None ise varsayılan duruş
+    taret_tilt = taret tilt açısı (rad, yukarı +); None ise varsayılan (25°)
+
+    Kamera taretin tilt linkinde olduğu için toplam rotasyon iki katmandır:
+        R_kamera_dünya = R_gövde · R_taret
+    """
     iris_pos = np.asarray(iris_pos, dtype=float)
     roll, pitch, yaw = iris_rpy
     R_iris = rot_rpy(roll, pitch, yaw)
-    cam_pos = iris_pos + R_iris @ CAM_OFFSET_POS
-    R_cam = R_iris @ _rot_y(CAM_TILT_RAD)     # kamera tilt drone frame'de
+    ofs, R_taret = kamera_ekstrinsik(taret_pan, taret_tilt)
+    cam_pos = iris_pos + R_iris @ ofs
+    R_cam = R_iris @ R_taret
     return cam_pos, R_cam
 
 

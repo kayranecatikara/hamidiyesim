@@ -37,15 +37,36 @@ def _env_f(name, default):
     return float(os.environ.get(name, default))
 
 
+
+# ══════════════════════════════════════════════════════════════════════════
+#  PİKSEL ÖLÇEĞİ — kamera değişince sabitler KENDİLİĞİNDEN uyarlansın diye
+# ══════════════════════════════════════════════════════════════════════════
+# Aşağıdaki bazı sabitlerin birimi PİKSEL'dir (px, px·m, (m/s)/px). Bunlar
+# uçuşlarda ÖLÇÜLDÜ — ama ölçüldükleri kamera 640×480 / 125° FOV idi
+# (FX = 166.58 px). 2026-09-06'da kamera gerçek donanıma eşlendi:
+# Waveshare IMX477-160, 2028×1520 / 128° → FX = 494.76 px.
+#
+# Aynı fiziksel durum artık 2.97 KAT daha büyük piksel sayısı üretiyor.
+# Sabitler elle güncellenirse bir dahaki kamera değişiminde yine kayar
+# (CLAUDE.md §5.12: arkada kalan şey sistemi bozar). Bu yüzden ölçüm
+# DEĞERİ ile ölçüldüğü KAMERA yan yana yazılıyor ve ölçek türetiliyor.
+#
+#   px ve px·m birimliler   → × _PX_OLCEK   (piksel sayısı büyüdü)
+#   (m/s)/px birimliler     → ÷ _PX_OLCEK   (aynı hız için daha çok piksel)
+_PX_OLCEK = geo.FX / geo.FX_OLCUM_REFERANSI
+
 class Cfg:
     """IBVS lead pursuit ayarları. Kritikler AVCI_IBVS_* env ile override edilir."""
     # ── çekirdek ──
     K_LEAD = _env_f("AVCI_IBVS_K_LEAD", 0.5)      # ≈ hedef_hızı/bizim_hız, tarama 0.0-1.0
     MAX_LEAD_DEG = 35.0
-    OLCEK_KAPALI_PX = 6.0    # olcek_px = fx·0.81/R = 134.9/R → 6 px ≈ R 22.5 m (lead yok)
-    OLCEK_TAM_PX = 14.0      #                                → 14 px ≈ R 9.6 m (tam lead)
+    # ⚠ 6.0 / 14.0 px → 640×480 @125° kamerada ölçüldü (o kamerada
+    #   olcek_px = fx·0.81/R = 134.9/R → 6 px ≈ R 22.5 m, 14 px ≈ R 9.6 m).
+    #   Ölçekle büyürler; MENZİL karşılıkları AYNI kalır. Şu an: 17.8 / 41.6 px
+    OLCEK_KAPALI_PX = 6.0 * _PX_OLCEK    # lead yok eşiği
+    OLCEK_TAM_PX = 14.0 * _PX_OLCEK      # tam lead eşiği
     FILTRE_TAU_S = 0.12      # 30 Hz'te ~3.6 kare; pencere dar, uzun tutma
-    MIN_GOVDE_PX = 2.0
+    MIN_GOVDE_PX = 2.0 * _PX_OLCEK   # px; gövde ekseni bu kadar kısaysa yön güvenilmez
     FLIP_DT_TAVAN_S = 0.20   # 30 Hz'te 6 kare
     GECIKME_TAVAN_S = 0.12   # bundan bayat kare atlanır (döngü kullanır)
     YUKSELTI_DUZELT = True   # Adım 3: LOS yükselti düzeltmesi (alttan yaklaşma)

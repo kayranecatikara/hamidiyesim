@@ -1292,3 +1292,71 @@ body {
 .ayar-kopyala-btn { font-size: 10.5px; padding: 4px 8px; color: #93c5fd; }
 .ayar-secim { display: flex; gap: 5px; flex-wrap: wrap; }
 .ayar-secim .ayar-bool { min-width: 66px; }
+
+/* ════════════════════════════════════════════════════════════════════
+   TARET (turret) PANELİ — 2026-09-06, VAKKAS
+   Namlu + IMX477 kamera aynı doğrultuda; joystick ikisini birden çevirir.
+   ════════════════════════════════════════════════════════════════════ */
+.taret-panel { border: 1px solid var(--border-hightlight); border-radius: 4px;
+               padding: 8px; background: var(--bg-main); }
+.taret-ust   { display: flex; gap: 10px; align-items: flex-start; }
+
+/* Kare pad: yatay = pan, dikey = tilt. Daire DEĞİL, çünkü iki eksenin
+   sınırları farklı (pan ±180°, tilt −30…+90°) ve kare bunu dürüst gösterir. */
+.taret-pad {
+    position: relative; width: 118px; height: 118px; flex: 0 0 auto;
+    background: repeating-linear-gradient(0deg, transparent 0 14px,
+        rgba(255,255,255,.05) 14px 15px),
+        repeating-linear-gradient(90deg, transparent 0 14px,
+        rgba(255,255,255,.05) 14px 15px), var(--bg-panel);
+    border: 2px solid var(--border-hightlight); border-radius: 4px;
+    cursor: crosshair; touch-action: none; user-select: none;
+}
+.taret-hac-x, .taret-hac-y { position: absolute; background: rgba(255,255,255,.18); }
+.taret-hac-x { left: 0; right: 0; top: 50%; height: 1px; }
+/* tilt 0° çizgisi: −30…+90 aralığında 0, üstten %75'te */
+.taret-hac-y { top: 0; bottom: 0; left: 50%; width: 1px; }
+.taret-knob {
+    position: absolute; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent-orange, #ff8c00); border: 2px solid #fff;
+    left: 50%; top: 25%; transform: translate(-50%, -50%);
+    box-shadow: 0 0 8px rgba(255,140,0,.8); pointer-events: none;
+}
+.taret-etiket { position: absolute; font-size: 8px; opacity: .55;
+                letter-spacing: .5px; }
+.t-ust { top: 2px;  left: 50%; transform: translateX(-50%); }
+.t-alt { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.t-sol { left: 3px;  top: 50%; transform: translateY(-50%); }
+.t-sag { right: 3px; top: 50%; transform: translateY(-50%); }
+
+.taret-okuma { flex: 1 1 auto; min-width: 0; font-size: 11px; }
+/* ⚠ Okuma satırları: ETİKET ÜSTTE, DEĞER ALTTA.
+   İlk deneme etiket|değer yan yanaydı; "−142.5° / 68.3°" gibi tam sınır
+   değerleri sağdan kırpılıp "…" oluyordu (ölçüldü, ekran görüntüsüyle).
+   Alt alta dizince değere sütunun TAMAMI kalıyor ve hiçbir açı kırpılmıyor. */
+.taret-okuma .d-row { display: flex; flex-direction: column;
+                      align-items: flex-start; gap: 0; white-space: nowrap;
+                      line-height: 1.25; margin-bottom: 3px; }
+/* ⚠ Ölçüldü: sol panel içeriği ~276 px. Pad 118 + boşluk 10 → okumaya 148 px
+   kalıyor. "−30.0° / 55.0°" 10 px monospace'te ~84 px; etiket 44 px. Sığar.
+   Daha büyük yazıda değerler SAĞDAN KIRPILIYORDU. */
+.taret-okuma .d-row > span:first-child { opacity: .55; font-size: 9px;
+                                         letter-spacing: .5px; }
+.taret-okuma .val { font-family: 'Roboto Mono', monospace; font-size: 11px;
+                    text-align: left; }
+#btn-ag-ates { white-space: nowrap; flex: 0 0 auto; padding: 6px 10px;
+               font-size: 11px; }
+.taret-hizli { display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
+               margin-top: 6px; }
+.taret-hizli .t-btn { font-size: 9px; padding: 3px 1px; }
+
+.taret-ates-satir { display: flex; gap: 8px; align-items: center;
+                    margin-top: 8px; }
+.taret-hiz-etiket { font-size: 10px; display: flex; align-items: center;
+                    gap: 4px; flex: 1 1 auto; }
+.taret-hiz-etiket input[type=range] { flex: 1 1 auto; min-width: 60px; }
+.taret-ag-sonuc { margin-top: 6px; font-size: 11px; font-family: 'Roboto Mono', monospace;
+                  padding: 4px 6px; border-radius: 3px;
+                  background: rgba(255,255,255,.05); }
+.taret-ag-sonuc.vurus { background: rgba(0,200,80,.25); color: #7CFFB0; }
+.taret-ag-sonuc.iska  { background: rgba(220,60,60,.22); color: #FF9C9C; }

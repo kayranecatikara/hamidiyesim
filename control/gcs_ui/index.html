@@ -146,7 +146,55 @@
 
                 <!-- Avcı Drone Kontrol Paneli -->
                 <div id="hunter-controls" class="control-section">
-                    <h3 class="section-title">TAKİP MODU</h3>
+
+                    <!-- ══════════════ TARET + AĞ FIRLATICI ══════════════
+                         Taretin namlusu ve IMX477 kamerası AYNI doğrultuya
+                         bakar (boresight). Joystick pan/tilt açısı komut eder;
+                         "gerçek" satırı Gazebo'dan geri okunur — komut ile
+                         gerçekleşen yan yana durur (mekanizma kapısı). -->
+                    <h3 class="section-title">🔭 TARET (namlu + kamera)</h3>
+                    <div class="taret-panel">
+                        <div class="taret-ust">
+                            <div id="taret-pad" class="taret-pad">
+                                <div class="taret-hac-y"></div>
+                                <div class="taret-hac-x"></div>
+                                <div id="taret-knob" class="taret-knob"></div>
+                                <span class="taret-etiket t-ust">TILT +90°</span>
+                                <span class="taret-etiket t-alt">−30°</span>
+                                <span class="taret-etiket t-sol">PAN −180°</span>
+                                <span class="taret-etiket t-sag">+180°</span>
+                            </div>
+                            <div class="taret-okuma">
+                                <div class="d-row"><span>KOMUT:</span>
+                                    <span class="val"><span id="taret-kpan">0.0</span>° /
+                                        <span id="taret-ktilt">25.0</span>°</span></div>
+                                <div class="d-row"><span>GERÇEK:</span>
+                                    <span class="val"><span id="taret-gpan">--</span>° /
+                                        <span id="taret-gtilt">--</span>°</span></div>
+                                <div class="d-row"><span>HATA:</span>
+                                    <span id="taret-hata" class="val">--</span></div>
+                                <div class="taret-hizli">
+                                    <button class="t-btn taret-on" data-pan="0" data-tilt="25">İLERİ 25°</button>
+                                    <button class="t-btn taret-on" data-pan="0" data-tilt="0">DÜZ</button>
+                                    <button class="t-btn taret-on" data-pan="0" data-tilt="90">TAM ÜST</button>
+                                    <button class="t-btn taret-on" data-pan="-90" data-tilt="0">SOL 90</button>
+                                    <button class="t-btn taret-on" data-pan="90" data-tilt="0">SAĞ 90</button>
+                                    <button class="t-btn taret-on" data-pan="0" data-tilt="-30">ALT −30</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="taret-ates-satir">
+                            <button id="btn-ag-ates" class="t-btn btn-danger">🕸 AĞ AT</button>
+                            <label class="taret-hiz-etiket">NAMLU HIZI
+                                <input type="range" id="ag-hiz" min="8" max="35"
+                                       step="1" value="20">
+                                <span id="ag-hiz-deger">20</span> m/s
+                            </label>
+                        </div>
+                        <div id="ag-sonuc" class="taret-ag-sonuc">ağ hazır</div>
+                    </div>
+
+                    <h3 class="section-title mt-2">TAKİP MODU</h3>
                     <div class="btn-grid">
                         <button id="btn-chase" class="t-btn btn-success block-btn">🚀 GÖREVİ BAŞLAT</button>
                     </div>
@@ -365,6 +413,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=11"></script>
+    <script src="script.js?v=15"></script>
 </body>
 </html>

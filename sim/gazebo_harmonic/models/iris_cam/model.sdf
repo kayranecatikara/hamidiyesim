@@ -632,7 +632,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -649,7 +649,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -667,7 +667,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -684,7 +684,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -702,7 +702,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -719,7 +719,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -737,7 +737,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>0.084 0 0</cp>
       <forward>0 -1 0</forward>
@@ -754,7 +754,7 @@
       <cla_stall>-0.025</cla_stall>
       <cda_stall>0.0</cda_stall>
       <cma_stall>0.0</cma_stall>
-      <area>0.005</area>
+      <area>0.002477</area>
       <air_density>1.2041</air_density>
       <cp>-0.084 0 0</cp>
       <forward>0 1 0</forward>
@@ -877,6 +877,380 @@
         <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
       </control>
 
+    </plugin>
+
+    <!-- ================================================================== -->
+    <!--  VAKKAS TARETİ — 2 eksenli (pan + tilt) + namlu + IMX477 kamera     -->
+    <!--  2026-09-06. Taret geometrisi `vakkas-entegre` dalındaki 2fefa04    -->
+    <!--  commit'inden devşirildi; eksen sınırları ve kamera VAKKAS'a göre   -->
+    <!--  yeniden düzenlendi.                                                -->
+    <!-- ================================================================== -->
+    <!--
+      NEDEN TARET:
+        Gövdeye sabit kamerada nişan almak için TÜM ARACI döndürmek gerekir;
+        bu, güdümün uçuş yolunu nişan alma yüzünden bozmasına yol açar
+        (2026-09-02 kazasında yaşandı: yaw + roll aynı anda doydu).
+        Taret nişanı uçuştan AYIRIR: gövde uçar, taret nişan alır.
+
+      KÜTLE BÜTÇESİ (toplam 0.35 kg — iris_with_standoffs'taki 3.40 kg ile
+      birlikte araç toplamı tam 4.00 kg eder; bkz. tools/sdf_kutle.py):
+        turret_base_link  0.10   gövdeye sabit kaide + pan motoru
+        turret_yaw_link   0.08   dönen tabla
+        turret_pitch_link 0.10   tilt beşiği + IMX477 kamera
+        muzzle_link       0.07   namlu (ağ fırlatma çıkışı)
+    -->
+
+    <!-- ── Kaide: gövdeye SABİT. Aracın yatay merkezinde (x=0,y=0), üstte. ── -->
+    <link name="turret_base_link">
+      <pose>0.0 0.0 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>4e-5</iyy><iyz>0</iyz>
+          <izz>4e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_base_collision">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_base_visual">
+        <geometry><box><size>0.05 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.15 0.15 0.18 1</ambient>
+          <diffuse>0.15 0.15 0.18 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_mount_joint" type="fixed">
+      <parent>iris_with_standoffs::base_link</parent>
+      <child>turret_base_link</child>
+    </joint>
+
+    <!-- ── 1. EKSEN: PAN (sağa-sola) ────────────────────────────────────────
+         Dönme ekseni Z (yukarı). 0 = burun yönü (gövde +X).
+         SINIR ±180°: eski sürümde 0..360° idi; o hâlde taret 0 çizgisini
+         GEÇEMEZ (359°'den 1°'ye gitmek için 358° geri dönmesi gerekir).
+         ±180° ile sıfır ileriye denk gelir ve iki yöne simetrik döner.
+         ⚠ ±180 sınırında hâlâ bir "sarma" sorunu vardır; taret sürücüsü
+           yazılırken en kısa yol hesabı (açı farkını ±180'e katlama) ŞART. -->
+    <link name="turret_yaw_link">
+      <pose>0.0 0.0 0.08 0 0 0</pose>
+      <inertial>
+        <mass>0.08</mass>
+        <inertia>
+          <ixx>3e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>3e-5</iyy><iyz>0</iyz>
+          <izz>3e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_yaw_collision">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+      </collision>
+      <visual name="turret_yaw_visual">
+        <geometry><cylinder><radius>0.025</radius><length>0.025</length></cylinder></geometry>
+        <material>
+          <ambient>0.25 0.25 0.28 1</ambient>
+          <diffuse>0.25 0.25 0.28 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="turret_yaw_joint" type="revolute">
+      <parent>turret_base_link</parent>
+      <child>turret_yaw_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-3.14159</lower>   <!-- -180° -->
+          <upper>3.14159</upper>    <!-- +180° -->
+          <effort>25.0</effort>     <!-- N·m; servo tork tavanı -->
+          <velocity>6.0</velocity>  <!-- rad/s = 344 °/s; fırçasız gimbal hızı -->
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- ── 2. EKSEN: TILT (yukarı-aşağı) ────────────────────────────────────
+         Eksen `0 -1 0`: POZİTİF açı namluyu YUKARI kaldırır.
+           (Sağ-el kuralı: X ileri, Y sol, Z yukarı. +Y etrafında pozitif
+            dönme +X'i −Z'ye götürür = burun aşağı. Bu yüzden eksen −Y
+            seçildi, böylece pozitif = yukarı.)
+         SINIR −30° .. +90°:
+           −30° : gerçek gimballerin tipik alt sınırı; arama sırasında
+                  aşağı bakabilmek için (CLAUDE.md'de gerçek kameranın
+                  −30° alt sınırı kayıtlı).
+           +90° : tam dik yukarı. Daha geriye bakmak gerekirse PAN 180°
+                  döner — tilt'i 90°'nin ötesine taşımak gereksiz.
+         ⚠ ESKİ SÜRÜMDEN FARK: 2fefa04'te 0..180° idi (aşağı HİÇ bakamıyordu). -->
+    <link name="turret_pitch_link">
+      <pose>0.0 0.0 0.095 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>4e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>6e-5</iyy><iyz>0</iyz>
+          <izz>6e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="turret_pitch_collision">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+      </collision>
+      <visual name="turret_pitch_visual">
+        <geometry><box><size>0.04 0.05 0.03</size></box></geometry>
+        <material>
+          <ambient>0.35 0.35 0.38 1</ambient>
+          <diffuse>0.35 0.35 0.38 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ══════════ IMX477 — NAMLUYLA AYNI DOĞRULTUDA (boresight) ══════════
+        Kamera taretin TILT linkinde durur. Namlu da bu linkte. İkisinin
+        optik/atış ekseni de link'in +X'idir → taret nereye nişan alırsa
+        kamera oraya bakar. Aradaki tek fark 3.5 cm dikey ofsettir (kamera
+        namlunun ÜSTÜNDE); 100 m'de 0.02°'lik paralaks yapar — ihmal edilir.
+
+        ── GERÇEK DONANIM: Waveshare IMX477-160 (ürün kodu 22232) ────────
+          sensör          Sony IMX477, 4056 × 3040 px (12.3 MP), en-boy 4:3
+          sensör boyutu   7.857 × 5.895 mm (1/2.3"), köşegen 9.823 mm
+          piksel adımı    1.55 µm
+          lens            balıkgöz, ilan edilen **160° (KÖŞEGEN)**
+
+        ── 160° KÖŞEGEN'DEN YATAY FOV NASIL ÇIKAR ────────────────────────
+        Lensin "izdüşüm modeli" (projection), gelen ışının açısını sensör
+        üzerindeki yarıçapa nasıl çevirdiğinin kuralıdır:
+          · düz izdüşüm (pinhole/rectilinear):  r = f·tan θ
+          · eş uzaklık   (equidistant fisheye): r = f·θ
+        160°'lik bir lens ZORUNLU OLARAK balıkgözdür: düz izdüşümde kenar
+        büyütmesi 180°'de sonsuza gider, öyle bir lens yapılamaz.
+
+        Eş uzaklıkta açı yarıçapla DOĞRU ORANTILI olduğu için FOV'lar
+        sensör kenar oranlarıyla ölçeklenir:
+            köşegen 9.823 mm → 160.0°   (ilan edilen)
+            yatay   7.857 mm → 160 × 7.857/9.823 = 128.0°   ← KULLANILAN
+            dikey   5.895 mm → 160 × 5.895/9.823 =  96.0°
+        (Yanlışlıkla düz izdüşüm varsayılsaydı 155.1° çıkardı — 27° hata.)
+
+        ⚠ Buradaki <camera>, Gazebo'nun DÜZ İZDÜŞÜMLÜ kamerasıdır; aynı yatay
+          açıyı kapsar ama balıkgözün kenar bozulmasını üretmez. Güdüm zaten
+          düz izdüşüm modeli (FX) varsayıyor ve gerçek boru hattında da
+          balıkgöz düzeltmesi (undistort) planlanıyor — yani düz izdüşüm,
+          İŞLENMİŞ görüntünün doğru modelidir.
+          Gerçek balıkgöz gerekirse Gazebo destekliyor:
+            <sensor type="wideanglecamera"> + <lens><type>equidistant</type>
+          ama o zaman R = FX·S/p formülü GEÇERSİZ olur (r = f·θ'ya geçer).
+
+        ── ÇÖZÜNÜRLÜK: 1352 × 1014 — ÖLÇÜLEREK seçildi ───────────────────
+        Sensör 4056 × 3040; bu onun tam 1/3'ü (her iki eksende).
+
+        İKİ AYRI ÖLÇÜM GEREKTİ, çünkü iki ayrı darboğaz var:
+
+        1) GAZEBO RENDER  (tools/kamera_olcek_dene.py, gz + 2 SITL):
+              640 × 480    23.4 kare/s   RTF 0.878
+             1280 × 960    23.7 kare/s   RTF 0.851
+             2028 × 1520   23.5 kare/s   RTF 0.830
+             4056 × 3040   15.0 kare/s   RTF 0.474  ⛔ yığın çöküyor
+           → 3 MP'ye kadar render bedava; 12.3 MP çökertiyor.
+
+        2) TESPİT BORU HATTI  (gcs_server.process_iris_frame, yalıtılmış):
+              640 × 480    15.5 ms/kare   tavan 64.6 k/s
+             1014 ×  760   28.6 ms/kare   tavan 35.0 k/s
+             1352 × 1014   28.6 ms/kare   tavan 35.0 k/s   ← SEÇİLDİ
+             2028 × 1520   32.9 ms/kare   tavan 30.4 k/s
+           → 1014 ile 1352 AYNI maliyette. Yani 1352, bedavaya daha çok bilgi.
+
+        NİYE 1352 EN İYİSİ — tespit modelinin girdi boyutu:
+          vision/detector.py ağırlık dosyasından imgsz = 1280 okuyor ve HER
+          kareyi o boyuta ölçekliyor. Bu yüzden YOLO'nun maliyeti kaynak
+          çözünürlükten BAĞIMSIZ (ölçüldü: her boyutta 10.5 ms).
+            · 1014 verilirse 1280'e BÜYÜTÜLÜR → olmayan bilgi uydurulur
+            · 1352 verilirse 1280'e küçültülür (1.06×) → bilgi neredeyse tam
+            · 2028 verilirse 1280'e küçültülür (1.58×) → fazlası ATILIR,
+              ama GPU render ve JPEG maliyeti ödenir
+          Yani tespit kalitesi 1280 kaynak genişliğinde DOYUYOR; 1352 o
+          doyum noktasının hemen üstü.
+
+        ⚠ CANLI SİSTEMDE TAVANA ULAŞILMIYOR: gz + 2 SITL + YOLO aynı GPU'yu
+          paylaşıyor. AYNI KOD, AYNI KOŞULLARDA ölçülen canlı tespit hızı:
+              640 × 480    9.2 tespit/s
+             1014 ×  760   6.9 tespit/s
+             1352 × 1014   6.7 tespit/s
+          Yani çözünürlük artışının bedeli %27; 1014 ile 1352 arasında fark
+          YOK. Sınır bu makinenin toplam yükü, çözünürlük değil.
+          ⚠ Eskiden "640×480'de 18-23 tespit/s" diye bir kıyas yapılmıştı;
+            o sayı BAŞKA bir oturumun logundan geliyordu ve aynı koşul
+            değildi — elmayla elma kıyası yukarıdaki tablodur.
+          Tespit hızı kritikse: takipçiyi kapat (AVCI_TRACKER=off), önizlemeyi
+          küçült (AVCI_ONIZLEME_EN) ya da bu satırı 640×480'e indir.
+
+        Açısal çözünürlük: 128°/1352 = 0.0947 °/px
+          (640×480 döneminde 0.195 °/px idi → 2.1 kat daha ince)
+          gerçek IMX477 tam çözünürlükte 0.0316 °/px
+
+        gz-transport topic'i AYNI: iris_cam/image
+        (control/gcs_server.py:2005 bu adı okur — değiştirilirse görüntü kesilir)
+      -->
+      <sensor name="camera" type="camera">
+        <gz_frame_id>turret_pitch_link</gz_frame_id>
+        <!-- x=0.12: namlu ucunu (x=0.11) geçer, namlu kadraja girmez.
+             z=0.035: namlunun üstünde. Dönme YOK → namluyla aynı doğrultu. -->
+        <pose>0.12 0 0.035 0 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>1</visualize>
+        <topic>iris_cam/image</topic>
+        <camera>
+          <horizontal_fov>2.23371</horizontal_fov>   <!-- 128.0° yatay (160° köşegen) -->
+          <image>
+            <width>1352</width>
+            <height>1014</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>1000</far>
+          </clip>
+        </camera>
+      </sensor>
+    </link>
+
+    <joint name="turret_pitch_joint" type="revolute">
+      <parent>turret_yaw_link</parent>
+      <child>turret_pitch_link</child>
+      <axis>
+        <xyz>0 -1 0</xyz>
+        <limit>
+          <lower>-0.5236</lower>    <!-- -30° : aşağı bakış sınırı -->
+          <upper>1.5708</upper>     <!-- +90° : tam dik yukarı -->
+          <effort>25.0</effort>
+          <velocity>6.0</velocity>
+        </limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- ── NAMLU: ağın çıkış noktası. Ekseni gövde +X'i (kamera ile aynı).
+         pitch=90° ile silindirin kendi +Z'si gövde +X'ine döndürülür. ── -->
+    <link name="muzzle_link">
+      <pose degrees="true">0.06 0.0 0.095 0 90 0</pose>
+      <inertial>
+        <mass>0.07</mass>
+        <inertia>
+          <ixx>2e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>2e-5</iyy><iyz>0</iyz>
+          <izz>1e-5</izz>
+        </inertia>
+      </inertial>
+      <collision name="muzzle_collision">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+      </collision>
+      <visual name="muzzle_visual">
+        <geometry><cylinder><radius>0.028</radius><length>0.10</length></cylinder></geometry>
+        <material>
+          <ambient>0.7 0.25 0.05 1</ambient>
+          <diffuse>0.7 0.25 0.05 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="muzzle_joint" type="fixed">
+      <parent>turret_pitch_link</parent>
+      <child>muzzle_link</child>
+    </joint>
+
+    <!-- ══════════════════ TARET AÇI DENETLEYİCİLERİ ══════════════════
+      JointPositionController: eklem için bir AÇI HEDEFİ alır ve PID ile
+      oraya sürer. Hedef gz-transport üzerinden verilir:
+
+        # pan  (rad, sola +):
+        gz topic -t /model/iris_with_ardupilot/joint/turret_yaw_joint/0/cmd_pos \
+                 -m gz.msgs.Double -p 'data: 0.5'
+        # tilt (rad, yukarı +):
+        gz topic -t /model/iris_with_ardupilot/joint/turret_pitch_joint/0/cmd_pos \
+                 -m gz.msgs.Double -p 'data: 0.4363'
+
+      ⚠ <initial_position> 0.4363 rad (=25°): TARETİN VARSAYILAN DURUŞU
+        25° YUKARI. Böylece hiçbir taret komutu verilmezken kamera, ESKİ
+        gövdeye sabit kameranın baktığı yere (25° yukarı tilt) bakar ve
+        mevcut güdüm/tespit davranışı DEĞİŞMEZ. Taret bir ÜST KÜME'dir:
+        eskisinin yapabildiği her şeyi yapar, üstüne dönebilir.
+        (CLAUDE.md §5.10 — yeni yetenek eklerken eskisini bozma.)
+    -->
+    <!-- ⛔⛔ KAZANÇLAR ÖLÇÜLEREK BOYUTLANDIRILDI — RASTGELE BÜYÜTMEYİN
+      2026-09-06'da devşirilen ilk hâlde (2fefa04) kazançlar
+      p=30 / i=25 / d=1.5 / i_max=15 / cmd_max=20 idi. ÖLÇÜLDÜ: bu değerlerle
+      tilt eklemi hedefe oturmuyor, hedefin ETRAFINDA hız sınırında (±6 rad/s)
+      gidip geliyordu — LİMİT ÇEVRİMİ. Bu titreşim gövdeye geçti, ivmeölçerler
+      0.5-0.8 g tepe-tepe salladı ve ArduPilot 'PreArm: Accels inconsistent'
+      diyerek ARM ETMEDİ. Yani araç HİÇ KALKAMIYORDU.
+
+      NİYE: eklemin ataleti çok küçük (3.3e-4 kg·m²). i_max=15 N·m demek
+      45181 rad/s² açısal ivme demek; 1 ms'lik fizik adımında 45 rad/s hız
+      değişimi. Eklem hız sınırı 6 rad/s — her adımda tavana çarpıyor.
+
+      ── DOĞRU BOYUTLANDIRMA (ikinci derece sistem) ──
+      Kapalı çevrim denklemi:   I·θ̈ + (b + Kd)·θ̇ + Kp·θ = Kp·θ_hedef
+        I  : eklemin gördüğü toplam atalet (kg·m²)
+        b  : eklemin kendi sönümü (<damping> = 0.02)
+        Kp : oransal kazanç — 'hatanın kaç katı tork uygulayayım' (N·m/rad)
+        Kd : türev kazancı — hız ile orantılı fren (N·m·s/rad)
+        Ki : integral kazancı — kalıcı hatayı sıfırlar (N·m/(rad·s))
+
+      Buradan iki tasarım büyüklüğü çıkar:
+        doğal frekans  ω_n = √(Kp/I)      — sistem ne kadar hızlı tepki verir
+        sönüm oranı    ζ  = (b+Kd)/(2√(Kp·I))  — ζ<1 aşımlı, ζ=1 kritik, ζ>1 ağır
+
+      ATALETLER (paralel eksen teoremi: I = I_kendi + m·d²):
+        TILT: 6.0e-5 (tilt linki) + 0.07·0.06² = 2.5e-4 (namlu, eksenden
+              6 cm ileride) + 2.0e-5 (namlunun kendisi) = 3.32e-4 kg·m²
+        PAN : 3.62e-4 kg·m²
+
+      SEÇİM: ω_n = 40 rad/s (6.4 Hz), ζ = 0.9 (hafif aşımlı, hızlı oturur)
+        Kp = I·ω_n²        = 3.3e-4 · 1600 = 0.53  → 0.5
+        Kd = 2ζ√(Kp·I) − b = 0.004
+        yerleşme süresi ≈ 4/(ζ·ω_n) = 0.11 s
+      Ki, yalnız YERÇEKİMİ torkunu yenmek için: namlu 0.07 kg, kol 6 cm
+        → τ_g = 0.07·9.81·0.06 = 0.041 N·m. i_max bunun ~2 katı seçildi
+        (0.08); DAHA BÜYÜĞÜ windup aşımı üretiyor — aşağıda ölçüldü.
+      cmd_max 1.0 N·m: gerçek bir fırçasız gimbal motorunun mertebesi; yine de
+        3012 rad/s² verir, 6 rad/s'lik hız sınırına 2 ms'de ulaşır.
+    -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>turret_yaw_joint</joint_name>
+      <initial_position>0.0</initial_position>
+      <p_gain>0.5</p_gain>
+      <i_gain>0.2</i_gain>
+      <d_gain>0.004</d_gain>
+      <!-- ⚠ i_max KÜÇÜK OLMALI — ÖLÇÜLDÜ: 0.1 N·m ile 90°'lik komutta 5.97°
+           aşım oldu. Sebep integral doyması (windup): eklem 6 rad/s hız
+           tavanında uzun süre koşarken integral tavana yapışıyor, hedefe
+           varınca boşalması zaman alıyor. i_max/Kp = taşıyabildiği kalıcı
+           açı ofsetidir: 0.1/0.5 = 0.2 rad = 11.5°(!). Pan ekseni DİKEY
+           olduğu için yerçekimi yükü yoktur; integral yalnız sürtünme
+           içindir. 0.02 → 2.3° kapasite, fazlasıyla yeter. -->
+      <i_max>0.02</i_max>
+      <i_min>-0.02</i_min>
+      <cmd_max>1.0</cmd_max>
+      <cmd_min>-1.0</cmd_min>
+    </plugin>
+
+    <plugin filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>turret_pitch_joint</joint_name>
+      <initial_position>0.4363</initial_position>
+      <!-- Tilt ekseni yerçekimine karşı çalışır (namlunun 6 cm'lik kolu);
+           kalıcı hatayı integral kapatır. -->
+      <p_gain>0.5</p_gain>
+      <i_gain>1.0</i_gain>
+      <d_gain>0.004</d_gain>
+      <!-- i_max = yerçekimi torkunun (0.0412 N·m) ~2 katı. Daha büyüğü
+           pan'daki gibi windup aşımı üretir (bkz. yukarıdaki not). -->
+      <i_max>0.08</i_max>
+      <i_min>-0.08</i_min>
+      <cmd_max>1.0</cmd_max>
+      <cmd_min>-1.0</cmd_min>
     </plugin>
 
   </model>

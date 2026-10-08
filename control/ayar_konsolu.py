@@ -34,6 +34,35 @@ Alan adı "modul:ALAN" biçiminde verilebilir (bkz. gcs_server._hedef_cfg).
 #      "param" → ARAÇ parametresi (MAVLink PARAM_SET, uçuşta yazılır)
 #      "secim" → metin seçeneği; min alanına seçenek listesi konur
 
+# ══════════════════════════════════════════════════════════════════════════
+#  PİKSEL BİRİMLİ KAYDIRICILARIN ARALIĞI KAMERAYLA ÖLÇEKLENİR
+# ══════════════════════════════════════════════════════════════════════════
+# Aşağıdaki bazı ayarların birimi piksel (px, px·m, (m/s)/px). Aralıkları
+# 640×480 / 125° kamerada ÖLÇÜLMÜŞ değerlere göre yazılmıştı. Kamera gerçek
+# donanıma eşlenince (Waveshare IMX477-160, 2028×1520 / 128°) yürürlükteki
+# değerler o aralıkların DIŞINA çıktı ve panelin kaydırıcısı ayarı
+# değiştiremez hâle geldi.
+#
+# ⛔ Bunu BEKÇİ TESTİ yakaladı: tests/test_bbox_ibvs.py K1 — "her kaydırıcının
+#   aralığı yürürlükteki değeri KAPSAR". Tam bunun için var.
+#
+# Elle yeni sayı yazmak aynı hatayı bir dahaki kamera değişiminde tekrarlar;
+# bu yüzden aralıklar da ölçekten TÜRETİLİYOR (bbox_ibvs._PX_OLCEK ile aynı).
+from vision import geometry as _geo_ak  # noqa: E402
+
+_PX_OLCEK = _geo_ak.FX / _geo_ak.FX_OLCUM_REFERANSI
+
+
+def _px(x):
+    """px / px·m birimli aralık ucu — piksel sayısıyla BÜYÜR."""
+    return round(x * _PX_OLCEK, 4)
+
+
+def _px_bolu(x):
+    """(m/s)/px birimli aralık ucu — piksel sayısıyla KÜÇÜLÜR."""
+    return round(x / _PX_OLCEK, 5)
+
+
 AYARLAR = [
 
     # ═════════════════════════════════════════════════════════════════════
@@ -64,15 +93,6 @@ AYARLAR = [
      "BÜYÜKLÜĞÜ korunur. 1.0 = saf takip (yataydaki K_YAW da 1.0).",
      "Dikey hataya daha sert tepki; 1'in üstü aşım ve salınım üretir.",
      "Dikeyde tembelleşir; 0 = dikey komut hiç verilmez."),
-
-    ("K_VZ_D", "K_VZ_D", "Dikey sönümleme", "G0", "sayi",
-     "", 0.0, 3.0, 0.05,
-     "Türev sönümlemesi: aracın KENDİ dikey hızı nişanın ötesine geçtiyse "
-     "komut geri çekilir. Terminalin K_VZ_D'sini ödünç ALMAZ — kendi "
-     "kazancı (§5.12: iki özellik aynı alanı paylaşmasın).",
-     "Aşım azalır, hedefin üstünden geçme biter. Çok artarsa gürültüyü "
-     "büyütür ve vz tavana çarpar.",
-     "0 = sönümleme yok; dikey salınabilir."),
 
     ("YAVASLA", "YAVASLA", "Kaçıracaksan YAVAŞLA", "G0", "bool",
      None, None, None, None,
@@ -117,7 +137,7 @@ AYARLAR = [
      "carpim — bugünkü. Yatışta menzil %83'e varan hata veriyor."),
 
     ("MENZIL_PX_M_CARPIM", "MENZIL_PX_M_CARPIM", "Kalibre C — çarpım", "GM",
-     "sayi", "px·m", 80.0, 400.0, 1.0,
+     "sayi", "px·m", _px(80.0), _px(400.0), _px(1.0),
      "R = C / sqrt(w·h). ⚠ 2026-08-19'a kadar 160.0 kullanılıyordu; gerçek "
      "loglardan ölçülen 185.7 (medyan p·R, 0-15° bandı, n=5274). Yani "
      "menziller %14 EKSİK tahmin ediliyordu — kendimizi olduğumuzdan yakın "
@@ -126,7 +146,7 @@ AYARLAR = [
      "Menzil tahmini küçülür."),
 
     ("MENZIL_PX_M_KOSEGEN", "MENZIL_PX_M_KOSEGEN", "Kalibre C — köşegen",
-     "GM", "sayi", "px·m", 120.0, 600.0, 1.0,
+     "GM", "sayi", "px·m", _px(120.0), _px(600.0), _px(1.0),
      "R = C / sqrt(w²+h²). Ölçülen 296.8 (aynı yöntem). İma ettiği görünen "
      "boy 1.78 m — model köşegeni 1.31 m'den büyük, çünkü YOLO kutusu "
      "görsel modeli gevşek sarıyor. Ampirik sabit doğrusudur.",
@@ -324,13 +344,20 @@ AYARLAR = [
      "Dikey bütçe daralır; ① DİKEY KAPI irtifayı kapatamaz ve terminale "
      "hiç girilemez."),
 
-    ("K_VZ_D", "K_VZ_D", "Dikey sönümleme", "G2", "sayi", "", 0.0, 3.0, 0.05,
-     "Türev sönümleme: vz = vz_nişan + K_VZ_D·(vz_nişan − iris_vz). "
-     "Aracın MEVCUT dikey hızını hesaba katar.",
-     "Dikey komut daha çabuk oturur; aşım azalır. ÇOK artarsa gürültüyü "
-     "büyütür ve vz tavana çarpar.",
-     "0 = sönümleme yok; dikey kanal salınır (ölçüldü: vz işaret "
-     "değişimi 1.62/s, |vz| p90 8.0 m/s)."),
+    ("K_VZ_D", "K_VZ_D", "⭐ Dikey hız hatası kazancı", "G2", "sayi", "",
+     0.0, 3.0, 0.05,
+     "vz = vz_nişan + K_VZ_D·(vz_nişan − iris_vz), yani "
+     "vz = (1+K_VZ_D)·vz_nişan − K_VZ_D·iris_vz. "
+     "⚠ ADI 'sönümleme' ama İKİ İŞ birden yapıyor: araç komuttan HIZLI "
+     "giderken komutu geri çeker (sönümleme), GERİ KALIRKEN komutu "
+     "büyütür (gecikme telafisi). Komut ters döndüğü anda araç hâlâ eski "
+     "yönde olduğu için fark devleşir ve komut (1+K_VZ_D) katına çıkar — "
+     "o anda SALINIMI BESLER.",
+     "Yavaş bir dikey kanalda gecikmeyi kapatır. ⚠ Kanal HIZLIYSA aşımı "
+     "büyütür: ölçüldü, jerk 5→40 sonrası bu terim nişan komutunun "
+     "0.54 katından 0.84 katına çıktı ve karelerin %20-38'inde nişan "
+     "komutundan BÜYÜK oldu.",
+     "0 = ham nişan komutu doğrudan gider; ne telafi ne sönümleme."),
 
     # ═════════════════════════════════════════════════════════════════════
     ("G3", None, "④ HIZ — kutu boyutundan PI", None,
@@ -342,13 +369,13 @@ AYARLAR = [
      None, None),
 
     ("K_FWD", "K_FWD", "Hız P kazancı", "G3", "sayi", "(m/s)/px",
-     0.0, 2.0, 0.05,
+     0.0, _px_bolu(2.0), _px_bolu(0.05),
      "Kutu boyutu hatasının ANLIK hıza katkısı.",
      "Menzil hatasına daha hızlı tepki; ama hız salınabilir.",
      "Hız yavaş toparlanır; integralin oturması beklenir."),
 
     ("K_I", "K_I", "Hız İ kazancı", "G3", "sayi", "(m/s)/(px·s)",
-     0.0, 0.3, 0.005,
+     0.0, _px_bolu(0.3), _px_bolu(0.005),
      "Hedefin KENDİ HIZINI öğrenen integral. Kalıcı hatayı siler.",
      "Hedef hızını daha çabuk öğrenir. ÇOK artarsa windup ve aşım.",
      "Öğrenme yavaşlar; hedef hızlanınca geride kalınır."),
@@ -418,29 +445,35 @@ AYARLAR = [
      "yeniden açıldı.",
      None, None),
 
-    ("CONF_MIN", "CONF_MIN", "Kutu güven eşiği (güdüm)", "G7", "sayi", "",
+    ("CONF_MIN", "CONF_MIN", "⭐ Kutu güven eşiği (güdüm)", "G7", "sayi", "",
      0.05, 0.95, 0.01,
-     "Bu güvenin ALTINDAKİ tespit kutusu YOK SAYILIR (bbox güdümü).",
-     "Yalnız sağlam kutular kullanılır; ama zayıf tespitte kör kalınır.",
-     "Cılız tespitler de kullanılır; gürültülü kutu güdümü bozar."),
+     "Bu güvenin ALTINDAKİ tespit kutusu YOK SAYILIR (bbox güdümü). "
+     "⚠ TESPİT modeli zaten conf≥0.25 ile çalışıyor (detector.py); bu eşik "
+     "0.35 iken 0.25-0.35 arası tespitler güdüme ULAŞIYOR ama ATILIYOR. "
+     "Ölçüldü (20 uçuş): 20-40 m'de görsel temas yalnız %58.1; kayıpların "
+     "başladığı karede conf medyanı 0.41, MİNİMUMU tam 0.35 (eşik kesiyor).",
+     "Yalnız sağlam kutular kullanılır; ama zayıf tespitte kör kalınır. "
+     "0.35 = bugünkü.",
+     "Cılız tespitler de kullanılır. detector.py'nin 2026-07-30 ölçümü: "
+     "40 m'de conf≥0.35 → %63.6 yakalama, conf≥0.25 → %92.9. Risk: zayıf "
+     "kutu gürültülüdür (cx/kutu boyu titrer) ve yanlış tespit girebilir."),
 
     ("BOYUT_MIN", "BOYUT_MIN", "En küçük geçerli kutu", "G7", "sayi", "px",
-     2.0, 20.0, 0.5,
+     _px(2.0), _px(20.0), _px(0.5),
      "Bundan küçük kutu gürültü sayılır (menzil hesabı patlamasın).",
      "Uzaktaki küçük hedef de sayılır; menzil tahmini gürültülenir.",
      "Yalnız yeterince büyük kutular; çok uzakta görsel kullanılmaz."),
 
     ("sup:POSE_CONF_MIN", "sup:POSE_CONF_MIN",
      "E1 · faz geçişi güven eşiği", "G7", "sayi", "", 0.0, 0.95, 0.01,
-     "⚠ FAZ ZIPLAMASININ KÖK NEDENİ. Supervisor'ın GÖRSEL faza GİRME "
-     "eşiği. Varsayılan 0.0 = eşik YOK; ama güdüm CONF_MIN=0.35 altındaki "
-     "kutuyu REDDEDİYOR. Arada kalan tespitlerde supervisor 'görsel' der, "
-     "güdüm kutuyu kullanamaz, 20 kare sonra GPS'e dönülür.",
-     "0.35'e (CONF_MIN ile aynı) çekmek iki katmanı EŞİTLER. Ölçüldü: "
-     "conf 0.268-0.334 olan kareler zıplamayı üretiyordu; 20 saniyede "
-     "8 faz değişimi, hız 18.1→8.5 m/s, menzil 28.9→51.0 m açıldı.",
-     "0.0 = eşik yok (bugünkü); en cılız tespitte bile görsel faza "
-     "girilir."),
+     "Supervisor'ın GÖRSEL faza GİRME eşiği. ✅ DÜZELTİLDİ 2026-08-20: "
+     "artık kendi sabiti YOK, doğrudan CONF_MIN'i okur (yapısal bağ). "
+     "Eskiden 0.0'dı: supervisor 'görsel' der, güdüm kutuyu reddeder, "
+     "komut donar, 20 kare sonra GPS'e dönülür → faz zıplaması + fren.",
+     "Katılaşır: görsel faza geç girilir, GPS'te uzun kalınır.",
+     "⚠ CONF_MIN'den FARKLI bir değer vermek eski arızayı geri getirir. "
+     "Ölçülmüştü: conf 0.268-0.334 kareleri 20 saniyede 8 faz değişimi, "
+     "hız 18.1→8.5 m/s, menzil 28.9→51.0 m."),
 
     ("sup:KILIT_N", "sup:KILIT_N", "Görsel faza giriş kare sayısı", "G7",
      "sayi", "kare", 1.0, 40.0, 1.0,
@@ -522,8 +555,21 @@ AYARLAR = [
      "Yukarıdan gelen düzeltme hızlanır.",
      "Alçalma yavaş; hedefin üstünde kalınır."),
 
+    ("PSC_JERK_Z", "PSC_JERK_Z", "⭐ Dikey jerk sınırı", "G8", "param",
+     "m/s³", 2.0, 60.0, 1.0,
+     "İvmenin DEĞİŞİM hızı — 'ivmenin ivmesi'. Dikey hız komutu bir "
+     "basamak atarsa araç oraya bu sınırın izin verdiği kadar çabuk "
+     "gider: Δv'lik değişim ≈ 2·√(Δv/jerk) saniye sürer.",
+     "Dikey kanal ÇEVİKLEŞİR. ⚠ 2026-08-20'de 5 → 40 yapıldı; komut→"
+     "gerçekleşme gecikmesi 0.8-1.0 s'den 0.6 s'ye, takip oranı 0.72-0.90'"
+     "dan 0.90'a çıktı. AMA aynı değişiklikten sonra DAİRE senaryosunda "
+     "isabet 5/5 → 6/10'a düştü ve aracın dikey tepe hızı 4.49 → 7.47 m/s "
+     "oldu: araç artık ZATEN AŞIRI OLAN dikey komutu gerçekten uyguluyor.",
+     "Dikey komut rampalanır, araç yavaşlar. 5 = ArduPilot varsayılanı "
+     "(yatay PSC_JERK_XY 40'tayken 8 KAT asimetri demekti)."),
+
     ("WPNAV_ACCEL_Z", "WPNAV_ACCEL_Z", "Dikey ivme tavanı", "G8", "param",
-     "cm/s²", 50.0, 1500.0, 50.0,
+     "cm/s²", 50.0, 3000.0, 50.0,
      "Dikey hız komutunun rampa hızı. ⭐ 2026-08-02'de bu 100 (1 m/s²) "
      "iken dikey ıskanın KÖK NEDENİYDİ: 4.65 m kapatmak 3.05 s "
      "sürüyordu, elde 2.4-2.8 s vardı.",

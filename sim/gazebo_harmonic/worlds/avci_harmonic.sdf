@@ -174,5 +174,16 @@
       <uri>model://mini_talon_vtail</uri>
       <pose degrees="true">12 0 0.195 0 0 90</pose>
     </include>
+
+    <!-- ══ AĞ MERMİSİ — yerin ALTINDA park eder, ateşlenince yukarı gelir ══
+      Ateşleme anında `create` servisiyle DOĞURMAK yerine önceden var olup
+      park etmesi tercih edildi: set_pose tek servis çağrısıdır, kesin
+      çalışır ve ilk atışta model yükleme gecikmesi yaşanmaz.
+      Uçuşu control/ag_firlatici.py yönetir (Python; C++ eklenti YOK). -->
+    <include>
+      <name>ag_konisi</name>
+      <uri>model://ag_konisi</uri>
+      <pose>0 0 -50 0 0 0</pose>
+    </include>
   </world>
 </sdf>

@@ -24,6 +24,12 @@ import time
 from control.guidance.guidance_core import hedef_kadraj_hatasi, govde_to_dunya
 from control.guidance.common import normalize_angle as normalize_angle_test
 from control.guidance import gps_guidance as gg
+from vision import geometry as _geo   # kadraj merkezi/boyutu
+# ⛔ 2026-09-06: bu testler kadraj merkezini (320,240) ve boyutunu
+#   (640×480) SABİT yazıyordu. Kamera gerçek donanıma eşlenince
+#   (Waveshare IMX477-160, 2028×1520) hepsi düştü — kod değil TEST
+#   eskimişti. Artık geo'dan türetiliyor; kamera bir daha değişince
+#   kendiliğinden uyarlanır.
 
 # Test CSV'leri gerçek uçuş loglarına karışmasın (bkz. test_visual_lead notu)
 import tempfile as _tf
@@ -50,10 +56,10 @@ def main():
     b = govde_to_dunya([0.906, 0.0, -0.423], 0, 0, 0)
     tgt = (C.RANGE_SET * b).tolist()
     r = hedef_kadraj_hatasi(tgt, [0, 0, 0], 0, 0, 0)
-    kontrol("G1  merkez → yaw≈0, elev≈25°, (u,v)≈(320,240)",
+    kontrol("G1  merkez → yaw≈0, elev≈25°, (u,v)≈kadraj merkezi",
             abs(math.degrees(r["yaw_hata"])) < 0.5
             and abs(math.degrees(r["elev"]) - tilt) < 0.5
-            and abs(r["u"] - 320) < 2 and abs(r["v"] - 240) < 2,
+            and abs(r["u"] - _geo.CX) < 2 and abs(r["v"] - _geo.CY) < 2,
             f"yaw={math.degrees(r['yaw_hata']):.2f}° elev={math.degrees(r['elev']):.2f}° "
             f"u={r['u']:.1f} v={r['v']:.1f}")
 
@@ -95,12 +101,12 @@ def main():
     # 2026-08-02'de kamera tilt'inden ayrıldı (dikey ivme bütçesi, bkz.
     # Cfg.ISTASYON_ELEV_DEG); hedef artık merkezin (tilt − istasyon)° altında
     # görünür. Asıl gereklilik hedefin kadrajı terk etmemesi.
-    v_marj = min(r7["v"], 480 - r7["v"]) if r7["v"] is not None else -1
+    v_marj = min(r7["v"], _geo.IMG_H - r7["v"]) if r7["v"] is not None else -1
     kontrol(f"G7  istasyonda hedef kadrajda paylı (yaw≈0, elev≈{ist:.0f}°, menzil≈RANGE_SET)",
             abs(math.degrees(r7["yaw_hata"])) < 0.5
             and abs(math.degrees(r7["elev"]) - ist) < 0.5
             and abs(r7["menzil"] - C.RANGE_SET) < 0.2
-            and v_marj > 100,
+            and v_marj > 100 * (_geo.IMG_H / 480.0),
             f"yaw={math.degrees(r7['yaw_hata']):.2f}° elev={math.degrees(r7['elev']):.2f}° "
             f"menzil={r7['menzil']:.2f} v={r7['v']:.0f}px (merkez 240, kenara pay {v_marj:.0f}px)")
 
@@ -309,7 +315,7 @@ def main():
     stS = [T[0] - d_behind, T[1], T[2] + d_below]
     rS = hedef_kadraj_hatasi(T, stS, 0, pit11, 0.0)
     kontrol("G13b daire duruşunda (pitch +11°) dinamik istasyon hedefi MERKEZE getirir",
-            abs(math.degrees(rD["pitch_hata"])) < 0.5 and abs(rD["v"] - 240) < 3,
+            abs(math.degrees(rD["pitch_hata"])) < 0.5 and abs(rD["v"] - _geo.CY) < 3,
             f"dinamik: hata={math.degrees(rD['pitch_hata']):+.2f}° v={rD['v']:.0f}px | "
             f"statik 15° olsaydı: {math.degrees(rS['pitch_hata']):+.2f}° v={rS['v']:.0f}px")
 

@@ -1,6 +1,81 @@
 # =============================================================
 #  AVCI DRONE (ArduCopter) — Avcı İHA parametre yamaları
 # =============================================================
+
+# ═══════════════════════════════════════════════════════════════════════
+#  ⭐ 2026-09-06 — VAKKAS GEÇİŞİ: ZARF YENİDEN HESAPLANDI
+# ═══════════════════════════════════════════════════════════════════════
+# Araç artık VAKKAS'ı temsil ediyor: 4.00 kg kütle, 8.00 kgf toplam maks itki.
+# Önceki sim aracı ÇOK daha güçlüydü ve bu dosyadaki her zarf değeri O ARACA
+# göre ayarlanmıştı. Ölçüm (logs/vakkas/T01_taban.txt, taze uçuş):
+#
+#                                  ESKİ sim aracı      VAKKAS
+#   kütle                              1.75 kg         4.00 kg
+#   maks itki                         16.76 kgf        8.00 kgf
+#   itki/ağırlık                        9.58            2.00
+#   kullanılabilir (eklenti kırpması)   9.58            1.99
+#
+# ⚠ ESKİ DOSYA "itki/ağırlık 6.4" ve "7.08" diyordu — İKİSİ DE YANLIŞTI.
+#   Gerçek değer 8.64'tü (asılı motor PWM'inden ölçüldü: 1358 µs → u=0.323 →
+#   T_max = m·g/u²). Zarf, sanılandan da güçlü bir araca göre açılmıştı.
+#
+# ── EĞİM TAVANI NEDEN DÜŞTÜ (fizik) ────────────────────────────────────
+# Araç θ kadar yatarken itkinin yalnız cos θ kadarı yukarı bakar. İrtifayı
+# korumak için gereken toplam itki  W / cos θ 'dır:
+#      30° -> 1.15x    45° -> 1.41x    60° -> 2.00x    70° -> 2.92x
+# VAKKAS'ın kullanılabilir itkisi ağırlığının 1.80 katıdır. 70° için 2.92
+# gerekir → FİZİKEN İMKÂNSIZ, araç irtifa kaybeder.
+# Bu, 2026-09-02'de GERÇEK dronun düştüğü mekanizmanın ta kendisidir
+# (60°+60° -> bileşke 75.5° -> dikey itki oranı 0.25 -> gereken gaz %124).
+#
+# 45° seçildi:  gereken 1.414x , mevcut 1.805x → %28 pay kalır.
+# Bu pay duruş denetleyicisinin ihtiyacıdır: yatış/eğim torku üretmek için
+# motorlar ARASINDA fark gerekir; hepsi tavandaysa fark üretilemez.
+#
+# ── AÇISAL KAZANÇLAR: ÖNCE BÜYÜTÜLDÜ, SONRA UÇUŞ ÇÜRÜTTÜ ───────────────
+# ⛔ YANLIŞ ÇIKAN AKIL YÜRÜTME (burada duruyor ki tekrar denenmesin):
+#   "Açısal ivme = tork/atalet. Tork itkiyle, atalet kütleyle orantılı:
+#      yetki oranı = (7.96/16.76)/(3.40/1.50) = 0.21
+#    aynı PID çıkışı 0.21 kat ivme üretir, kazançlar 4.75 ile çarpılmalı."
+#   Buna göre P/I 0.054 -> 0.256, D 0.00144 -> 0.00684 yapıldı.
+#
+# ⛔ UÇUŞ SONUCU (A/B, tek değişken — logs/vakkas/T10 vs T11):
+#     kazanç 0.256 : 12 m/s kare deseninde İKİNCİ bacakta 46.7 m irtifa
+#                    kaybı, "Potential Thrust Loss", Crash: AngErr=62>30
+#     kazanç 0.135 : dört bacakta da irtifa sarkması 0.0 m, doyum %0,
+#                    hız takibi %101
+#   Aynı araç, aynı desen, tek fark kazançlar. Hüküm net.
+#
+# NEDEN yanlıştı: hesap TOPLAM atalet yerine yalnız base_link ölçeğini
+# kullandı. Rotorların m·y² katkısı (4·0.025·0.22² = 0.0048) DEĞİŞMEDİ;
+# gerçek Ixx oranı 2.27 değil ~1.96. Ayrıca D kazancını 1.9 katına çıkarmak
+# ArduPilot'un 20 Hz türev süzgeciyle birlikte gürültüyü büyütüyor ve motor
+# karıştırıcısını doyuruyor ("Potential Thrust Loss" tam bunun mesajı).
+#
+# ✔ ŞİMDİKİ DEĞERLER = ArduCopter FABRİKA VARSAYILANLARI (0.135/0.135/0.0036).
+#   Gerçek VAKKAS uçtuğunda doğru yol ArduPilot AUTOTUNE'dur; teorik
+#   ölçekleme değil.
+#
+# ⛔ GERİ DÖNÜŞ: önceki hâlin yedeği  logs/vakkas/avci_copter.parm.ONCE
+# ═══════════════════════════════════════════════════════════════════════
+
+# ⛔⛔ EEPROM TUZAĞI — 2026-09-06'da YAKALANDI, OKUMADAN DEĞİŞTİRME
+# ═══════════════════════════════════════════════════════════════════════
+# Bu dosya SITL'e `--add-param-file` ile verilir. O yol AP_Param::
+# set_default_by_name() çağırır — yani yalnız VARSAYILANI değiştirir.
+# Bir parametrenin ~/ardupilot/eeprom.bin içinde KAYITLI değeri varsa
+# (biri bir kez GCS'ten yazdıysa) KAYITLI DEĞER KAZANIR, bu dosya yok sayılır.
+#
+# ÖLÇÜLDÜ: dosya eğim tavanını 7000 istiyordu, araç 6000 uyguluyordu. Yani
+# araç 2026-08-17'den beri 70° değil 60° tavanla uçtu ve o dönemin kampanya
+# raporları yanlış bir varsayım üzerine kuruldu (CLAUDE.md §5.1 — "özellik
+# gerçekten çalıştı mı" kapısı tam bunun için var).
+# Diğer 20 parametrenin hepsi doğru uygulanmıştı; yalnız o biri kayıtlıydı.
+#
+# ✔ ÇÖZÜM: başlatmadan sonra  `python3 tools/param_dogrula.py --yaz`
+#   dosya ile aracı karşılaştırır, uyuşmayanı MAVLink ile yazar.
+#   scripts/start_harmonic.sh bunu artık kendisi yapıyor.
+# ═══════════════════════════════════════════════════════════════════════
 # start_ardupilot_sitl.sh / start_harmonic.sh içinde --add-param-file ile
 # yüklenir. Amaç: kamikaze avcı drone'un yüksek hızlı, agresif takip yapabilmesi.
 #
@@ -77,8 +152,43 @@ WP_YAW_BEHAVIOR 0
 # ve 60° bile %78 gaz istediği için yalpalıyordu).
 # Eski 45° yalnız 9.81 m/s² veriyordu; komut karelerin %43'ünde tavanı
 # aşıyordu ve S1/S3/Ö5 bu doygunluk yüzünden elendi.
-ANGLE_MAX 7000
-
+# ⭐ VAKKAS 2026-09-06: 40° — ÖLÇÜLEREK indirildi  (eski 7000, ara değer 4500)
+#
+# ⛔ ÖNCE 4500 (45°) SEÇİLMİŞTİ — UÇUŞ ÇÜRÜTTÜ (logs/vakkas/T07_egim_zarfi.txt).
+#   45°'de araç irtifasını tuttu (2.6 s'de −3.7 m) AMA motorlar tepe u=0.977'ye
+#   çıktı, karelerin %15'i DOYUMDA geçti ve ArduPilot 'Potential Thrust Loss'
+#   uyarısı bastı. Motor doyunca duruş torku üretilemez: manevradan çıkarken
+#   araç toparlanamayıp düştü (Crash: Disarming: AngErr=143>30).
+#
+# ── MOTOR PAYI HESABI (itki ∝ u², u = normalize rotor devri) ──
+#   Asılı devir ÖLÇÜLDÜ: u_asılı = 0.709
+#   θ eğiminde irtifayı korumak için:  u(θ) = u_asılı / sqrt(cos θ)
+#
+#   ⛔ MOTOR TAVANI 0.95 DEĞİL, 1.00 — bu bir kez YANLIŞ HESAPLANDI.
+#     ArduPilotPlugin.cc:1676:
+#         raw_cmd = clamp((pwm − servo_min)/(servo_max − servo_min), 0, 1)
+#     model.sdf'te servo_min=1100, servo_max=1900. ArduPilot'un
+#     MOT_SPIN_MAX 0.95'i PWM 1950'ye denk gelir ve eklenti onu 1900'e
+#     KIRPAR → u = 1.00. Yani ArduPilot her zaman tam devri sürebiliyor.
+#     Kullanılabilir itki/ağırlık = 1/u_asılı² = 1.99 (1.80 değil).
+#
+#       eğim   u(θ)    duruş için kalan pay (tavan 1.00)
+#        30°   0.762    +0.238
+#        35°   0.783    +0.217
+#        40°   0.810    +0.190
+#        45°   0.843    +0.157   ← SEÇİLDİ
+#        50°   0.884    +0.116
+#        55°   0.936    +0.064
+#        60°   1.003    −0.003   ⛔ fiziken imkânsız
+#
+#   ÖLÇÜM (T07 45° kolu): tepe u = 0.977 → tavanın ALTINDA kaldı, araç
+#   2.6 s'de yalnız 3.7 m sarktı. Duruş için kullandığı pay 0.134.
+#   45°, 0.157 pay verir — ölçülen ihtiyacın üstünde. SAVUNULABILIR.
+#
+# ⚠ ArduCopter fabrika varsayılanı 3000 (30°) — sebebi tam budur: tipik
+#   çok rotorlunun itki/ağırlığı ~2'dir. VAKKAS da öyle. Eski sim aracının
+#   70°'si, itki/ağırlığı 8.64 olan GERÇEK DIŞI bir araca aitti.
+ANGLE_MAX 4500
 # ── GUIDED/WP hız ve ivme tavanları (cm/s, cm/s²) ──
 # Hedef uçak: AIRSPEED_CRUISE 15, AIRSPEED_MAX 22 m/s (avci_plane.parm).
 # Ölçülen gerçek hedef hızı: medyan 15.3-16.0 m/s, tepe ~20 m/s.
@@ -96,8 +206,10 @@ WPNAV_SPEED 2500
 # 2600 = 26 m/s², yeni ANGLE_MAX 70°'nin verdiği g·tan70° = 27.0'ın hemen
 # altı — böylece açı değil bu ivme bütçesi bağlar ve duruş denetleyicisine
 # rezerv kalır. Ölçülen komut talebi p90'ı (26.3) tam karşılar.
-WPNAV_ACCEL 2600
-
+# ⭐ VAKKAS 2026-09-06: g·tan(45°) = 9.81 m/s²; hemen altı  (eski 2600)
+# ⚠ AMA bkz. aşağıdaki WPNAV_SPEED notu: 18 m/s'de sert 90° dönüş
+#   bu ivmeyle bile aracı düşürdü. Bağlayıcı kısıt HIZ, ivme değil.
+WPNAV_ACCEL 950
 # Dikey hız: güdüm zaten 6 m/s komut ediyordu, fiilen 2.5/1.5 ile kırpılıyordu.
 # İniş tırmanmadan muhafazakâr: yere yaklaşma riski asimetrik.
 #
@@ -106,15 +218,16 @@ WPNAV_ACCEL 2600
 # dikey bütçe yatayın onda birinde kalmıştı (yatay 8 → 26 m/s², dikey 6/4
 # m/s ve 2.5 m/s² aynı). Dikey hizalama kapısının (Cfg.DIKEY_KAPI_M) hızlı
 # kapatabilmesi için tavanlar birlikte açıldı.
-WPNAV_SPEED_UP 2000
-WPNAV_SPEED_DN 1500
-
+# ⭐ VAKKAS 2026-09-06: maks tirmanma ivmesi (T/W-1)·g = 7.9 m/s²; 20 m/s'ye ulasamaz  (eski 2000)
+WPNAV_SPEED_UP 1000
+# ⭐ VAKKAS 2026-09-06: inis asimetrik risk; muhafazakar  (eski 1500)
+WPNAV_SPEED_DN 800
 # Dikey ivme (B7 açık sorusu). Varsayılan 1.0 m/s² ile 6 m/s'den fren mesafesi
 # 18 m; hedefin dalıştan çıkışını takip etmeye yetmiyordu. 2.5 m/s² → 7.2 m.
 # 2026-08-17: itki artışıyla birlikte 8.0 m/s² — yatay 26 m/s²'nin hâlâ
 # altında ama 3.2 kat açıldı.
-WPNAV_ACCEL_Z 2000
-
+# ⭐ VAKKAS 2026-09-06: fiziksel tavan 7.9 m/s²; duruspayiyla 5.0  (eski 2000)
+WPNAV_ACCEL_Z 500
 # Jerk (m/s³). Varsayılan 1.0 ile 8 m/s²'ye ulaşmak 8 saniye sürer — ivme
 # tavanını açmak tek başına işe yaramaz, jerk onu boğar. 4.0 → ~2 s.
 # Agresif bir değişiklik; yalpalama görülürse ÖNCE bunu 2.0'a çekin.
@@ -129,18 +242,24 @@ PSC_VELXY_P 2.0
 # duruş döngüsünün ETKİN KAZANCI 2.5 katına çıktı. Telafi edilmezse döngü
 # salınıma girer (tam da çözmeye çalıştığımız şeyi ÜRETİR).
 # P ve D, itki oranına bölünür; I aynı oranda düşürülür.
-ATC_RAT_RLL_P 0.054
-ATC_RAT_RLL_I 0.054
-ATC_RAT_RLL_D 0.00144
-ATC_RAT_PIT_P 0.054
-ATC_RAT_PIT_I 0.054
-ATC_RAT_PIT_D 0.00144
-
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri (×4.75 ölçekleme uçuşta çürüdü)
+ATC_RAT_RLL_P 0.135
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri
+ATC_RAT_RLL_I 0.135
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri
+ATC_RAT_RLL_D 0.0036
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri
+ATC_RAT_PIT_P 0.135
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri
+ATC_RAT_PIT_I 0.135
+# ⭐ VAKKAS 2026-09-06: FABRİKA değeri
+ATC_RAT_PIT_D 0.0036
 # Duruş açısal ivme tavanları — 75° yatışa hızlı gitmek için açıldı
 # (110000 cdeg/s² = 1100 °/s² idi).
-ATC_ACCEL_R_MAX 250000
-ATC_ACCEL_P_MAX 250000
-
+# ⭐ VAKKAS 2026-09-06: ArduCopter FABRİKA değeri (250000 bu araç için fazla)
+ATC_ACCEL_R_MAX 110000
+# ⭐ VAKKAS 2026-09-06: ArduCopter FABRİKA değeri
+ATC_ACCEL_P_MAX 110000
 # ── YATAY JERK TAVANI — GUIDED hız modunun GERÇEK anahtarı ──
 # ⚠ Yukarıdaki WPNAV_JERK bu modda OKUNMUYOR. GUIDED hız komutu
 # velaccel_control_start → pva_control_start → set_max_speed_accel_NE_cm
@@ -170,7 +289,8 @@ ATC_ACCEL_P_MAX 250000
 # kabul ettiğini geri okutur (kosu scripti PARAM_VALUE ile teyit eder).
 # Ölçüldü: jerk BU ARACIN yanal çevikliğini bağlayan TEK kısıttı
 # (docs/kampanya/S_SALINIM.md §10) — zarf büyürken o da büyümeli.
-PSC_JERK_XY 40
+# ⭐ VAKKAS 2026-09-06: jerk aci degisim hizina bagli; olculecek  (eski 40)
+PSC_JERK_XY 10
 # ⭐ 2026-08-20 · DİKEY ZARF GENİŞLETMESİ (kullanıcı kuralı: "aracı
 # kısıtlayan ne varsa genişlet, gerçek FPV dronumuz çok daha güçlü")
 # PSC_JERK_Z ArduPilot varsayılanı 5.0 m/s³ idi ve HİÇ DOKUNULMAMIŞTI.
@@ -178,8 +298,8 @@ PSC_JERK_XY 40
 # gerçekleşme arasındaki çapraz korelasyon tepesi 0.6-1.0 s gecikmede.
 # 5 m/s³ ile 3 m/s'lik değişim 2·√(3/5)=1.55 s sürer — birebir örtüşüyor.
 # 40 ile 0.55 s'ye iner.
-PSC_JERK_Z 40
-
+# ⭐ VAKKAS 2026-09-06: ayni gerekce  (eski 40)
+PSC_JERK_Z 10
 # ── HEADING TİTREMESİ (yaw limit-çevrimi) ──
 # Belirti: uzak mesafede seyirde burun ±3° salınıyor. Ölçüm (kara kutu, uzun
 # seyir dilimleri): yaw takip hatası std 1.4-2.4°, salınım ~1.1-2.0 Hz.
@@ -199,3 +319,23 @@ PSC_JERK_Z 40
 # SITL'de GCS/RC failsafe'i sakin tut (chase thread'i keepalive göndermiyor)
 FS_GCS_ENABLE 0
 FS_THR_ENABLE 0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  ⭐ 2026-09-06 · VAKKAS — İTKİ MODELİ
+# ═══════════════════════════════════════════════════════════════════════
+# MOT_THST_HOVER: aracın havada ASILI durabilmek için gereken itkinin,
+# maksimum itkiye oranı. İrtifa denetleyicisinin İLERİ BESLEME terimidir —
+# "hiçbir hata yokken gazı buraya koy" der. Yanlışsa denetleyici her seferinde
+# önce yanlış yere gidip sonra hatadan düzeltir; irtifa aşımı/sarkma yapar.
+#   Kaba beklenti: W/T_max = 4.00/8.00 = 0.50
+#   ⚠ Aradan MOT_THST_EXPO / MOT_SPIN_MIN / MOT_SPIN_MAX geçtiği için gerçek
+#     değer bundan farklıdır; T02 koşusunda ÖLÇÜLÜP buraya yazılacak.
+# ⭐ ÖLÇÜLDÜ (T02, logs/vakkas/T02_vakkas.txt): asılı gaz %47.0.
+#   Kaba beklenti 0.50 idi; aradan MOT_THST_EXPO/SPIN_MIN/SPIN_MAX
+#   geçtiği için gerçek değer farklı çıktı — model değil ÖLÇÜM yazıldı.
+MOT_THST_HOVER 0.47
+# MOT_HOVER_LEARN 0 = araç bu değeri uçuşta ÖĞRENİP KAYDETMESİN.
+# Deney disiplini (CLAUDE.md §4): öğrenme açıkken her koşu bir sonrakinin
+# başlangıç şartını değiştirir ve A/B kolları kirlenir.
+MOT_HOVER_LEARN 0

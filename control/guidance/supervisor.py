@@ -138,7 +138,13 @@ class SupCfg:
     # "girip hemen çıkma" çevrimi kapanır.
     #
     # AVCI_HYBRID_CONF=0 ile eski (eşiksiz) davranış geri gelir.
-    POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF", 0.35))
+    # ⚠ YAPISAL BAĞ (2026-08-20): varsayılan SABİT DEĞİL, doğrudan
+    # bbox_ibvs.Cfg.CONF_MIN'den okunur. Sebebi: iki katman aynı eşiği
+    # kullanmak ZORUNDA (yukarıdaki kök neden). Sabit 0.35 yazılırsa
+    # güdüm eşiği ileride değiştiğinde bu satır SESSİZCE geride kalır ve
+    # aynı arıza geri gelir. Bağ testi: tests/test_bbox_ibvs.py C1b.
+    POSE_CONF_MIN = float(os.environ.get("AVCI_HYBRID_CONF",
+                                         IbvsCfg.CONF_MIN))
 
     # ── MENZİL KAPISI KAPATILDI (2026-08-08, D0 YARIŞMA KURALI) ──
     #

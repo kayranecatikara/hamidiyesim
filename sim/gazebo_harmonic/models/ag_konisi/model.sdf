@@ -1,0 +1,62 @@
+<?xml version="1.0" ?>
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+   AĞ KONİSİ — VAKKAS ağ fırlatıcısının mermisi
+  ══════════════════════════════════════════════════════════════════════════
+  Gerçek bir örgü değil, "yakalama hacmi" soyutlaması: atılan ağın açılmış
+  hâlini temsil eden bir koni. Geniş ağzı +X'e (uçuş yönüne) bakar.
+
+  ⛔ NİYE <static>1</static>:
+    Ağın uçuşu control/ag_firlatici.py içinde PYTHON ile entegre edilir
+    (yerçekimi + hava direnci + açılma) ve her adımda `/world/<dünya>/set_pose`
+    servisiyle taşınır. Model statik olmazsa Gazebo'nun fizik motoru da ona
+    kuvvet uygular ve iki sürücü birbiriyle kavga eder (poz zıplar).
+    Kullanıcı isteği (2026-09-06): "ağ fırlatıcı taşınsın, C++ falan istemem
+    python olsun." Bu yüzden balistik C++ eklentide değil, Python'da.
+
+  KOORDİNAT SÖZLEŞMESİ: link orijini koninin TEPESİ (arka uç); koni oradan
+  +X yönünde açılır. Böylece modeli namlunun ucuna koymak yeterlidir, ağız
+  kendiliğinden ileri bakar.
+
+  ⚠ Görsel BOYUT SABİTTİR (açılmış hâl). Python modeli ağın kademeli
+    açılmasını hesaba katar (ilk 0.2 s'de katlı → açık); görselde bu
+    görünmez. set_pose ölçek değiştiremediği için kabul edilen sadeleştirme.
+-->
+<sdf version="1.9">
+  <model name="ag_konisi">
+    <static>1</static>
+    <link name="ag_link">
+      <!-- Koni varsayılan olarak +Z'ye bakar (tepe +Z). pitch=-90 → +Z ekseni
+           -X'e döner: TEPE geride, GENİŞ AĞIZ +X'te.
+           merkez x=+0.30 → tepe x=0 (link orijini), ağız x=0.60
+           yarıçap 0.60 m → 1.20 m ağız çapı (açılmış ağ) -->
+      <visual name="ag_visual">
+        <pose degrees="true">0.30 0 0 0 -90 0</pose>
+        <geometry>
+          <cone>
+            <radius>0.60</radius>
+            <length>0.60</length>
+          </cone>
+        </geometry>
+        <material>
+          <ambient>0.95 0.85 0.15 0.55</ambient>
+          <diffuse>0.95 0.85 0.15 0.55</diffuse>
+          <emissive>0.35 0.30 0.03 1</emissive>
+        </material>
+        <transparency>0.45</transparency>
+      </visual>
+      <!-- Ağız halkası: nişan/yakalama yarıçapını gözle okunur kılar -->
+      <visual name="ag_agiz">
+        <pose degrees="true">0.60 0 0 0 90 0</pose>
+        <geometry>
+          <cylinder><radius>0.60</radius><length>0.02</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>1.0 0.35 0.05 0.9</ambient>
+          <diffuse>1.0 0.35 0.05 0.9</diffuse>
+          <emissive>0.5 0.15 0.0 1</emissive>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

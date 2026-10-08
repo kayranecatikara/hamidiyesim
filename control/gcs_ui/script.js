@@ -1566,3 +1566,156 @@ function ayarKopyala() {
         }
     });
 })();
+
+/* ══════════════════════════════════════════════════════════════════════
+   TARET (turret) KONTROLÜ — 2026-09-06, VAKKAS
+   ══════════════════════════════════════════════════════════════════════
+   Taretin namlusu ve IMX477 kamerası AYNI doğrultuya bakar (boresight);
+   bu yüzden joystick hem nişanı hem FPV görüntüsünü çevirir.
+
+   Pad KARE, daire değil: iki eksenin sınırları farklı (pan ±180°,
+   tilt −30…+90°) ve kare bu asimetriyi dürüstçe gösterir. Dikeyde 0°
+   çizgisi ortada DEĞİL, üstten %75'te — çünkü aşağı yalnız 30° bakılır.
+
+   Komut 20 Hz'e KISILIR (throttle): sürüklerken her fare olayında POST
+   atmak sunucuyu boğar ve Gazebo'ya gereksiz mesaj yağdırır.
+   ────────────────────────────────────────────────────────────────────── */
+(function () {
+    const pad  = document.getElementById('taret-pad');
+    if (!pad) return;                       // panel bu sürümde yoksa sessiz çık
+    const knob = document.getElementById('taret-knob');
+    const PAN_MIN = -180, PAN_MAX = 180, TILT_MIN = -30, TILT_MAX = 90;
+
+    let komut = { pan: 0, tilt: 25 };
+    let suruklu = false, sonGonderim = 0, bekleyen = null;
+
+    function aciDanYuzde(pan, tilt) {
+        return {
+            x: (pan - PAN_MIN) / (PAN_MAX - PAN_MIN),
+            // dikeyde YUKARI = büyük tilt, o yüzden 1 - oran
+            y: 1 - (tilt - TILT_MIN) / (TILT_MAX - TILT_MIN)
+        };
+    }
+    function knobYerlestir(pan, tilt) {
+        const p = aciDanYuzde(pan, tilt);
+        knob.style.left = (p.x * 100) + '%';
+        knob.style.top  = (p.y * 100) + '%';
+    }
+    function yaz(pan, tilt) {
+        document.getElementById('taret-kpan').textContent  = pan.toFixed(1);
+        document.getElementById('taret-ktilt').textContent = tilt.toFixed(1);
+        knobYerlestir(pan, tilt);
+    }
+
+    function gonder(pan, tilt) {
+        const simdi = performance.now();
+        komut = { pan: pan, tilt: tilt };
+        yaz(pan, tilt);
+        if (simdi - sonGonderim < 50) {          // 20 Hz tavan
+            if (!bekleyen) bekleyen = setTimeout(() => {
+                bekleyen = null; gonder(komut.pan, komut.tilt);
+            }, 50);
+            return;
+        }
+        sonGonderim = simdi;
+        fetch('/api/taret', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pan: pan, tilt: tilt })
+        }).catch(() => {});
+    }
+
+    function padOlayi(ev) {
+        const r = pad.getBoundingClientRect();
+        const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+        const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+        gonder(PAN_MIN + x * (PAN_MAX - PAN_MIN),
+               TILT_MAX - y * (TILT_MAX - TILT_MIN));
+    }
+    pad.addEventListener('mousedown', (e) => { suruklu = true; padOlayi(e); });
+    window.addEventListener('mousemove', (e) => { if (suruklu) padOlayi(e); });
+    window.addEventListener('mouseup',   () => { suruklu = false; });
+    pad.addEventListener('touchstart', (e) => {
+        suruklu = true; padOlayi(e.touches[0]); e.preventDefault(); },
+        { passive: false });
+    pad.addEventListener('touchmove', (e) => {
+        if (suruklu) { padOlayi(e.touches[0]); e.preventDefault(); } },
+        { passive: false });
+    pad.addEventListener('touchend', () => { suruklu = false; });
+
+    document.querySelectorAll('.taret-on').forEach((b) => {
+        b.addEventListener('click', () =>
+            gonder(parseFloat(b.dataset.pan), parseFloat(b.dataset.tilt)));
+    });
+
+    // ── AĞ FIRLATICI ────────────────────────────────────────────────
+    const hizK = document.getElementById('ag-hiz');
+    const hizD = document.getElementById('ag-hiz-deger');
+    if (hizK) hizK.addEventListener('input', () => { hizD.textContent = hizK.value; });
+    const atesB = document.getElementById('btn-ag-ates');
+    const sonucE = document.getElementById('ag-sonuc');
+    if (atesB) atesB.addEventListener('click', () => {
+        sonucE.className = 'taret-ag-sonuc';
+        sonucE.textContent = 'ateşleniyor…';
+        fetch('/api/ag/ates', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hiz: parseFloat(hizK.value) })
+        }).then(r => r.json()).then(j => {
+            if (!j.ok) { sonucE.className = 'taret-ag-sonuc iska';
+                         sonucE.textContent = '⛔ ' + (j.mesaj || 'atılamadı'); }
+        }).catch(() => {});
+    });
+
+    // ── 5 Hz durum tazeleme: komut ↔ GERÇEKLEŞEN + ağ sonucu ────────
+    setInterval(() => {
+        fetch('/api/taret').then(r => r.json()).then(d => {
+            // Sürüklenmiyorsa sunucunun komutunu doğru kabul et (başka bir
+            // istemci ya da otomatik nişan taretti çevirmiş olabilir).
+            if (!suruklu && typeof d.komut_pan === 'number'
+                && (Math.abs(d.komut_pan - komut.pan) > 0.05
+                    || Math.abs(d.komut_tilt - komut.tilt) > 0.05)) {
+                komut = { pan: d.komut_pan, tilt: d.komut_tilt };
+                yaz(komut.pan, komut.tilt);
+            }
+            const gp = d.gercek_pan, gt = d.gercek_tilt;
+            document.getElementById('taret-gpan').textContent =
+                (gp === null || gp === undefined) ? '--' : gp.toFixed(1);
+            document.getElementById('taret-gtilt').textContent =
+                (gt === null || gt === undefined) ? '--' : gt.toFixed(1);
+            const h = document.getElementById('taret-hata');
+            if (d.hata_pan === null || d.hata_pan === undefined) {
+                h.textContent = '--'; h.className = 'val';
+            } else {
+                const en = Math.max(d.hata_pan, d.hata_tilt);
+                h.textContent = d.hata_pan.toFixed(2) + '° / ' +
+                                d.hata_tilt.toFixed(2) + '°';
+                h.className = 'val ' + (en < 1.0 ? 'success' : 'warning');
+            }
+        }).catch(() => {});
+
+        fetch('/api/ag/durum').then(r => r.json()).then(d => {
+            if (!sonucE) return;
+            if (d.asama === 'UÇUYOR') {
+                sonucE.className = 'taret-ag-sonuc';
+                sonucE.textContent = '🕸 ağ uçuyor…';
+            } else if (d.son && d.son.sonuc) {
+                const v = d.son.sonuc === 'YAKALANDI';
+                sonucE.className = 'taret-ag-sonuc ' + (v ? 'vurus' : 'iska');
+                sonucE.textContent = (v ? '✔ ' : '✖ ') + d.son.sonuc +
+                    '  ·  menzil ' + d.son.menzil_m + ' m' +
+                    (d.son.en_yakin_m !== null && d.son.en_yakin_m !== undefined
+                        ? '  ·  en yakın ' + d.son.en_yakin_m + ' m' : '') +
+                    '  ·  çıkış ' + (d.son.cikis_hizi || 0).toFixed(1) + ' m/s';
+            }
+        }).catch(() => {});
+    }, 200);
+
+    // ⛔ AÇILIŞTA SUNUCUDAN OKU: panel yeniden yüklenince yerel `komut`
+    //   sıfırlanıyor ve "KOMUT 0/25" yazarken taret bambaşka açıdaydı —
+    //   ekranla araç ayrışıyordu. Gerçek kaynak sunucudur.
+    fetch('/api/taret').then(r => r.json()).then(d => {
+        if (typeof d.komut_pan === 'number') {
+            komut = { pan: d.komut_pan, tilt: d.komut_tilt };
+            yaz(komut.pan, komut.tilt);
+        }
+    }).catch(() => yaz(komut.pan, komut.tilt));
+})();

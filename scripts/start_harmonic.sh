@@ -242,6 +242,16 @@ pgrep -f 'gz sim|gz-sim-server' >/dev/null 2>&1 || eksik="$eksik Gazebo"
 pgrep -f 'sim_vehicle.py -v ArduCopter' >/dev/null 2>&1 || eksik="$eksik ArduCopter"
 pgrep -f 'sim_vehicle.py -v ArduPlane'  >/dev/null 2>&1 || eksik="$eksik ArduPlane"
 
+# ── PARAMETRE DOĞRULAMA (2026-09-06'da yakalanan EEPROM tuzağı) ────────
+# `--add-param-file` yalnız VARSAYILANI değiştirir; eeprom.bin'de KAYITLI
+# değeri olan parametre dosyayı sessizce yok sayar. Ölçüldü: eğim tavanı
+# dosyada 7000, araçta 6000. Artık her başlatmada karşılaştırılıp yazılıyor.
+echo "[HARMONIC] Parametreler doğrulanıyor (eeprom tuzağı)..."
+python3 "$PROJ/tools/param_dogrula.py" --yaz --sessiz \
+        --dosya "$PROJ/sim/ardupilot_params/avci_copter.parm" \
+        --adres udpin:127.0.0.1:14541 2>&1 | sed 's/^/    /'
+_sure "Parametreler doğrulandı"
+
 echo "=================================================================="
 if [ -n "$eksik" ]; then
     echo "[HARMONIC] ✗ BAŞLAMADI:$eksik"

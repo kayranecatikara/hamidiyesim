@@ -1,3 +1,22 @@
+# ══════════════════════════════════════════════════════════════════════════
+# ⛔ BU BLOK HER İMPORT'TAN ÖNCE GELMELİ — SESSİZ KAMERA ARIZASI DÜZELTMESİ
+# ══════════════════════════════════════════════════════════════════════════
+# Sistemdeki protobuf 4+ ile gz-msgs'in üretilmiş Python modülleri (gz.msgs10.*)
+# uyuşmuyor:  "Descriptors cannot be created directly ... regenerate with
+# protoc >= 3.19".  Bu bir ImportError olarak patlıyordu ve aşağıdaki
+# gz_camera_thread() onu `except Exception` ile yakalayıp
+#     "[GCS] gz-transport Python yok, Harmonic kamera atlandı"
+# yazıp SESSİZCE devam ediyordu → panelde FPV görüntüsü HİÇ gelmiyordu.
+# Kullanıcı `AVCI_GZ_CAMERA=1` verse bile.
+#
+# Çözüm protobuf'ın saf-Python çözümleyicisine geçmek. Elle `export` etmeye
+# bırakılırsa unutulur (2026-09-06'da tam bu yaşandı), o yüzden burada
+# ZORLANIYOR. `google.protobuf` import edilmeden ÖNCE ayarlanmalı — bu yüzden
+# dosyanın en başında.
+import os as _os_erken  # noqa: E402
+_os_erken.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
+
 import sys
 import os
 import random
@@ -1753,6 +1772,9 @@ _lock_prev_id  = None   # kilit olay logu için önceki kilit ID'si
 # Parazit modellere de uygulansın mı? 1 = tespit/pose/tracker PARAZİTLİ kareyi
 # görür (görüntü hattının gerçek dayanıklılık testi); 0 (varsayılan) = parazit
 # yalnız operatör yayınına biner, modeller temiz kareyi görür (eski davranış).
+# Panele giden MJPEG önizlemesinin genişliği (px). Tespit TAM
+# çözünürlükte yapılır; bu yalnız EKRAN kopyasıdır. 0 = küçültme yok.
+_ONIZLEME_EN = int(os.environ.get("AVCI_ONIZLEME_EN", 960))
 _NOISE_PRE_DETECT = os.environ.get("AVCI_NOISE_PRE_DETECT", "0") == "1"
 # (GT rotasyon modu 2026-08-02 akşamı SÖKÜLDÜ — kullanıcı güdümü eski "en iyi
 # hal"e döndürdü; pose modeli yeniden devrede. geometry.rot_gt_goruntu ve
@@ -1905,6 +1927,27 @@ def process_iris_frame(img, stamp=None, wall_recv=None):
     # ---- VIDEO PARAZİT (yayın) + MJPEG KODLAMA ----
     if not _NOISE_PRE_DETECT and lvl > 0.001:
         img = _apply_video_noise(img, lvl)         # eski davranış: yalnız yayına
+
+    # ⛔ ÖNİZLEME KÜÇÜLTMESİ — ÖLÇÜLEREK EKLENDİ (2026-09-06)
+    # Kamera gerçek donanıma (Waveshare IMX477-160) eşlenip çözünürlük
+    # yükseltilince boru hattı çöktü: 2028×1520'de gelen 18 kare/s'in
+    # yalnız 3.7'si işlenebiliyordu (%80 düşüş); 640×480'de %0 düşüyordu.
+    # Maliyetin büyük kısmı YOLO DEĞİL — YOLO girdiyi zaten imgsz=1280'e
+    # ölçekliyor, yani kaynak büyüdükçe onun maliyeti sabit kalıyor. Asıl
+    # yük, panele giden MJPEG akışını TAM ÇÖZÜNÜRLÜKTE kodlamaktı
+    # (cv2.imencode maliyeti piksel sayısıyla doğrusal: 0.3 MP ≈ 6 ms,
+    #  3.1 MP ≈ 60 ms — tek başına 30 Hz'i imkânsız kılar).
+    #
+    # Panelin küçük penceresi 3 MP'lik önizleme İSTEMİYOR. Tespit ve
+    # takip TAM çözünürlükte yapılır (bilgi kaybı YOK), yalnız EKRANA
+    # GİDEN kopya küçültülür. Kutu koordinatları güdüme tam çözünürlükte
+    # gider; küçültme yalnız görüntüdür.
+    # AVCI_ONIZLEME_EN=0 ile kapatılır (tam çözünürlük yayınlanır).
+    if _ONIZLEME_EN > 0 and img.shape[1] > _ONIZLEME_EN:
+        _o = _ONIZLEME_EN / float(img.shape[1])
+        img = cv2.resize(img, (_ONIZLEME_EN, int(round(img.shape[0] * _o))),
+                         interpolation=cv2.INTER_AREA)
+
     if 0.001 < lvl < 0.999:
         jpeg_q = max(5, int(90 - lvl * 85))
         _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_q])
@@ -2324,6 +2367,211 @@ def stop_iris_telem():
         _iris_telem_thread.join(timeout=2.0)
     _iris_telem_thread = None
 
+
+# ══════════════════════════════════════════════════════════════════════════
+#  TARET (turret) — 2 eksenli nişan mekanizması
+# ══════════════════════════════════════════════════════════════════════════
+# VAKKAS'ın gövdesi üstündeki taret; namlu ve IMX477 kamera aynı doğrultuda.
+# Gazebo tarafında iki `JointPositionController` eklentisi açı hedefi bekler:
+#     /model/iris_with_ardupilot/joint/turret_yaw_joint/0/cmd_pos    (rad)
+#     /model/iris_with_ardupilot/joint/turret_pitch_joint/0/cmd_pos  (rad)
+# Gerçek açılar `.../joint_state` konusundan geri okunur — komut ile
+# gerçekleşeni yan yana göstermek, "eklem gerçekten gitti mi" sorusunun
+# cevabıdır (CLAUDE.md §5.1 mekanizma kapısı).
+#
+# ⚠ SINIRLAR SDF ile BİREBİR olmalı (iris_cam/model.sdf <limit>):
+#     pan  : -180° … +180°   (0 = burun yönü)
+#     tilt :  -30° …  +90°   (+ = yukarı; -30 gerçek gimballerin alt sınırı)
+_TARET_ARAC = os.environ.get("AVCI_TARET_ARAC", "iris_with_ardupilot")
+_TARET_DUNYA = os.environ.get("AVCI_TARET_DUNYA", "avci")
+_TARET_SINIR = {"pan": (-180.0, 180.0), "tilt": (-30.0, 90.0)}
+_taret = {"komut_pan": 0.0, "komut_tilt": 25.0,
+          "gercek_pan": None, "gercek_tilt": None,
+          "hiz_pan": None, "hiz_tilt": None, "baglanti": False}
+_taret_pub = {}
+
+
+def _taret_konu(eklem):
+    return "/model/%s/joint/%s/0/cmd_pos" % (_TARET_ARAC, eklem)
+
+
+def _taret_yayinci(eklem):
+    """Eklem için gz-transport yayıncısı (bir kez kurulur, sonra saklanır)."""
+    if eklem in _taret_pub:
+        return _taret_pub[eklem]
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.double_pb2 import Double
+    except Exception as e:
+        print("[TARET] gz-transport yok: %s" % e)
+        return None
+    if "_node" not in _taret_pub:
+        _taret_pub["_node"] = GzNode()
+        _taret_pub["_Double"] = Double
+    p = _taret_pub["_node"].advertise(_taret_konu(eklem), Double)
+    _taret_pub[eklem] = p
+    # ⛔ KEŞİF GECİKMESİ: gz-transport'ta yayıncı ile abone birbirini
+    #   bulana kadar gönderilen mesaj DÜŞER. Ölçüldü (2026-09-06): sunucu
+    #   açıldıktan sonraki İLK taret komutu hiç ulaşmadı (komut −35/45,
+    #   gerçek 0/25 kaldı). Kısa bir bekleme + aşağıdaki tekrarlayıcı
+    #   iplik birlikte bunu kapatıyor.
+    time.sleep(0.25)
+    return p
+
+
+def _taret_yaz(pan_deg, tilt_deg):
+    """Açıları sınırlara kırpıp Gazebo'ya yaz. Dönüş: (pan, tilt) uygulanan."""
+    lo, hi = _TARET_SINIR["pan"]
+    pan = max(lo, min(hi, float(pan_deg)))
+    lo, hi = _TARET_SINIR["tilt"]
+    tilt = max(lo, min(hi, float(tilt_deg)))
+    tamam = True
+    for eklem, aci in (("turret_yaw_joint", pan), ("turret_pitch_joint", tilt)):
+        p = _taret_yayinci(eklem)
+        if p is None:
+            tamam = False
+            continue
+        m = _taret_pub["_Double"]()
+        m.data = math.radians(aci)
+        try:
+            p.publish(m)
+        except Exception as e:
+            print("[TARET] yayın hatası (%s): %s" % (eklem, e))
+            tamam = False
+    _taret["komut_pan"], _taret["komut_tilt"] = pan, tilt
+    _taret["baglanti"] = tamam
+    return pan, tilt
+
+
+def taret_tekrar_thread():
+    """Son taret komutunu 2 Hz tekrarla.
+
+    NİYE: (1) yayıncı/abone keşfi tamamlanmadan atılan ilk mesaj düşüyor;
+    (2) Gazebo yeniden başlatılırsa JointPositionController sıfırdan başlar
+    ve panelin gösterdiği açı ile aracın açısı ayrışır. Tekrarlayıcı ikisini
+    de kapatır. Aynı değeri tekrar yazmak zararsızdır — denetleyici zaten
+    o hedefi tutuyor.
+    """
+    while True:
+        time.sleep(0.5)
+        try:
+            if _taret_pub:            # en az bir kez komut verilmişse
+                _taret_yaz(_taret["komut_pan"], _taret["komut_tilt"])
+        except Exception:
+            pass
+
+
+def taret_durum_thread():
+    """Taret eklemlerinin GERÇEK açılarını joint_state'ten oku."""
+    try:
+        from gz.transport13 import Node as GzNode
+        from gz.msgs10.model_pb2 import Model as GzModel
+    except Exception as e:
+        print("[TARET] durum okuma yok: %s" % e)
+        return
+
+    def cb(msg):
+        for j in msg.joint:
+            if j.name == "turret_yaw_joint":
+                _taret["gercek_pan"] = math.degrees(j.axis1.position)
+                _taret["hiz_pan"] = j.axis1.velocity
+            elif j.name == "turret_pitch_joint":
+                _taret["gercek_tilt"] = math.degrees(j.axis1.position)
+                _taret["hiz_tilt"] = j.axis1.velocity
+
+    node = GzNode()
+    konu = "/world/%s/model/%s/joint_state" % (_TARET_DUNYA, _TARET_ARAC)
+    if node.subscribe(GzModel, konu, cb):
+        print("[TARET] eklem durumu dinleniyor: %s" % konu)
+    else:
+        print("[TARET] ⛔ abone olunamadı: %s" % konu)
+    while True:
+        time.sleep(1)
+
+
+class TaretCmd(BaseModel):
+    """Taret açı komutu (derece). Verilmeyen eksen olduğu yerde kalır."""
+    pan: float | None = None
+    tilt: float | None = None
+
+
+@app.post("/api/taret")
+def taret_komut(cmd: TaretCmd):
+    """Taret açısı komutu. Gövde: {"pan": derece, "tilt": derece}"""
+    pan, tilt = _taret_yaz(
+        _taret["komut_pan"] if cmd.pan is None else cmd.pan,
+        _taret["komut_tilt"] if cmd.tilt is None else cmd.tilt)
+    return {"ok": _taret["baglanti"], "pan": pan, "tilt": tilt}
+
+
+@app.get("/api/taret")
+def taret_durum():
+    """Komut edilen ve GERÇEKLEŞEN taret açıları + sınırlar."""
+    d = dict(_taret)
+    d["sinir"] = _TARET_SINIR
+    for a, b in (("pan", "gercek_pan"), ("tilt", "gercek_tilt")):
+        g = _taret[b]
+        d["hata_" + a] = (round(abs(g - _taret["komut_" + a]), 2)
+                          if g is not None else None)
+    return d
+
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  AĞ FIRLATICI — taret namlusundan ağ atma  (SAF PYTHON, C++ eklenti YOK)
+# ══════════════════════════════════════════════════════════════════════════
+# Balistik ve yakalama sınaması control/ag_firlatici.py içinde Python ile
+# yapılır; Gazebo'daki `ag_konisi` modeli set_pose ile taşınır. Ayrıntı ve
+# model varsayımları o dosyanın başında.
+_ag_firlatici = None
+_ag_kilit = threading.Lock()
+
+
+def _ag_al():
+    """Fırlatıcıyı ilk kullanımda kur (Gazebo ayakta değilse None döner)."""
+    global _ag_firlatici
+    with _ag_kilit:
+        if _ag_firlatici is None:
+            try:
+                from control.ag_firlatici import AgFirlatici
+                _ag_firlatici = AgFirlatici()
+                print("[AĞ] fırlatıcı hazır (Python balistik)")
+            except Exception as e:
+                print("[AĞ] fırlatıcı kurulamadı: %s" % e)
+                return None
+        return _ag_firlatici
+
+
+class AgCmd(BaseModel):
+    hiz: float | None = None      # m/s; None → varsayılan namlu hızı
+
+
+@app.post("/api/ag/ates")
+def ag_ates(cmd: AgCmd):
+    """Namludan bir ağ at. Ağ, taretin baktığı yöne gider (boresight)."""
+    f = _ag_al()
+    if f is None:
+        return {"ok": False, "mesaj": "fırlatıcı yok (Gazebo ayakta mı?)"}
+    return f.ates(cmd.hiz)
+
+
+@app.get("/api/ag/durum")
+def ag_durum():
+    """Son atışın sonucu + fırlatıcının aşaması."""
+    f = _ag_al()
+    if f is None:
+        return {"asama": "YOK", "mesaj": "fırlatıcı kurulamadı", "son": None}
+    d = dict(f.durum)
+    n = f.namlu_dunya()
+    if n is not None:
+        uc, yon, va = n
+        d["namlu_uc"] = [round(float(x), 2) for x in uc]
+        d["atis_yukselis_deg"] = round(math.degrees(math.asin(
+            max(-1.0, min(1.0, float(yon[2]))))), 1)
+        d["arac_hizi"] = round(float((va ** 2).sum() ** 0.5), 1)
+    return d
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(mavlink_listener())          # plane — 14550
@@ -2331,6 +2579,15 @@ async def startup_event():
     # Hasar modülü: çarpışma menzilini izler, temasta hedefi imha eder.
     # Güdümden bağımsız — hangi faz çalışırsa çalışsın (veya hiçbiri) izler.
     threading.Thread(target=_hasar_izleyici, daemon=True).start()
+    # Taret eklem durumu (komut ↔ gerçekleşen kıyası panelde gösterilsin)
+    threading.Thread(target=taret_durum_thread, daemon=True,
+                     name="taret-durum").start()
+    threading.Thread(target=taret_tekrar_thread, daemon=True,
+                     name="taret-tekrar").start()
+    # İlk komutu şimdi ver: yayıncılar kurulsun ve taret varsayılan
+    # duruşuna (0°, +25°) otursun — panel açıldığında değer tutarlı olsun.
+    threading.Timer(3.0, lambda: _taret_yaz(_taret["komut_pan"],
+                                            _taret["komut_tilt"])).start()
     print(f"[GCS] Hasar modülü {'aktif' if _HASAR_AKTIF else 'KAPALI'} "
           f"— GERÇEK Gazebo teması (yakınlık eşiği YOK; AVCI_HASAR=0 kapatır)")
     # YOLO detector'ı yükle (opsiyonel; AVCI_DETECTOR=off ile kapatılır)

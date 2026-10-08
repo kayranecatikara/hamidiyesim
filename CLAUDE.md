@@ -8,30 +8,7 @@ Geliştirme yolu herkes için aynıdır.
 
 # 0 · ⛔⛔ İKİ ÜSTÜN KURAL — hepsinden önce gelir
 
-## 0.1 · UÇUŞLARI **KULLANICI** KOŞAR. YAPAY ZEKÂ KOŞMAZ.
-
-**Kullanıcı kuralı (2026-08-18):** *"bundan sonra kendin koşu yapma, devri
-bitti, koşuların hepsini ben yapıyorum."*
-
-Yapay zekâ **sim kurmaz, uçuş başlatmaz, kampanya koşmaz.** `mkur.sh`,
-`kosu*.sh`, `kacamak_testi.py`, `ucus_kaydi.py` — bunları **kullanıcı**
-çalıştırır.
-
-**Yapay zekânın işi:**
-1. Özelliği **önerir** (§1 adım 1) ve onay alınca **kodlar**.
-2. Kullanıcıya **tam çalıştırma komutlarını** ve **koşu planını** verir —
-   kaç koşu, hangi kol, ne değişiyor, neye bakılacak.
-3. Kullanıcı uçurur, kayıt dizinini verir.
-4. Yapay zekâ **o kaydı analiz eder** (§2 adım 4-6) ve raporlar.
-
-**Tek istisna:** kullanıcı açıkça *"sen koş"* derse. Bu izin **o koşuya
-özeldir**, bir sonrakine geçmez.
-
-⚠ Analiz yükü hâlâ yapay zekâdadır — değişen şey yalnız **kimin
-uçurduğu**. Kayıtların tamamı (her kare, tek tek) yine yapay zekâ
-tarafından incelenir.
-
-## 0.2 · PANELDE **TEK** ÖZELLİK DURUR — biriktirme YASAK
+## 0.1 · PANELDE **TEK** ÖZELLİK DURUR — biriktirme YASAK
 
 **Kullanıcı kuralı (2026-08-18):** *"bir özellik denenir, iyiyse eklenir,
 değilse çıkarılır, sonra arayüzden silinir. Bu ne şimdi, her şey dolmuş."*
@@ -49,7 +26,7 @@ göre tamamen çıkarılır.
 **"Ölçüm sürerken bir sonrakini de hazırlayayım" YASAKTIR.** Sıra sıra
 gidilir.
 
-## 0.3 · ⛔ HER ŞEYİ TAM TEFERRUATIYLA AÇIKLA — terim bırakma
+## 0.2 · ⛔ HER ŞEYİ TAM TEFERRUATIYLA AÇIKLA — terim bırakma
 
 **Kullanıcı kuralı (2026-08-19):** *"Artık bu aşamadan sonra sisteme ne
 ekliyoruz, ne çıkartıyoruz, nasıl yapıyoruz tam öğrenmek istiyorum. O yüzden
@@ -89,10 +66,11 @@ gerektiğini ve *hangi ölçümün* onu gösterdiğini söyler. Riskleri ve geri
 dönüş yolunu (kill-switch) birlikte sunar. Kullanıcı onaylamadan güdüm
 davranışını değiştiren kod yazılmaz.
 
-**2. KULLANICI UÇURUR, YAPAY ZEKÂ PLANLAR — EN AZ 4 UÇUŞ.** (§0.1)
+**2. YAPAY ZEKÂ UÇURUR — EN AZ 4 UÇUŞ.**
 Yapay zekâ bölüm 2'deki test mekanizmasına ve bölüm 3'teki senaryo
-tasarımına göre **koşu planını ve tam komutları** verir; kontrol/deney
-kolları dönüşümlü koşulur. **Uçuşları kullanıcı yapar.**
+tasarımına göre koşu planını kurar ve koşuları **kendisi çalıştırır**;
+kontrol/deney kolları dönüşümlü koşulur. Plan, ilk uçuş başlamadan ÖNCE
+sohbete yazılır (§1.1).
 Kanıt: taze uçuş + video + log, üçü birden.
 
 **3. YAPAY ZEKÂ RAPOR EDER.** Özellik sistemi iyileştirdi mi, kötüleştirdi mi,
@@ -165,8 +143,8 @@ sessizce yapılmaz — kullanıcının bekleme süresi değişiyor demektir.
 
 # 2 · TEST MEKANİZMASI — değişmez sekiz adım
 
-1. **TAZE UÇUŞ.** Testi **kullanıcı** koşar (§0.1); yapay zekâ planı ve
-   komutları verir, kaydı analiz eder. Eski log replay'i kanıt değildir.
+1. **TAZE UÇUŞ.** Testi **yapay zekâ** koşar ve kaydı analiz eder; koşu
+   planı önce sohbete yazılır (§1.1). Eski log replay'i kanıt değildir.
 2. **SANİYEDE 1 KARE + TELEMETRİ.** `python3 tools/ucus_kaydi.py <dizin> <süre>`
    — her kare o anki panel telemetrisiyle eşli olarak `meta.csv`'ye yazılır.
 3. **KARELERİ BİRLEŞTİR → VİDEO.**
@@ -567,7 +545,7 @@ itibaren geçerli olur — **uçuş sırasında, yeniden başlatmadan.**
    çeker, arayüz kendiliğinden büyür (HTML/CSS/JS'e dokunma).
 4. Raporda kullanıcıya "panelden şu düğmeyi açıp kapatarak farkı gör" de.
 
-**⚠ PANELDE YALNIZ O ANKİ ADIMIN ÖZELLİĞİ DURUR — bkz. §0.2 (üstün kural).**
+**⚠ PANELDE YALNIZ O ANKİ ADIMIN ÖZELLİĞİ DURUR — bkz. §0.1 (üstün kural).**
 Bir özelliğin kararı verilince — ister sisteme **GİRSİN** ister **ELENSİN** —
 düğmesi `_OZELLIKLER`'den **SİLİNİR**. Yeni adıma geçerken önceki adımın
 düğmesi temizlenir; panelde her zaman sadece o an denenen şey görünür.
@@ -591,11 +569,13 @@ anahtarın değişmediğinden emin olmak deney disiplininin parçası (§4).
 
 # 7 · YAPAY ZEKÂNIN ÇALIŞMA BİÇİMİ
 
-- ⛔ **UÇUŞ KOŞMA — §0.1.** Sim kurma, uçuş başlatma, kampanya koşma yok.
-  Plan ve komut ver, kullanıcı uçursun, sen kaydı analiz et.
+- **UÇUŞLARI SEN KOŞARSIN.** Sim kurulumu, uçuş başlatma, kampanya koşma —
+  hepsi yapay zekânın işi (kullanıcı kuralı 2026-08-21). Ama koşu planı
+  BAŞLAMADAN ÖNCE sohbete yazılır ve uzun kampanyada ara rapor verilir;
+  saatlerce sessiz kalmak YASAK — eski kısıtın sebebi buydu.
 - **ARKA PLANDA GİZLİ SHELL YOK.** Analizler sohbette, doğrudan çalıştırılır
   ki kullanıcı ne olup bittiğini görsün.
-- **PLANI KULLANICIYA VER.** Kaç uçuş, ne kadar sürecek, her koşuda ne
+- **PLANI ÖNCEDEN SOHBETE YAZ.** Kaç uçuş, ne kadar sürecek, her koşuda ne
   değişiyor, neye bakılacak — hepsi **sohbete**, tablo hâlinde. Kampanya
   belgesine yazmak bunun yerine geçmez. Bkz. §1.1.
 - Bir şey takılırsa **sebebini bul ve söyle**, sessizce yeniden deneme.

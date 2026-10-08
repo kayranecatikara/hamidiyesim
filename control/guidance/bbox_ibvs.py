@@ -68,6 +68,24 @@ def _env_f(name, default):
     return float(os.environ.get(name, default))
 
 
+
+# ══════════════════════════════════════════════════════════════════════════
+#  PİKSEL ÖLÇEĞİ — kamera değişince sabitler KENDİLİĞİNDEN uyarlansın diye
+# ══════════════════════════════════════════════════════════════════════════
+# Aşağıdaki bazı sabitlerin birimi PİKSEL'dir (px, px·m, (m/s)/px). Bunlar
+# uçuşlarda ÖLÇÜLDÜ — ama ölçüldükleri kamera 640×480 / 125° FOV idi
+# (FX = 166.58 px). 2026-09-06'da kamera gerçek donanıma eşlendi:
+# Waveshare IMX477-160, 2028×1520 / 128° → FX = 494.76 px.
+#
+# Aynı fiziksel durum artık 2.97 KAT daha büyük piksel sayısı üretiyor.
+# Sabitler elle güncellenirse bir dahaki kamera değişiminde yine kayar
+# (CLAUDE.md §5.12: arkada kalan şey sistemi bozar). Bu yüzden ölçüm
+# DEĞERİ ile ölçüldüğü KAMERA yan yana yazılıyor ve ölçek türetiliyor.
+#
+#   px ve px·m birimliler   → × _PX_OLCEK   (piksel sayısı büyüdü)
+#   (m/s)/px birimliler     → ÷ _PX_OLCEK   (aynı hız için daha çok piksel)
+_PX_OLCEK = geo.FX / geo.FX_OLCUM_REFERANSI
+
 class Cfg:
     LOOP_HZ = 20.0
 
@@ -193,8 +211,10 @@ class Cfg:
     # Ölçüye göre kalibrasyon — C = medyan(p · R_gerçek), 0-15° bandında.
     # ⚠ Bugüne kadar 160.0 kullanılıyordu; ölçülen 185.7. Yani menziller
     # %14 EKSİK tahmin ediliyordu (kendimizi olduğumuzdan yakın sanıyorduk).
-    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 185.7)   # px·m
-    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 296.8)  # px·m
+    # ⚠ 185.7 / 296.8 → 640×480 @125° kamerada ÖLÇÜLDÜ. Ölçek için bkz.
+    #   dosya başındaki _PX_OLCEK bloğu. Şu an: 551.4 / 881.5 px·m
+    MENZIL_PX_M_CARPIM = _env_f("AVCI_IBVS_C_CARPIM", 185.7 * _PX_OLCEK)   # px·m
+    MENZIL_PX_M_KOSEGEN = _env_f("AVCI_IBVS_C_KOSEGEN", 296.8 * _PX_OLCEK)  # px·m
 
     # ── EŞİKLER ARTIK METRE ───────────────────────────────────────────
     # Ölçü değişince piksel eşikleri anlamını yitirir (köşegen ~1.6 kat
@@ -204,8 +224,10 @@ class Cfg:
     HUCUM_MENZIL_M = _env_f("AVCI_IBVS_HUCUM_M", 1.0)   # m; PI'nın sıfır noktası
     LEAD_MENZIL_M = _env_f("AVCI_IBVS_LEAD_M", 6.4)     # m; lead tamamen sönene menzil
 
-    K_FWD = _env_f("AVCI_IBVS_KFWD", 0.35)      # (m/s)/px; P kazancı
-    K_I = _env_f("AVCI_IBVS_KI", 0.04)          # (m/s)/(px·s); İ kazancı
+    # ⚠ 0.35 / 0.04 → 640×480 @125° kamerada ÖLÇÜLDÜ. Birim (m/s)/px olduğu
+    #   için ölçeğe BÖLÜNÜR. Şu an: 0.1178 / 0.01347
+    K_FWD = _env_f("AVCI_IBVS_KFWD", 0.35 / _PX_OLCEK)   # (m/s)/px; P kazancı
+    K_I = _env_f("AVCI_IBVS_KI", 0.04 / _PX_OLCEK)       # (m/s)/(px·s); İ kazancı
     I_MIN, I_MAX = 0.0, 24.0       # m/s; integral penceresi (windup koruması)
 
     # V_MIN 0 (2026-08-08, kullanıcı kararı): GERİ ÇEKİLME YOK. Eski −2 m/s
@@ -598,7 +620,9 @@ class Cfg:
     DIKEY_KAP_TABAN = _env_f("AVCI_IBVS_DIKEY_KAP_TABAN", 1.5)   # m/s
 
     CONF_MIN = _env_f("AVCI_IBVS_CONF", 0.35)   # bunun altı kutu = yok sayılır
-    BOYUT_MIN = 6.0                # px; bundan küçük kutu güvenilmez (gürültü)
+    # ⚠ 6.0 px → 640×480 kamerada ölçülen gürültü tabanı; ölçekle büyür.
+    #   Şu an: 17.8 px
+    BOYUT_MIN = 6.0 * _PX_OLCEK    # px; bundan küçük kutu güvenilmez (gürültü)
 
 
 _LOG_DIR = os.path.join(
@@ -612,6 +636,8 @@ _CSV_ALANLAR = [
     "boyut_hata", "hiz_I", "v_los", "kacis_ek", "gecikme_s", "eps_hiz_deg", "sonum_deg", "donus_tavan", "lead_az_deg", "los_hiz_az", "los_hiz_el",
     "vx_cmd", "vy_cmd", "vz_cmd", "yaw_cmd_deg", "kayip_sayac",
     "elev_atalet_deg", "kapanma_hedefi", "kapanma_olculen", "dikey_olcek",
+    # ── TEŞHİS (davranışa etkisiz): KUTU_YOK karesinin SEBEBİ ──
+    "red_conf", "kilit_kaynak",
 ]
 
 
@@ -1048,9 +1074,21 @@ def run_bbox_ibvs(conn, get_iris, wait_pose, stop_event, cfg=Cfg,
                     send_velocity(conn, *son_v_cmd)
                 else:
                     send_velocity(conn, vx_p, vy_p, vz_p, cmd_yaw or iyaw)
+                # ── TEŞHİS: kare NEDEN kutusuz? Üç ayrı sebep var ve
+                # çareleri BAŞKA BAŞKA. Sebebi loglamadan hangisini
+                # düzelttiğimizi bilemeyiz (§5.1 mekanizma kapısı).
+                #   red_conf dolu      → tespit VAR, CONF_MIN reddetti
+                #   kilit_kaynak=tahmin→ kilit COAST'ta, gcs det=None veriyor
+                #   ikisi de boş       → tespit hiç yok (conf < 0.25)
+                _pz = kayit.get("pose")
+                _kl = kayit.get("lock")
                 w_csv.writerow({"t": round(now, 3), "dt": round(dt, 4),
                                 "durum": "KUTU_YOK", "kayip_sayac": kayip_sayac,
-                                "iris_yaw_deg": round(math.degrees(iyaw), 1)})
+                                "iris_yaw_deg": round(math.degrees(iyaw), 1),
+                                "red_conf": (round(_pz.get("conf", 0.0), 3)
+                                             if _pz is not None else ""),
+                                "kilit_kaynak": (_kl.get("kaynak", "")
+                                                 if _kl else "")})
                 f.flush()
                 continue
 

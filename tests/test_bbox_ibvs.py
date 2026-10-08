@@ -42,6 +42,24 @@ def kontrol(ad, kosul, detay=""):
     print(f"  {'PASS' if kosul else 'FAIL'}  {ad}  {detay}")
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# ⛔ PİKSEL GİRDİLERİ KAMERAYA GÖRE ÖLÇEKLENİR (2026-09-06)
+# Bu dosyadaki bazı testler kutu boyutlarını ve piksel ofsetlerini SABİT
+# yazıyordu (10 px, 80 px, CX+90, cy=260). Bu sayılar 640×480 / 125° kamerada
+# ölçülmüştü. Kamera gerçek donanıma eşlenince (Waveshare IMX477-160,
+# 2028×1520 / 128°) aynı fiziksel durum 2.97 kat büyük piksel sayısı üretiyor
+# ve testler YANLIŞ SEBEPLE düştü — kod değil TEST eskimişti.
+#   ör. E2: cy=260 eskiden merkezin 20 px altıydı, artık 500 px ÜSTÜ →
+#           dikey komut tavana dayanıyor ve iki kol ayrışmıyordu.
+# Artık ölçekle çarpılıyor; kamera bir daha değişince kendiliğinden uyar.
+_PX = geo.FX / geo.FX_OLCUM_REFERANSI
+
+
+def _px(x):
+    """640×480 @125° kamerada ölçülmüş piksel değerini bugünkü kameraya çevir."""
+    return x * _PX
+
+
 def _cy_icin(elev_deg, cfg=None):
     """Hedefi SEVİYE çerçevesinde `elev_deg` yükselişte gösteren cy (roll=pitch=0)."""
     return geo.CY + geo.FY * math.tan(
@@ -554,6 +572,75 @@ def main():
             f"bbox.CONF_MIN={C.CONF_MIN} — supervisor'ın 'görsel' dediği "
             "her kareyi güdüm KULLANABİLİR")
 
+    # C1d: ⭐ YAPISAL BAĞ — supervisor kendi SABİTİNİ yazmasın.
+    # C1b eşitliği KONTROL eder ama nasıl sağlandığını değil. Sabit 0.35
+    # yazılırsa test bugün geçer, CONF_MIN yarın değişince SESSİZCE bozulur —
+    # ve tam o arıza (faz zıplaması) geri gelir. Bu yüzden kaynağa bakılır.
+    import inspect as _insp
+    _sup_src = _insp.getsource(_sup.SupCfg)
+    # Atama satırlara bölünmüş olabilir → yorumları at, kalanı tek satıra ez.
+    _kod = " ".join(ln.split("#")[0] for ln in _sup_src.splitlines())
+    _atama = _kod.split("POSE_CONF_MIN")[-1].split(")) ")[0]
+    kontrol("C1d ⭐ supervisor eşiği CONF_MIN'den TÜRER (sabit yazılmaz)",
+            "IbvsCfg.CONF_MIN" in _atama,
+            "AVCI_HYBRID_CONF varsayılanı = IbvsCfg.CONF_MIN; "
+            "sayısal sabit yok → iki katman ayrışamaz")
+
+    # C1e: TEŞHİS SÜTUNLARI — kör karenin SEBEBİ loglanır.
+    # Üç sebep var, çareleri farklı: (1) CONF_MIN reddetti, (2) kilit
+    # COAST'ta (gcs det=None veriyor), (3) tespit hiç yok. Sebep
+    # loglanmazsa hangi çarenin işe yaradığı ölçülemez (§5.1).
+    kontrol("C1e teşhis sütunları var (red_conf, kilit_kaynak)",
+            "red_conf" in ib._CSV_ALANLAR and "kilit_kaynak" in ib._CSV_ALANLAR,
+            "KUTU_YOK karesi neden kutusuz olduğunu yazar")
+
+    # ── K · AYAR KONSOLU BÜTÜNLÜĞÜ ─────────────────────────────────
+    # Üçü de 2026-08-21'de GERÇEKTEN bulundu. Kaydırıcı sessizce yanlış
+    # değer yazarsa uçuş bozulur ve sebebi hiçbir logda görünmez.
+    import collections as _co, os as _os
+    from control import ayar_konsolu as _ak
+    _parm = {}
+    _pp = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "sim", "ardupilot_params", "avci_copter.parm")
+    for _ln in open(_pp):
+        _q = _ln.split()
+        if len(_q) == 2:
+            try: _parm[_q[0]] = float(_q[1])
+            except ValueError: pass
+
+    # K1: kaydırıcı aralığı YÜRÜRLÜKTEKİ değeri kapsamalı.
+    # Yaşandı: WPNAV_ACCEL_Z gerçek değer 2000, kaydırıcı [50,1500] →
+    # kullanıcı o kaydırıcıya dokununca değer SESSİZCE 1500'e düşerdi.
+    _disi = []
+    for _a in _ak.AYARLAR:
+        if _a[4] not in ("sayi", "param"): continue
+        _lo, _hi, _alan = _a[6], _a[7], _a[1]
+        if _a[4] == "param": _v = _parm.get(_alan)
+        elif _alan.startswith("sup:"): _v = getattr(_sup.SupCfg, _alan[4:], None)
+        else: _v = getattr(C, _alan, None)
+        if _v is None: _disi.append(f"{_a[0]}(değer yok)"); continue
+        if not (_lo <= float(_v) <= _hi): _disi.append(f"{_a[0]}={_v}∉[{_lo},{_hi}]")
+    kontrol("K1 ⭐ her kaydırıcının aralığı yürürlükteki değeri KAPSAR",
+            not _disi, f"aralık dışı: {_disi if _disi else 'YOK'}")
+
+    # K2: aynı alan iki kez listelenmesin — iki kaydırıcı aynı sayıyı
+    # yazarsa kullanıcı hangisinin geçerli olduğunu bilemez.
+    _c = _co.Counter(_a[0] for _a in _ak.AYARLAR if _a[4] != "grup")
+    _kopya = [k for k, n in _c.items() if n > 1]
+    kontrol("K2 ayar konsolunda kopya kayıt YOK",
+            not _kopya, f"kopya: {_kopya if _kopya else 'YOK'}")
+
+    # K3: uçuşta değiştirilmiş ARAÇ parametresi panelde bulunmalı.
+    # Yaşandı: PSC_JERK_Z 5→40 yapıldı (dikey davranışın kök taşı) ama
+    # panelde hiç yoktu → canlı sınanamıyordu.
+    _kritik = ["PSC_JERK_Z", "PSC_JERK_XY", "WPNAV_ACCEL_Z", "ANGLE_MAX",
+               "WPNAV_SPEED", "WPNAV_SPEED_UP", "WPNAV_SPEED_DN"]
+    _panelde = {_a[1] for _a in _ak.AYARLAR}
+    _eksik = [k for k in _kritik if k in _parm and k not in _panelde]
+    kontrol("K3 ⭐ uçuş-kritik araç parametreleri panelde var",
+            not _eksik, f"eksik: {_eksik if _eksik else 'YOK'}")
+
     # C1c: histerezis var — girmek ve çıkmak farklı şart
     kontrol("C1c faz histerezisi: girmek ≠ çıkmak (çatırdama kalkanı)",
             _sup.SupCfg.KILIT_N >= 5 and _sup.SupCfg.KAYIP_M >= _sup.SupCfg.KILIT_N,
@@ -578,10 +665,14 @@ def main():
 
     # C4: menzil ölçeği — R = C / kutu, C ölçüye göre seçilir
     _Cc = ib.menzil_sabiti(C)
+    # ⚠ Aralık ölçekle büyür (px·m birimi). Ayrıca eski hâldeki
+    #   `abs(_Cc/20 - _Cc/20) < 1e-9` totolojiydi (her zaman doğru) — yerine
+    #   gerçek bir sağlama: 20 px'lik kutunun menzili, C/20 olmalı.
+    _R20 = ib.menzil_kestir(20.0, C) if hasattr(ib, "menzil_kestir") else _Cc / 20.0
     kontrol("C4 menzil ölçeği: R = menzil_sabiti / kutu",
-            80.0 < _Cc < 400.0 and abs(_Cc / 20.0 - _Cc / 20.0) < 1e-9,
+            _px(80.0) < _Cc < _px(400.0) and abs(_R20 - _Cc / 20.0) < 1e-6,
             f"ölçü={C.BOYUT_OLCU}, C={_Cc:.1f} px·m → 20 px = "
-            f"{_Cc / 20.0:.1f} m")
+            f"{_Cc / 20.0:.1f} m  (aralık {_px(80.0):.0f}-{_px(400.0):.0f})")
 
     # C5: dikey komut VZ_MAX ile sınırlı
     _dik = [abs(ib.komut(CX, _cy_icin(_e), 30, 30, 0.0, 20.0, 0.05, C)[2])
@@ -675,9 +766,14 @@ def main():
 
     # E2: ⭐ dikey roll telafisi HER KAREDE (ayrı anahtar YOK)
     # Eski tasarımda seyirde açık / terminalde kapalıydı — tutarsızdı.
-    _r0 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, C, iris_roll=0.0)
-    _r40 = ib.komut(CX + 90.0, 260.0, 30, 30, 0.0, 15.0, 0.05, C,
-                    iris_roll=math.radians(40.0))
+    # cy=260 eskiden merkezin 20 px ALTIydı = 6.85° aşağı bakış; açıyla ver ki
+    # kameradan bağımsız olsun. Yatay ofset de ölçeklenir.
+    _cy_e2 = _cy_icin(GeoCfg.KAMERA_TILT_DEG
+                      - math.degrees(math.atan(20.0 / geo.FX_OLCUM_REFERANSI)))
+    _r0 = ib.komut(CX + _px(90.0), _cy_e2, _px(30), _px(30), 0.0, 15.0, 0.05,
+                   C, iris_roll=0.0)
+    _r40 = ib.komut(CX + _px(90.0), _cy_e2, _px(30), _px(30), 0.0, 15.0, 0.05,
+                    C, iris_roll=math.radians(40.0))
     kontrol("E2 ⭐ dikey roll telafisi HER KAREDE (tek yol)",
             abs(_r40[2] - _r0[2]) > 0.05 and not hasattr(ib.Cfg, "DIKEY_ROLL"),
             f"yatış 0°→vz={_r0[2]:+.2f}, 40°→vz={_r40[2]:+.2f} "
@@ -695,13 +791,13 @@ def main():
             f"λ̇=0.5 rad/s → {math.degrees(_donen[5]['lead_az']):.1f}°")
 
     # E4: lead menzille sönümlenir (yakında hata büyütmesin)
-    _uzak = ib.komut(CX, _cy_icin(0.0), 10, 10, 0.0, 15.0, 0.05, C,
+    _uzak = ib.komut(CX, _cy_icin(0.0), _px(10), _px(10), 0.0, 15.0, 0.05, C,
                      los_hiz=(0.5, 0.0))[5]["lead_olcek"]
-    _yakin = ib.komut(CX, _cy_icin(0.0), 80, 80, 0.0, 15.0, 0.05, C,
+    _yakin = ib.komut(CX, _cy_icin(0.0), _px(80), _px(80), 0.0, 15.0, 0.05, C,
                       los_hiz=(0.5, 0.0))[5]["lead_olcek"]
     kontrol("E4 lead menzille sönümlenir (yakında söner)",
             _yakin < _uzak and C.LEAD_SONUM,
-            f"kutu 10 px → ölçek {_uzak:.2f}; 80 px → {_yakin:.2f}")
+            f"kutu {_px(10):.0f} px → ölçek {_uzak:.2f}; {_px(80):.0f} px → {_yakin:.2f}")
 
     # E5: Ö1 kaçış telafisi — hedef uzaklaşırken hızı artırır, yaklaşırken YOK
     class _Kacis(ib.Cfg):
